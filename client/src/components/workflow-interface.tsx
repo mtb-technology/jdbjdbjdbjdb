@@ -53,6 +53,8 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
   const [isAutoRunning, setIsAutoRunning] = useState(false);
   const [autoRunMode, setAutoRunMode] = useState(false);
   const [viewMode, setViewMode] = useState<"stage" | "concept">("stage");
+  const [stageStartTime, setStageStartTime] = useState<Date | null>(null);
+  const [currentStageTimer, setCurrentStageTimer] = useState(0);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -127,6 +129,29 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
     },
   });
 
+  // Timer voor huidige stap
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (executeStageM.isPending && stageStartTime) {
+      interval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - stageStartTime.getTime()) / 1000);
+        setCurrentStageTimer(elapsed);
+      }, 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [executeStageM.isPending, stageStartTime]);
+
+  // Auto-start workflow direct bij laden
+  useEffect(() => {
+    if (!currentReport) {
+      createReportMutation.mutate();
+    }
+  }, [createReportMutation]);
+
   const finalizeReportMutation = useMutation({
     mutationFn: async (reportId: string) => {
       const response = await apiRequest("POST", `/api/reports/${reportId}/finalize`);
@@ -157,6 +182,9 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
 
   const executeCurrentStage = () => {
     if (!currentReport) return;
+    
+    setStageStartTime(new Date());
+    setCurrentStageTimer(0);
     
     const currentStage = WORKFLOW_STAGES[currentStageIndex];
     executeStageM.mutate({
@@ -219,14 +247,14 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
-              <Play className="mr-2 h-5 w-5 text-primary" />
-              Start Rapport Workflow
+              <Clock className="mr-2 h-5 w-5 text-primary animate-spin" />
+              Workflow wordt opgestart...
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <p className="text-muted-foreground">
-                Klaar om het 11-stappen prompting proces te starten voor {clientName}?
+                Het systeem maakt een nieuwe case aan en start automatisch met stap 1...
               </p>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -241,14 +269,12 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
                 </div>
               </div>
               
-              <Button 
-                onClick={startWorkflow} 
-                disabled={createReportMutation.isPending}
-                className="w-full"
-                data-testid="button-start-workflow"
-              >
-                {createReportMutation.isPending ? "Starten..." : "Start Workflow"}
-              </Button>
+              <div className="bg-muted/50 rounded-lg p-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-sm">Case wordt aangemaakt...</span>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -272,8 +298,16 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
             
             <Progress value={progressPercentage} className="w-full" />
             
-            <div className="text-sm text-muted-foreground">
-              Huidige stap: {currentStage.label}
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <span>Huidige stap: {currentStage.label}</span>
+              {executeStageM.isPending && (
+                <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
+                  <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="font-medium">
+                    AI bezig... {currentStageTimer}s
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
@@ -295,9 +329,11 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
                   key={stage.key}
                   className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
                     status === "current" 
-                      ? "bg-primary/10 border-primary" 
+                      ? executeStageM.isPending && index === currentStageIndex
+                        ? "bg-orange-50 dark:bg-orange-950/20 border-orange-300 dark:border-orange-700"
+                        : "bg-primary/10 border-primary" 
                       : status === "completed" 
-                      ? "bg-muted/50 border-border" 
+                      ? "bg-green-50 dark:bg-green-950/20 border-green-300 dark:border-green-700" 
                       : "bg-background border-border opacity-60"
                   }`}
                   onClick={() => status !== "pending" && setCurrentStageIndex(index)}
@@ -305,13 +341,19 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
                 >
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${
                     status === "completed" ? "bg-green-500 text-white" :
-                    status === "current" ? "bg-primary text-primary-foreground" :
+                    status === "current" ? 
+                      executeStageM.isPending && index === currentStageIndex ?
+                        "bg-orange-500 text-white" : "bg-primary text-primary-foreground" :
                     "bg-muted text-muted-foreground"
                   }`}>
                     {status === "completed" ? (
                       <CheckCircle className="h-4 w-4" />
                     ) : status === "current" ? (
-                      <Clock className="h-4 w-4" />
+                      executeStageM.isPending && index === currentStageIndex ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <Clock className="h-4 w-4" />
+                      )
                     ) : (
                       <IconComponent className="h-4 w-4" />
                     )}
@@ -320,6 +362,11 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
                   <div className="flex-1">
                     <div className="font-medium">{stage.label}</div>
                     <div className="text-sm text-muted-foreground">{stage.description}</div>
+                    {status === "current" && executeStageM.isPending && index === currentStageIndex && (
+                      <div className="text-xs text-orange-600 dark:text-orange-400 mt-1 font-medium">
+                        AI bezig... {currentStageTimer}s
+                      </div>
+                    )}
                   </div>
                   
                   {status === "current" && (
