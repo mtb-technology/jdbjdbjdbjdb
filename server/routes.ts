@@ -343,8 +343,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
   app.get("/api/prompts/active", async (req, res) => {
     try {
       const activeConfig = await storage.getActivePromptConfig();
-      // Cache active config for 5 minutes as it doesn't change often
-      res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+      // No caching to prevent stale IDs
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.json(activeConfig);
     } catch (error) {
       console.error("Error fetching active prompt config:", error);
@@ -387,6 +387,9 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     try {
       const updates = req.body;
       
+      // Log the ID being updated for debugging
+      console.log(`Updating prompt config with ID: ${req.params.id}`);
+      
       // Deactivate all other configs if this one is set as active
       if (updates.isActive) {
         const allConfigs = await storage.getAllPromptConfigs();
@@ -399,6 +402,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       
       const updatedConfig = await storage.updatePromptConfig(req.params.id, updates);
       if (!updatedConfig) {
+        console.error(`Prompt config not found with ID: ${req.params.id}`);
         res.status(404).json({ message: "Prompt configuratie niet gevonden" });
         return;
       }
