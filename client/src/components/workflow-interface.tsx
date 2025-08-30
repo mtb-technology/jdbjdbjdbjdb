@@ -318,83 +318,93 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
   return (
     <div className="space-y-6">
       
-      {/* Living Report Artifact - prominent display */}
+      {/* Professional Document Artifact */}
       {currentReport?.generatedContent && (
-        <Card className="border-2 border-green-200 dark:border-green-800 bg-gradient-to-r from-green-50/50 to-blue-50/50 dark:from-green-950/10 dark:to-blue-950/10">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-lg">📄 Levend Fiscaal Rapport Artefact</span>
-                <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
-                  {currentStageIndex >= 2 ? `Versie ${Math.max(1, currentStageIndex - 1)}` : "Basis versie"}
-                </Badge>
-              </div>
-              <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                <div className="flex items-center space-x-1">
-                  <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
-                  <span>Real-time updates</span>
-                </div>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="text-sm text-green-700 dark:text-green-400 font-medium">
-                🌱 Dit rapport groeit en evolueert met elke specialist stap - kijk toe hoe het tot leven komt!
-              </div>
-              
-              {/* PDF-achtige Document Preview */}
-              <div className="bg-white dark:bg-gray-50 border-2 border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                {/* Document Header */}
-                <div className="bg-gray-50 dark:bg-gray-100 border-b border-gray-200 px-8 py-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h1 className="text-lg font-bold text-gray-900">DE FISCALE ANALIST</h1>
-                      <p className="text-sm text-gray-600">Fiscaal Duidingsrapport</p>
-                    </div>
-                    <div className="text-right text-xs text-gray-600">
-                      <div>Datum: {new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
-                      <div>Client: {clientName}</div>
-                      <div className="mt-1">
-                        <Badge variant="outline" className="text-xs">
-                          Versie {Math.max(1, currentStageIndex - 1)} - Live Preview
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Document Content */}
-                <div className="px-8 py-6 max-h-[500px] overflow-y-auto">
-                  <div 
-                    className="prose prose-sm max-w-none text-gray-900 dark:text-gray-800"
-                    style={{
-                      fontFamily: 'system-ui, -apple-system, sans-serif',
-                      lineHeight: '1.6',
-                      fontSize: '14px'
-                    }}
-                    dangerouslySetInnerHTML={{ __html: currentReport.generatedContent }}
-                  />
-                </div>
-                
-                {/* Document Footer */}
-                <div className="bg-gray-50 dark:bg-gray-100 border-t border-gray-200 px-8 py-3">
-                  <div className="flex justify-between items-center text-xs text-gray-500">
-                    <div>© {new Date().getFullYear()} De Fiscale Analist - Concept Rapport</div>
-                    <div>Pagina 1</div>
-                  </div>
-                </div>
-              </div>
-              
-              {currentStageIndex >= 2 && currentStageIndex < WORKFLOW_STAGES.length - 1 && (
-                <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                  🔄 Volgende specialist ({WORKFLOW_STAGES[currentStageIndex]?.label}) gaat dit rapport verder verbeteren...
-                </div>
-              )}
+        <div className="relative">
+          {/* Live Report Indicator */}
+          <div className="absolute -top-2 -right-2 z-10">
+            <div className="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg flex items-center space-x-1">
+              <div className="h-2 w-2 bg-white rounded-full animate-pulse"></div>
+              <span>LIVE</span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          
+          {/* Document Container - A4 ratio */}
+          <div className="bg-white shadow-2xl rounded-lg overflow-hidden max-w-4xl mx-auto" style={{ aspectRatio: '210/297' }}>
+            
+            {/* Official Letterhead */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-8 py-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-wide">DE FISCALE ANALIST</h1>
+                  <p className="text-blue-100 text-sm mt-1">Belastingadvies & Fiscale Duiding</p>
+                  <div className="mt-2 text-xs text-blue-100">
+                    BTW: NL123456789B01 | KvK: 12345678
+                  </div>
+                </div>
+                <div className="text-right text-xs text-blue-100">
+                  <div className="font-medium">FISCAAL DUIDINGSRAPPORT</div>
+                  <div className="mt-1">Rapport ID: {currentReport.id.substring(0, 8).toUpperCase()}</div>
+                  <div>Datum: {new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Client Information Bar */}
+            <div className="bg-gray-50 border-b border-gray-200 px-8 py-3">
+              <div className="flex justify-between items-center">
+                <div className="text-sm">
+                  <span className="font-medium text-gray-700">Client:</span>
+                  <span className="ml-2 text-gray-900">{clientName}</span>
+                </div>
+                <div className="flex items-center space-x-4 text-xs text-gray-600">
+                  <div className="flex items-center space-x-1">
+                    <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span>Versie {Math.max(1, currentStageIndex - 1)}</span>
+                  </div>
+                  <div>Live Preview</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Document Content */}
+            <div className="px-8 py-6 overflow-y-auto" style={{ height: 'calc(100% - 200px)' }}>
+              <div 
+                className="text-gray-900 leading-relaxed"
+                style={{
+                  fontFamily: '"Times New Roman", Times, serif',
+                  fontSize: '15px',
+                  lineHeight: '1.8'
+                }}
+                dangerouslySetInnerHTML={{ __html: currentReport.generatedContent }}
+              />
+            </div>
+
+            {/* Document Footer */}
+            <div className="absolute bottom-0 left-0 right-0 bg-gray-50 border-t border-gray-200 px-8 py-2">
+              <div className="flex justify-between items-center text-xs text-gray-500">
+                <div>© {new Date().getFullYear()} De Fiscale Analist | Concept versie - Niet voor officieel gebruik</div>
+                <div className="flex items-center space-x-2">
+                  <span>Pagina 1 van 1</span>
+                  <span>•</span>
+                  <span>Laatste update: {new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Growth Indicator */}
+          {currentStageIndex >= 2 && currentStageIndex < WORKFLOW_STAGES.length - 1 && (
+            <div className="mt-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <div className="h-3 w-3 bg-blue-500 rounded-full animate-pulse"></div>
+                <div className="text-sm text-blue-700 dark:text-blue-400 font-medium">
+                  🔄 Volgende specialist (<strong>{WORKFLOW_STAGES[currentStageIndex]?.label}</strong>) gaat dit rapport verder verbeteren en uitbreiden...
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Progress Header */}
