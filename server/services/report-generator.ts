@@ -1,5 +1,8 @@
 import type { DossierData, BouwplanData } from "@shared/schema";
 import { SourceValidator } from "./source-validator";
+import { GoogleGenAI } from "@google/genai";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export class ReportGenerator {
   private sourceValidator: SourceValidator;
@@ -15,272 +18,86 @@ export class ReportGenerator {
       day: 'numeric'
     });
 
-    let reportContent = '';
+    // Prepare the complete prompt based on the exact specification
+    const systemPrompt = `Prompt: De Fiscale Analist (Gebalanceerd Duidingsrapport)
+Doel van deze prompt: Jij bent 'De Fiscale Analist'. Jouw taak is om de verstrekte dossier en bouwplan JSON-objecten om te zetten in een professioneel, helder, en praktisch duidingsrapport voor de klant. Het rapport moet exact de structuur van het bouwplan volgen en de kernvragen van de klant beantwoorden. De output moet de perfecte balans vinden tussen het informeren van de klant en het beheersen van de aansprakelijkheid.
 
-    // Generate introduction if requested
-    if (bouwplan.structuur.inleiding) {
-      reportContent += this.generateInleiding(dossier);
-    }
+[ROL & DOEL]
+Jij bent 'De Fiscale Analist'. Je combineert de scherpte van een diagnostisch expert met de helderheid van een strategisch gids. Je doel is niet om definitieve oplossingen te geven, maar om de fiscale situatie, de uitdagingen en hun onderlinge samenhang, en de mogelijke scenario's op een professionele en begrijpelijke manier in kaart te brengen zoals in het bouwplan beschreven. 
 
-    // Generate knelpunten sections
-    if (bouwplan.structuur.knelpunten.length > 0) {
-      reportContent += this.generateKnelpunten(dossier, bouwplan.structuur.knelpunten);
-    }
+[INPUT-FORMATEN]
+Je ontvangt twee inputs om je taak uit te voeren:
+[Datum vandaag]: ${currentDate}
+[Input 1: Gevalideerd Dossier (JSON)]: Bevat de specifieke, persoonlijke feiten van de klant (namen, data, bedragen, etc.).
+[Input 2: Bouwplan Rapport]: Bevat de te behandelen onderwerpen en de structuur van het rapport.
 
-    // Generate scenario analysis if requested
-    if (bouwplan.structuur.scenario_analyse) {
-      reportContent += this.generateScenarioAnalyse(dossier);
-    }
+[KERNINSTRUCTIES & KWALITEITSEISEN]
+Dit zijn de ononderhandelbare regels voor het schrijven van het rapport.
 
-    // Generate vervolgstappen if requested
-    if (bouwplan.structuur.vervolgstappen) {
-      reportContent += this.generateVervolgstappen(dossier);
-    }
+1. Taal van het Rapport: Schrijf het volledige rapport, inclusief alle koppen en inhoud, in de taal die is gespecificeerd in de taal-variabele van het Bouwplan Rapport [Input 2]. De instructies blijven Nederlands, maar alle tekst die voor de klant bestemd is, moet in hun taal zijn.
 
-    // Always add sources section
-    reportContent += this.generateBronnenlijst();
+2. Toon & Stijl: Professioneel, Didactisch en Zorgvuldig
+Professioneel: Hanteer een formele, zakelijke en respectvolle toon. Spreek de klant aan met "u". Gebruik heldere, gestructureerde kopteksten (zoals "Knelpunt 1:", "Stap 2:").
+Didactisch (Waarde toevoegen): Leg complexe fiscale termen direct uit in eenvoudige taal. Focus op wat een regel betekent voor de situatie van de klant. Waar nuttig, gebruik een beknopte tabel om concepten of keuzes te verhelderen (bijv. de kernverschillen tussen B.V. en een alternatief).
+Zorgvuldig (Risico beheersen): Gebruik een waarschuwende ondertoon waar risico's worden besproken. Gebruik formuleringen als "Let op:" of "Hier ontstaat een significant aandachtspunt:" om de ernst te benadrukken zonder te alarmeren.
 
-    return reportContent;
-  }
+3. Structuur & Inhoud: Diagnose, Context en Vervolgstappen
+Volg het Bouwplan: ZEER BELANGRIJK: Houd je strikt aan de structuur en onderwerpen uit [Input 2].
+Toevoegen bij de finale assemblage: de prominente waarschuwing, geraadpleegde bronnen en disclaimer.
 
-  private generateInleiding(dossier: DossierData): string {
-    return `
-      <section class="space-y-4">
-        <h2 class="text-xl font-semibold text-foreground border-b border-border pb-2">
-          <i class="fas fa-info-circle mr-2 text-primary"></i>
-          Inleiding
-        </h2>
-        <div class="prose prose-sm max-w-none">
-          <p class="text-muted-foreground leading-relaxed">
-            Op basis van de door u verstrekte informatie analyseren wij de fiscale aspecten van uw situatie betreffende ${dossier.klant.situatie}. 
-            Dit rapport identificeert de belangrijkste aandachtspunten en mogelijke fiscale gevolgen die kunnen optreden bij de voorgenomen transacties.
-            Uw vermogenspositie van €${dossier.fiscale_gegevens.vermogen.toLocaleString('nl-NL')} en jaarlijkse inkomsten van 
-            €${dossier.fiscale_gegevens.inkomsten.toLocaleString('nl-NL')} vormen de basis voor deze analyse.
-          </p>
-        </div>
-      </section>
-    `;
-  }
+4. Risicobeheersing & Aansprakelijkheid: Formuleer met Precisie
+Vermijd Stelligheid: Gebruik NOOIT absolute of definitieve taal.
+Vermijd: "dit is...", "het gevolg is...", "u zult...", "dit leidt tot...".
+Gebruik altijd: "kan leiden tot...", "een mogelijk gevolg is...", "het uitgangspunt is doorgaans...", "naar alle waarschijnlijkheid zal...", "het risico bestaat dat...".
+Duidelijke Scope: Maak ondubbelzinnig duidelijk dat dit rapport een initiële duiding is en geen volledig advies. De prominent geplaatste waarschuwingsbox is hierbij leidend.
 
-  private generateKnelpunten(dossier: DossierData, knelpunten: string[]): string {
-    let knelpuntenContent = `
-      <section class="space-y-6">
-        <h2 class="text-xl font-semibold text-foreground border-b border-border pb-2">
-          <i class="fas fa-triangle-exclamation mr-2 text-destructive"></i>
-          Geïdentificeerde Fiscale Knelpunten
-        </h2>
-    `;
+5. Fiscale Accuratesse & Bronvermelding
+Gelimiteerde Bronnen: Gebruik uitsluitend belastingdienst.nl, wetten.overheid.nl, en rijksoverheid.nl.
+Geforceerd Zoekgedrag: Gebruik altijd de site: operator in je Google Search queries (bv. site:belastingdienst.nl schenkbelasting echtscheiding 2025).
+Verplichte Inline Citaties: Elke fiscale bewering (tarief, drempel, voorwaarde) MOET direct gevolgd worden door een [Bron X] verwijzing.
+Bronnenlijst: Sluit het rapport af met een genummerde sectie Geraadpleegde Bronnen met een lijst van de titels en volledige URL's die exact overeenkomt met de gebruikte citaties. Het is je ten strengste verboden te verwijzen naar of informatie te gebruiken van andere bronnen.
 
-    knelpunten.forEach((knelpunt, index) => {
-      knelpuntenContent += this.generateKnelpuntSection(knelpunt, index + 1, dossier);
-    });
+[FINALE ASSEMBLAGE]
+1. Prominente waarschuwing: Plaats de volgende tekst in een kader direct na de inleiding. Pas deze tekst niet aan.
+"Belangrijke kennisgeving: De aard van dit rapport
+Dit document is een initiële, diagnostische analyse, opgesteld op basis van de door u verstrekte informatie. Het doel is om de voornaamste fiscale aandachtspunten en potentiële risico's ('knelpunten') te identificeren en de onderliggende principes toe te lichten. Dit rapport biedt dus een analyse van de problematiek, geen kant-en-klare oplossingen.
+Het is nadrukkelijk geen definitief fiscaal advies en dient niet als basis voor het nemen van financiële, juridische of strategische beslissingen. De complexiteit en continue verandering van fiscale wetgeving maken een uitgebreid en persoonlijk adviestraject noodzakelijk.
+Daarom kunnen aan de informatie in dit document geen rechten worden ontleend en wordt iedere aansprakelijkheid voor beslissingen die hierop gebaseerd zijn, uitgesloten. Dit rapport kan dienen als startpunt voor een eventueel nader te overwegen, diepgaand adviestraject."
 
-    knelpuntenContent += '</section>';
-    return knelpuntenContent;
-  }
+2. Rapport samenstelling volgens Bouwplan: Stel het rapport samen volgens de structuur in het bouwplan, eindigend met de sectie Geraadpleegde Bronnen.
 
-  private generateKnelpuntSection(knelpunt: string, index: number, dossier: DossierData): string {
-    const knelpuntInfo = this.getKnelpuntInfo(knelpunt, dossier);
-    
-    return `
-      <div class="bg-muted/50 rounded-lg p-5 space-y-4">
-        <h3 class="font-semibold text-foreground">
-          Knelpunt ${index}: ${knelpuntInfo.title}
-        </h3>
-        <div class="space-y-3">
-          <p class="text-sm text-muted-foreground leading-relaxed">
-            ${knelpuntInfo.description}
-          </p>
-          ${knelpuntInfo.toelichting ? `
-            <div class="bg-background rounded-md p-3">
-              <p class="text-xs text-muted-foreground">
-                <i class="fas fa-lightbulb mr-1 text-accent"></i>
-                <strong>Toelichting:</strong> ${knelpuntInfo.toelichting}
-              </p>
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    `;
-  }
+3. Standaard disclaimer (Allerlaatst): Plaats de onderstaande disclaimer altijd als allerlaatste onderdeel van het rapport, zonder enige aanpassing.
+"Disclaimer: Dit rapport bevat een initiële, algemene fiscale duiding en is (deels) geautomatiseerd opgesteld op basis van de door u verstrekte informatie. Het is geen vervanging van persoonlijk, professioneel fiscaal advies. Fiscale wet- en regelgeving kan wijzigen, wat invloed kan hebben op dit rapport. Fiscale wetgeving is complex en uw situatie kan een diepgaandere analyse vereisen die buiten de scope van dit rapport valt. Voor een advies waarop u beslissingen kunt baseren, dient u altijd gebruik te maken van onze uitgebreide adviesdienst. Aan de informatie in dit initiële rapport kunnen geen rechten worden ontleend. Wij aanvaarden geen aansprakelijkheid voor eventuele onjuistheden of omissies. Dit advies is specifiek voor uw situatie en kan niet zonder meer worden toegepast op andere situaties. Het invullen van de aangifte blijft uw eigen verantwoordelijkheid."
 
-  private getKnelpuntInfo(knelpunt: string, dossier: DossierData): {
-    title: string;
-    description: string;
-    toelichting?: string;
-  } {
-    switch (knelpunt.toLowerCase()) {
-      case 'schenkbelasting':
-        return {
-          title: 'Schenkbelasting bij vermogensoverdracht',
-          description: `Bij de overdracht van vermogen tussen (ex-)echtgenoten kan schenkbelasting verschuldigd worden indien de overdracht wordt aangemerkt als een schenking. Het huidige tarief bedraagt 20% over het meerdere boven de vrijstelling van €6.604 (2024) <span class="text-primary font-medium">[Bron 1]</span>.`,
-          toelichting: `Een mogelijk scenario is dat de vermogensoverdracht kwalificeert onder de echtscheidingsvrijstelling, waardoor geen schenkbelasting verschuldigd zou zijn <span class="text-primary font-medium">[Bron 2]</span>.`
-        };
-      case 'vermogensoverdracht':
-        return {
-          title: 'Inkomstenbelasting gevolgen vermogensoverdracht',
-          description: `De overdracht van bepaalde vermogensbestanddelen kan leiden tot een belastbare gebeurtenis in box 1 of box 3 van de inkomstenbelasting. Dit risico bestaat met name bij de overdracht van ondernemingsvermogen of beleggingen <span class="text-primary font-medium">[Bron 3]</span>.`
-        };
-      case 'erfbelasting':
-        return {
-          title: 'Erfbelasting bij overlijden',
-          description: `Bij overlijden van een der echtgenoten kan erfbelasting verschuldigd worden over het nagelaten vermogen. De vrijstelling voor de langstlevende echtgenoot bedraagt €700.000 (2024) <span class="text-primary font-medium">[Bron 1]</span>.`
-        };
-      default:
-        return {
-          title: `Fiscaal knelpunt: ${knelpunt}`,
-          description: `Dit knelpunt vereist nadere analyse in uw specifieke situatie. Het kan leiden tot onverwachte fiscale gevolgen indien niet tijdig wordt gehandeld <span class="text-primary font-medium">[Bron 1]</span>.`
-        };
-    }
-  }
+Genereer nu een volledig HTML-geformatteerd rapport op basis van onderstaande inputs. Gebruik professionele HTML-styling die geschikt is voor weergave in een browser, inclusief CSS-klassen die compatibel zijn met Tailwind CSS.`;
 
-  private generateScenarioAnalyse(dossier: DossierData): string {
-    return `
-      <section class="space-y-4">
-        <h2 class="text-xl font-semibold text-foreground border-b border-border pb-2">
-          <i class="fas fa-chart-bar mr-2 text-primary"></i>
-          Scenario Analyse
-        </h2>
-        
-        <div class="overflow-hidden">
-          <table class="min-w-full divide-y divide-border">
-            <thead class="bg-muted">
-              <tr>
-                <th class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Scenario</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Fiscale Gevolgen</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Risico</th>
-              </tr>
-            </thead>
-            <tbody class="bg-background divide-y divide-border">
-              <tr>
-                <td class="px-4 py-3 text-sm text-foreground">Directe overdracht</td>
-                <td class="px-4 py-3 text-sm text-muted-foreground">Mogelijk schenkbelasting verschuldigd</td>
-                <td class="px-4 py-3">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive">
-                    Hoog
-                  </span>
-                </td>
-              </tr>
-              <tr>
-                <td class="px-4 py-3 text-sm text-foreground">Gestructureerde overdracht</td>
-                <td class="px-4 py-3 text-sm text-muted-foreground">Gebruik echtscheidingsvrijstelling</td>
-                <td class="px-4 py-3">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    Laag
-                  </span>
-                </td>
-              </tr>
-              <tr>
-                <td class="px-4 py-3 text-sm text-foreground">Gefaseerde aanpak</td>
-                <td class="px-4 py-3 text-sm text-muted-foreground">Optimaal gebruik van vrijstellingen</td>
-                <td class="px-4 py-3">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                    Gemiddeld
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    `;
-  }
+    const userMessage = `[Input 1: Gevalideerd Dossier (JSON)]:
+${JSON.stringify(dossier, null, 2)}
 
-  private generateVervolgstappen(dossier: DossierData): string {
-    const vervolgstappen = [
-      {
-        title: 'Juridische structuur bepalen',
-        description: 'Vaststellen of de overdracht kwalificeert voor de echtscheidingsvrijstelling'
-      },
-      {
-        title: 'Timing optimaliseren', 
-        description: 'Bepalen van het optimale moment voor de vermogensoverdracht'
-      },
-      {
-        title: 'Documentatie voorbereiden',
-        description: 'Opstellen van de benodigde juridische documenten voor de overdracht'
-      },
-      {
-        title: 'Aangifte voorbereiden',
-        description: 'Documentatie en aangifte schenkbelasting indien van toepassing'
+[Input 2: Bouwplan Rapport]:
+${JSON.stringify(bouwplan, null, 2)}`;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.1, // Low temperature for consistency and accuracy
+        },
+        contents: userMessage,
+      });
+
+      const generatedContent = response.text || "";
+      
+      if (!generatedContent) {
+        throw new Error("Geen inhoud gegenereerd door AI model");
       }
-    ];
 
-    let vervolgstappenContent = `
-      <section class="space-y-4">
-        <h2 class="text-xl font-semibold text-foreground border-b border-border pb-2">
-          <i class="fas fa-arrow-right mr-2 text-primary"></i>
-          Aanbevolen Vervolgstappen
-        </h2>
-        
-        <div class="space-y-3">
-    `;
+      return generatedContent;
 
-    vervolgstappen.forEach((stap, index) => {
-      vervolgstappenContent += `
-        <div class="flex items-start space-x-3">
-          <div class="flex-shrink-0 w-6 h-6 bg-primary rounded-full flex items-center justify-center mt-0.5">
-            <span class="text-xs font-medium text-primary-foreground">${index + 1}</span>
-          </div>
-          <div>
-            <p class="text-sm font-medium text-foreground">${stap.title}</p>
-            <p class="text-sm text-muted-foreground">${stap.description}</p>
-          </div>
-        </div>
-      `;
-    });
-
-    vervolgstappenContent += `
-        </div>
-      </section>
-    `;
-
-    return vervolgstappenContent;
-  }
-
-  private generateBronnenlijst(): string {
-    const bronnen = [
-      {
-        title: 'Tarieven schenkbelasting 2024',
-        url: 'https://www.belastingdienst.nl/wps/wcm/connect/bldcontentnl/belastingdienst/prive/vermogen_en_aanmerkelijk_belang/schenk_en_erfbelasting/tarieven'
-      },
-      {
-        title: 'Echtscheidingsvrijstelling vermogensoverdracht',
-        url: 'https://www.belastingdienst.nl/wps/wcm/connect/bldcontentnl/belastingdienst/prive/vermogen_en_aanmerkelijk_belang/schenk_en_erfbelasting/schenkbelasting/vrijstellingen_schenkbelasting'
-      },
-      {
-        title: 'Inkomstenbelasting bij vermogensoverdracht',
-        url: 'https://wetten.overheid.nl/BWBR0011353/2024-01-01'
-      }
-    ];
-
-    let bronnenContent = `
-      <section class="space-y-4">
-        <h2 class="text-xl font-semibold text-foreground border-b border-border pb-2">
-          <i class="fas fa-book mr-2 text-primary"></i>
-          Geraadpleegde Bronnen
-        </h2>
-        
-        <div class="space-y-2 text-sm">
-    `;
-
-    bronnen.forEach((bron, index) => {
-      bronnenContent += `
-        <div class="flex items-start space-x-3">
-          <span class="flex-shrink-0 w-8 h-6 bg-secondary rounded text-xs font-medium flex items-center justify-center text-secondary-foreground">[${index + 1}]</span>
-          <div>
-            <p class="text-muted-foreground">${bron.title}</p>
-            <a href="${bron.url}" class="text-primary hover:underline text-xs" target="_blank" rel="noopener noreferrer">${bron.url}</a>
-          </div>
-        </div>
-      `;
-    });
-
-    bronnenContent += `
-        </div>
-      </section>
-    `;
-
-    return bronnenContent;
+    } catch (error) {
+      console.error("Error generating report with Gemini:", error);
+      throw new Error("Fout bij het genereren van het rapport met AI. Probeer het opnieuw.");
+    }
   }
 }
