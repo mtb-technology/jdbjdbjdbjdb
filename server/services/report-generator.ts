@@ -108,9 +108,9 @@ export class ReportGenerator {
       }
       
       // Get AI configuration from prompt config or use defaults
-      // Use gemini-2.0-flash-001 which is the latest model per NPM docs
+      // Use gemini-2.5-pro for highest quality analysis
       const aiConfig: AiConfig = prompts.aiConfig || {
-        model: "gemini-2.0-flash-001" as any,
+        model: "gemini-2.5-pro",
         temperature: 0.1,
         topP: 0.95,
         topK: 20,

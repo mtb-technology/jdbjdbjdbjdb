@@ -23,7 +23,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/test-ai", async (req, res) => {
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash-001",
+        model: "gemini-2.5-pro",
         contents: "Say hello in Dutch in 5 words"
       });
       res.json({ success: true, response: response.text });
@@ -87,7 +87,7 @@ Geef het resultaat terug als JSON in dit exacte formaat:
 ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash-001",
+        model: "gemini-2.5-pro",
         contents: extractionPrompt,
         temperature: 0.1,
         topP: 0.95,
