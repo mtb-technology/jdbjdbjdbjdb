@@ -65,6 +65,15 @@ export const bouwplanSchema = z.object({
   }),
 });
 
+// AI Configuration schema
+export const aiConfigSchema = z.object({
+  model: z.enum(["gemini-2.5-pro", "gemini-2.5-flash"]).default("gemini-2.5-pro"),
+  temperature: z.number().min(0).max(2).default(0.1),
+  topP: z.number().min(0).max(1).default(0.95),
+  topK: z.number().min(1).max(40).default(20),
+  maxOutputTokens: z.number().min(100).max(8192).default(2048),
+});
+
 // Multi-stage prompting workflow schema
 export const promptConfigSchema = z.object({
   "1_informatiecheck": z.string().default(""),
@@ -78,6 +87,7 @@ export const promptConfigSchema = z.object({
   "4f_DeKlantpsycholoog": z.string().default(""),
   "4g_ChefEindredactie": z.string().default(""),
   "final_check": z.string().default(""),
+  aiConfig: aiConfigSchema.optional(),
 });
 
 export const reportStageSchema = z.object({
@@ -119,5 +129,6 @@ export type InsertPromptConfig = z.infer<typeof insertPromptConfigSchema>;
 export type DossierData = z.infer<typeof dossierSchema>;
 export type BouwplanData = z.infer<typeof bouwplanSchema>;
 export type PromptConfig = z.infer<typeof promptConfigSchema>;
+export type AiConfig = z.infer<typeof aiConfigSchema>;
 export type ReportStage = z.infer<typeof reportStageSchema>;
 export type PromptConfigRecord = typeof promptConfigs.$inferSelect;

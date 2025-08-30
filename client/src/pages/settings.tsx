@@ -4,6 +4,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -13,9 +15,11 @@ import {
   RefreshCw,
   CheckCircle,
   AlertCircle,
-  Workflow
+  Workflow,
+  Brain,
+  Zap
 } from "lucide-react";
-import type { PromptConfigRecord, PromptConfig } from "@shared/schema";
+import type { PromptConfigRecord, PromptConfig, AiConfig } from "@shared/schema";
 
 const PROMPT_STAGES = [
   { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Validatie en opslag dossier" },
@@ -33,6 +37,13 @@ const PROMPT_STAGES = [
 
 export default function Settings() {
   const [activeConfig, setActiveConfig] = useState<PromptConfig | null>(null);
+  const [aiConfig, setAiConfig] = useState<AiConfig>({
+    model: "gemini-2.5-pro",
+    temperature: 0.1,
+    topP: 0.95,
+    topK: 20,
+    maxOutputTokens: 2048,
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -66,7 +77,11 @@ export default function Settings() {
 
   useEffect(() => {
     if (activePromptConfig?.config) {
-      setActiveConfig(activePromptConfig.config as PromptConfig);
+      const config = activePromptConfig.config as PromptConfig;
+      setActiveConfig(config);
+      if (config.aiConfig) {
+        setAiConfig(config.aiConfig);
+      }
     }
   }, [activePromptConfig]);
 
@@ -82,10 +97,22 @@ export default function Settings() {
   const handleSave = () => {
     if (!activeConfig || !activePromptConfig?.id) return;
     
+    const configWithAi = {
+      ...activeConfig,
+      aiConfig,
+    };
+    
     updatePromptMutation.mutate({
       id: activePromptConfig.id,
-      config: activeConfig,
+      config: configWithAi,
     });
+  };
+
+  const handleAiConfigChange = (key: keyof AiConfig, value: any) => {
+    setAiConfig(prev => ({
+      ...prev,
+      [key]: value,
+    }));
   };
 
   const isPromptEmpty = (prompt: string) => {
@@ -96,7 +123,7 @@ export default function Settings() {
     if (!activeConfig) return { completed: 0, total: PROMPT_STAGES.length };
     
     const completed = PROMPT_STAGES.filter(stage => 
-      !isPromptEmpty(activeConfig[stage.key as keyof PromptConfig])
+      !isPromptEmpty(activeConfig[stage.key as keyof PromptConfig] as string)
     ).length;
     
     return { completed, total: PROMPT_STAGES.length };
@@ -166,7 +193,7 @@ export default function Settings() {
         {/* Prompt Stages */}
         <div className="grid gap-6">
           {PROMPT_STAGES.map((stage, index) => {
-            const prompt = activeConfig?.[stage.key as keyof PromptConfig] || "";
+            const prompt = (activeConfig?.[stage.key as keyof PromptConfig] as string) || "";
             const isEmpty = isPromptEmpty(prompt);
             
             return (
@@ -213,6 +240,140 @@ export default function Settings() {
             );
           })}
         </div>
+
+        {/* AI Configuration */}
+        <Card className="mt-8">
+          <CardHeader>
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <Brain className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">AI Model Configuratie</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Configureer Gemini model instellingen voor optimale prestaties
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          
+          <CardContent className="space-y-6">
+            
+            {/* Model Selection */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Model Selectie</Label>
+              <Select 
+                value={aiConfig.model} 
+                onValueChange={(value) => handleAiConfigChange("model", value)}
+              >
+                <SelectTrigger data-testid="select-ai-model">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gemini-2.5-pro">
+                    <div className="flex items-center space-x-2">
+                      <Brain className="h-4 w-4" />
+                      <div>
+                        <div className="font-medium">Gemini 2.5 Pro</div>
+                        <div className="text-xs text-muted-foreground">Beste kwaliteit, uitgebreide redenering</div>
+                      </div>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="gemini-2.5-flash">
+                    <div className="flex items-center space-x-2">
+                      <Zap className="h-4 w-4" />
+                      <div>
+                        <div className="font-medium">Gemini 2.5 Flash</div>
+                        <div className="text-xs text-muted-foreground">Snellere verwerking, lagere kosten</div>
+                      </div>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Temperature */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Creativiteit (Temperature)</Label>
+                <span className="text-sm text-muted-foreground">{aiConfig.temperature}</span>
+              </div>
+              <Slider
+                value={[aiConfig.temperature]}
+                onValueChange={([value]) => handleAiConfigChange("temperature", value)}
+                min={0}
+                max={2}
+                step={0.1}
+                className="w-full"
+                data-testid="slider-temperature"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Precies (0)</span>
+                <span>Gebalanceerd (1)</span>
+                <span>Creatief (2)</span>
+              </div>
+            </div>
+
+            {/* Top P */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Focus (Top P)</Label>
+                <span className="text-sm text-muted-foreground">{aiConfig.topP}</span>
+              </div>
+              <Slider
+                value={[aiConfig.topP]}
+                onValueChange={([value]) => handleAiConfigChange("topP", value)}
+                min={0.1}
+                max={1}
+                step={0.05}
+                className="w-full"
+                data-testid="slider-topP"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Gefocust (0.1)</span>
+                <span>Gevarieerd (1.0)</span>
+              </div>
+            </div>
+
+            {/* Max Output Tokens */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Max Output Tokens</Label>
+                <span className="text-sm text-muted-foreground">{aiConfig.maxOutputTokens}</span>
+              </div>
+              <Slider
+                value={[aiConfig.maxOutputTokens]}
+                onValueChange={([value]) => handleAiConfigChange("maxOutputTokens", value)}
+                min={500}
+                max={8192}
+                step={256}
+                className="w-full"
+                data-testid="slider-max-tokens"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Kort (500)</span>
+                <span>Uitgebreid (8192)</span>
+              </div>
+            </div>
+
+            {/* Deep Research Info */}
+            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                <div>
+                  <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-1">
+                    Deep Research Functionaliteit
+                  </h4>
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    Deep Research is alleen beschikbaar via de Gemini web interface, niet via de API. 
+                    Voor de beste resultaten, gebruik Gemini 2.5 Pro met aangepaste temperature instellingen.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+          </CardContent>
+        </Card>
 
         {/* Footer Info */}
         <Card className="mt-8 bg-muted/50">

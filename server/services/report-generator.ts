@@ -1,4 +1,4 @@
-import type { DossierData, BouwplanData, PromptConfig } from "@shared/schema";
+import type { DossierData, BouwplanData, PromptConfig, AiConfig } from "@shared/schema";
 import { SourceValidator } from "./source-validator";
 import { GoogleGenAI } from "@google/genai";
 import { storage } from "../storage";
@@ -76,10 +76,22 @@ export class ReportGenerator {
     try {
       console.log(`Executing stage: ${stageName}`);
       
-      const response = await ai.models.generateContent({
+      // Get AI configuration from prompt config or use defaults
+      const aiConfig: AiConfig = prompts.aiConfig || {
         model: "gemini-2.5-pro",
+        temperature: 0.1,
+        topP: 0.95,
+        topK: 20,
+        maxOutputTokens: 2048,
+      };
+      
+      const response = await ai.models.generateContent({
+        model: aiConfig.model,
         config: {
-          temperature: 0.1,
+          temperature: aiConfig.temperature,
+          topP: aiConfig.topP,
+          topK: aiConfig.topK,
+          maxOutputTokens: aiConfig.maxOutputTokens,
         },
         contents: processedPrompt,
       });
@@ -90,7 +102,7 @@ export class ReportGenerator {
         throw new Error(`Geen response van AI voor stage ${stageName}`);
       }
 
-      console.log(`Stage ${stageName} completed successfully`);
+      console.log(`Stage ${stageName} completed successfully with model ${aiConfig.model}`);
       return result;
 
     } catch (error) {

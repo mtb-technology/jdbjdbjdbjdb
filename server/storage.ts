@@ -159,7 +159,14 @@ export class MemStorage implements IStorage {
         "4e_DeAdvocaat": "PLACEHOLDER: Voer hier de DeAdvocaat prompt in",
         "4f_DeKlantpsycholoog": "PLACEHOLDER: Voer hier de DeKlantpsycholoog prompt in",
         "4g_ChefEindredactie": "PLACEHOLDER: Voer hier de ChefEindredactie prompt in",
-        "final_check": "PLACEHOLDER: Voer hier de final check prompt in"
+        "final_check": "PLACEHOLDER: Voer hier de final check prompt in",
+        aiConfig: {
+          model: "gemini-2.5-pro",
+          temperature: 0.1,
+          topP: 0.95,
+          topK: 20,
+          maxOutputTokens: 2048,
+        }
       }
     };
     
