@@ -46,19 +46,6 @@ export class ReportGenerator {
     const promptTemplate = stageConfig.prompt || "";
     const useStageGrounding = stageConfig.useGrounding || false;
 
-    // Als er geen custom prompt is, gebruik een basis AI prompt
-    if (!promptTemplate || promptTemplate.startsWith("PLACEHOLDER:")) {
-      console.warn(`Stage ${stageName} heeft nog geen custom prompt, gebruik basis AI prompt`);
-      processedPrompt = this.getDefaultPromptForStage(stageName, variables);
-    } else {
-      // Replace variables in custom prompt template
-      processedPrompt = promptTemplate;
-      for (const [key, value] of Object.entries(variables)) {
-        const placeholder = `{{${key}}}`;
-        processedPrompt = processedPrompt.replace(new RegExp(placeholder, 'g'), String(value));
-      }
-    }
-
     // Get the current working text - starts with raw text, then evolves per stage
     let currentWorkingText = (dossier as any).rawText || JSON.stringify(dossier, null, 2);
     
@@ -94,7 +81,21 @@ export class ReportGenerator {
     // Add clientName to variables for fallback prompts
     variables.clientName = JSON.parse(variables.dossier).klant?.naam || "Client";
 
-    // processedPrompt is already set above
+    // Declare and process the prompt template
+    let processedPrompt: string;
+    
+    // Als er geen custom prompt is, gebruik een basis AI prompt
+    if (!promptTemplate || promptTemplate.startsWith("PLACEHOLDER:")) {
+      console.warn(`Stage ${stageName} heeft nog geen custom prompt, gebruik basis AI prompt`);
+      processedPrompt = this.getDefaultPromptForStage(stageName, variables);
+    } else {
+      // Replace variables in custom prompt template
+      processedPrompt = promptTemplate;
+      for (const [key, value] of Object.entries(variables)) {
+        const placeholder = `{{${key}}}`;
+        processedPrompt = processedPrompt.replace(new RegExp(placeholder, 'g'), String(value));
+      }
+    }
 
     try {
       console.log(`Executing stage: ${stageName}`);
