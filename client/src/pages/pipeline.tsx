@@ -262,7 +262,6 @@ De AI zal automatisch de belangrijke informatie extraheren en structureren."
                     <Label className="text-sm font-medium">Klant Gegevens</Label>
                     <div className="bg-muted/50 p-3 rounded-md font-mono text-xs">
                       Naam: {extractedDossier.klant.naam}<br/>
-                      BSN: {extractedDossier.klant.bsn || "Niet opgegeven"}<br/>
                       Situatie: {extractedDossier.klant.situatie}
                     </div>
                   </div>

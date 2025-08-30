@@ -37,8 +37,7 @@ ${rawText}
 Extraheer de volgende informatie:
 
 1. KLANT GEGEVENS:
-- naam: Volledige naam van de klant
-- bsn: BSN indien vermeld (optioneel)  
+- naam: Volledige naam van de klant (voor- en achternaam)
 - situatie: Korte samenvatting van de fiscale situatie/vraag
 
 2. FISCALE GEGEVENS:
@@ -53,7 +52,6 @@ Geef het resultaat terug als JSON in dit exacte formaat:
   "dossier": {
     "klant": {
       "naam": "...",
-      "bsn": "..." of null,
       "situatie": "..."
     },
     "fiscale_gegevens": {

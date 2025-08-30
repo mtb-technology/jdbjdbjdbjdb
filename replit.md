@@ -7,6 +7,7 @@ This is a full-stack web application called "De Fiscale Analist" (The Fiscal Ana
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+Privacy-focused: Minimize personal data collection - avoid BSN and other sensitive personal identifiers.
 
 ## System Architecture
 
