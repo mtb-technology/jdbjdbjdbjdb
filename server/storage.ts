@@ -1,5 +1,7 @@
 import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { promises as fs } from "fs";
+import { join } from "path";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -27,6 +29,8 @@ export class MemStorage implements IStorage {
   private reports: Map<string, Report>;
   private sources: Map<string, Source>;
   private promptConfigs: Map<string, PromptConfigRecord>;
+  private readonly STORAGE_DIR = join(process.cwd(), 'storage');
+  private readonly PROMPTS_FILE = join(this.STORAGE_DIR, 'prompts.json');
 
   constructor() {
     this.users = new Map();
@@ -34,10 +38,54 @@ export class MemStorage implements IStorage {
     this.sources = new Map();
     this.promptConfigs = new Map();
     
+    // Initialize storage directory and load persistent data
+    this.initializeStorage();
+  }
+
+  private async initializeStorage() {
+    await this.ensureStorageDirectory();
+    await this.loadPromptConfigs();
+    
+    // Initialize defaults only if no configs exist
+    if (this.promptConfigs.size === 0) {
+      await this.initializeDefaultPromptConfig();
+    }
+    
     // Initialize with verified Dutch government sources
     this.initializeDefaultSources();
-    // Initialize with default prompt configuration
-    this.initializeDefaultPromptConfig();
+  }
+
+  private async ensureStorageDirectory() {
+    try {
+      await fs.mkdir(this.STORAGE_DIR, { recursive: true });
+    } catch (error) {
+      console.warn('Could not create storage directory:', error);
+    }
+  }
+
+  private async loadPromptConfigs() {
+    try {
+      const data = await fs.readFile(this.PROMPTS_FILE, 'utf8');
+      const configs: PromptConfigRecord[] = JSON.parse(data);
+      
+      for (const config of configs) {
+        this.promptConfigs.set(config.id, config);
+      }
+      
+      console.log(`Loaded ${configs.length} prompt configurations from storage`);
+    } catch (error) {
+      console.log('No existing prompt configurations found, will create defaults');
+    }
+  }
+
+  private async savePromptConfigs() {
+    try {
+      const configs = Array.from(this.promptConfigs.values());
+      await fs.writeFile(this.PROMPTS_FILE, JSON.stringify(configs, null, 2));
+      console.log('Prompt configurations saved to storage');
+    } catch (error) {
+      console.error('Failed to save prompt configurations:', error);
+    }
   }
 
   private async initializeDefaultSources() {
@@ -199,6 +247,7 @@ export class MemStorage implements IStorage {
       isActive: insertConfig.isActive !== undefined ? insertConfig.isActive : false,
     };
     this.promptConfigs.set(id, config);
+    await this.savePromptConfigs(); // Persist to storage
     return config;
   }
 
@@ -212,6 +261,7 @@ export class MemStorage implements IStorage {
       updatedAt: new Date(),
     };
     this.promptConfigs.set(id, updatedConfig);
+    await this.savePromptConfigs(); // Persist to storage
     return updatedConfig;
   }
 }

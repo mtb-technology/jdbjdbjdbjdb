@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Default Fiscal Analysis",
+    "isActive": true,
+    "config": {
+      "1_informatiecheck": {
+        "prompt": "PLACEHOLDER: Voer hier de informatiecheck prompt in",
+        "useGrounding": false
+      },
+      "2_complexiteitscheck": {
+        "prompt": "PLACEHOLDER: Voer hier de complexiteitscheck prompt in",
+        "useGrounding": false
+      },
+      "3_generatie": {
+        "prompt": "PLACEHOLDER: Voer hier de generatie prompt in",
+        "useGrounding": true
+      },
+      "4a_BronnenSpecialist": {
+        "prompt": "PLACEHOLDER: Voer hier de BronnenSpecialist prompt in",
+        "useGrounding": true
+      },
+      "4b_FiscaalTechnischSpecialist": {
+        "prompt": "PLACEHOLDER: Voer hier de FiscaalTechnischSpecialist prompt in",
+        "useGrounding": true
+      },
+      "4c_ScenarioGatenAnalist": {
+        "prompt": "PLACEHOLDER: Voer hier de ScenarioGatenAnalist prompt in",
+        "useGrounding": true
+      },
+      "4d_DeVertaler": {
+        "prompt": "PLACEHOLDER: Voer hier de DeVertaler prompt in",
+        "useGrounding": false
+      },
+      "4e_DeAdvocaat": {
+        "prompt": "PLACEHOLDER: Voer hier de DeAdvocaat prompt in",
+        "useGrounding": true
+      },
+      "4f_DeKlantpsycholoog": {
+        "prompt": "PLACEHOLDER: Voer hier de DeKlantpsycholoog prompt in",
+        "useGrounding": false
+      },
+      "4g_ChefEindredactie": {
+        "prompt": "PLACEHOLDER: Voer hier de ChefEindredactie prompt in",
+        "useGrounding": false
+      },
+      "final_check": {
+        "prompt": "PLACEHOLDER: Voer hier de final check prompt in",
+        "useGrounding": false
+      },
+      "aiConfig": {
+        "model": "gemini-2.5-pro",
+        "temperature": 0.1,
+        "topP": 0.95,
+        "topK": 20,
+        "maxOutputTokens": 2048
+      }
+    },
+    "id": "60c5d892-22af-4c42-af8e-e4fb34ad1a26",
+    "createdAt": "2025-08-30T09:46:34.504Z",
+    "updatedAt": "2025-08-30T09:46:34.504Z"
+  }
+]

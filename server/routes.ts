@@ -369,6 +369,47 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     }
   });
 
+  // Backup en restore endpoints voor prompt veiligheid
+  app.get("/api/prompts/backup", async (req, res) => {
+    try {
+      const configs = await storage.getAllPromptConfigs();
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename="prompt-backup.json"');
+      res.json({
+        backup_date: new Date().toISOString(),
+        prompt_configs: configs
+      });
+    } catch (error) {
+      console.error("Error creating backup:", error);
+      res.status(500).json({ message: "Backup failed" });
+    }
+  });
+
+  app.post("/api/prompts/restore", async (req, res) => {
+    try {
+      const { prompt_configs } = req.body;
+      
+      if (!Array.isArray(prompt_configs)) {
+        res.status(400).json({ message: "Invalid backup format" });
+        return;
+      }
+
+      // Restore from backup by updating existing configs
+      let restored = 0;
+      for (const config of prompt_configs) {
+        if (config.id) {
+          await storage.updatePromptConfig(config.id, config);
+          restored++;
+        }
+      }
+      
+      res.json({ message: `${restored} prompt configuraties hersteld` });
+    } catch (error) {
+      console.error("Error restoring backup:", error);
+      res.status(500).json({ message: "Restore failed" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
