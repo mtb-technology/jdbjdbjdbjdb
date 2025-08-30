@@ -16,30 +16,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const reportGenerator = new ReportGenerator();
   const sourceValidator = new SourceValidator();
 
-  // Generate report endpoint
-  app.post("/api/reports/generate", async (req, res) => {
+  // Create new report (start workflow)
+  app.post("/api/reports/create", async (req, res) => {
     try {
       const validatedData = generateReportSchema.parse(req.body);
       
-      // Generate the report
-      const generatedContent = await reportGenerator.generateReport(
-        validatedData.dossier,
-        validatedData.bouwplan
-      );
-
-      // Create report in storage
+      // Create report in draft state
       const report = await storage.createReport({
         title: `Fiscaal Duidingsrapport - ${validatedData.clientName}`,
         clientName: validatedData.clientName,
         dossierData: validatedData.dossier,
         bouwplanData: validatedData.bouwplan,
-        generatedContent,
-        status: "generated",
+        generatedContent: null,
+        stageResults: {},
+        currentStage: "1_informatiecheck",
+        status: "processing",
       });
 
       res.json(report);
     } catch (error) {
-      console.error("Error generating report:", error);
+      console.error("Error creating report:", error);
       if (error instanceof z.ZodError) {
         res.status(400).json({ 
           message: "Validatiefout in invoergegevens", 
@@ -47,9 +43,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       } else {
         res.status(500).json({ 
-          message: "Fout bij het genereren van het rapport" 
+          message: "Fout bij het aanmaken van het rapport" 
         });
       }
+    }
+  });
+
+  // Execute specific stage of report generation
+  app.post("/api/reports/:id/stage/:stage", async (req, res) => {
+    try {
+      const { id, stage } = req.params;
+      const { customInput } = req.body;
+
+      const report = await storage.getReport(id);
+      if (!report) {
+        res.status(404).json({ message: "Rapport niet gevonden" });
+        return;
+      }
+
+      // Execute the specific stage
+      const stageResult = await reportGenerator.executeStage(
+        stage,
+        report.dossierData as DossierData,
+        report.bouwplanData as BouwplanData,
+        report.stageResults as Record<string, string> || {},
+        customInput
+      );
+
+      // Update report with stage result
+      const updatedStageResults = {
+        ...(report.stageResults as Record<string, string> || {}),
+        [stage]: stageResult
+      };
+
+      const updatedReport = await storage.updateReport(id, {
+        stageResults: updatedStageResults,
+        currentStage: stage,
+      });
+
+      res.json({
+        report: updatedReport,
+        stageResult,
+      });
+
+    } catch (error) {
+      console.error(`Error executing stage ${req.params.stage}:`, error);
+      res.status(500).json({ 
+        message: `Fout bij uitvoeren van stap ${req.params.stage}` 
+      });
+    }
+  });
+
+  // Generate final report from all stages
+  app.post("/api/reports/:id/finalize", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const report = await storage.getReport(id);
+      if (!report) {
+        res.status(404).json({ message: "Rapport niet gevonden" });
+        return;
+      }
+
+      const finalContent = await reportGenerator.finalizeReport(
+        report.stageResults as Record<string, string> || {}
+      );
+
+      const finalizedReport = await storage.updateReport(id, {
+        generatedContent: finalContent,
+        status: "generated",
+      });
+
+      res.json(finalizedReport);
+
+    } catch (error) {
+      console.error("Error finalizing report:", error);
+      res.status(500).json({ 
+        message: "Fout bij finaliseren van het rapport" 
+      });
     }
   });
 
