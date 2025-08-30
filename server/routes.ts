@@ -104,8 +104,9 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         }
       });
 
-      const extractedJson = response.text?.trim();
+      const extractedJson = (response.candidates?.[0]?.content?.parts?.[0]?.text || response.text)?.trim();
       if (!extractedJson) {
+        console.error('No JSON extracted from AI response:', response);
         res.status(500).json({ message: "Geen data geëxtraheerd" });
         return;
       }

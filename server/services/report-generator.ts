@@ -119,15 +119,15 @@ export class ReportGenerator {
         temperature: 0.1,
         topP: 0.95,
         topK: 20,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 8192,
       };
       
-      // Prepare generation config
+      // Prepare generation config with forced higher token limit
       const generationConfig: any = {
         temperature: aiConfig.temperature,
         topP: aiConfig.topP,
         topK: aiConfig.topK,
-        maxOutputTokens: aiConfig.maxOutputTokens,
+        maxOutputTokens: 8192, // Force higher token limit for complete responses
       };
 
       // Add grounding for research-like capabilities if enabled for this stage
@@ -147,9 +147,9 @@ export class ReportGenerator {
           config: generationConfig
         });
         
-        const result = response.text || "";
+        const result = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || "";
         
-        if (!result) {
+        if (!result || result.trim() === '') {
           throw new Error(`Lege response van AI voor stage ${stageName}`);
         };
         
