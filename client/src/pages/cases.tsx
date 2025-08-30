@@ -75,8 +75,8 @@ export default function Cases() {
     switch (status) {
       case "draft": return "secondary";
       case "processing": return "default";
-      case "generated": return "default";
-      case "exported": return "default";
+      case "generated": return "outline"; // Blauwe outline voor "groeiend" rapport
+      case "exported": return "default"; // Groen voor echt voltooid
       case "archived": return "secondary";
       default: return "secondary";
     }
@@ -86,8 +86,8 @@ export default function Cases() {
     switch (status) {
       case "draft": return "Concept";
       case "processing": return "Bezig";
-      case "generated": return "Voltooid";
-      case "exported": return "Geëxporteerd";
+      case "generated": return "Rapport Groeit";
+      case "exported": return "Voltooid";
       case "archived": return "Gearchiveerd";
       default: return status;
     }
