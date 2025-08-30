@@ -318,6 +318,47 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
   return (
     <div className="space-y-6">
       
+      {/* Living Report Artifact - prominent display */}
+      {currentReport?.generatedContent && (
+        <Card className="border-2 border-green-200 dark:border-green-800 bg-gradient-to-r from-green-50/50 to-blue-50/50 dark:from-green-950/10 dark:to-blue-950/10">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-lg">📄 Levend Fiscaal Rapport Artefact</span>
+                <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                  {currentStageIndex >= 2 ? `Versie ${Math.max(1, currentStageIndex - 1)}` : "Basis versie"}
+                </Badge>
+              </div>
+              <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                <div className="flex items-center space-x-1">
+                  <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
+                  <span>Real-time updates</span>
+                </div>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="text-sm text-green-700 dark:text-green-400 font-medium">
+                🌱 Dit rapport groeit en evolueert met elke specialist stap - kijk toe hoe het tot leven komt!
+              </div>
+              <div className="bg-white dark:bg-gray-900 border border-green-200 dark:border-green-700 rounded-lg p-6 max-h-96 overflow-y-auto shadow-sm">
+                <div 
+                  className="prose prose-sm max-w-none text-sm leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: currentReport.generatedContent }}
+                />
+              </div>
+              {currentStageIndex >= 2 && currentStageIndex < WORKFLOW_STAGES.length - 1 && (
+                <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                  🔄 Volgende specialist ({WORKFLOW_STAGES[currentStageIndex]?.label}) gaat dit rapport verder verbeteren...
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Progress Header */}
       <Card>
         <CardContent className="p-6">
@@ -597,38 +638,6 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
                 </div>
               )}
 
-              {/* Living Report Display - starts from stage 3 */}
-              {currentReport?.generatedContent && currentStageIndex >= 2 && (
-                <div className="mt-6 space-y-3">
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <h4 className="font-medium text-foreground">📄 Levende Rapport</h4>
-                      <Badge variant="outline" className="text-xs">
-                        {currentStageIndex === 2 ? "Eerste versie" : `Bijgewerkt door ${WORKFLOW_STAGES[currentStageIndex].label}`}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      <span>Real-time</span>
-                    </div>
-                  </div>
-                  <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4 max-h-96 overflow-y-auto">
-                    <div className="text-xs text-green-700 dark:text-green-400 mb-2 font-medium">
-                      🌱 Dit rapport groeit en verbetert met elke specialist stap
-                    </div>
-                    <div 
-                      className="prose prose-sm max-w-none text-sm"
-                      dangerouslySetInnerHTML={{ __html: currentReport.generatedContent }}
-                    />
-                  </div>
-                  {currentStageIndex === 2 && (
-                    <p className="text-xs text-green-600 dark:text-green-400">
-                      ✨ Gefeliciteerd! Je eerste rapport versie is klaar. De volgende stappen zullen dit rapport verder verfijnen en verbeteren.
-                    </p>
-                  )}
-                </div>
-              )}
 
               <Separator />
 
