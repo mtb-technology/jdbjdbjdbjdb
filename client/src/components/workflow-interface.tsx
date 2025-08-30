@@ -73,6 +73,9 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
       setStageResults(report.stageResults as Record<string, string> || {});
       setConceptReportVersions(report.conceptReportVersions as Record<string, string> || {});
       
+      // Sla report ID op in sessie om dubbele creatie te voorkomen
+      sessionStorage.setItem('current-workflow-report-id', report.id);
+      
       // Auto-start informatiecheck (stap 1) direct na report aanmaken
       setTimeout(() => {
         executeCurrentStage();
@@ -147,7 +150,10 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
 
   // Auto-start workflow direct bij laden - slechts 1x!
   useEffect(() => {
-    if (!currentReport && !createReportMutation.isPending) {
+    // Check of er al een report ID in sessionStorage staat voor deze sessie
+    const sessionReportId = sessionStorage.getItem('current-workflow-report-id');
+    
+    if (!currentReport && !createReportMutation.isPending && !sessionReportId) {
       createReportMutation.mutate();
     }
   }, []); // Geen dependencies - wordt slechts 1x uitgevoerd
@@ -174,9 +180,6 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
     },
   });
 
-  const startWorkflow = () => {
-    createReportMutation.mutate();
-  };
 
   // Manual execution only - no auto-advance
 

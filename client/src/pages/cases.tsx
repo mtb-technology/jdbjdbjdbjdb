@@ -170,8 +170,8 @@ export default function Cases() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-4 items-center">
-              <div className="flex-1 relative">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="flex-1 relative w-full">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Zoek op klantnaam of titel..."
@@ -182,7 +182,7 @@ export default function Cases() {
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-48" data-testid="select-status-filter">
+                <SelectTrigger className="w-full sm:w-48" data-testid="select-status-filter">
                   <SelectValue placeholder="Alle statussen" />
                 </SelectTrigger>
                 <SelectContent>
