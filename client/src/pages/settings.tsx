@@ -398,23 +398,25 @@ const Settings = memo(function Settings() {
                       </div>
                     )}
                     
-                    {/* Grounding Toggle per Stage */}
-                    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                      <div className="space-y-1">
-                        <Label className="text-sm font-medium flex items-center">
-                          <Search className="mr-2 h-4 w-4" />
-                          Google Search Grounding voor deze stap
-                        </Label>
-                        <p className="text-xs text-muted-foreground">
-                          Zoekt actuele informatie online tijdens deze prompt stap
-                        </p>
+                    {/* Grounding Toggle per Stage - Only for Google provider */}
+                    {(stageConfig?.aiConfig?.provider || aiConfig.provider) === "google" && (
+                      <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                        <div className="space-y-1">
+                          <Label className="text-sm font-medium flex items-center">
+                            <Search className="mr-2 h-4 w-4" />
+                            Google Search Grounding voor deze stap
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            Zoekt actuele informatie online tijdens deze prompt stap
+                          </p>
+                        </div>
+                        <Switch
+                          checked={useGrounding}
+                          onCheckedChange={(checked) => handleGroundingChange(stage.key, checked)}
+                          data-testid={`switch-grounding-${stage.key}`}
+                        />
                       </div>
-                      <Switch
-                        checked={useGrounding}
-                        onCheckedChange={(checked) => handleGroundingChange(stage.key, checked)}
-                        data-testid={`switch-grounding-${stage.key}`}
-                      />
-                    </div>
+                    )}
 
                     {/* Per-Stage AI Configuration */}
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
