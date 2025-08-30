@@ -329,18 +329,37 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
 
   // Get the current working text that will be processed by this stage
   const getCurrentWorkingText = useCallback(() => {
+    const currentStage = WORKFLOW_STAGES[currentStageIndex];
+    
     if (currentStageIndex === 0) {
       return rawText; // First stage gets the original raw text
     }
     
-    // Get the output of the previous stage
+    // Voor Feedback Verwerker: gebruik het concept rapport
+    if (currentStage.key === "5_feedback_verwerker") {
+      // Zoek het meest recente concept rapport
+      const conceptReports = Object.values(conceptReportVersions);
+      if (conceptReports.length > 0) {
+        return conceptReports[conceptReports.length - 1]; // Laatste concept rapport
+      }
+      // Fallback naar generatie stap output als er geen concept rapport is
+      return stageResults["3_generatie"] || rawText;
+    }
+    
+    // Voor reviewer stappen (4a-4f): gebruik het concept rapport
+    if (currentStage.key.startsWith("4")) {
+      // Gebruik het concept rapport van stap 3 (generatie)
+      return conceptReportVersions["3_generatie"] || stageResults["3_generatie"] || rawText;
+    }
+    
+    // Voor andere stappen: gebruik output van vorige stap
     const previousStageKey = WORKFLOW_STAGES[currentStageIndex - 1]?.key;
     if (previousStageKey && stageResults[previousStageKey]) {
       return stageResults[previousStageKey];
     }
     
     return rawText; // Fallback to original
-  }, [currentStageIndex, rawText, stageResults]);
+  }, [currentStageIndex, rawText, stageResults, conceptReportVersions]);
 
 
   // Cyclical workflow: 4x→5→4x→5→4x→5 etc
@@ -672,7 +691,11 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
                 Huidige Tekst (wordt verwerkt door deze stap)
               </label>
               <Badge variant="secondary">
-                {currentStageIndex === 0 ? "Ruwe Input (emails, etc.)" : currentStageIndex === 1 ? "Gestructureerde Info (uit stap 1)" : `Verfijnde Data (uit ${WORKFLOW_STAGES[currentStageIndex - 1]?.label})`}
+                {currentStageIndex === 0 ? "Ruwe Input (emails, etc.)" : 
+                 currentStageIndex === 1 ? "Gestructureerde Info (uit stap 1)" :
+                 WORKFLOW_STAGES[currentStageIndex].key === "5_feedback_verwerker" ? "Concept Rapport (te verwerken)" :
+                 WORKFLOW_STAGES[currentStageIndex].key.startsWith("4") ? "Concept Rapport (te reviewen)" :
+                 `Verfijnde Data (uit ${WORKFLOW_STAGES[currentStageIndex - 1]?.label})`}
               </Badge>
             </div>
             <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
