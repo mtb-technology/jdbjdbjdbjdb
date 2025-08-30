@@ -15,6 +15,12 @@ const generateReportSchema = z.object({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Initialize database with default prompts if needed
+  try {
+    await (storage as any).initializeDefaultPrompts?.();
+  } catch (error) {
+    console.warn("Could not initialize default prompts:", error);
+  }
   const reportGenerator = new ReportGenerator();
   const sourceValidator = new SourceValidator();
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });

@@ -145,12 +145,12 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
     };
   }, [executeStageM.isPending, stageStartTime]);
 
-  // Auto-start workflow direct bij laden
+  // Auto-start workflow direct bij laden - slechts 1x!
   useEffect(() => {
-    if (!currentReport) {
+    if (!currentReport && !createReportMutation.isPending) {
       createReportMutation.mutate();
     }
-  }, [createReportMutation]);
+  }, []); // Geen dependencies - wordt slechts 1x uitgevoerd
 
   const finalizeReportMutation = useMutation({
     mutationFn: async (reportId: string) => {

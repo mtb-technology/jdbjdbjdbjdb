@@ -461,8 +461,48 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createPromptConfig(insertConfig: InsertPromptConfig): Promise<PromptConfigRecord> {
+    // Set all other configs to inactive first
+    if (insertConfig.isActive) {
+      await db.update(promptConfigs).set({ isActive: false });
+    }
+    
     const [config] = await db.insert(promptConfigs).values(insertConfig).returning();
     return config;
+  }
+
+  async initializeDefaultPrompts(): Promise<void> {
+    // Check if any configs exist
+    const existing = await this.getAllPromptConfigs();
+    if (existing.length > 0) return;
+    
+    // Create default config
+    const defaultConfig = {
+      name: "Default Fiscal Analysis",
+      isActive: true,
+      config: {
+        "1_informatiecheck": { prompt: "", useGrounding: false },
+        "2_complexiteitscheck": { prompt: "", useGrounding: false },
+        "3_generatie": { prompt: "", useGrounding: true },
+        "4a_BronnenSpecialist": { prompt: "", useGrounding: true },
+        "4b_FiscaalTechnischSpecialist": { prompt: "", useGrounding: true },
+        "4c_ScenarioGatenAnalist": { prompt: "", useGrounding: true },
+        "4d_DeVertaler": { prompt: "", useGrounding: false },
+        "4e_DeAdvocaat": { prompt: "", useGrounding: true },
+        "4f_DeKlantpsycholoog": { prompt: "", useGrounding: false },
+        "4g_ChefEindredactie": { prompt: "", useGrounding: false },
+        "final_check": { prompt: "", useGrounding: false },
+        aiConfig: {
+          model: "gemini-2.5-pro",
+          temperature: 0.1,
+          topP: 0.95,
+          topK: 20,
+          maxOutputTokens: 2048
+        }
+      }
+    };
+
+    await this.createPromptConfig(defaultConfig);
+    console.log("Default prompt configuration initialized in database");
   }
 
   async updatePromptConfig(id: string, updateData: Partial<PromptConfigRecord>): Promise<PromptConfigRecord | undefined> {
