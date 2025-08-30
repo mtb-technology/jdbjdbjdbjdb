@@ -129,10 +129,13 @@ export class ReportGenerator {
         generationConfig.tools = [{ google_search: {} }];
       }
       
+      // Combine prompt with input text - prompt gives instructions, currentWorkingText is the data to process
+      const fullInput = `${processedPrompt}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
+      
       const response = await ai.models.generateContent({
         model: aiConfig.model,
         config: generationConfig,
-        contents: processedPrompt,
+        contents: fullInput,
       });
 
       const result = response.text || "";
