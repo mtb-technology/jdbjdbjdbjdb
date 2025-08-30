@@ -233,12 +233,21 @@ De AI zal automatisch de belangrijke informatie extraheren en structureren."
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <WorkflowInterface
-                  dossier={extractedDossier}
-                  bouwplan={extractedBouwplan}
-                  clientName={extractedDossier.klant.naam}
-                  onComplete={handleWorkflowComplete}
-                />
+                <div className="space-y-4">
+                  <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      <strong>Automatische Pipeline:</strong> Alle 11 stappen worden nu sequentieel uitgevoerd. 
+                      Elke stap krijgt het originele dossier + alle vorige resultaten voor complete context.
+                    </p>
+                  </div>
+                  
+                  <WorkflowInterface
+                    dossier={extractedDossier}
+                    bouwplan={extractedBouwplan}
+                    clientName={extractedDossier.klant.naam}
+                    onComplete={handleWorkflowComplete}
+                  />
+                </div>
               </CardContent>
             </Card>
 

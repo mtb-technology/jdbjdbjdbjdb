@@ -300,7 +300,7 @@ export default function Settings() {
                         value={prompt}
                         onChange={(e) => handlePromptChange(stage.key, e.target.value)}
                         className="font-mono text-sm min-h-32"
-                        placeholder={`Voer hier de ${stage.label} prompt in...\n\nBeschikbare variabelen:\n- ${"{{datum}}"} - Huidige datum\n- ${"{{dossier}}"} - Klant dossier JSON\n- ${"{{bouwplan}}"} - Rapport structuur JSON\n- ${"{{rapport}}"} - Vorige stage resultaat (vanaf stage 4)`}
+                        placeholder={`Voer hier de ${stage.label} prompt in...\n\nBeschikbare variabelen:\n- ${"{{datum}}"} - Huidige datum\n- ${"{{dossier}}"} - Klant dossier JSON\n- ${"{{bouwplan}}"} - Rapport structuur JSON\n- ${"{{oorspronkelijk_dossier}}"} - Origineel dossier (altijd beschikbaar)\n- ${"{{concept_rapport}}"} - Concept rapport uit stap 3 (voor technische analyse)\n- ${"{{1_informatiecheck}}"} - Resultaat informatiecheck\n- ${"{{3_generatie}}"} - Resultaat basis generatie\n- ${"{{4a_BronnenSpecialist}}"} - Resultaat bronnen specialist\n- (alle vorige stage resultaten beschikbaar)`}
                         data-testid={`textarea-prompt-${stage.key}`}
                       />
                     </div>

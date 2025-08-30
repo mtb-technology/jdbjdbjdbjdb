@@ -55,13 +55,29 @@ export class ReportGenerator {
       });
     }
 
-    // Prepare variables for prompt template
+    // Prepare variables for prompt template with enhanced context
     const variables: Record<string, string> = {
       datum: currentDate,
       dossier: JSON.stringify(dossier, null, 2),
       bouwplan: JSON.stringify(bouwplan, null, 2),
+      oorspronkelijk_dossier: JSON.stringify(dossier, null, 2), // Always include original dossier for context
       ...previousStageResults
     };
+
+    // Enhanced context passing for specific stages
+    if (previousStageResults["3_generatie"]) {
+      variables.concept_rapport = previousStageResults["3_generatie"];
+    }
+    
+    // For all 4x stages, ensure they have the latest cumulative rapport
+    if (stageName.startsWith("4") && Object.keys(previousStageResults).length > 0) {
+      // Get the most recent report version (latest stage result)
+      const latestStageKeys = Object.keys(previousStageResults).sort();
+      if (latestStageKeys.length > 0) {
+        const latestKey = latestStageKeys[latestStageKeys.length - 1];
+        variables.rapport = previousStageResults[latestKey];
+      }
+    }
 
     // Add custom input if provided
     if (customInput) {
@@ -85,7 +101,6 @@ export class ReportGenerator {
         topP: 0.95,
         topK: 20,
         maxOutputTokens: 2048,
-        useGrounding: true,
       };
       
       // Prepare generation config
