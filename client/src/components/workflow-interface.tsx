@@ -166,6 +166,21 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
     });
   };
 
+  // Get the current working text that will be processed by this stage
+  const getCurrentWorkingText = () => {
+    if (currentStageIndex === 0) {
+      return rawText; // First stage gets the original raw text
+    }
+    
+    // Get the output of the previous stage
+    const previousStageKey = WORKFLOW_STAGES[currentStageIndex - 1]?.key;
+    if (previousStageKey && stageResults[previousStageKey]) {
+      return stageResults[previousStageKey];
+    }
+    
+    return rawText; // Fallback to original
+  };
+
 
   const goToNextStage = () => {
     if (currentStageIndex < WORKFLOW_STAGES.length - 1) {
@@ -338,6 +353,30 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          
+          {/* Current Working Text - What this stage will process */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-primary">
+                Huidige Tekst (wordt verwerkt door deze stap)
+              </label>
+              <Badge variant="secondary">
+                {currentStageIndex === 0 ? "Originele Tekst" : `Output van ${WORKFLOW_STAGES[currentStageIndex - 1]?.label}`}
+              </Badge>
+            </div>
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="text-sm text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
+                {getCurrentWorkingText()}
+              </div>
+            </div>
+            {currentStageIndex > 0 && (
+              <p className="text-xs text-muted-foreground">
+                💡 Deze tekst is het resultaat van de vorige stap en wordt nu verder verfijnd.
+              </p>
+            )}
+          </div>
+
+          <Separator />
           
           {/* Stage Input (if needed) */}
           <div className="space-y-2">

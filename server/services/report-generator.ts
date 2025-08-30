@@ -56,13 +56,23 @@ export class ReportGenerator {
       });
     }
 
+    // Get the current working text - starts with raw text, then evolves per stage
+    let currentWorkingText = (dossier as any).rawText || JSON.stringify(dossier, null, 2);
+    
+    // For stage 2+, use the output of the previous stage as the working text
+    const previousStageKeys = Object.keys(previousStageResults);
+    if (previousStageKeys.length > 0) {
+      const lastStage = previousStageKeys[previousStageKeys.length - 1];
+      currentWorkingText = previousStageResults[lastStage] || currentWorkingText;
+    }
+
     // Prepare variables for prompt template with enhanced context
     const variables: Record<string, string> = {
       datum: currentDate,
-      ruwe_tekst: (dossier as any).rawText || JSON.stringify(dossier, null, 2), // Gebruik ruwe tekst als beschikbaar
+      huidige_tekst: currentWorkingText, // De tekst die deze stap moet verwerken
+      oorspronkelijke_tekst: (dossier as any).rawText || JSON.stringify(dossier, null, 2), // Origineel voor referentie
       dossier: JSON.stringify(dossier, null, 2),
       bouwplan: JSON.stringify(bouwplan, null, 2),
-      oorspronkelijk_dossier: JSON.stringify(dossier, null, 2),
       ...previousStageResults
     };
 
@@ -122,13 +132,32 @@ export class ReportGenerator {
         throw new Error(`Geen response van AI voor stage ${stageName}`);
       }
 
-      // For stage 3 (generatie), this IS the first concept report
-      if (stageName === "3_generatie") {
-        console.log(`Stage ${stageName} completed - generated initial concept report`);
-        return {
-          stageOutput: `✅ Basis rapport gegenereerd\n\nHet initiële fiscaal duidingsrapport is opgesteld met alle hoofdcomponenten.`,
-          conceptReport: result
-        };
+      // For all stages: output becomes the new working text + update concept report
+      console.log(`Stage ${stageName} completed - refined text generated`);
+      
+      // If this stage generates a concept report (stages 3+), extract it
+      let conceptReport = null;
+      if (stageName === "3_generatie" || stageName.startsWith("4")) {
+        // Try to extract concept report from result if it contains both
+        const conceptMatch = result.match(/\[CONCEPT_RAPPORT\](.*?)\[\/CONCEPT_RAPPORT\]/s);
+        if (conceptMatch) {
+          conceptReport = conceptMatch[1].trim();
+          // Remove concept report section from main output to keep it clean
+          const cleanOutput = result.replace(/\[CONCEPT_RAPPORT\].*?\[\/CONCEPT_RAPPORT\]/s, '').trim();
+          return {
+            stageOutput: cleanOutput || result, // The refined text for next stage
+            conceptReport: conceptReport // The floating concept report
+          };
+        } else {
+          // For stage 3, if no concept markers, the result IS the concept report
+          if (stageName === "3_generatie") {
+            conceptReport = result;
+            return {
+              stageOutput: result, // Also use as refined text
+              conceptReport: result // Initial concept report
+            };
+          }
+        }
       }
       
       // For stages 4a-4g, generate both stage-specific output and updated concept report
@@ -178,11 +207,10 @@ Houd rekening met:
         }
       }
       
-      // For other stages (1, 2, final), just return the output as stage output
-      console.log(`Stage ${stageName} completed successfully with model ${aiConfig.model}`);
+      // Default return for stages 1-2: just refined text, no concept report yet
       return {
-        stageOutput: result,
-        conceptReport: "" // No concept report for non-4x stages
+        stageOutput: result, // The refined/improved text for next stage
+        conceptReport: null
       };
 
     } catch (error) {
