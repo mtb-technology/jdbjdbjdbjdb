@@ -92,6 +92,7 @@ export class MemStorage implements IStorage {
       id, 
       createdAt: now,
       updatedAt: now,
+      status: insertReport.status || "draft",
     };
     this.reports.set(id, report);
     return report;
@@ -124,6 +125,7 @@ export class MemStorage implements IStorage {
       ...insertSource, 
       id,
       lastChecked: new Date(),
+      isVerified: insertSource.isVerified || false,
     };
     this.sources.set(id, source);
     return source;
