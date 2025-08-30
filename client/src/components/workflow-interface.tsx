@@ -22,8 +22,8 @@ import {
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
 const WORKFLOW_STAGES = [
-  { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Validatie en opslag dossier", icon: FileText },
-  { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Validatie en opslag bouwplan", icon: AlertCircle },
+  { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Ruwe tekst → Gestructureerde informatie", icon: FileText },
+  { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Analyse van complexiteit en scope", icon: AlertCircle },
   { key: "3_generatie", label: "3. Generatie", description: "Basis rapport generatie", icon: FileText },
   { key: "4a_BronnenSpecialist", label: "4a. Bronnen Specialist", description: "Bronverwerking in rapport", icon: CheckCircle },
   { key: "4b_FiscaalTechnischSpecialist", label: "4b. Fiscaal Technisch Specialist", description: "Technische fiscale expertise", icon: CheckCircle },
@@ -361,7 +361,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
                 Huidige Tekst (wordt verwerkt door deze stap)
               </label>
               <Badge variant="secondary">
-                {currentStageIndex === 0 ? "Originele Tekst" : `Output van ${WORKFLOW_STAGES[currentStageIndex - 1]?.label}`}
+                {currentStageIndex === 0 ? "Ruwe Input (emails, etc.)" : currentStageIndex === 1 ? "Gestructureerde Info (uit stap 1)" : `Verfijnde Data (uit ${WORKFLOW_STAGES[currentStageIndex - 1]?.label})`}
               </Badge>
             </div>
             <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -369,9 +369,19 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
                 {getCurrentWorkingText()}
               </div>
             </div>
-            {currentStageIndex > 0 && (
+            {currentStageIndex === 0 && (
               <p className="text-xs text-muted-foreground">
-                💡 Deze tekst is het resultaat van de vorige stap en wordt nu verder verfijnd.
+                📧 Ruwe input: emails, klantvragen, documenten - wordt gestructureerd door informatiecheck
+              </p>
+            )}
+            {currentStageIndex === 1 && (
+              <p className="text-xs text-muted-foreground">
+                ✅ Gestructureerde info uit stap 1 - dit is nu het startpunt voor alle verdere analyse
+              </p>
+            )}
+            {currentStageIndex > 1 && (
+              <p className="text-xs text-muted-foreground">
+                🔄 Verfijnde data uit vorige stap - wordt verder geanalyseerd en verbeterd
               </p>
             )}
           </div>
