@@ -299,7 +299,11 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   // Manual execution only - no auto-advance
 
   const executeCurrentStage = () => {
-    if (!currentReport) return;
+    // If no current report, create one first
+    if (!currentReport) {
+      createReportMutation.mutate();
+      return;
+    }
     
     setStageStartTime(new Date());
     setCurrentStageTimer(0);
@@ -402,7 +406,7 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   const progressPercentage = (Object.keys(stageResults).length / WORKFLOW_STAGES.length) * 100;
 
   // Show case creation status if no current report yet
-  const isCreatingCase = !currentReport && createReportMutation.isPending;
+  const isCreatingCase = createReportMutation.isPending;
 
   return (
     <div className="space-y-6">
