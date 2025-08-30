@@ -128,8 +128,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
   const [conceptReportVersions, setConceptReportVersions] = useState<Record<string, string>>({});
   const [editingStage, setEditingStage] = useState<string | null>(null);
   const [customInput, setCustomInput] = useState("");
-  const [isAutoRunning, setIsAutoRunning] = useState(false);
-  const [autoRunMode, setAutoRunMode] = useState(false);
+  // Auto-run functionality removed per user request
   const [viewMode, setViewMode] = useState<"stage" | "concept">("stage");
   const [stageStartTime, setStageStartTime] = useState<Date | null>(null);
   const [currentStageTimer, setCurrentStageTimer] = useState(0);
@@ -154,13 +153,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
       // Sla report ID op in sessie om dubbele creatie te voorkomen
       sessionStorage.setItem('current-workflow-report-id', report.id);
       
-      // Only auto-start if auto-run mode is enabled
-      if (autoRunMode) {
-        setTimeout(() => {
-          setIsAutoRunning(true);
-          executeCurrentStage();
-        }, 500);
-      }
+      // No auto-start - user wants full manual control
     },
     onError: (error: Error) => {
       toast({
@@ -222,28 +215,9 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
         });
       }
       
-      // Auto-advance to next stage in cyclical workflow if auto-run is enabled
-      if (autoRunMode || isAutoRunning) {
-        const nextIndex = getNextStageIndex(currentStageIndex);
-        if (nextIndex !== null) {
-          setTimeout(() => {
-            setCurrentStageIndex(nextIndex);
-            // Auto-execute next stage
-            setTimeout(() => {
-              executeCurrentStage();
-            }, 1000);
-          }, 2000);
-        } else {
-          // Workflow complete
-          setIsAutoRunning(false);
-          if (currentReport) {
-            finalizeReportMutation.mutate(currentReport.id);
-          }
-        }
-      }
+      // No auto-advance - user must manually click to proceed
     },
     onError: (error: Error) => {
-      setIsAutoRunning(false);
       toast({
         title: "Fout bij uitvoeren stap",
         description: error.message,
@@ -684,33 +658,6 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
           <CardTitle className="flex items-center justify-between">
             <span>Huidige Stap: {currentStage.label}</span>
             <div className="flex items-center space-x-2">
-              {/* Auto-run controls */}
-              <div className="flex items-center space-x-2 text-sm">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autoRunMode}
-                    onChange={(e) => setAutoRunMode(e.target.checked)}
-                    className="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded"
-                    data-testid="checkbox-auto-run"
-                  />
-                  <span className="text-xs text-muted-foreground">Auto doorlopen</span>
-                </label>
-                
-                {/* Stop auto-run if running */}
-                {isAutoRunning && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => setIsAutoRunning(false)}
-                    data-testid="button-stop-auto-run"
-                  >
-                    <Square className="mr-1 h-3 w-3" />
-                    Stop
-                  </Button>
-                )}
-              </div>
-              
               {currentStageIndex > 0 && (
                 <Button 
                   variant="outline" 
@@ -778,41 +725,18 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
           {/* Execute Controls */}
           {!currentStageResult && (
             <div className="space-y-3">
-              <div className="flex space-x-2">
-                <Button
-                  onClick={() => {
-                    setIsAutoRunning(false);
-                    executeCurrentStage();
-                  }}
-                  disabled={executeStageM.isPending}
-                  className="flex-1 bg-primary"
-                  data-testid="button-execute-stage"
-                >
-                  <Play className="mr-2 h-4 w-4" />
-                  {executeStageM.isPending ? "Uitvoeren..." : `Voer ${currentStage.label} Uit`}
-                </Button>
-                
-                {autoRunMode && !isAutoRunning && (
-                  <Button
-                    onClick={() => {
-                      setIsAutoRunning(true);
-                      executeCurrentStage();
-                    }}
-                    disabled={executeStageM.isPending}
-                    variant="secondary"
-                    data-testid="button-auto-run"
-                  >
-                    <Zap className="mr-2 h-4 w-4" />
-                    Auto Doorlopen
-                  </Button>
-                )}
-              </div>
+              <Button
+                onClick={executeCurrentStage}
+                disabled={executeStageM.isPending}
+                className="w-full bg-primary"
+                data-testid="button-execute-stage"
+              >
+                <Play className="mr-2 h-4 w-4" />
+                {executeStageM.isPending ? "Uitvoeren..." : `Voer ${currentStage.label} Uit`}
+              </Button>
               
               <p className="text-xs text-muted-foreground text-center">
-                {autoRunMode 
-                  ? "Auto doorlopen ingeschakeld - klik 'Auto Doorlopen' om alle stappen automatisch uit te voeren"
-                  : "Elke stap wordt handmatig uitgevoerd voor volledige controle"
-                }
+                Elke stap wordt handmatig uitgevoerd voor volledige controle
               </p>
             </div>
           )}
