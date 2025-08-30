@@ -95,7 +95,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       const response = await ai.models.generateContent({
         model: "gemini-2.5-pro",
         contents: extractionPrompt,
-        generationConfig: {
+        config: {
           temperature: 0.1,
           topP: 0.95,
           topK: 20,
@@ -387,9 +387,6 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     try {
       const updates = req.body;
       
-      // Log the ID being updated for debugging
-      console.log(`Updating prompt config with ID: ${req.params.id}`);
-      
       // Deactivate all other configs if this one is set as active
       if (updates.isActive) {
         const allConfigs = await storage.getAllPromptConfigs();
@@ -402,7 +399,6 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       
       const updatedConfig = await storage.updatePromptConfig(req.params.id, updates);
       if (!updatedConfig) {
-        console.error(`Prompt config not found with ID: ${req.params.id}`);
         res.status(404).json({ message: "Prompt configuratie niet gevonden" });
         return;
       }

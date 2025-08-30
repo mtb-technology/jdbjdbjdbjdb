@@ -168,8 +168,6 @@ const Settings = memo(function Settings() {
       aiConfig,
     };
     
-    console.log('Saving with ID:', latestConfig.id);
-    
     updatePromptMutation.mutate({
       id: latestConfig.id,
       config: configWithAi,

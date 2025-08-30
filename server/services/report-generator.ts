@@ -100,7 +100,6 @@ export class ReportGenerator {
     
     // Als er geen custom prompt is, gebruik een basis AI prompt
     if (!promptTemplate || promptTemplate.startsWith("PLACEHOLDER:")) {
-      console.warn(`Stage ${stageName} heeft nog geen custom prompt, gebruik basis AI prompt`);
       processedPrompt = this.getDefaultPromptForStage(stageName, variables);
     } else {
       // Replace variables in custom prompt template
@@ -112,16 +111,6 @@ export class ReportGenerator {
     }
 
     try {
-      console.log(`Executing stage: ${stageName}`);
-      console.log(`Variables available:`, Object.keys(variables));
-      console.log(`Current working text length:`, currentWorkingText.length);
-      console.log(`Raw prompt template first 300 chars:`, promptTemplate.substring(0, 300));
-      console.log(`Processed prompt first 300 chars:`, processedPrompt.substring(0, 300));
-      
-      // Check if placeholder was actually replaced
-      if (processedPrompt.includes('{{huidige_tekst}}')) {
-        console.log('WARNING: {{huidige_tekst}} placeholder was NOT replaced!');
-      }
       
       // Get AI configuration from prompt config or use defaults
       // Use gemini-2.5-pro for highest quality analysis
@@ -151,24 +140,18 @@ export class ReportGenerator {
       
       // Correct syntax for @google/genai v1.16 volgens NPM docs
       try {
-        console.log(`Making AI call with model: ${aiConfig.model}`);
-        
         // Use the correct API method for GoogleGenAI
         const response = await ai.models.generateContent({
           model: aiConfig.model,
           contents: fullInput,
-          generationConfig
+          config: generationConfig
         });
         
         const result = response.text || "";
-        console.log(`AI response received, length: ${result.length}`);
         
         if (!result) {
-          console.log('Empty response from AI');
           throw new Error(`Lege response van AI voor stage ${stageName}`);
-        }
-        
-        console.log(`Stage ${stageName} completed successfully`);
+        };
         
         // Return result - cyclical flow logic handled by route handler
         return {
@@ -305,7 +288,6 @@ Lever een professionele fiscale analyse op basis van deze informatie.`;
     for (let i = stageOrder.length - 1; i >= 0; i--) {
       const stageKey = stageOrder[i];
       if (conceptReportVersions[stageKey]) {
-        console.log(`Using concept report from stage: ${stageKey}`);
         return conceptReportVersions[stageKey];
       }
     }

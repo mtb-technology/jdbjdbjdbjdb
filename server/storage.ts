@@ -81,10 +81,8 @@ export class MemStorage implements IStorage {
       for (const config of configs) {
         this.promptConfigs.set(config.id, config);
       }
-      
-      console.log(`Loaded ${configs.length} prompt configurations from storage`);
     } catch (error) {
-      console.log('No existing prompt configurations found, will create defaults');
+      // No existing configs, will be created later
     }
   }
 
@@ -92,7 +90,6 @@ export class MemStorage implements IStorage {
     try {
       const configs = Array.from(this.promptConfigs.values());
       await fs.writeFile(this.PROMPTS_FILE, JSON.stringify(configs, null, 2));
-      console.log('Prompt configurations saved to storage');
     } catch (error) {
       console.error('Failed to save prompt configurations:', error);
     }
@@ -474,7 +471,6 @@ export class DatabaseStorage implements IStorage {
     // Check if any configs exist
     const existing = await this.getAllPromptConfigs();
     if (existing.length > 0) {
-      console.log("Prompt configs already exist, skipping initialization");
       return;
     }
     
@@ -505,7 +501,6 @@ export class DatabaseStorage implements IStorage {
     };
 
     await this.createPromptConfig(defaultConfig);
-    console.log("Default prompt configuration initialized in database");
   }
 
   async updatePromptConfig(id: string, updateData: Partial<PromptConfigRecord>): Promise<PromptConfigRecord | undefined> {
