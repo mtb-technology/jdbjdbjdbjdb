@@ -132,84 +132,10 @@ export class ReportGenerator {
         throw new Error(`Geen response van AI voor stage ${stageName}`);
       }
 
-      // For all stages: output becomes the new working text + update concept report
-      console.log(`Stage ${stageName} completed - refined text generated`);
-      
-      // If this stage generates a concept report (stages 3+), extract it
-      let conceptReport = null;
-      if (stageName === "3_generatie" || stageName.startsWith("4")) {
-        // Try to extract concept report from result if it contains both
-        const conceptMatch = result.match(/\[CONCEPT_RAPPORT\](.*?)\[\/CONCEPT_RAPPORT\]/s);
-        if (conceptMatch) {
-          conceptReport = conceptMatch[1].trim();
-          // Remove concept report section from main output to keep it clean
-          const cleanOutput = result.replace(/\[CONCEPT_RAPPORT\].*?\[\/CONCEPT_RAPPORT\]/s, '').trim();
-          return {
-            stageOutput: cleanOutput || result, // The refined text for next stage
-            conceptReport: conceptReport // The floating concept report
-          };
-        } else {
-          // For stage 3, if no concept markers, the result IS the concept report
-          if (stageName === "3_generatie") {
-            conceptReport = result;
-            return {
-              stageOutput: result, // Also use as refined text
-              conceptReport: result // Initial concept report
-            };
-          }
-        }
-      }
-      
-      // For stages 4a-4g, generate both stage-specific output and updated concept report
-      if (stageName.startsWith("4")) {
-        console.log(`Stage ${stageName} completed - generating specialist output and updated concept`);
-        
-        // Get current concept report for updating
-        const currentConcept = latestConceptReportKeys.length > 0 
-          ? conceptReportVersions[latestConceptReportKeys[latestConceptReportKeys.length - 1]]
-          : "";
-        
-        // For 4x stages, we need to generate an updated concept report that incorporates this stage's expertise
-        const updatePrompt = `Je bent een ${this.getStageDescription(stageName)} specialist. 
-        
-Je hebt zojuist de volgende analyse gemaakt: ${result}
-
-Hier is het huidige concept rapport:
-${currentConcept}
-
-Taak: Integreer jouw expertise naadloos in het concept rapport. Behoud de bestaande structuur maar voeg jouw inzichten toe waar relevant. Geef het bijgewerkte volledige rapport terug.
-
-Houd rekening met:
-- Behoud de bestaande opmaak en structuur
-- Voeg jouw specifieke expertise toe zonder dubbeling
-- Zorg dat het rapport coherent en professioneel blijft
-- Verwijs naar bronnen waar nodig`;
-
-        try {
-          const updateResponse = await ai.models.generateContent({
-            model: aiConfig.model,
-            config: generationConfig,
-            contents: updatePrompt,
-          });
-
-          const updatedConceptReport = updateResponse.text || currentConcept;
-          
-          return {
-            stageOutput: result, // The specialist's specific analysis
-            conceptReport: updatedConceptReport // The updated full concept report
-          };
-        } catch (error) {
-          console.error(`Error updating concept report for ${stageName}:`, error);
-          return {
-            stageOutput: result,
-            conceptReport: currentConcept // Fallback to current version
-          };
-        }
-      }
-      
-      // Default return for stages 1-2: just refined text, no concept report yet
+      // Simpel: gewoon de ruwe AI output retourneren
+      console.log(`Stage ${stageName} completed`);
       return {
-        stageOutput: result, // The refined/improved text for next stage
+        stageOutput: result, // Ruwe AI output wordt input voor volgende stap
         conceptReport: null
       };
 
