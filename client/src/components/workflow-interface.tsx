@@ -40,10 +40,11 @@ interface WorkflowInterfaceProps {
   bouwplan: BouwplanData;
   clientName: string;
   rawText: string;  // Voeg ruwe tekst toe voor dynamische verwerking
+  existingReport?: Report;  // Optionele bestaande report voor case detail pagina
   onComplete: (report: Report) => void;
 }
 
-export default function WorkflowInterface({ dossier, bouwplan, clientName, rawText, onComplete }: WorkflowInterfaceProps) {
+export default function WorkflowInterface({ dossier, bouwplan, clientName, rawText, existingReport, onComplete }: WorkflowInterfaceProps) {
   const [currentReport, setCurrentReport] = useState<Report | null>(null);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [stageResults, setStageResults] = useState<Record<string, string>>({});
@@ -161,15 +162,31 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
     };
   }, [executeStageM.isPending, stageStartTime]);
 
-  // Auto-start workflow direct bij laden - slechts 1x!
+  // Initialize with existing report or create new one
   useEffect(() => {
-    // Check of er al een report ID in sessionStorage staat voor deze sessie
-    const sessionReportId = sessionStorage.getItem('current-workflow-report-id');
-    
-    if (!currentReport && !createReportMutation.isPending && !sessionReportId) {
-      createReportMutation.mutate();
+    if (existingReport) {
+      // Load existing report data
+      setCurrentReport(existingReport);
+      setStageResults(existingReport.stageResults as Record<string, string> || {});
+      setConceptReportVersions(existingReport.conceptReportVersions as Record<string, string> || {});
+      
+      // Set current stage index based on completed stages
+      const completedStages = Object.keys(existingReport.stageResults as Record<string, string> || {});
+      const lastCompletedIndex = completedStages.length > 0 
+        ? Math.max(...completedStages.map(stage => WORKFLOW_STAGES.findIndex(s => s.key === stage)))
+        : -1;
+      setCurrentStageIndex(Math.min(lastCompletedIndex + 1, WORKFLOW_STAGES.length - 1));
+      
+      sessionStorage.setItem('current-workflow-report-id', existingReport.id);
+    } else {
+      // Auto-start workflow direct bij laden - slechts 1x!
+      const sessionReportId = sessionStorage.getItem('current-workflow-report-id');
+      
+      if (!currentReport && !createReportMutation.isPending && !sessionReportId) {
+        createReportMutation.mutate();
+      }
     }
-  }, []); // Geen dependencies - wordt slechts 1x uitgevoerd
+  }, [existingReport]); // Afhankelijk van existingReport
 
   const finalizeReportMutation = useMutation({
     mutationFn: async (reportId: string) => {

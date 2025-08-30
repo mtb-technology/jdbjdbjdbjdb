@@ -142,6 +142,7 @@ export default function CaseDetail() {
           bouwplan={report.bouwplanData as any}
           clientName={report.clientName}
           rawText={(report.dossierData as any)?.rawText || ""}
+          existingReport={report}
           onComplete={(updatedReport) => {
             // Refresh the report data
             window.location.reload();
