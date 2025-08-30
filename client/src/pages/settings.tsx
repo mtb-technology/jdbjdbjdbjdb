@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -38,7 +38,7 @@ const PROMPT_STAGES = [
   { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", type: "generator" },
 ] as const;
 
-export default function Settings() {
+const Settings = memo(function Settings() {
   const [activeConfig, setActiveConfig] = useState<PromptConfig | null>(null);
   const [aiConfig, setAiConfig] = useState<AiConfig>({
     model: "gemini-2.5-pro",
@@ -88,7 +88,7 @@ export default function Settings() {
     }
   }, [activePromptConfig]);
 
-  const handlePromptChange = (stageKey: string, value: string) => {
+  const handlePromptChange = useCallback((stageKey: string, value: string) => {
     if (!activeConfig) return;
     
     const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
@@ -100,9 +100,9 @@ export default function Settings() {
         prompt: value,
       },
     });
-  };
+  }, [activeConfig]);
 
-  const handleGroundingChange = (stageKey: string, useGrounding: boolean) => {
+  const handleGroundingChange = useCallback((stageKey: string, useGrounding: boolean) => {
     if (!activeConfig) return;
     
     const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
@@ -114,9 +114,9 @@ export default function Settings() {
         useGrounding,
       },
     });
-  };
+  }, [activeConfig]);
 
-  const handleStepTypeChange = (stageKey: string, stepType: "generator" | "reviewer") => {
+  const handleStepTypeChange = useCallback((stageKey: string, stepType: "generator" | "reviewer") => {
     if (!activeConfig) return;
     
     const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
@@ -128,9 +128,9 @@ export default function Settings() {
         stepType,
       },
     });
-  };
+  }, [activeConfig]);
 
-  const handleVerwerkerPromptChange = (stageKey: string, verwerkerPrompt: string) => {
+  const handleVerwerkerPromptChange = useCallback((stageKey: string, verwerkerPrompt: string) => {
     if (!activeConfig) return;
     
     const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
@@ -142,9 +142,9 @@ export default function Settings() {
         verwerkerPrompt,
       },
     });
-  };
+  }, [activeConfig]);
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     if (!activeConfig || !activePromptConfig?.id) return;
     
     const configWithAi = {
@@ -156,20 +156,20 @@ export default function Settings() {
       id: activePromptConfig.id,
       config: configWithAi,
     });
-  };
+  }, [activeConfig, activePromptConfig?.id, aiConfig, updatePromptMutation]);
 
-  const handleAiConfigChange = (key: keyof AiConfig, value: any) => {
+  const handleAiConfigChange = useCallback((key: keyof AiConfig, value: any) => {
     setAiConfig(prev => ({
       ...prev,
       [key]: value,
     }));
-  };
+  }, []);
 
-  const isPromptEmpty = (prompt: string) => {
+  const isPromptEmpty = useCallback((prompt: string) => {
     return !prompt || prompt.trim() === "" || prompt.startsWith("PLACEHOLDER:");
-  };
+  }, []);
 
-  const getCompletionStats = () => {
+  const getCompletionStats = useMemo(() => {
     if (!activeConfig) return { completed: 0, total: PROMPT_STAGES.length };
     
     const completed = PROMPT_STAGES.filter(stage => {
@@ -178,7 +178,7 @@ export default function Settings() {
     }).length;
     
     return { completed, total: PROMPT_STAGES.length };
-  };
+  }, [activeConfig, isPromptEmpty]);
 
   if (isLoading) {
     return (
@@ -192,7 +192,7 @@ export default function Settings() {
     );
   }
 
-  const stats = getCompletionStats();
+  const stats = getCompletionStats;
 
   return (
     <div className="min-h-screen bg-background">
@@ -542,4 +542,6 @@ export default function Settings() {
       </div>
     </div>
   );
-}
+});
+
+export default Settings;

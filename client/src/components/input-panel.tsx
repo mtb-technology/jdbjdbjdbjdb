@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, memo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +23,7 @@ interface InputPanelProps {
   isGenerating: boolean;
 }
 
-export default function InputPanel({
+const InputPanel = memo(function InputPanel({
   dossierData,
   bouwplanData,
   onDossierChange,
@@ -31,7 +31,7 @@ export default function InputPanel({
   onGenerate,
   isGenerating,
 }: InputPanelProps) {
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     const saveData = {
       dossier: dossierData,
       bouwplan: bouwplanData,
@@ -45,13 +45,16 @@ export default function InputPanel({
     if (button) {
       const originalText = button.textContent;
       button.textContent = '✓ Opgeslagen';
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         button.textContent = originalText;
       }, 2000);
+      
+      // Store timeout reference for potential cleanup
+      (button as any).__timeout = timeout;
     }
-  };
+  }, [dossierData, bouwplanData]);
 
-  const handleLoad = () => {
+  const handleLoad = useCallback(() => {
     const savedData = localStorage.getItem('fiscale-pipeline-draft');
     if (savedData) {
       try {
@@ -64,15 +67,18 @@ export default function InputPanel({
         if (button) {
           const originalText = button.textContent;
           button.textContent = '✓ Geladen';
-          setTimeout(() => {
+          const timeout = setTimeout(() => {
             button.textContent = originalText;
           }, 2000);
+          
+          // Store timeout reference for potential cleanup
+          (button as any).__timeout = timeout;
         }
       } catch (error) {
         console.error('Error loading saved data:', error);
       }
     }
-  };
+  }, [onDossierChange, onBouwplanChange]);
 
   return (
     <div className="lg:col-span-4">
@@ -198,4 +204,6 @@ export default function InputPanel({
       </Card>
     </div>
   );
-}
+});
+
+export default InputPanel;

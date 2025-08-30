@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -121,7 +121,7 @@ interface WorkflowInterfaceProps {
   onComplete: (report: Report) => void;
 }
 
-export default function WorkflowInterface({ dossier, bouwplan, clientName, rawText, existingReport, onComplete }: WorkflowInterfaceProps) {
+const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, clientName, rawText, existingReport, onComplete }: WorkflowInterfaceProps) {
   const [currentReport, setCurrentReport] = useState<Report | null>(null);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [stageResults, setStageResults] = useState<Record<string, string>>({});
@@ -313,7 +313,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
   };
 
   // Get the current working text that will be processed by this stage
-  const getCurrentWorkingText = () => {
+  const getCurrentWorkingText = useCallback(() => {
     if (currentStageIndex === 0) {
       return rawText; // First stage gets the original raw text
     }
@@ -325,11 +325,11 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
     }
     
     return rawText; // Fallback to original
-  };
+  }, [currentStageIndex, rawText, stageResults]);
 
 
   // Cyclical workflow: 4x→5→4x→5→4x→5 etc
-  const getNextStageIndex = (currentIndex: number): number | null => {
+  const getNextStageIndex = useCallback((currentIndex: number): number | null => {
     const currentStage = WORKFLOW_STAGES[currentIndex];
     const reviewerStages = ["4a_BronnenSpecialist", "4b_FiscaalTechnischSpecialist", "4c_ScenarioGatenAnalist", 
                            "4d_DeVertaler", "4e_DeAdvocaat", "4f_DeKlantpsycholoog"];
@@ -366,9 +366,9 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
     if (currentStage.key === "final_check") return null;
     
     return currentIndex + 1; // Default fallback
-  };
+  }, [stageResults]);
 
-  const goToNextStage = () => {
+  const goToNextStage = useCallback(() => {
     const nextIndex = getNextStageIndex(currentStageIndex);
     
     if (nextIndex !== null) {
@@ -379,13 +379,13 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
         finalizeReportMutation.mutate(currentReport.id);
       }
     }
-  };
+  }, [getNextStageIndex, currentStageIndex, currentReport, finalizeReportMutation]);
 
-  const goToPreviousStage = () => {
+  const goToPreviousStage = useCallback(() => {
     if (currentStageIndex > 0) {
       setCurrentStageIndex(prev => prev - 1);
     }
-  };
+  }, [currentStageIndex]);
 
   const getStageStatus = (index: number) => {
     const stage = WORKFLOW_STAGES[index];
@@ -952,4 +952,6 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
 
     </div>
   );
-}
+});
+
+export default WorkflowInterface;

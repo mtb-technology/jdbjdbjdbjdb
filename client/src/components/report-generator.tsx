@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, memo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -8,7 +8,7 @@ import WorkflowInterface from "./workflow-interface";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
 
-export default function ReportGenerator() {
+const ReportGenerator = memo(function ReportGenerator() {
   const [dossierData, setDossierData] = useState<string>("");
   const [bouwplanData, setBouwplanData] = useState<string>("");
   const [currentReport, setCurrentReport] = useState<Report | null>(null);
@@ -38,7 +38,7 @@ export default function ReportGenerator() {
     },
   });
 
-  const handleGenerateReport = () => {
+  const handleGenerateReport = useCallback(() => {
     try {
       const parsedDossier = JSON.parse(dossierData) as DossierData;
       const parsedBouwplan = JSON.parse(bouwplanData) as BouwplanData;
@@ -55,15 +55,15 @@ export default function ReportGenerator() {
         variant: "destructive",
       });
     }
-  };
+  }, [dossierData, bouwplanData, generateReportMutation, toast]);
 
-  const handleWorkflowComplete = (report: Report) => {
+  const handleWorkflowComplete = useCallback((report: Report) => {
     setCurrentReport(report);
     setActiveTab("preview");
     queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
-  };
+  }, [queryClient]);
 
-  const isDataValid = () => {
+  const isDataValid = useCallback(() => {
     try {
       const parsedDossier = JSON.parse(dossierData) as DossierData;
       const parsedBouwplan = JSON.parse(bouwplanData) as BouwplanData;
@@ -71,7 +71,7 @@ export default function ReportGenerator() {
     } catch {
       return false;
     }
-  };
+  }, [dossierData, bouwplanData]);
 
   return (
     <div className="space-y-6">
@@ -107,6 +107,7 @@ export default function ReportGenerator() {
               bouwplan={JSON.parse(bouwplanData) as BouwplanData}
               clientName={(JSON.parse(dossierData) as DossierData).klant.naam}
               onComplete={handleWorkflowComplete}
+              rawText={dossierData}
             />
           </TabsContent>
 
@@ -131,4 +132,6 @@ export default function ReportGenerator() {
       )}
     </div>
   );
-}
+});
+
+export default ReportGenerator;

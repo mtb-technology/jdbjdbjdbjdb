@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,110 @@ interface CasesResponse {
   totalPages: number;
 }
 
-export default function Cases() {
+// Memoized Case Item Component for better performance
+const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, handleExport, updateStatusMutation, deleteCaseMutation }: {
+  case_: Case;
+  getStatusColor: (status: string) => string;
+  getStatusText: (status: string, report?: any) => string;
+  handleExport: (caseId: string, format: string) => void;
+  updateStatusMutation: any;
+  deleteCaseMutation: any;
+}) {
+  return (
+    <Card className="hover:shadow-md transition-shadow">
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <h3 className="text-lg font-semibold">{case_.title}</h3>
+              <Badge variant={getStatusColor(case_.status)}>
+                {getStatusText(case_.status, case_)}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-6 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <User className="h-4 w-4" />
+                {case_.clientName}
+              </div>
+              <div className="flex items-center gap-1">
+                <Calendar className="h-4 w-4" />
+                {new Date(case_.createdAt).toLocaleDateString('nl-NL')}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href={`/cases/${case_.id}`}>
+              <Button variant="outline" size="sm" data-testid={`button-view-case-${case_.id}`}>
+                <Eye className="h-4 w-4 mr-2" />
+                Bekijken
+              </Button>
+            </Link>
+            {case_.status === "generated" && (
+              <>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => handleExport(case_.id, "html")}
+                  data-testid={`button-export-html-${case_.id}`}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  HTML
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => handleExport(case_.id, "json")}
+                  data-testid={`button-export-json-${case_.id}`}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  JSON
+                </Button>
+              </>
+            )}
+            {case_.status !== "archived" && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => updateStatusMutation.mutate({ id: case_.id, status: "archived" })}
+                data-testid={`button-archive-${case_.id}`}
+              >
+                <Archive className="h-4 w-4 mr-2" />
+                Archiveren
+              </Button>
+            )}
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" data-testid={`button-delete-${case_.id}`}>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Verwijderen
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Case verwijderen</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Weet je zeker dat je deze case wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Annuleren</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={() => deleteCaseMutation.mutate(case_.id)}
+                    data-testid={`button-confirm-delete-${case_.id}`}
+                  >
+                    Verwijderen
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+});
+
+function Cases() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -71,7 +174,7 @@ export default function Cases() {
     },
   });
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = useCallback((status: string) => {
     switch (status) {
       case "draft": return "secondary";
       case "processing": return "default";
@@ -80,9 +183,9 @@ export default function Cases() {
       case "archived": return "secondary";
       default: return "secondary";
     }
-  };
+  }, []);
 
-  const getStatusText = (status: string, report?: any) => {
+  const getStatusText = useCallback((status: string, report?: any) => {
     switch (status) {
       case "draft": return "Concept";
       case "processing": return "Bezig";
@@ -105,14 +208,14 @@ export default function Cases() {
       case "archived": return "Gearchiveerd";
       default: return status;
     }
-  };
+  }, []);
 
-  const handleExport = (caseId: string, format: string) => {
+  const handleExport = useCallback((caseId: string, format: string) => {
     window.open(`/api/cases/${caseId}/export/${format}`, '_blank');
-  };
+  }, []);
 
-  const cases = casesData?.reports || [];
-  const totalPages = casesData?.totalPages || 1;
+  const cases = useMemo(() => casesData?.reports || [], [casesData?.reports]);
+  const totalPages = useMemo(() => casesData?.totalPages || 1, [casesData?.totalPages]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -358,4 +461,4 @@ export default function Cases() {
       </div>
     </div>
   );
-}
+}export default memo(Cases);

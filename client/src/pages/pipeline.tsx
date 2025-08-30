@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,7 +9,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import WorkflowInterface from "@/components/workflow-interface";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
 
-export default function Pipeline() {
+const Pipeline = memo(function Pipeline() {
   const [rawText, setRawText] = useState("");
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [finalReport, setFinalReport] = useState<string>("");
@@ -26,15 +26,15 @@ export default function Pipeline() {
     structuur: { inleiding: true, knelpunten: [], scenario_analyse: true, vervolgstappen: true }
   };
 
-  const handleWorkflowComplete = (report: Report) => {
+  const handleWorkflowComplete = useCallback((report: Report) => {
     setFinalReport(report.generatedContent || "");
-  };
+  }, []);
 
-  const startWorkflow = () => {
+  const startWorkflow = useCallback(() => {
     if (rawText.trim()) {
       setShowWorkflow(true);
     }
-  };
+  }, [rawText]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -154,4 +154,6 @@ export default function Pipeline() {
       </div>
     </div>
   );
-}
+});
+
+export default Pipeline;

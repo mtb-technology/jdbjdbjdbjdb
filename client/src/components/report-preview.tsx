@@ -1,3 +1,4 @@
+import { memo, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,12 +20,12 @@ interface ReportPreviewProps {
   isGenerating: boolean;
 }
 
-export default function ReportPreview({ report, isGenerating }: ReportPreviewProps) {
-  const handlePrint = () => {
+const ReportPreview = memo(function ReportPreview({ report, isGenerating }: ReportPreviewProps) {
+  const handlePrint = useCallback(() => {
     window.print();
-  };
+  }, []);
 
-  const handleExport = () => {
+  const handleExport = useCallback(() => {
     if (!report?.generatedContent) return;
     
     const element = document.createElement("a");
@@ -34,9 +35,9 @@ export default function ReportPreview({ report, isGenerating }: ReportPreviewPro
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
-  };
+  }, [report?.generatedContent, report?.clientName]);
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     if (!report?.generatedContent) return;
     
     const shareData = {
@@ -65,7 +66,7 @@ export default function ReportPreview({ report, isGenerating }: ReportPreviewPro
     } catch (error) {
       console.error('Error sharing:', error);
     }
-  };
+  }, [report?.generatedContent, report?.clientName]);
 
   if (isGenerating) {
     return (
@@ -191,4 +192,6 @@ export default function ReportPreview({ report, isGenerating }: ReportPreviewPro
       </Card>
     </div>
   );
-}
+});
+
+export default ReportPreview;

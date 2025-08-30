@@ -275,6 +275,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
   app.get("/api/reports", async (req, res) => {
     try {
       const reports = await storage.getAllReports();
+      // Add caching headers for better performance
+      res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
       res.json(reports);
     } catch (error) {
       console.error("Error fetching reports:", error);
@@ -318,6 +320,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
   app.get("/api/sources", async (req, res) => {
     try {
       const sources = await storage.getAllSources();
+      // Cache sources for longer as they rarely change
+      res.set('Cache-Control', 'public, max-age=600, stale-while-revalidate=1200');
       res.json(sources);
     } catch (error) {
       console.error("Error fetching sources:", error);
@@ -339,6 +343,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
   app.get("/api/prompts/active", async (req, res) => {
     try {
       const activeConfig = await storage.getActivePromptConfig();
+      // Cache active config for 5 minutes as it doesn't change often
+      res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
       res.json(activeConfig);
     } catch (error) {
       console.error("Error fetching active prompt config:", error);
@@ -458,6 +464,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         search: search as string
       });
       
+      // Add caching headers for case list
+      res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
       res.json(cases);
     } catch (error: any) {
       console.error("Error fetching cases:", error);
