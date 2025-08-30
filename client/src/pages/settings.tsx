@@ -24,6 +24,20 @@ import {
 } from "lucide-react";
 import type { PromptConfigRecord, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 
+// Available AI models by provider
+const AI_MODELS = {
+  google: [
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  ],
+  openai: [
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+    { value: "o3-mini", label: "o3 Mini (Deep Research)" },
+    { value: "o3", label: "o3 (Deep Research)" },
+  ],
+} as const;
+
 const PROMPT_STAGES = [
   { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Validatie en opslag dossier", type: "generator" },
   { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Validatie en opslag bouwplan", type: "generator" },
@@ -41,6 +55,7 @@ const PROMPT_STAGES = [
 const Settings = memo(function Settings() {
   const [activeConfig, setActiveConfig] = useState<PromptConfig | null>(null);
   const [aiConfig, setAiConfig] = useState<AiConfig>({
+    provider: "google",
     model: "gemini-2.5-pro",
     temperature: 0.1,
     topP: 0.95,
@@ -412,15 +427,52 @@ const Settings = memo(function Settings() {
                 <Brain className="h-4 w-4 text-primary" />
               </div>
               <div>
-                <CardTitle className="text-lg">AI Model Configuratie</CardTitle>
+                <CardTitle className="text-lg">AI Model Configuratie (Global Default)</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Configureer Gemini model instellingen voor optimale prestaties
+                  Configureer standaard AI provider en model instellingen. Elke stap kan deze overschrijven.
                 </p>
               </div>
             </div>
           </CardHeader>
           
           <CardContent className="space-y-6">
+            
+            {/* Provider Selection */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">AI Provider</Label>
+              <Select 
+                value={aiConfig.provider} 
+                onValueChange={(value: "google" | "openai") => {
+                  const defaultModel = value === "google" ? "gemini-2.5-pro" : "gpt-4o";
+                  handleAiConfigChange("provider", value);
+                  handleAiConfigChange("model", defaultModel);
+                }}
+              >
+                <SelectTrigger data-testid="select-ai-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="google">
+                    <div className="flex items-center space-x-2">
+                      <Brain className="h-4 w-4" />
+                      <div>
+                        <div className="font-medium">Google AI (Gemini)</div>
+                        <div className="text-xs text-muted-foreground">Grounding & Research</div>
+                      </div>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="openai">
+                    <div className="flex items-center space-x-2">
+                      <Zap className="h-4 w-4" />
+                      <div>
+                        <div className="font-medium">OpenAI (GPT/o3)</div>
+                        <div className="text-xs text-muted-foreground">Deep Research & Reasoning</div>
+                      </div>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             
             {/* Model Selection */}
             <div className="space-y-3">
@@ -433,24 +485,21 @@ const Settings = memo(function Settings() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gemini-2.5-pro">
-                    <div className="flex items-center space-x-2">
-                      <Brain className="h-4 w-4" />
-                      <div>
-                        <div className="font-medium">Gemini 2.5 Pro</div>
-                        <div className="text-xs text-muted-foreground">Beste kwaliteit, uitgebreide redenering</div>
+                  {AI_MODELS[aiConfig.provider].map((model) => (
+                    <SelectItem key={model.value} value={model.value}>
+                      <div className="flex items-center space-x-2">
+                        <Brain className="h-4 w-4" />
+                        <div>
+                          <div className="font-medium">{model.label}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {model.value.includes('o3') ? 'Deep Research & Reasoning' : 
+                             model.value.includes('flash') ? 'Snelle verwerking, lagere kosten' :
+                             'Beste kwaliteit, uitgebreide redenering'}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="gemini-2.5-flash">
-                    <div className="flex items-center space-x-2">
-                      <Zap className="h-4 w-4" />
-                      <div>
-                        <div className="font-medium">Gemini 2.5 Flash</div>
-                        <div className="text-xs text-muted-foreground">Snellere verwerking, lagere kosten</div>
-                      </div>
-                    </div>
-                  </SelectItem>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

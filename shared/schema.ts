@@ -65,20 +65,38 @@ export const bouwplanSchema = z.object({
   }),
 });
 
-// AI Configuration schema
+// AI Provider and Model Configuration schemas
+export const aiProviderSchema = z.enum(["google", "openai"]);
+
+export const googleModelSchema = z.enum(["gemini-2.5-pro", "gemini-2.5-flash"]);
+export const openaiModelSchema = z.enum(["gpt-4o", "gpt-4o-mini", "o3-mini", "o3"]);
+
 export const aiConfigSchema = z.object({
-  model: z.enum(["gemini-2.5-pro", "gemini-2.5-flash"]).default("gemini-2.5-pro"),
+  provider: aiProviderSchema.default("google"),
+  model: z.string().default("gemini-2.5-pro"), // Will be validated based on provider
   temperature: z.number().min(0).max(2).default(0.1),
   topP: z.number().min(0).max(1).default(0.95),
   topK: z.number().min(1).max(40).default(20),
   maxOutputTokens: z.number().min(100).max(8192).default(2048),
 });
 
-// Stage-specific configuration
+// Provider-specific validation
+export const validateModelForProvider = (provider: string, model: string): boolean => {
+  if (provider === "google") {
+    return googleModelSchema.safeParse(model).success;
+  }
+  if (provider === "openai") {
+    return openaiModelSchema.safeParse(model).success;
+  }
+  return false;
+};
+
+// Stage-specific configuration with per-stage AI provider choice
 export const stageConfigSchema = z.object({
   prompt: z.string().default(""),
   useGrounding: z.boolean().default(false),
   stepType: z.enum(["generator", "reviewer", "processor"]).default("generator"),
+  aiConfig: aiConfigSchema.optional(), // Per-stage AI configuration override
 });
 
 // Multi-stage prompting workflow schema  

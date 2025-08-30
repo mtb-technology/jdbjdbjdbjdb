@@ -1,15 +1,50 @@
 import type { DossierData, BouwplanData, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 import { SourceValidator } from "./source-validator";
 import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { storage } from "../storage";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "" });
+const googleAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "" });
+const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
 
 export class ReportGenerator {
   private sourceValidator: SourceValidator;
 
   constructor() {
     this.sourceValidator = new SourceValidator();
+  }
+
+  // OpenAI API call method
+  private async callOpenAI(aiConfig: AiConfig, prompt: string): Promise<string> {
+    // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+    // However, o3 and o3-mini are the newest reasoning models for deep research
+    const response = await openaiClient.chat.completions.create({
+      model: aiConfig.model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: aiConfig.temperature,
+      max_tokens: aiConfig.maxOutputTokens,
+      top_p: aiConfig.topP,
+    });
+    
+    return response.choices[0]?.message?.content || "";
+  }
+
+  // Google AI API call method  
+  private async callGoogleAI(aiConfig: AiConfig, prompt: string): Promise<string> {
+    const generationConfig: any = {
+      temperature: aiConfig.temperature,
+      topP: aiConfig.topP,
+      topK: aiConfig.topK,
+      maxOutputTokens: aiConfig.maxOutputTokens,
+    };
+    
+    const response = await googleAI.models.generateContent({
+      model: aiConfig.model,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: generationConfig
+    });
+    
+    return response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || "";
   }
 
   async generateReport(dossier: DossierData, bouwplan: BouwplanData): Promise<string> {
@@ -29,6 +64,16 @@ export class ReportGenerator {
     conceptReportVersions: Record<string, string>,
     customInput?: string
   ): Promise<{ stageOutput: string; conceptReport: string }> {
+    // Helper function to call the appropriate AI service
+    const callAI = async (aiConfig: AiConfig, prompt: string): Promise<string> => {
+      console.log(`Using AI Provider: ${aiConfig.provider}, Model: ${aiConfig.model} for stage: ${stageName}`);
+      
+      if (aiConfig.provider === "openai") {
+        return this.callOpenAI(aiConfig, prompt);
+      } else {
+        return this.callGoogleAI(aiConfig, prompt);
+      }
+    };
     const currentDate = new Date().toLocaleDateString('nl-NL', {
       year: 'numeric',
       month: 'long', 
@@ -112,46 +157,28 @@ export class ReportGenerator {
 
     try {
       
-      // Get AI configuration from prompt config or use defaults
-      // Use gemini-2.5-pro for highest quality analysis
-      const aiConfig: AiConfig = prompts.aiConfig || {
-        model: "gemini-2.5-pro",
-        temperature: 0.1,
-        topP: 0.95,
-        topK: 20,
-        maxOutputTokens: 8192,
-      };
+      // Get AI configuration - check stage-specific config first, then global config, then defaults
+      const stageAiConfig = stageConfig?.aiConfig;
+      const globalAiConfig = prompts.aiConfig;
       
-      // Prepare generation config with forced higher token limit
-      const generationConfig: any = {
-        temperature: aiConfig.temperature,
-        topP: aiConfig.topP,
-        topK: aiConfig.topK,
-        maxOutputTokens: 8192, // Force higher token limit for complete responses
+      const aiConfig: AiConfig = {
+        provider: stageAiConfig?.provider || globalAiConfig?.provider || "google",
+        model: stageAiConfig?.model || globalAiConfig?.model || "gemini-2.5-pro",
+        temperature: stageAiConfig?.temperature || globalAiConfig?.temperature || 0.1,
+        topP: stageAiConfig?.topP || globalAiConfig?.topP || 0.95,
+        topK: stageAiConfig?.topK || globalAiConfig?.topK || 20,
+        maxOutputTokens: stageAiConfig?.maxOutputTokens || globalAiConfig?.maxOutputTokens || 8192,
       };
-
-      // Add grounding for research-like capabilities if enabled for this stage
-      if (useStageGrounding) {
-        generationConfig.tools = [{ google_search: {} }];
-      }
       
       // Combine prompt with input text - prompt gives instructions, currentWorkingText is the data to process
       const fullInput = `${processedPrompt}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
       
-      // Correct syntax for @google/genai v1.16 volgens NPM docs
       try {
-        // Use the correct API method for GoogleGenAI
-        const response = await ai.models.generateContent({
-          model: aiConfig.model,
-          contents: fullInput,
-          config: generationConfig
-        });
-        
-        const result = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || "";
+        const result = await callAI(aiConfig, fullInput);
         
         if (!result || result.trim() === '') {
           throw new Error(`Lege response van AI voor stage ${stageName}`);
-        };
+        }
         
         // Return result - cyclical flow logic handled by route handler
         return {
