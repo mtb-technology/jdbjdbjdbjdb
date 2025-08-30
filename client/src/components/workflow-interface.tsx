@@ -96,17 +96,17 @@ function formatReportContent(content: string): string {
 }
 
 const WORKFLOW_STAGES = [
-  { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Ruwe tekst → Gestructureerde informatie", icon: FileText },
-  { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Analyse van complexiteit en scope", icon: AlertCircle },
-  { key: "3_generatie", label: "3. Generatie", description: "Basis rapport generatie", icon: FileText },
-  { key: "4a_BronnenSpecialist", label: "4a. Bronnen Specialist", description: "Bronverwerking in rapport", icon: CheckCircle },
-  { key: "4b_FiscaalTechnischSpecialist", label: "4b. Fiscaal Technisch Specialist", description: "Technische fiscale expertise", icon: CheckCircle },
-  { key: "4c_ScenarioGatenAnalist", label: "4c. Scenario Gaten Analist", description: "Scenario analyse en gaps", icon: CheckCircle },
-  { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Taal en communicatie optimalisatie", icon: CheckCircle },
-  { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Juridische compliance check", icon: CheckCircle },
-  { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Klantgerichte communicatie", icon: CheckCircle },
-  { key: "4g_ChefEindredactie", label: "4g. Chef Eindredactie", description: "Finale redactionele controle", icon: CheckCircle },
-  { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", icon: CheckCircle },
+  { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Ruwe tekst → Gestructureerde informatie", icon: FileText, type: "generator" },
+  { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Analyse van complexiteit en scope", icon: AlertCircle, type: "generator" },
+  { key: "3_generatie", label: "3. Generatie", description: "Basis rapport generatie", icon: FileText, type: "generator" },
+  { key: "4a_BronnenSpecialist", label: "4a. Bronnen Specialist", description: "Review bronnen → JSON feedback", icon: CheckCircle, type: "reviewer" },
+  { key: "4b_FiscaalTechnischSpecialist", label: "4b. Fiscaal Technisch Specialist", description: "Review fiscale techniek → JSON feedback", icon: CheckCircle, type: "reviewer" },
+  { key: "4c_ScenarioGatenAnalist", label: "4c. Scenario Gaten Analist", description: "Review scenarios → JSON feedback", icon: CheckCircle, type: "reviewer" },
+  { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Review communicatie → JSON feedback", icon: CheckCircle, type: "reviewer" },
+  { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", icon: CheckCircle, type: "reviewer" },
+  { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", icon: CheckCircle, type: "reviewer" },
+  { key: "4g_ChefEindredactie", label: "4g. Chef Eindredactie", description: "Finale review → JSON feedback", icon: CheckCircle, type: "reviewer" },
+  { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", icon: Eye, type: "generator" },
 ] as const;
 
 interface WorkflowInterfaceProps {
@@ -839,26 +839,35 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
                 const conceptResult = conceptReportVersions[stage.key];
                 if (!stageResult) return null;
                 
+                const isReviewer = stage.type === "reviewer";
+                
                 return (
-                  <div key={stage.key} className="border rounded-lg p-3">
+                  <div key={stage.key} className={`border rounded-lg p-3 ${isReviewer ? 'border-l-4 border-l-orange-400 bg-orange-50/20' : 'border-l-4 border-l-blue-400'}`}>
                     <div className="flex items-center justify-between mb-2">
-                      <h5 className="font-medium text-sm">{stage.label}</h5>
+                      <div className="flex items-center space-x-2">
+                        <h5 className="font-medium text-sm">{stage.label}</h5>
+                        <Badge variant={isReviewer ? "destructive" : "default"} className="text-xs">
+                          {isReviewer ? "🔍 Review" : "📝 Generator"}
+                        </Badge>
+                      </div>
                       <div className="flex items-center space-x-2">
                         <Badge variant="secondary" className="text-xs">Voltooid</Badge>
                         {conceptResult && (
                           <Badge variant="outline" className="text-xs text-blue-600">
-                            + Concept Update
+                            + Rapport Update
                           </Badge>
                         )}
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground max-h-20 overflow-y-auto">
-                      <div className="font-medium text-muted-foreground mb-1">Specialist Output:</div>
+                      <div className="font-medium text-muted-foreground mb-1">
+                        {isReviewer ? "JSON Feedback:" : "Specialist Output:"}
+                      </div>
                       {stageResult.length > 150 ? `${stageResult.substring(0, 150)}...` : stageResult}
                       
                       {conceptResult && (
                         <div className="mt-2 pt-2 border-t border-muted">
-                          <div className="font-medium text-blue-600 dark:text-blue-400 mb-1">Concept Rapport Update:</div>
+                          <div className="font-medium text-blue-600 dark:text-blue-400 mb-1">Rapport Update Toegepast:</div>
                           <div className="text-blue-700 dark:text-blue-300">
                             {conceptResult.length > 100 ? `${conceptResult.substring(0, 100)}...` : conceptResult}
                           </div>

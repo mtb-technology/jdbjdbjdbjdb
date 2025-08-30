@@ -139,11 +139,11 @@ export class ReportGenerator {
       try {
         console.log(`Making AI call with model: ${aiConfig.model}`);
         
-        // Use the correct API method - config params go directly in the object, not nested
+        // Use the correct API method - generation config needs to be nested
         const response = await ai.models.generateContent({
           model: aiConfig.model,
           contents: fullInput,
-          ...generationConfig  // Spread the config directly
+          generationConfig: generationConfig
         });
         
         const result = response.text || "";
@@ -155,9 +155,34 @@ export class ReportGenerator {
         }
         
         console.log(`Stage ${stageName} completed successfully`);
+        
+        // Check if this is a reviewer step that needs feedback processing
+        const stageConfig = prompts[stageName as keyof typeof prompts] as any;
+        const isReviewerStep = stageConfig?.stepType === "reviewer";
+        
+        if (isReviewerStep && stageConfig?.verwerkerPrompt) {
+          console.log(`Processing feedback for reviewer step: ${stageName}`);
+          
+          // Get the latest concept report from previous stages
+          const latestConceptReport = this.getLatestConceptReport(conceptReportVersions, stageName);
+          
+          // Apply the feedback to the current concept report
+          const updatedReport = await this.processFeedback(
+            result, // JSON feedback from reviewer
+            latestConceptReport, // Current concept report
+            stageConfig.verwerkerPrompt,
+            variables
+          );
+          
+          return {
+            stageOutput: result, // Keep original feedback
+            conceptReport: updatedReport // Updated concept report
+          };
+        }
+        
         return {
           stageOutput: result,
-          conceptReport: ""
+          conceptReport: stageName === "3_generatie" ? result : "" // Only set concept on generation stage
         };
         
       } catch (aiError: any) {
@@ -219,6 +244,74 @@ Lever een professionele fiscale analyse op basis van deze informatie.`;
       "4g_ChefEindredactie": "eindredactie en kwaliteitscontrole"
     };
     return descriptions[stageName] || "algemene";
+  }
+
+  // Process reviewer feedback into concept report
+  private async processFeedback(
+    jsonFeedback: string, 
+    currentConceptReport: string, 
+    verwerkerPrompt: string,
+    variables: Record<string, any>
+  ): Promise<string> {
+    try {
+      // Replace variables in verwerker prompt
+      const processedPrompt = verwerkerPrompt.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+        return variables[key] || match;
+      });
+
+      const fullInput = `${processedPrompt}
+
+--- CURRENT CONCEPT REPORT ---
+${currentConceptReport}
+
+--- JSON FEEDBACK TO PROCESS ---
+${jsonFeedback}`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-pro",
+        contents: fullInput,
+        generationConfig: {
+          temperature: 0.1,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+        }
+      });
+
+      const updatedReport = response.text || currentConceptReport;
+      console.log(`Feedback processed, updated report length: ${updatedReport.length}`);
+      
+      return updatedReport;
+      
+    } catch (error) {
+      console.error('Error processing feedback:', error);
+      return currentConceptReport; // Return original if processing fails
+    }
+  }
+
+  // Get the latest concept report from previous stages
+  private getLatestConceptReport(conceptReportVersions: Record<string, string>, currentStage: string): string {
+    // Find the most recent concept report version
+    const availableVersions = Object.keys(conceptReportVersions);
+    
+    if (availableVersions.length === 0) {
+      return ""; // No concept report yet
+    }
+    
+    // Sort by stage order (stage 3 is first concept, then 4a, 4b, etc.)
+    const stageOrder = ["3_generatie", "4a_BronnenSpecialist", "4b_FiscaalTechnischSpecialist", 
+                       "4c_ScenarioGatenAnalist", "4d_DeVertaler", "4e_DeAdvocaat", 
+                       "4f_DeKlantpsycholoog", "4g_ChefEindredactie"];
+    
+    // Get the latest available concept report
+    for (let i = stageOrder.length - 1; i >= 0; i--) {
+      const stageKey = stageOrder[i];
+      if (conceptReportVersions[stageKey]) {
+        console.log(`Using concept report from stage: ${stageKey}`);
+        return conceptReportVersions[stageKey];
+      }
+    }
+    
+    return ""; // Fallback
   }
 
   async finalizeReport(stageResults: Record<string, string>): Promise<string> {

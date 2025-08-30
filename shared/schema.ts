@@ -78,6 +78,8 @@ export const aiConfigSchema = z.object({
 export const stageConfigSchema = z.object({
   prompt: z.string().default(""),
   useGrounding: z.boolean().default(false),
+  stepType: z.enum(["generator", "reviewer"]).default("generator"),
+  verwerkerPrompt: z.string().optional(), // Voor reviewer stappen: hoe feedback in rapport verwerken
 });
 
 // Multi-stage prompting workflow schema  

@@ -25,17 +25,17 @@ import {
 import type { PromptConfigRecord, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 
 const PROMPT_STAGES = [
-  { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Validatie en opslag dossier" },
-  { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Validatie en opslag bouwplan" },
-  { key: "3_generatie", label: "3. Generatie", description: "Basis rapport generatie" },
-  { key: "4a_BronnenSpecialist", label: "4a. Bronnen Specialist", description: "Bronverwerking in rapport" },
-  { key: "4b_FiscaalTechnischSpecialist", label: "4b. Fiscaal Technisch Specialist", description: "Technische fiscale expertise" },
-  { key: "4c_ScenarioGatenAnalist", label: "4c. Scenario Gaten Analist", description: "Scenario analyse en gaps" },
-  { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Taal en communicatie optimalisatie" },
-  { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Juridische compliance check" },
-  { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Klantgerichte communicatie" },
-  { key: "4g_ChefEindredactie", label: "4g. Chef Eindredactie", description: "Finale redactionele controle" },
-  { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs" },
+  { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Validatie en opslag dossier", type: "generator" },
+  { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Validatie en opslag bouwplan", type: "generator" },
+  { key: "3_generatie", label: "3. Generatie", description: "Basis rapport generatie", type: "generator" },
+  { key: "4a_BronnenSpecialist", label: "4a. Bronnen Specialist", description: "Review bronnen → JSON feedback", type: "reviewer" },
+  { key: "4b_FiscaalTechnischSpecialist", label: "4b. Fiscaal Technisch Specialist", description: "Review fiscale techniek → JSON feedback", type: "reviewer" },
+  { key: "4c_ScenarioGatenAnalist", label: "4c. Scenario Gaten Analist", description: "Review scenarios → JSON feedback", type: "reviewer" },
+  { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Review communicatie → JSON feedback", type: "reviewer" },
+  { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", type: "reviewer" },
+  { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", type: "reviewer" },
+  { key: "4g_ChefEindredactie", label: "4g. Chef Eindredactie", description: "Finale review → JSON feedback", type: "reviewer" },
+  { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", type: "generator" },
 ] as const;
 
 export default function Settings() {
@@ -112,6 +112,34 @@ export default function Settings() {
       [stageKey]: {
         ...currentStageConfig,
         useGrounding,
+      },
+    });
+  };
+
+  const handleStepTypeChange = (stageKey: string, stepType: "generator" | "reviewer") => {
+    if (!activeConfig) return;
+    
+    const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+    
+    setActiveConfig({
+      ...activeConfig,
+      [stageKey]: {
+        ...currentStageConfig,
+        stepType,
+      },
+    });
+  };
+
+  const handleVerwerkerPromptChange = (stageKey: string, verwerkerPrompt: string) => {
+    if (!activeConfig) return;
+    
+    const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+    
+    setActiveConfig({
+      ...activeConfig,
+      [stageKey]: {
+        ...currentStageConfig,
+        verwerkerPrompt,
       },
     });
   };
@@ -244,15 +272,19 @@ export default function Settings() {
             const stageConfig = activeConfig?.[stage.key as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
             const prompt = stageConfig?.prompt || "";
             const useGrounding = stageConfig?.useGrounding || false;
+            const stepType = stageConfig?.stepType || stage.type || "generator";
+            const verwerkerPrompt = stageConfig?.verwerkerPrompt || "";
             const isEmpty = isPromptEmpty(prompt);
+            const isReviewer = stepType === "reviewer";
             
             return (
-              <Card key={stage.key} className="shadow-sm">
+              <Card key={stage.key} className={`shadow-sm ${isReviewer ? 'border-l-4 border-l-orange-400' : 'border-l-4 border-l-blue-400'}`}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        isEmpty ? 'bg-muted text-muted-foreground' : 'bg-primary text-primary-foreground'
+                        isEmpty ? 'bg-muted text-muted-foreground' : 
+                        isReviewer ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white'
                       }`}>
                         {isEmpty ? (
                           <AlertCircle className="h-4 w-4" />
@@ -261,7 +293,12 @@ export default function Settings() {
                         )}
                       </div>
                       <div>
-                        <CardTitle className="text-lg">{stage.label}</CardTitle>
+                        <div className="flex items-center space-x-2">
+                          <CardTitle className="text-lg">{stage.label}</CardTitle>
+                          <Badge variant={isReviewer ? "destructive" : "default"} className="text-xs">
+                            {isReviewer ? "🔍 Review" : "📝 Generator"}
+                          </Badge>
+                        </div>
                         <p className="text-sm text-muted-foreground">{stage.description}</p>
                       </div>
                     </div>
@@ -274,6 +311,18 @@ export default function Settings() {
                 
                 <CardContent>
                   <div className="space-y-4">
+                    
+                    {/* Step Type Indicator */}
+                    {isReviewer && (
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <span className="text-orange-700 font-medium text-sm">🔍 Review Stap</span>
+                        </div>
+                        <p className="text-xs text-orange-700">
+                          Deze stap geeft <strong>JSON feedback</strong> op het rapport. Gebruik de "Verwerker Prompt" om deze feedback automatisch in het rapport te verwerken.
+                        </p>
+                      </div>
+                    )}
                     
                     {/* Grounding Toggle per Stage */}
                     <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
@@ -293,10 +342,11 @@ export default function Settings() {
                       />
                     </div>
 
+                    {/* Main Prompt */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label className="text-sm font-medium">
-                          Prompt Template
+                          {isReviewer ? "Review Prompt (→ JSON feedback)" : "Generator Prompt (→ Rapport content)"}
                         </Label>
                         <Button
                           variant="ghost"
@@ -312,10 +362,32 @@ export default function Settings() {
                         value={prompt}
                         onChange={(e) => handlePromptChange(stage.key, e.target.value)}
                         className="font-mono text-sm min-h-32"
-                        placeholder={`Voer hier de ${stage.label} prompt in...`}
+                        placeholder={isReviewer ? 
+                          `Review prompt die JSON feedback geeft voor ${stage.label}...` :
+                          `Generator prompt voor ${stage.label}...`
+                        }
                         data-testid={`textarea-prompt-${stage.key}`}
                       />
                     </div>
+
+                    {/* Verwerker Prompt - only for reviewers */}
+                    {isReviewer && (
+                      <div className="space-y-2 border-t border-orange-200 pt-4">
+                        <Label className="text-sm font-medium text-orange-700">
+                          📝 Verwerker Prompt (JSON feedback → Rapport update)
+                        </Label>
+                        <p className="text-xs text-orange-600 mb-2">
+                          Deze prompt krijgt de JSON feedback en past het concept rapport dienovereenkomstig aan.
+                        </p>
+                        <Textarea
+                          value={verwerkerPrompt}
+                          onChange={(e) => handleVerwerkerPromptChange(stage.key, e.target.value)}
+                          className="font-mono text-sm min-h-24 border-orange-200"
+                          placeholder="Prompt om JSON feedback in het rapport te verwerken..."
+                          data-testid={`textarea-verwerker-${stage.key}`}
+                        />
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
