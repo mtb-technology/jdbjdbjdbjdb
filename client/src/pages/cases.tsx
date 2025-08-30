@@ -35,24 +35,22 @@ export default function Cases() {
 
   const { data: casesData, isLoading } = useQuery<CasesResponse>({
     queryKey: ["/api/cases", { page, search, status: statusFilter }],
-    queryFn: () => {
+    queryFn: async () => {
       const params = new URLSearchParams();
       params.set("page", page.toString());
       params.set("limit", "10");
       if (search) params.set("search", search);
       if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
       
-      return apiRequest(`/api/cases?${params.toString()}`);
+      const response = await apiRequest("GET", `/api/cases?${params.toString()}`);
+      return response.json();
     }
   });
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      return apiRequest(`/api/cases/${id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
+      const response = await apiRequest("PATCH", `/api/cases/${id}/status`, { status });
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
@@ -61,7 +59,8 @@ export default function Cases() {
 
   const deleteCaseMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/cases/${id}`, { method: "DELETE" });
+      const response = await apiRequest("DELETE", `/api/cases/${id}`);
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
@@ -196,7 +195,7 @@ export default function Cases() {
           </Card>
         ) : (
           <div className="space-y-4">
-            {cases.map((case_) => (
+            {cases.map((case_: Case) => (
               <Card key={case_.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">

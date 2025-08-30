@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Play, Zap } from "lucide-react";
+import { Play, Zap, FolderOpen } from "lucide-react";
+import { Link } from "wouter";
 import WorkflowInterface from "@/components/workflow-interface";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
 
@@ -44,15 +45,21 @@ export default function Pipeline() {
                 <span className="text-xl font-bold text-foreground">Fiscale Pipeline</span>
               </div>
               <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <a href="/" className="text-primary font-medium" data-testid="nav-pipeline">
-                  Pipeline
-                </a>
-                <a href="/cases" className="text-muted-foreground hover:text-foreground" data-testid="nav-cases">
-                  Cases
-                </a>
-                <a href="/settings" className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
-                  Instellingen
-                </a>
+                <Link href="/">
+                  <a className="text-primary font-medium" data-testid="nav-pipeline">
+                    Pipeline
+                  </a>
+                </Link>
+                <Link href="/cases">
+                  <a className="text-muted-foreground hover:text-foreground" data-testid="nav-cases">
+                    Cases
+                  </a>
+                </Link>
+                <Link href="/settings">
+                  <a className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
+                    Instellingen
+                  </a>
+                </Link>
               </nav>
             </div>
           </div>
@@ -66,7 +73,9 @@ export default function Pipeline() {
           <Card>
             <CardHeader>
               <CardTitle>Fiscale Pipeline</CardTitle>
-              <CardDescription>Voer je tekst in en start direct de workflow</CardDescription>
+              <CardDescription>
+                Voer je tekst in en start direct de workflow. Elke nieuwe workflow wordt automatisch een case die je later kunt terugvinden.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea
@@ -76,14 +85,23 @@ export default function Pipeline() {
                 className="min-h-32"
                 data-testid="textarea-raw-input"
               />
-              <Button 
-                onClick={startWorkflow}
-                disabled={!rawText.trim()}
-                data-testid="button-start-workflow"
-              >
-                <Play className="mr-2 h-4 w-4" />
-                Start Workflow
-              </Button>
+              <div className="flex gap-3">
+                <Button 
+                  onClick={startWorkflow}
+                  disabled={!rawText.trim()}
+                  data-testid="button-start-workflow"
+                  className="flex-1"
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  Start Nieuwe Case
+                </Button>
+                <Link href="/cases">
+                  <Button variant="outline" data-testid="button-view-cases">
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Bekijk Cases
+                  </Button>
+                </Link>
+              </div>
             </CardContent>
           </Card>
         ) : (
