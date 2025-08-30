@@ -46,10 +46,12 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
   const [currentReport, setCurrentReport] = useState<Report | null>(null);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [stageResults, setStageResults] = useState<Record<string, string>>({});
+  const [conceptReportVersions, setConceptReportVersions] = useState<Record<string, string>>({});
   const [editingStage, setEditingStage] = useState<string | null>(null);
   const [customInput, setCustomInput] = useState("");
   const [isAutoRunning, setIsAutoRunning] = useState(false);
   const [autoRunMode, setAutoRunMode] = useState(false);
+  const [viewMode, setViewMode] = useState<"stage" | "concept">("stage");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -65,6 +67,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
     onSuccess: (report: Report) => {
       setCurrentReport(report);
       setStageResults(report.stageResults as Record<string, string> || {});
+      setConceptReportVersions(report.conceptReportVersions as Record<string, string> || {});
       
       // Automatically start auto-execution after report creation
       setTimeout(() => {
@@ -88,12 +91,21 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
       });
       return response.json();
     },
-    onSuccess: (data: { report: Report; stageResult: string }) => {
+    onSuccess: (data: { report: Report; stageResult: string; conceptReport?: string }) => {
       setCurrentReport(data.report);
       setStageResults(prev => ({
         ...prev,
         [WORKFLOW_STAGES[currentStageIndex].key]: data.stageResult
       }));
+      
+      // Update concept report versions if provided
+      if (data.conceptReport) {
+        setConceptReportVersions(prev => ({
+          ...prev,
+          [WORKFLOW_STAGES[currentStageIndex].key]: data.conceptReport
+        }));
+      }
+      
       setCustomInput("");
       setEditingStage(null);
       
@@ -200,6 +212,14 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
           ...prev,
           [stage.key]: data.stageResult
         }));
+        
+        // Update concept report versions if provided
+        if (data.conceptReport) {
+          setConceptReportVersions(prev => ({
+            ...prev,
+            [stage.key]: data.conceptReport
+          }));
+        }
         
         // Small delay between stages for better UX
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -454,7 +474,34 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
           {currentStageResult && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <h4 className="font-medium text-foreground">Resultaat:</h4>
+                <div className="flex items-center space-x-4">
+                  <h4 className="font-medium text-foreground">Resultaat:</h4>
+                  
+                  {/* View Mode Toggle */}
+                  {conceptReportVersions[currentStage.key] && (
+                    <div className="flex bg-muted rounded-lg p-1">
+                      <Button
+                        variant={viewMode === "stage" ? "secondary" : "ghost"}
+                        size="sm"
+                        onClick={() => setViewMode("stage")}
+                        className="text-xs px-3 py-1 h-7"
+                        data-testid="button-view-stage"
+                      >
+                        Specialist Output
+                      </Button>
+                      <Button
+                        variant={viewMode === "concept" ? "secondary" : "ghost"}
+                        size="sm"
+                        onClick={() => setViewMode("concept")}
+                        className="text-xs px-3 py-1 h-7"
+                        data-testid="button-view-concept"
+                      >
+                        Concept Rapport
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                
                 <div className="flex items-center space-x-2">
                   <Button
                     variant="outline"
@@ -481,11 +528,20 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
               {editingStage === currentStage.key ? (
                 <div className="space-y-2">
                   <Textarea
-                    value={currentStageResult}
-                    onChange={(e) => setStageResults(prev => ({
-                      ...prev,
-                      [currentStage.key]: e.target.value
-                    }))}
+                    value={viewMode === "stage" ? currentStageResult : (conceptReportVersions[currentStage.key] || "")}
+                    onChange={(e) => {
+                      if (viewMode === "stage") {
+                        setStageResults(prev => ({
+                          ...prev,
+                          [currentStage.key]: e.target.value
+                        }));
+                      } else {
+                        setConceptReportVersions(prev => ({
+                          ...prev,
+                          [currentStage.key]: e.target.value
+                        }));
+                      }
+                    }}
                     className="min-h-32 font-mono text-sm"
                     data-testid="textarea-edit-result"
                   />
@@ -501,8 +557,11 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
                 </div>
               ) : (
                 <div className="bg-muted/50 rounded-lg p-4 max-h-64 overflow-y-auto">
+                  <div className="text-xs text-blue-600 dark:text-blue-400 mb-2 font-medium">
+                    {viewMode === "stage" ? "Specialist Output:" : "Bijgewerkt Concept Rapport:"}
+                  </div>
                   <pre className="text-sm whitespace-pre-wrap text-muted-foreground">
-                    {currentStageResult}
+                    {viewMode === "stage" ? currentStageResult : (conceptReportVersions[currentStage.key] || "Geen concept rapport voor deze stap")}
                   </pre>
                 </div>
               )}
@@ -541,22 +600,65 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
       {Object.keys(stageResults).length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Voltooide Stappen</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              <span>Voltooide Stappen</span>
+              
+              {/* Latest Concept Report Preview */}
+              {Object.keys(conceptReportVersions).length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const latestKey = Object.keys(conceptReportVersions).sort().pop();
+                    if (latestKey) {
+                      setViewMode("concept");
+                      // Find stage index for latest concept
+                      const stageIndex = WORKFLOW_STAGES.findIndex(s => s.key === latestKey);
+                      if (stageIndex !== -1) {
+                        setCurrentStageIndex(stageIndex);
+                      }
+                    }
+                  }}
+                  data-testid="button-view-latest-concept"
+                >
+                  <Eye className="mr-1 h-3 w-3" />
+                  Laatste Concept Bekijken
+                </Button>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {WORKFLOW_STAGES.map((stage, index) => {
-                const result = stageResults[stage.key];
-                if (!result) return null;
+                const stageResult = stageResults[stage.key];
+                const conceptResult = conceptReportVersions[stage.key];
+                if (!stageResult) return null;
                 
                 return (
                   <div key={stage.key} className="border rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
                       <h5 className="font-medium text-sm">{stage.label}</h5>
-                      <Badge variant="secondary" className="text-xs">Voltooid</Badge>
+                      <div className="flex items-center space-x-2">
+                        <Badge variant="secondary" className="text-xs">Voltooid</Badge>
+                        {conceptResult && (
+                          <Badge variant="outline" className="text-xs text-blue-600">
+                            + Concept Update
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <div className="text-xs text-muted-foreground max-h-20 overflow-y-auto">
-                      {result.length > 200 ? `${result.substring(0, 200)}...` : result}
+                      <div className="font-medium text-muted-foreground mb-1">Specialist Output:</div>
+                      {stageResult.length > 150 ? `${stageResult.substring(0, 150)}...` : stageResult}
+                      
+                      {conceptResult && (
+                        <div className="mt-2 pt-2 border-t border-muted">
+                          <div className="font-medium text-blue-600 dark:text-blue-400 mb-1">Concept Rapport Update:</div>
+                          <div className="text-blue-700 dark:text-blue-300">
+                            {conceptResult.length > 100 ? `${conceptResult.substring(0, 100)}...` : conceptResult}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

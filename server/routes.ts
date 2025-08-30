@@ -124,6 +124,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         bouwplanData: validatedData.bouwplan,
         generatedContent: null,
         stageResults: {},
+        conceptReportVersions: {},
         currentStage: "1_informatiecheck",
         status: "processing",
       });
@@ -157,28 +158,38 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       }
 
       // Execute the specific stage
-      const stageResult = await reportGenerator.executeStage(
+      const stageExecution = await reportGenerator.executeStage(
         stage,
         report.dossierData as DossierData,
         report.bouwplanData as BouwplanData,
         report.stageResults as Record<string, string> || {},
+        report.conceptReportVersions as Record<string, string> || {},
         customInput
       );
 
-      // Update report with stage result
+      // Update report with both stage output and concept report version
       const updatedStageResults = {
         ...(report.stageResults as Record<string, string> || {}),
-        [stage]: stageResult
+        [stage]: stageExecution.stageOutput
       };
+
+      const updatedConceptVersions = stageExecution.conceptReport 
+        ? {
+            ...(report.conceptReportVersions as Record<string, string> || {}),
+            [stage]: stageExecution.conceptReport
+          }
+        : report.conceptReportVersions;
 
       const updatedReport = await storage.updateReport(id, {
         stageResults: updatedStageResults,
+        conceptReportVersions: updatedConceptVersions,
         currentStage: stage,
       });
 
       res.json({
         report: updatedReport,
-        stageResult,
+        stageResult: stageExecution.stageOutput,
+        conceptReport: stageExecution.conceptReport,
       });
 
     } catch (error) {
@@ -200,9 +211,13 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         return;
       }
 
-      const finalContent = await reportGenerator.finalizeReport(
-        report.stageResults as Record<string, string> || {}
-      );
+      // Use the latest concept report version as the final content
+      const conceptVersions = report.conceptReportVersions as Record<string, string> || {};
+      const latestConceptKeys = Object.keys(conceptVersions);
+      
+      const finalContent = latestConceptKeys.length > 0 
+        ? conceptVersions[latestConceptKeys[latestConceptKeys.length - 1]]
+        : await reportGenerator.finalizeReport(report.stageResults as Record<string, string> || {});
 
       const finalizedReport = await storage.updateReport(id, {
         generatedContent: finalContent,

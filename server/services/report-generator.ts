@@ -26,8 +26,9 @@ export class ReportGenerator {
     dossier: DossierData,
     bouwplan: BouwplanData,
     previousStageResults: Record<string, string>,
+    conceptReportVersions: Record<string, string>,
     customInput?: string
-  ): Promise<string> {
+  ): Promise<{ stageOutput: string; conceptReport: string }> {
     const currentDate = new Date().toLocaleDateString('nl-NL', {
       year: 'numeric',
       month: 'long', 
@@ -64,19 +65,11 @@ export class ReportGenerator {
       ...previousStageResults
     };
 
-    // Enhanced context passing for specific stages
-    if (previousStageResults["3_generatie"]) {
-      variables.concept_rapport = previousStageResults["3_generatie"];
-    }
-    
-    // For all 4x stages, ensure they have the latest cumulative rapport
-    if (stageName.startsWith("4") && Object.keys(previousStageResults).length > 0) {
-      // Get the most recent report version (latest stage result)
-      const latestStageKeys = Object.keys(previousStageResults).sort();
-      if (latestStageKeys.length > 0) {
-        const latestKey = latestStageKeys[latestStageKeys.length - 1];
-        variables.rapport = previousStageResults[latestKey];
-      }
+    // Enhanced context passing - get latest concept report version
+    const latestConceptReportKeys = Object.keys(conceptReportVersions);
+    if (latestConceptReportKeys.length > 0) {
+      const latestKey = latestConceptReportKeys[latestConceptReportKeys.length - 1];
+      variables.concept_rapport = conceptReportVersions[latestKey];
     }
 
     // Add custom input if provided
@@ -128,13 +121,86 @@ export class ReportGenerator {
         throw new Error(`Geen response van AI voor stage ${stageName}`);
       }
 
+      // For stage 3 (generatie), this IS the first concept report
+      if (stageName === "3_generatie") {
+        console.log(`Stage ${stageName} completed - generated initial concept report`);
+        return {
+          stageOutput: `✅ Basis rapport gegenereerd\n\nHet initiële fiscaal duidingsrapport is opgesteld met alle hoofdcomponenten.`,
+          conceptReport: result
+        };
+      }
+      
+      // For stages 4a-4g, generate both stage-specific output and updated concept report
+      if (stageName.startsWith("4")) {
+        console.log(`Stage ${stageName} completed - generating specialist output and updated concept`);
+        
+        // Get current concept report for updating
+        const currentConcept = latestConceptReportKeys.length > 0 
+          ? conceptReportVersions[latestConceptReportKeys[latestConceptReportKeys.length - 1]]
+          : "";
+        
+        // For 4x stages, we need to generate an updated concept report that incorporates this stage's expertise
+        const updatePrompt = `Je bent een ${this.getStageDescription(stageName)} specialist. 
+        
+Je hebt zojuist de volgende analyse gemaakt: ${result}
+
+Hier is het huidige concept rapport:
+${currentConcept}
+
+Taak: Integreer jouw expertise naadloos in het concept rapport. Behoud de bestaande structuur maar voeg jouw inzichten toe waar relevant. Geef het bijgewerkte volledige rapport terug.
+
+Houd rekening met:
+- Behoud de bestaande opmaak en structuur
+- Voeg jouw specifieke expertise toe zonder dubbeling
+- Zorg dat het rapport coherent en professioneel blijft
+- Verwijs naar bronnen waar nodig`;
+
+        try {
+          const updateResponse = await ai.models.generateContent({
+            model: aiConfig.model,
+            config: generationConfig,
+            contents: updatePrompt,
+          });
+
+          const updatedConceptReport = updateResponse.text || currentConcept;
+          
+          return {
+            stageOutput: result, // The specialist's specific analysis
+            conceptReport: updatedConceptReport // The updated full concept report
+          };
+        } catch (error) {
+          console.error(`Error updating concept report for ${stageName}:`, error);
+          return {
+            stageOutput: result,
+            conceptReport: currentConcept // Fallback to current version
+          };
+        }
+      }
+      
+      // For other stages (1, 2, final), just return the output as stage output
       console.log(`Stage ${stageName} completed successfully with model ${aiConfig.model}`);
-      return result;
+      return {
+        stageOutput: result,
+        conceptReport: "" // No concept report for non-4x stages
+      };
 
     } catch (error) {
       console.error(`Error in stage ${stageName}:`, error);
       throw new Error(`Fout bij uitvoeren van stap ${stageName}: ${error}`);
     }
+  }
+
+  private getStageDescription(stageName: string): string {
+    const descriptions: Record<string, string> = {
+      "4a_BronnenSpecialist": "bronnen verificatie",
+      "4b_FiscaalTechnischSpecialist": "fiscaal-technische",
+      "4c_ScenarioGatenAnalist": "scenario analyse",
+      "4d_DeVertaler": "communicatie en vertaling",
+      "4e_DeAdvocaat": "juridische compliance",
+      "4f_DeKlantpsycholoog": "klantgerichte communicatie",
+      "4g_ChefEindredactie": "eindredactie en kwaliteitscontrole"
+    };
+    return descriptions[stageName] || "algemene";
   }
 
   async finalizeReport(stageResults: Record<string, string>): Promise<string> {
@@ -149,44 +215,81 @@ export class ReportGenerator {
     return finalCheckResult;
   }
 
-  private getFallbackPromptResult(stageName: string, variables: Record<string, any>): string {
+  private getFallbackPromptResult(stageName: string, variables: Record<string, any>): { stageOutput: string; conceptReport: string } {
     // Temporary fallback until user loads custom prompts
     switch (stageName) {
       case "1_informatiecheck":
-        return `✅ Informatiecheck voltooid voor ${JSON.parse(variables.dossier).klant?.naam}\n\nDossier gevalideerd en bevat alle benodigde informatie voor fiscale analyse.`;
+        return {
+          stageOutput: `✅ Informatiecheck voltooid voor ${JSON.parse(variables.dossier).klant?.naam}\n\nDossier gevalideerd en bevat alle benodigde informatie voor fiscale analyse.`,
+          conceptReport: ""
+        };
       
       case "2_complexiteitscheck":
-        return `✅ Complexiteitscheck voltooid\n\nFiscale situatie geanalyseerd en geschikt bevonden voor gestructureerde rapportage via het 11-stappen proces.`;
+        return {
+          stageOutput: `✅ Complexiteitscheck voltooid\n\nFiscale situatie geanalyseerd en geschikt bevonden voor gestructureerde rapportage via het 11-stappen proces.`,
+          conceptReport: ""
+        };
       
       case "3_generatie":
-        return this.generateBasicReport(variables);
+        const basicReport = this.generateBasicReport(variables);
+        return {
+          stageOutput: "✅ Basis rapport gegenereerd\n\nHet initiële fiscaal duidingsrapport is opgesteld met alle hoofdcomponenten.",
+          conceptReport: basicReport
+        };
         
       case "4a_BronnenSpecialist":
-        return `✅ Bronnenverificatie voltooid\n\nAlle fiscale claims zijn geverifieerd tegen officiële Nederlandse overheidsbronnen (belastingdienst.nl, wetten.overheid.nl, rijksoverheid.nl).`;
+        return {
+          stageOutput: `✅ Bronnenverificatie voltooid\n\nAlle fiscale claims zijn geverifieerd tegen officiële Nederlandse overheidsbronnen (belastingdienst.nl, wetten.overheid.nl, rijksoverheid.nl).`,
+          conceptReport: variables.concept_rapport || ""
+        };
         
       case "4b_FiscaalTechnischSpecialist":
-        return `✅ Fiscaal-technische review voltooid\n\nTechnische fiscale aspecten zijn geverifieerd en alle berekeningen zijn gecontroleerd op juistheid.`;
+        return {
+          stageOutput: `✅ Fiscaal-technische review voltooid\n\nTechnische fiscale aspecten zijn geverifieerd en alle berekeningen zijn gecontroleerd op juistheid.`,
+          conceptReport: variables.concept_rapport || ""
+        };
         
       case "4c_ScenarioGatenAnalist":
-        return `✅ Scenario-analyse voltooid\n\nMogelijke scenario's zijn geïdentificeerd en potentiële hiaten in de analyse zijn opgevuld.`;
+        return {
+          stageOutput: `✅ Scenario-analyse voltooid\n\nMogelijke scenario's zijn geïdentificeerd en potentiële hiaten in de analyse zijn opgevuld.`,
+          conceptReport: variables.concept_rapport || ""
+        };
         
       case "4d_DeVertaler":
-        return `✅ Taaloptimalisatie voltooid\n\nRapport is geoptimaliseerd voor duidelijkheid en begrijpelijkheid voor de eindgebruiker.`;
+        return {
+          stageOutput: `✅ Taaloptimalisatie voltooid\n\nRapport is geoptimaliseerd voor duidelijkheid en begrijpelijkheid voor de eindgebruiker.`,
+          conceptReport: variables.concept_rapport || ""
+        };
         
       case "4e_DeAdvocaat":
-        return `✅ Juridische compliance check voltooid\n\nRapport voldoet aan alle wettelijke vereisten en aansprakelijkheidsrichtlijnen.`;
+        return {
+          stageOutput: `✅ Juridische compliance check voltooid\n\nRapport voldoet aan alle wettelijke vereisten en aansprakelijkheidsrichtlijnen.`,
+          conceptReport: variables.concept_rapport || ""
+        };
         
       case "4f_DeKlantpsycholoog":
-        return `✅ Klantgerichte optimalisatie voltooid\n\nRapport is aangepast voor optimale communicatie en begrip door de klant.`;
+        return {
+          stageOutput: `✅ Klantgerichte optimalisatie voltooid\n\nRapport is aangepast voor optimale communicatie en begrip door de klant.`,
+          conceptReport: variables.concept_rapport || ""
+        };
         
       case "4g_ChefEindredactie":
-        return variables.rapport || this.generateBasicReport(variables);
+        return {
+          stageOutput: `✅ Eindredactie voltooid\n\nRapport is gefinaliseerd en klaar voor presentatie aan de klant.`,
+          conceptReport: variables.concept_rapport || this.generateBasicReport(variables)
+        };
         
       case "final_check":
-        return variables.rapport || this.generateBasicReport(variables);
+        return {
+          stageOutput: `✅ Finale controle voltooid\n\nRapport is goedgekeurd en gereed voor levering.`,
+          conceptReport: variables.concept_rapport || this.generateBasicReport(variables)
+        };
         
       default:
-        return `✅ Stage ${stageName} voltooid\n\nResultaat beschikbaar - configureer custom prompts voor volledige functionaliteit.`;
+        return {
+          stageOutput: `✅ Stage ${stageName} voltooid\n\nResultaat beschikbaar - configureer custom prompts voor volledige functionaliteit.`,
+          conceptReport: ""
+        };
     }
   }
 

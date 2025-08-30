@@ -105,6 +105,7 @@ export class MemStorage implements IStorage {
       status: insertReport.status || "draft",
       generatedContent: insertReport.generatedContent || null,
       stageResults: insertReport.stageResults || null,
+      conceptReportVersions: insertReport.conceptReportVersions || null,
       currentStage: insertReport.currentStage || "1_informatiecheck",
     };
     this.reports.set(id, report);

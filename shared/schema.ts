@@ -16,7 +16,8 @@ export const reports = pgTable("reports", {
   dossierData: json("dossier_data").notNull(),
   bouwplanData: json("bouwplan_data").notNull(),
   generatedContent: text("generated_content"),
-  stageResults: json("stage_results"), // Store results from each prompt stage
+  stageResults: json("stage_results"), // Store stage-specific outputs from each specialist
+  conceptReportVersions: json("concept_report_versions"), // Store evolving concept report through stages
   currentStage: text("current_stage").default("1_informatiecheck"),
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),
@@ -112,6 +113,8 @@ export const insertReportSchema = createInsertSchema(reports).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  conceptReportVersions: z.record(z.string()).optional(),
 });
 
 export const insertSourceSchema = createInsertSchema(sources).omit({
