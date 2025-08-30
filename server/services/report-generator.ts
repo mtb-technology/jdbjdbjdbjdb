@@ -99,7 +99,13 @@ export class ReportGenerator {
       console.log(`Executing stage: ${stageName}`);
       console.log(`Variables available:`, Object.keys(variables));
       console.log(`Current working text length:`, currentWorkingText.length);
-      console.log(`Processed prompt first 200 chars:`, processedPrompt.substring(0, 200));
+      console.log(`Raw prompt template first 300 chars:`, promptTemplate.substring(0, 300));
+      console.log(`Processed prompt first 300 chars:`, processedPrompt.substring(0, 300));
+      
+      // Check if placeholder was actually replaced
+      if (processedPrompt.includes('{{huidige_tekst}}')) {
+        console.log('WARNING: {{huidige_tekst}} placeholder was NOT replaced!');
+      }
       
       // Get AI configuration from prompt config or use defaults
       const aiConfig: AiConfig = prompts.aiConfig || {
