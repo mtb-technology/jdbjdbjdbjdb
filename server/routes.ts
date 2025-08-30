@@ -203,11 +203,25 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           }
         : report.conceptReportVersions;
 
-      const updatedReport = await storage.updateReport(id, {
+      // Special handling for stage 3 (generatie) and specialist stages
+      let updateData: any = {
         stageResults: updatedStageResults,
         conceptReportVersions: updatedConceptVersions,
         currentStage: stage,
-      });
+      };
+
+      // After stage 3 (generatie), make the first report version visible
+      if (stage === '3_generatie' && stageExecution.conceptReport) {
+        updateData.generatedContent = stageExecution.conceptReport;
+        updateData.status = 'generated'; // Mark as having first version
+      }
+      
+      // For specialist stages (4a-4g), continuously update the living report
+      if (stage.startsWith('4') && stageExecution.conceptReport) {
+        updateData.generatedContent = stageExecution.conceptReport;
+      }
+
+      const updatedReport = await storage.updateReport(id, updateData);
 
       res.json({
         report: updatedReport,

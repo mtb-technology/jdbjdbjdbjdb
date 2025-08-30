@@ -115,12 +115,25 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
       setCustomInput("");
       setEditingStage(null);
       
-      // Manual mode: user decides when to advance to next stage
-      
-      toast({
-        title: "Stap voltooid",
-        description: `${WORKFLOW_STAGES[currentStageIndex].label} is succesvol uitgevoerd.`,
-      });
+      // Special messaging for stage 3 - first living report
+      const currentStage = WORKFLOW_STAGES[currentStageIndex];
+      if (currentStage.key === '3_generatie' && data.report.generatedContent) {
+        toast({
+          title: "🎉 Eerste rapport versie gereed!",
+          description: "Het basis fiscaal rapport is aangemaakt en zal nu door specialisten verfijnd worden.",
+          duration: 5000,
+        });
+      } else if (currentStage.key.startsWith('4') && data.report.generatedContent) {
+        toast({
+          title: "📝 Rapport bijgewerkt",
+          description: `${currentStage.label} heeft het rapport verder verfijnd.`,
+        });
+      } else {
+        toast({
+          title: "Stap voltooid",
+          description: `${currentStage.label} is succesvol uitgevoerd.`,
+        });
+      }
     },
     onError: (error: Error) => {
       setIsAutoRunning(false);
@@ -564,6 +577,39 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
                   <pre className="text-sm whitespace-pre-wrap text-muted-foreground">
                     {viewMode === "stage" ? currentStageResult : (conceptReportVersions[currentStage.key] || "Geen concept rapport voor deze stap")}
                   </pre>
+                </div>
+              )}
+
+              {/* Living Report Display - starts from stage 3 */}
+              {currentReport?.generatedContent && currentStageIndex >= 2 && (
+                <div className="mt-6 space-y-3">
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <h4 className="font-medium text-foreground">📄 Levende Rapport</h4>
+                      <Badge variant="outline" className="text-xs">
+                        {currentStageIndex === 2 ? "Eerste versie" : `Bijgewerkt door ${WORKFLOW_STAGES[currentStageIndex].label}`}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center space-x-1 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      <span>Real-time</span>
+                    </div>
+                  </div>
+                  <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4 max-h-96 overflow-y-auto">
+                    <div className="text-xs text-green-700 dark:text-green-400 mb-2 font-medium">
+                      🌱 Dit rapport groeit en verbetert met elke specialist stap
+                    </div>
+                    <div 
+                      className="prose prose-sm max-w-none text-sm"
+                      dangerouslySetInnerHTML={{ __html: currentReport.generatedContent }}
+                    />
+                  </div>
+                  {currentStageIndex === 2 && (
+                    <p className="text-xs text-green-600 dark:text-green-400">
+                      ✨ Gefeliciteerd! Je eerste rapport versie is klaar. De volgende stappen zullen dit rapport verder verfijnen en verbeteren.
+                    </p>
+                  )}
                 </div>
               )}
 
