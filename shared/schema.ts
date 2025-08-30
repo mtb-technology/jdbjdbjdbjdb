@@ -46,7 +46,7 @@ export const sources = pgTable("sources", {
 export const dossierSchema = z.object({
   klant: z.object({
     naam: z.string().min(1, "Naam is verplicht"),
-    bsn: z.string().optional(),
+    bsn: z.string().nullable().optional(),
     situatie: z.string().min(1, "Situatie is verplicht"),
   }),
   fiscale_gegevens: z.object({

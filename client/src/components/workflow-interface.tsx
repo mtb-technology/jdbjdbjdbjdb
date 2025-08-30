@@ -102,7 +102,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
       if (data.conceptReport) {
         setConceptReportVersions(prev => ({
           ...prev,
-          [WORKFLOW_STAGES[currentStageIndex].key]: data.conceptReport
+          [WORKFLOW_STAGES[currentStageIndex].key]: data.conceptReport as string
         }));
       }
       
