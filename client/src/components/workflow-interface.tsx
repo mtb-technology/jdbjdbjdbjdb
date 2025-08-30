@@ -21,66 +21,78 @@ import {
 } from "lucide-react";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
-// Format plain text/markdown to proper HTML
+// Format plain text/markdown to professional fiscal report HTML - ONLY styling, no structure changes
 function formatReportContent(content: string): string {
   if (!content) return "";
   
-  // Remove AI chatter at the beginning
-  let cleanContent = content.replace(/^[\s\S]*?(?:---\s*)?(?:\*\*Aan\*\*:|Aan:)/, '**Aan**:');
-  
-  // If no proper start found, try to find the main content
-  if (cleanContent === content) {
-    // Look for report-like content
-    const reportStart = content.search(/(?:Geachte|Beste|.*rapport|.*analyse)/i);
-    if (reportStart > 0) {
-      cleanContent = content.substring(reportStart);
-    }
-  }
-  
-  return cleanContent
-    // Headers
-    .replace(/^### (.+)$/gm, '<h3 class="text-lg font-bold text-gray-900 mt-6 mb-3 border-b border-gray-200 pb-2">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold text-gray-900 mt-8 mb-4 border-b-2 border-blue-200 pb-2">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold text-gray-900 mt-8 mb-6">$1</h1>')
+  // Just apply styling to whatever content comes from AI - no structural changes
+  return content
+    // Headers - professional styling without changing structure
+    .replace(/^#{3}\s+(.+)$/gm, '<h3 class="text-lg font-bold text-gray-900 mt-8 mb-3 border-b border-gray-300 pb-2">$1</h3>')
+    .replace(/^#{2}\s+(.+)$/gm, '<h2 class="text-xl font-bold text-gray-900 mt-10 mb-4 border-b-2 border-blue-600 pb-3">$1</h2>')
+    .replace(/^#{1}\s+(.+)$/gm, '<h1 class="text-2xl font-bold text-gray-900 mt-10 mb-6">$1</h1>')
     
-    // Bold text
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
+    // Special title patterns from PDF
+    .replace(/^(Fiscale Analyse.*?)$/m, '<h1 class="text-3xl font-bold text-gray-900 mb-4 text-center">$1</h1>')
+    .replace(/^(Uw vraag beantwoord)$/gm, '<h2 class="text-xl font-bold text-gray-900 mt-10 mb-4 text-blue-700">$1</h2>')
     
-    // Italic text  
-    .replace(/\*(.+?)\*/g, '<em class="italic text-gray-700">$1</em>')
+    // Bold and italic
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-gray-900">$1</strong>')
+    .replace(/\*([^\*]+?)\*/g, '<em class="italic text-gray-700">$1</em>')
     
-    // Lists
-    .replace(/^[\*\-\+] (.+)$/gm, '<li class="ml-4 mb-1">• $1</li>')
-    .replace(/(<li.*<\/li>\s*)+/g, '<ul class="mb-4 space-y-1">$&</ul>')
+    // Bullet lists - professional indentation
+    .replace(/^[\*\-•]\s+(.+)$/gm, '<li class="ml-8 mb-2 text-gray-700 leading-relaxed">$1</li>')
+    .replace(/(<li class="ml-8.*?<\/li>\s*)+/g, '<ul class="mb-6 list-disc list-outside pl-2">$&</ul>')
     
-    // Numbered lists
-    .replace(/^\d+\.\s(.+)$/gm, '<li class="ml-4 mb-1">$1</li>')
-    .replace(/(<li class="ml-4 mb-1">(?!•).+<\/li>\s*)+/g, '<ol class="mb-4 space-y-1 list-decimal list-inside">$&</ol>')
+    // Numbered lists  
+    .replace(/^\d+\.\s+(.+)$/gm, '<li class="ml-8 mb-2 text-gray-700 leading-relaxed">$1</li>')
+    .replace(/(<li class="ml-8(?!.*list-disc).*?<\/li>\s*)+/g, '<ol class="mb-6 list-decimal list-outside pl-2">$&</ol>')
     
-    // Paragraphs (double line breaks)
-    .replace(/\n\n+/g, '</p><p class="mb-4 text-gray-800 leading-relaxed">')
-    .replace(/^(.)/gm, '<p class="mb-4 text-gray-800 leading-relaxed">$1')
-    .replace(/$(.)/gm, '$1</p>')
+    // Tables - professional table styling
+    .replace(/\|([^\n]+)\|/g, (match) => {
+      const cells = match.split('|').filter(c => c.trim());
+      if (cells.some(c => c.includes('---'))) return ''; // Skip separator rows
+      
+      const isFirstRow = !match.includes('<tr');
+      const cellTag = isFirstRow ? 'th' : 'td';
+      const cellClass = isFirstRow 
+        ? 'border border-gray-300 px-4 py-3 text-left font-semibold bg-gray-100'
+        : 'border border-gray-300 px-4 py-3 text-sm';
+      
+      const cellHtml = cells.map(cell => 
+        `<${cellTag} class="${cellClass}">${cell.trim()}</${cellTag}>`
+      ).join('');
+      return `<tr>${cellHtml}</tr>`;
+    })
+    .replace(/(<tr>.*?<\/tr>\s*)+/g, '<table class="w-full mb-8 border-collapse shadow-sm"><tbody>$&</tbody></table>')
     
-    // Clean up multiple paragraph tags
-    .replace(/<\/p><p[^>]*><\/p>/g, '</p>')
-    .replace(/^<p[^>]*><\/p>/, '')
+    // Important notes/warnings
+    .replace(/^(?:Let op|Belangrijk|Aandachtspunt|Note|Opmerking):\s*(.+)$/gm, 
+      '<div class="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-r"><p class="text-amber-900 font-medium">⚠️ Let op: $1</p></div>')
     
-    // Blockquotes (lines starting with >)
-    .replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-blue-500 pl-4 py-2 bg-blue-50 text-gray-700 italic mb-4">$1</blockquote>')
+    // Special sections boxes
+    .replace(/^(Belangrijke kennisgeving):\s*(.+)$/gm, 
+      '<div class="bg-blue-50 border-l-4 border-blue-600 p-5 mb-6 rounded-r"><h3 class="font-bold text-blue-900 mb-2">$1</h3><p class="text-blue-800">$2</p></div>')
     
-    // Horizontal rules
-    .replace(/^---+$/gm, '<hr class="my-6 border-t border-gray-300">')
+    // Calculation steps
+    .replace(/^(Stap \d+):\s*(.+)$/gm, 
+      '<div class="bg-gray-50 border-l-4 border-gray-400 pl-4 py-3 mb-4"><strong class="text-gray-800">$1:</strong> <span class="text-gray-700">$2</span></div>')
     
-    // Clean up any remaining markdown artifacts
-    .replace(/```[\s\S]*?```/g, '<pre class="bg-gray-100 p-4 rounded text-sm font-mono mb-4 overflow-x-auto">$&</pre>')
-    .replace(/```/g, '')
+    // Money amounts - make them stand out
+    .replace(/€\s*(\d+(?:[.,]\d+)*)/g, '<span class="font-semibold text-green-700">€ $1</span>')
     
-    // Email formatting
-    .replace(/^(Aan|Van|Datum|Betreft):\s*(.+)$/gm, '<div class="mb-2"><span class="font-medium text-gray-700">$1:</span> <span class="text-gray-900">$2</span></div>')
+    // Paragraphs - only apply to plain text blocks
+    .split('\n\n').map(block => {
+      // Don't wrap if already has HTML tags or is a list/header
+      if (block.trim() && !block.includes('<') && !block.match(/^[\*\-\d#•]/)) {
+        return `<p class="mb-6 text-gray-700 leading-relaxed text-justify">${block.trim()}</p>`;
+      }
+      return block;
+    }).join('\n\n')
     
-    // Clean up any empty paragraphs
-    .replace(/<p[^>]*>\s*<\/p>/g, '');
+    // Clean up empty tags
+    .replace(/<p[^>]*>\s*<\/p>/g, '')
+    .replace(/<\/p>\s*<p/g, '</p>\n\n<p');
 }
 
 const WORKFLOW_STAGES = [
