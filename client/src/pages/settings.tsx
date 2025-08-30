@@ -485,7 +485,7 @@ const Settings = memo(function Settings() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {AI_MODELS[aiConfig.provider].map((model) => (
+                  {aiConfig.provider && AI_MODELS[aiConfig.provider] && AI_MODELS[aiConfig.provider].map((model) => (
                     <SelectItem key={model.value} value={model.value}>
                       <div className="flex items-center space-x-2">
                         <Brain className="h-4 w-4" />
