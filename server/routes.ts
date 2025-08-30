@@ -4,6 +4,8 @@ import { storage } from "./storage";
 import { ReportGenerator } from "./services/report-generator";
 import { SourceValidator } from "./services/source-validator";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
+import type { DossierData, BouwplanData } from "@shared/schema";
+import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 
 const generateReportSchema = z.object({
@@ -15,6 +17,99 @@ const generateReportSchema = z.object({
 export async function registerRoutes(app: Express): Promise<Server> {
   const reportGenerator = new ReportGenerator();
   const sourceValidator = new SourceValidator();
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+
+  // Extract dossier data from raw text using AI
+  app.post("/api/extract-dossier", async (req, res) => {
+    try {
+      const { rawText } = req.body;
+      
+      if (!rawText || typeof rawText !== 'string') {
+        res.status(400).json({ message: "Tekst is verplicht" });
+        return;
+      }
+
+      const extractionPrompt = `Extraheer uit de volgende tekst de belangrijkste klant- en fiscale gegevens en structureer deze in JSON formaat.
+
+Gegeven tekst:
+${rawText}
+
+Extraheer de volgende informatie:
+
+1. KLANT GEGEVENS:
+- naam: Volledige naam van de klant
+- bsn: BSN indien vermeld (optioneel)  
+- situatie: Korte samenvatting van de fiscale situatie/vraag
+
+2. FISCALE GEGEVENS:
+- vermogen: Geschat vermogen in euro's (gebruik 0 als niet bekend)
+- inkomsten: Geschat jaarinkomen in euro's (gebruik 0 als niet bekend)
+
+3. RAPPORT STRUCTUUR:
+- Bepaal welke knelpunten/problemen er zijn (minimaal 1)
+
+Geef het resultaat terug als JSON in dit exacte formaat:
+{
+  "dossier": {
+    "klant": {
+      "naam": "...",
+      "bsn": "..." of null,
+      "situatie": "..."
+    },
+    "fiscale_gegevens": {
+      "vermogen": 0,
+      "inkomsten": 0
+    }
+  },
+  "bouwplan": {
+    "taal": "nl",
+    "structuur": {
+      "inleiding": true,
+      "knelpunten": ["knelpunt 1", "knelpunt 2"],
+      "scenario_analyse": true,
+      "vervolgstappen": true
+    }
+  }
+}
+
+ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-pro",
+        config: {
+          temperature: 0.1,
+          topP: 0.95,
+          topK: 20,
+          maxOutputTokens: 2048,
+          responseMimeType: "application/json",
+        },
+        contents: extractionPrompt,
+      });
+
+      const extractedJson = response.text?.trim();
+      if (!extractedJson) {
+        res.status(500).json({ message: "Geen data geëxtraheerd" });
+        return;
+      }
+
+      const parsedData = JSON.parse(extractedJson);
+      
+      // Validate extracted data against schemas
+      const validatedDossier = dossierSchema.parse(parsedData.dossier);
+      const validatedBouwplan = bouwplanSchema.parse(parsedData.bouwplan);
+
+      res.json({
+        dossier: validatedDossier,
+        bouwplan: validatedBouwplan,
+      });
+
+    } catch (error) {
+      console.error("Error extracting dossier data:", error);
+      res.status(500).json({ 
+        message: "Fout bij extraheren van dossiergegevens uit tekst" 
+      });
+    }
+  });
 
   // Create new report (start workflow)
   app.post("/api/reports/create", async (req, res) => {

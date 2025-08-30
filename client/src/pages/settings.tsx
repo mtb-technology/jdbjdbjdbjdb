@@ -45,7 +45,6 @@ export default function Settings() {
     topP: 0.95,
     topK: 20,
     maxOutputTokens: 2048,
-    useGrounding: true,
   });
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -168,14 +167,39 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-background">
+      
+      {/* Header */}
+      <header className="border-b border-border bg-card shadow-sm">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <SettingsIcon className="text-2xl text-primary mr-3 h-8 w-8" />
+                <span className="text-xl font-bold text-foreground">Instellingen</span>
+              </div>
+              <nav className="hidden md:ml-10 md:flex md:space-x-8">
+                <a href="/" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
+                  Pipeline
+                </a>
+                <a href="/dashboard" className="text-muted-foreground hover:text-foreground" data-testid="nav-dashboard">
+                  Dashboard
+                </a>
+                <a href="/settings" className="text-primary font-medium" data-testid="nav-settings">
+                  Instellingen
+                </a>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </header>
+
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* Header */}
+        {/* Page Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-foreground flex items-center">
-                <SettingsIcon className="mr-3 h-8 w-8 text-primary" />
+              <h1 className="text-3xl font-bold text-foreground">
                 Prompt Configuratie
               </h1>
               <p className="text-muted-foreground mt-2">

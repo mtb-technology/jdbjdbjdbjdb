@@ -17,14 +17,14 @@ export default function Dashboard() {
                 <span className="text-xl font-bold text-foreground">De Fiscale Analist</span>
               </div>
               <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <a href="/" className="text-primary font-medium" data-testid="nav-dashboard">
+                <a href="/" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
+                  Pipeline
+                </a>
+                <a href="/dashboard" className="text-primary font-medium" data-testid="nav-dashboard">
                   Dashboard
                 </a>
                 <a href="#" className="text-muted-foreground hover:text-foreground" data-testid="nav-reports">
                   Rapporten
-                </a>
-                <a href="#" className="text-muted-foreground hover:text-foreground" data-testid="nav-sources">
-                  Bronnen
                 </a>
                 <a href="/settings" className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
                   Instellingen
