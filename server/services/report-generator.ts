@@ -132,24 +132,36 @@ export class ReportGenerator {
       // Combine prompt with input text - prompt gives instructions, currentWorkingText is the data to process
       const fullInput = `${processedPrompt}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
       
-      const response = await ai.models.generateContent({
-        model: aiConfig.model,
-        config: generationConfig,
-        contents: fullInput,
-      });
-
-      const result = response.text || "";
-      
-      if (!result) {
-        throw new Error(`Geen response van AI voor stage ${stageName}`);
+      // Correct syntax for @google/genai v1.16
+      try {
+        console.log(`Making AI call with model: ${aiConfig.model}`);
+        
+        // Use the correct API method
+        const model = (ai as any).getGenerativeModel({ model: aiConfig.model });
+        const response = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: fullInput }] }],
+          generationConfig: generationConfig
+        });
+        
+        const result = response.response.text() || "";
+        console.log(`AI response received, length: ${result.length}`);
+        
+        if (!result) {
+          console.log('Empty response from AI');
+          throw new Error(`Lege response van AI voor stage ${stageName}`);
+        }
+        
+        console.log(`Stage ${stageName} completed successfully`);
+        return {
+          stageOutput: result,
+          conceptReport: ""
+        };
+        
+      } catch (aiError: any) {
+        console.error(`AI API Error for ${stageName}:`, aiError.message);
+        throw new Error(`AI fout in stap ${stageName}: ${aiError.message}`);
       }
-
-      // Simpel: gewoon de ruwe AI output retourneren
-      console.log(`Stage ${stageName} completed`);
-      return {
-        stageOutput: result, // Ruwe AI output wordt input voor volgende stap
-        conceptReport: null
-      };
+      
 
     } catch (error) {
       console.error(`Error in stage ${stageName}:`, error);
