@@ -26,7 +26,7 @@ function formatReportContent(content: string): string {
   if (!content) return "";
   
   // Remove AI chatter at the beginning
-  let cleanContent = content.replace(/^.*?(?:---\s*)?(?:\*\*Aan\*\*:|Aan:)/s, '**Aan**:');
+  let cleanContent = content.replace(/^[\s\S]*?(?:---\s*)?(?:\*\*Aan\*\*:|Aan:)/, '**Aan**:');
   
   // If no proper start found, try to find the main content
   if (cleanContent === content) {
@@ -51,11 +51,11 @@ function formatReportContent(content: string): string {
     
     // Lists
     .replace(/^[\*\-\+] (.+)$/gm, '<li class="ml-4 mb-1">• $1</li>')
-    .replace(/(<li.*<\/li>\s*)+/gs, '<ul class="mb-4 space-y-1">$&</ul>')
+    .replace(/(<li.*<\/li>\s*)+/g, '<ul class="mb-4 space-y-1">$&</ul>')
     
     // Numbered lists
     .replace(/^\d+\.\s(.+)$/gm, '<li class="ml-4 mb-1">$1</li>')
-    .replace(/(<li class="ml-4 mb-1">(?!•).+<\/li>\s*)+/gs, '<ol class="mb-4 space-y-1 list-decimal list-inside">$&</ol>')
+    .replace(/(<li class="ml-4 mb-1">(?!•).+<\/li>\s*)+/g, '<ol class="mb-4 space-y-1 list-decimal list-inside">$&</ol>')
     
     // Paragraphs (double line breaks)
     .replace(/\n\n+/g, '</p><p class="mb-4 text-gray-800 leading-relaxed">')

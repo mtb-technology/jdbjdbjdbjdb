@@ -66,11 +66,25 @@ export default function CaseDetail() {
     }
   };
 
-  const getStatusLabel = (status: string) => {
+  const getStatusLabel = (status: string, report?: any) => {
     switch (status) {
       case "draft": return "Concept";
       case "processing": return "In Behandeling";
-      case "generated": return "Gegenereerd";
+      case "generated": {
+        // Calculate progress based on completed stages
+        if (report?.stageResults) {
+          const completedStages = Object.keys(report.stageResults).length;
+          const totalStages = 11; // 11 workflow stages
+          const percentage = Math.round((completedStages / totalStages) * 100);
+          
+          if (completedStages >= 3) {
+            return `Stap ${completedStages}/11 (${percentage}%)`;
+          } else {
+            return `Wordt gegenereerd... ${completedStages}/11`;
+          }
+        }
+        return "Gegenereerd";
+      }
       case "exported": return "Geëxporteerd";
       case "archived": return "Gearchiveerd";
       default: return status;
@@ -98,7 +112,7 @@ export default function CaseDetail() {
               <span>{report.title}</span>
             </CardTitle>
             <Badge className={getStatusColor(report.status)} data-testid="badge-case-status">
-              {getStatusLabel(report.status)}
+              {getStatusLabel(report.status, report)}
             </Badge>
           </div>
         </CardHeader>

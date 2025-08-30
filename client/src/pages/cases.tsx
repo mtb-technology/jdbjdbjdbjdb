@@ -82,11 +82,25 @@ export default function Cases() {
     }
   };
 
-  const getStatusText = (status: string) => {
+  const getStatusText = (status: string, report?: any) => {
     switch (status) {
       case "draft": return "Concept";
       case "processing": return "Bezig";
-      case "generated": return "Rapport Groeit";
+      case "generated": {
+        // Calculate progress based on completed stages
+        if (report?.stageResults) {
+          const completedStages = Object.keys(report.stageResults).length;
+          const totalStages = 11; // 11 workflow stages
+          const percentage = Math.round((completedStages / totalStages) * 100);
+          
+          if (completedStages >= 3) {
+            return `Stap ${completedStages}/11 (${percentage}%)`;
+          } else {
+            return `Wordt gegenereerd... ${completedStages}/11`;
+          }
+        }
+        return "Rapport Groeit";
+      }
       case "exported": return "Voltooid";
       case "archived": return "Gearchiveerd";
       default: return status;
@@ -229,7 +243,7 @@ export default function Cases() {
                       <div className="flex items-center gap-3 mb-2">
                         <h3 className="text-lg font-semibold">{case_.title}</h3>
                         <Badge variant={getStatusColor(case_.status)}>
-                          {getStatusText(case_.status)}
+                          {getStatusText(case_.status, case_)}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-6 text-sm text-muted-foreground">
