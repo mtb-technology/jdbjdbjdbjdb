@@ -401,63 +401,39 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   const currentStageResult = stageResults[currentStage.key];
   const progressPercentage = (Object.keys(stageResults).length / WORKFLOW_STAGES.length) * 100;
 
-  if (!currentReport) {
-    return (
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Clock className="mr-2 h-5 w-5 text-primary animate-spin" />
-              Workflow wordt opgestart...
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <p className="text-muted-foreground">
-                Het systeem maakt een nieuwe case aan en start automatisch met stap 1...
-              </p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div>
-                  <strong>Klant:</strong> {dossier.klant.naam}
-                </div>
-                <div>
-                  <strong>Situatie:</strong> {dossier.klant.situatie}
-                </div>
-                <div>
-                  <strong>Taal:</strong> {bouwplan.taal === 'nl' ? 'Nederlands' : 'Engels'}
-                </div>
-              </div>
-              
-              <div className="bg-muted/50 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-sm">Case wordt aangemaakt...</span>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      sessionStorage.removeItem('current-workflow-report-id');
-                      window.location.reload();
-                    }}
-                    data-testid="button-reset-workflow"
-                  >
-                    <RotateCcw className="mr-1 h-3 w-3" />
-                    Reset
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Show case creation status if no current report yet
+  const isCreatingCase = !currentReport && createReportMutation.isPending;
 
   return (
     <div className="space-y-6">
+      
+      {/* Case Creation Status */}
+      {isCreatingCase && (
+        <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <div>
+                <p className="font-medium text-blue-700 dark:text-blue-300">Case wordt aangemaakt...</p>
+                <p className="text-sm text-blue-600 dark:text-blue-400">Workflow start automatisch zodra de case gereed is</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto"
+                onClick={() => {
+                  sessionStorage.removeItem('current-workflow-report-id');
+                  window.location.reload();
+                }}
+                data-testid="button-reset-workflow"
+              >
+                <RotateCcw className="mr-1 h-3 w-3" />
+                Reset
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       
       {/* Professional Document Artifact */}
       {currentReport?.generatedContent && (
@@ -727,12 +703,26 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
             <div className="space-y-3">
               <Button
                 onClick={executeCurrentStage}
-                disabled={executeStageM.isPending}
+                disabled={executeStageM.isPending || isCreatingCase}
                 className="w-full bg-primary"
                 data-testid="button-execute-stage"
               >
-                <Play className="mr-2 h-4 w-4" />
-                {executeStageM.isPending ? "Uitvoeren..." : `Voer ${currentStage.label} Uit`}
+                {executeStageM.isPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                    AI bezig...
+                  </>
+                ) : isCreatingCase ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2"></div>
+                    Case wordt aangemaakt...
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-4 w-4" />
+                    Voer {currentStage.label} Uit
+                  </>
+                )}
               </Button>
               
               <p className="text-xs text-muted-foreground text-center">
@@ -788,7 +778,7 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
                     variant="outline"
                     size="sm"
                     onClick={executeCurrentStage}
-                    disabled={executeStageM.isPending}
+                    disabled={executeStageM.isPending || isCreatingCase}
                     data-testid="button-rerun-stage"
                   >
                     <RotateCcw className="mr-1 h-3 w-3" />
