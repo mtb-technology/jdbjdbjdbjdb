@@ -433,9 +433,31 @@ const Settings = memo(function Settings() {
                           <Select
                             value={stageConfig?.aiConfig?.provider || aiConfig.provider}
                             onValueChange={(value: "google" | "openai") => {
+                              if (!activeConfig) return;
+                              
                               const defaultModel = value === "google" ? "gemini-2.5-pro" : "gpt-4o";
-                              handleStageAiConfigChange(stage.key, "provider", value);
-                              handleStageAiConfigChange(stage.key, "model", defaultModel);
+                              const currentStageConfig = activeConfig[stage.key as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+                              const currentAiConfig = currentStageConfig?.aiConfig || {
+                                provider: aiConfig.provider,
+                                model: aiConfig.model,
+                                temperature: aiConfig.temperature,
+                                topP: aiConfig.topP,
+                                topK: aiConfig.topK,
+                                maxOutputTokens: aiConfig.maxOutputTokens,
+                              };
+                              
+                              setActiveConfig({
+                                ...activeConfig,
+                                [stage.key]: {
+                                  ...currentStageConfig,
+                                  useGrounding: value === "google" ? (currentStageConfig?.useGrounding || false) : false,
+                                  aiConfig: {
+                                    ...currentAiConfig,
+                                    provider: value,
+                                    model: defaultModel,
+                                  },
+                                },
+                              });
                             }}
                             data-testid={`select-stage-provider-${stage.key}`}
                           >
