@@ -97,6 +97,9 @@ export class ReportGenerator {
 
     try {
       console.log(`Executing stage: ${stageName}`);
+      console.log(`Variables available:`, Object.keys(variables));
+      console.log(`Current working text length:`, currentWorkingText.length);
+      console.log(`Processed prompt first 200 chars:`, processedPrompt.substring(0, 200));
       
       // Get AI configuration from prompt config or use defaults
       const aiConfig: AiConfig = prompts.aiConfig || {
