@@ -1,4 +1,4 @@
-import type { DossierData, BouwplanData, PromptConfig, AiConfig } from "@shared/schema";
+import type { DossierData, BouwplanData, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 import { SourceValidator } from "./source-validator";
 import { GoogleGenAI } from "@google/genai";
 import { storage } from "../storage";
@@ -41,7 +41,9 @@ export class ReportGenerator {
     }
 
     const prompts = promptConfig.config as PromptConfig;
-    const promptTemplate = prompts[stageName as keyof Omit<PromptConfig, 'aiConfig'>] as string;
+    const stageConfig = prompts[stageName as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+    const promptTemplate = stageConfig.prompt || "";
+    const useStageGrounding = stageConfig.useGrounding || false;
 
     if (!promptTemplate || promptTemplate.startsWith("PLACEHOLDER:")) {
       console.warn(`Stage ${stageName} heeft nog geen custom prompt, gebruik fallback`);
@@ -94,8 +96,8 @@ export class ReportGenerator {
         maxOutputTokens: aiConfig.maxOutputTokens,
       };
 
-      // Add grounding for research-like capabilities if enabled
-      if (aiConfig.useGrounding) {
+      // Add grounding for research-like capabilities if enabled for this stage
+      if (useStageGrounding) {
         generationConfig.tools = [{ google_search: {} }];
       }
       

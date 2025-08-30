@@ -21,7 +21,7 @@ import {
   Zap,
   Search
 } from "lucide-react";
-import type { PromptConfigRecord, PromptConfig, AiConfig } from "@shared/schema";
+import type { PromptConfigRecord, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 
 const PROMPT_STAGES = [
   { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Validatie en opslag dossier" },
@@ -91,9 +91,28 @@ export default function Settings() {
   const handlePromptChange = (stageKey: string, value: string) => {
     if (!activeConfig) return;
     
+    const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+    
     setActiveConfig({
       ...activeConfig,
-      [stageKey]: value,
+      [stageKey]: {
+        ...currentStageConfig,
+        prompt: value,
+      },
+    });
+  };
+
+  const handleGroundingChange = (stageKey: string, useGrounding: boolean) => {
+    if (!activeConfig) return;
+    
+    const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+    
+    setActiveConfig({
+      ...activeConfig,
+      [stageKey]: {
+        ...currentStageConfig,
+        useGrounding,
+      },
     });
   };
 
@@ -125,9 +144,10 @@ export default function Settings() {
   const getCompletionStats = () => {
     if (!activeConfig) return { completed: 0, total: PROMPT_STAGES.length };
     
-    const completed = PROMPT_STAGES.filter(stage => 
-      !isPromptEmpty(activeConfig[stage.key as keyof PromptConfig] as string)
-    ).length;
+    const completed = PROMPT_STAGES.filter(stage => {
+      const stageConfig = activeConfig[stage.key as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+      return !isPromptEmpty(stageConfig?.prompt || "");
+    }).length;
     
     return { completed, total: PROMPT_STAGES.length };
   };
@@ -196,7 +216,9 @@ export default function Settings() {
         {/* Prompt Stages */}
         <div className="grid gap-6">
           {PROMPT_STAGES.map((stage, index) => {
-            const prompt = (activeConfig?.[stage.key as keyof PromptConfig] as string) || "";
+            const stageConfig = activeConfig?.[stage.key as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+            const prompt = stageConfig?.prompt || "";
+            const useGrounding = stageConfig?.useGrounding || false;
             const isEmpty = isPromptEmpty(prompt);
             
             return (
@@ -226,17 +248,38 @@ export default function Settings() {
                 </CardHeader>
                 
                 <CardContent>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">
-                      Prompt Template (gebruik {"{{variabele}}"} voor vervangingen)
-                    </Label>
-                    <Textarea
-                      value={prompt}
-                      onChange={(e) => handlePromptChange(stage.key, e.target.value)}
-                      className="font-mono text-sm min-h-32"
-                      placeholder={`Voer hier de ${stage.label} prompt in...\n\nBeschikbare variabelen:\n- ${"{{datum}}"} - Huidige datum\n- ${"{{dossier}}"} - Klant dossier JSON\n- ${"{{bouwplan}}"} - Rapport structuur JSON\n- ${"{{rapport}}"} - Vorige stage resultaat (vanaf stage 4)`}
-                      data-testid={`textarea-prompt-${stage.key}`}
-                    />
+                  <div className="space-y-4">
+                    
+                    {/* Grounding Toggle per Stage */}
+                    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                      <div className="space-y-1">
+                        <Label className="text-sm font-medium flex items-center">
+                          <Search className="mr-2 h-4 w-4" />
+                          Google Search Grounding voor deze stap
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Zoekt actuele informatie online tijdens deze prompt stap
+                        </p>
+                      </div>
+                      <Switch
+                        checked={useGrounding}
+                        onCheckedChange={(checked) => handleGroundingChange(stage.key, checked)}
+                        data-testid={`switch-grounding-${stage.key}`}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">
+                        Prompt Template (gebruik {"{{variabele}}"} voor vervangingen)
+                      </Label>
+                      <Textarea
+                        value={prompt}
+                        onChange={(e) => handlePromptChange(stage.key, e.target.value)}
+                        className="font-mono text-sm min-h-32"
+                        placeholder={`Voer hier de ${stage.label} prompt in...\n\nBeschikbare variabelen:\n- ${"{{datum}}"} - Huidige datum\n- ${"{{dossier}}"} - Klant dossier JSON\n- ${"{{bouwplan}}"} - Rapport structuur JSON\n- ${"{{rapport}}"} - Vorige stage resultaat (vanaf stage 4)`}
+                        data-testid={`textarea-prompt-${stage.key}`}
+                      />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -359,34 +402,17 @@ export default function Settings() {
               </div>
             </div>
 
-            {/* Google Search Grounding */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label className="text-sm font-medium">Google Search Grounding</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Alternatief voor Deep Research - zoekt actuele informatie online
-                  </p>
-                </div>
-                <Switch
-                  checked={aiConfig.useGrounding}
-                  onCheckedChange={(checked) => handleAiConfigChange("useGrounding", checked)}
-                  data-testid="switch-grounding"
-                />
-              </div>
-            </div>
-
             {/* Deep Research Info */}
             <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
               <div className="flex items-start space-x-3">
                 <Search className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
                 <div>
                   <h4 className="font-medium text-green-900 dark:text-green-100 mb-1">
-                    Research Functionaliteit 
+                    Per-Stage Research Grounding 
                   </h4>
                   <p className="text-sm text-green-700 dark:text-green-300">
-                    Google Search grounding is nu actief als alternatief voor Deep Research. 
-                    Dit geeft Gemini toegang tot actuele fiscale informatie van betrouwbare bronnen.
+                    Google Search grounding is nu per prompt stap instelbaar. 
+                    Elke stap heeft een eigen toggle voor research functionaliteit.
                   </p>
                 </div>
               </div>

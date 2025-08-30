@@ -72,22 +72,27 @@ export const aiConfigSchema = z.object({
   topP: z.number().min(0).max(1).default(0.95),
   topK: z.number().min(1).max(40).default(20),
   maxOutputTokens: z.number().min(100).max(8192).default(2048),
-  useGrounding: z.boolean().default(true), // Google Search grounding als Deep Research alternatief
 });
 
-// Multi-stage prompting workflow schema
+// Stage-specific configuration
+export const stageConfigSchema = z.object({
+  prompt: z.string().default(""),
+  useGrounding: z.boolean().default(false),
+});
+
+// Multi-stage prompting workflow schema  
 export const promptConfigSchema = z.object({
-  "1_informatiecheck": z.string().default(""),
-  "2_complexiteitscheck": z.string().default(""),
-  "3_generatie": z.string().default(""),
-  "4a_BronnenSpecialist": z.string().default(""),
-  "4b_FiscaalTechnischSpecialist": z.string().default(""),
-  "4c_ScenarioGatenAnalist": z.string().default(""),
-  "4d_DeVertaler": z.string().default(""),
-  "4e_DeAdvocaat": z.string().default(""),
-  "4f_DeKlantpsycholoog": z.string().default(""),
-  "4g_ChefEindredactie": z.string().default(""),
-  "final_check": z.string().default(""),
+  "1_informatiecheck": stageConfigSchema.default({ prompt: "", useGrounding: false }),
+  "2_complexiteitscheck": stageConfigSchema.default({ prompt: "", useGrounding: false }),
+  "3_generatie": stageConfigSchema.default({ prompt: "", useGrounding: true }),
+  "4a_BronnenSpecialist": stageConfigSchema.default({ prompt: "", useGrounding: true }),
+  "4b_FiscaalTechnischSpecialist": stageConfigSchema.default({ prompt: "", useGrounding: true }),
+  "4c_ScenarioGatenAnalist": stageConfigSchema.default({ prompt: "", useGrounding: true }),
+  "4d_DeVertaler": stageConfigSchema.default({ prompt: "", useGrounding: false }),
+  "4e_DeAdvocaat": stageConfigSchema.default({ prompt: "", useGrounding: true }),
+  "4f_DeKlantpsycholoog": stageConfigSchema.default({ prompt: "", useGrounding: false }),
+  "4g_ChefEindredactie": stageConfigSchema.default({ prompt: "", useGrounding: false }),
+  "final_check": stageConfigSchema.default({ prompt: "", useGrounding: false }),
   aiConfig: aiConfigSchema.optional(),
 });
 
@@ -131,5 +136,6 @@ export type DossierData = z.infer<typeof dossierSchema>;
 export type BouwplanData = z.infer<typeof bouwplanSchema>;
 export type PromptConfig = z.infer<typeof promptConfigSchema>;
 export type AiConfig = z.infer<typeof aiConfigSchema>;
+export type StageConfig = z.infer<typeof stageConfigSchema>;
 export type ReportStage = z.infer<typeof reportStageSchema>;
 export type PromptConfigRecord = typeof promptConfigs.$inferSelect;
