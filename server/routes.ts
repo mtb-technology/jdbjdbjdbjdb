@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { ReportGenerator } from "./services/report-generator";
 import { SourceValidator } from "./services/source-validator";
-import { dossierSchema, bouwplanSchema } from "@shared/schema";
+import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
 import { z } from "zod";
 
 const generateReportSchema = z.object({
@@ -104,6 +104,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching sources:", error);
       res.status(500).json({ message: "Fout bij ophalen bronnen" });
+    }
+  });
+
+  // Prompt configuration endpoints
+  app.get("/api/prompts", async (req, res) => {
+    try {
+      const prompts = await storage.getAllPromptConfigs();
+      res.json(prompts);
+    } catch (error) {
+      console.error("Error fetching prompt configs:", error);
+      res.status(500).json({ message: "Fout bij ophalen prompt configuraties" });
+    }
+  });
+
+  app.get("/api/prompts/active", async (req, res) => {
+    try {
+      const activeConfig = await storage.getActivePromptConfig();
+      res.json(activeConfig);
+    } catch (error) {
+      console.error("Error fetching active prompt config:", error);
+      res.status(500).json({ message: "Fout bij ophalen actieve prompt configuratie" });
+    }
+  });
+
+  app.post("/api/prompts", async (req, res) => {
+    try {
+      const validatedData = insertPromptConfigSchema.parse(req.body);
+      
+      // Deactivate all other configs if this one is set as active
+      if (validatedData.isActive) {
+        const allConfigs = await storage.getAllPromptConfigs();
+        for (const config of allConfigs) {
+          if (config.isActive) {
+            await storage.updatePromptConfig(config.id, { isActive: false });
+          }
+        }
+      }
+      
+      const promptConfig = await storage.createPromptConfig(validatedData);
+      res.json(promptConfig);
+    } catch (error) {
+      console.error("Error creating prompt config:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ 
+          message: "Validatiefout in prompt configuratie", 
+          errors: error.errors 
+        });
+      } else {
+        res.status(500).json({ 
+          message: "Fout bij aanmaken prompt configuratie" 
+        });
+      }
+    }
+  });
+
+  app.put("/api/prompts/:id", async (req, res) => {
+    try {
+      const updates = req.body;
+      
+      // Deactivate all other configs if this one is set as active
+      if (updates.isActive) {
+        const allConfigs = await storage.getAllPromptConfigs();
+        for (const config of allConfigs) {
+          if (config.isActive && config.id !== req.params.id) {
+            await storage.updatePromptConfig(config.id, { isActive: false });
+          }
+        }
+      }
+      
+      const updatedConfig = await storage.updatePromptConfig(req.params.id, updates);
+      if (!updatedConfig) {
+        res.status(404).json({ message: "Prompt configuratie niet gevonden" });
+        return;
+      }
+      res.json(updatedConfig);
+    } catch (error) {
+      console.error("Error updating prompt config:", error);
+      res.status(500).json({ message: "Fout bij bijwerken prompt configuratie" });
     }
   });
 

@@ -1,6 +1,7 @@
-import type { DossierData, BouwplanData } from "@shared/schema";
+import type { DossierData, BouwplanData, PromptConfig } from "@shared/schema";
 import { SourceValidator } from "./source-validator";
 import { GoogleGenAI } from "@google/genai";
+import { storage } from "../storage";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
@@ -18,86 +19,246 @@ export class ReportGenerator {
       day: 'numeric'
     });
 
-    // Prepare the complete prompt based on the exact specification
-    const systemPrompt = `Prompt: De Fiscale Analist (Gebalanceerd Duidingsrapport)
-Doel van deze prompt: Jij bent 'De Fiscale Analist'. Jouw taak is om de verstrekte dossier en bouwplan JSON-objecten om te zetten in een professioneel, helder, en praktisch duidingsrapport voor de klant. Het rapport moet exact de structuur van het bouwplan volgen en de kernvragen van de klant beantwoorden. De output moet de perfecte balans vinden tussen het informeren van de klant en het beheersen van de aansprakelijkheid.
+    // Get active prompt configuration
+    const promptConfig = await storage.getActivePromptConfig();
+    if (!promptConfig) {
+      throw new Error("Geen actieve prompt configuratie gevonden");
+    }
 
-[ROL & DOEL]
-Jij bent 'De Fiscale Analist'. Je combineert de scherpte van een diagnostisch expert met de helderheid van een strategisch gids. Je doel is niet om definitieve oplossingen te geven, maar om de fiscale situatie, de uitdagingen en hun onderlinge samenhang, en de mogelijke scenario's op een professionele en begrijpelijke manier in kaart te brengen zoals in het bouwplan beschreven. 
+    const prompts = promptConfig.config as PromptConfig;
 
-[INPUT-FORMATEN]
-Je ontvangt twee inputs om je taak uit te voeren:
-[Datum vandaag]: ${currentDate}
-[Input 1: Gevalideerd Dossier (JSON)]: Bevat de specifieke, persoonlijke feiten van de klant (namen, data, bedragen, etc.).
-[Input 2: Bouwplan Rapport]: Bevat de te behandelen onderwerpen en de structuur van het rapport.
+    // Stage 1: Informatiecheck
+    console.log("Starting Stage 1: Informatiecheck");
+    const informatieCheckResult = await this.executePromptStage(
+      "1_informatiecheck",
+      prompts["1_informatiecheck"],
+      {
+        datum: currentDate,
+        dossier: JSON.stringify(dossier, null, 2)
+      }
+    );
 
-[KERNINSTRUCTIES & KWALITEITSEISEN]
-Dit zijn de ononderhandelbare regels voor het schrijven van het rapport.
+    // Stage 2: Complexiteitscheck  
+    console.log("Starting Stage 2: Complexiteitscheck");
+    const complexiteitsCheckResult = await this.executePromptStage(
+      "2_complexiteitscheck", 
+      prompts["2_complexiteitscheck"],
+      {
+        datum: currentDate,
+        dossier: JSON.stringify(dossier, null, 2),
+        bouwplan: JSON.stringify(bouwplan, null, 2),
+        informatiecheck_result: informatieCheckResult
+      }
+    );
 
-1. Taal van het Rapport: Schrijf het volledige rapport, inclusief alle koppen en inhoud, in de taal die is gespecificeerd in de taal-variabele van het Bouwplan Rapport [Input 2]. De instructies blijven Nederlands, maar alle tekst die voor de klant bestemd is, moet in hun taal zijn.
+    // Stage 3: Generatie (basis rapport)
+    console.log("Starting Stage 3: Generatie");
+    const generatieResult = await this.executePromptStage(
+      "3_generatie",
+      prompts["3_generatie"],
+      {
+        datum: currentDate,
+        dossier: JSON.stringify(dossier, null, 2),
+        bouwplan: JSON.stringify(bouwplan, null, 2),
+        informatiecheck_result: informatieCheckResult,
+        complexiteitscheck_result: complexiteitsCheckResult
+      }
+    );
 
-2. Toon & Stijl: Professioneel, Didactisch en Zorgvuldig
-Professioneel: Hanteer een formele, zakelijke en respectvolle toon. Spreek de klant aan met "u". Gebruik heldere, gestructureerde kopteksten (zoals "Knelpunt 1:", "Stap 2:").
-Didactisch (Waarde toevoegen): Leg complexe fiscale termen direct uit in eenvoudige taal. Focus op wat een regel betekent voor de situatie van de klant. Waar nuttig, gebruik een beknopte tabel om concepten of keuzes te verhelderen (bijv. de kernverschillen tussen B.V. en een alternatief).
-Zorgvuldig (Risico beheersen): Gebruik een waarschuwende ondertoon waar risico's worden besproken. Gebruik formuleringen als "Let op:" of "Hier ontstaat een significant aandachtspunt:" om de ernst te benadrukken zonder te alarmeren.
+    // Stage 4a: BronnenSpecialist
+    console.log("Starting Stage 4a: BronnenSpecialist");
+    const bronnenSpecialistResult = await this.executePromptStage(
+      "4a_BronnenSpecialist",
+      prompts["4a_BronnenSpecialist"],
+      {
+        datum: currentDate,
+        rapport: generatieResult,
+        dossier: JSON.stringify(dossier, null, 2)
+      }
+    );
 
-3. Structuur & Inhoud: Diagnose, Context en Vervolgstappen
-Volg het Bouwplan: ZEER BELANGRIJK: Houd je strikt aan de structuur en onderwerpen uit [Input 2].
-Toevoegen bij de finale assemblage: de prominente waarschuwing, geraadpleegde bronnen en disclaimer.
+    // Stage 4b: FiscaalTechnischSpecialist
+    console.log("Starting Stage 4b: FiscaalTechnischSpecialist");
+    const fiscaalTechnischResult = await this.executePromptStage(
+      "4b_FiscaalTechnischSpecialist",
+      prompts["4b_FiscaalTechnischSpecialist"],
+      {
+        datum: currentDate,
+        rapport: bronnenSpecialistResult,
+        dossier: JSON.stringify(dossier, null, 2)
+      }
+    );
 
-4. Risicobeheersing & Aansprakelijkheid: Formuleer met Precisie
-Vermijd Stelligheid: Gebruik NOOIT absolute of definitieve taal.
-Vermijd: "dit is...", "het gevolg is...", "u zult...", "dit leidt tot...".
-Gebruik altijd: "kan leiden tot...", "een mogelijk gevolg is...", "het uitgangspunt is doorgaans...", "naar alle waarschijnlijkheid zal...", "het risico bestaat dat...".
-Duidelijke Scope: Maak ondubbelzinnig duidelijk dat dit rapport een initiële duiding is en geen volledig advies. De prominent geplaatste waarschuwingsbox is hierbij leidend.
+    // Stage 4c: ScenarioGatenAnalist
+    console.log("Starting Stage 4c: ScenarioGatenAnalist");
+    const scenarioGatenResult = await this.executePromptStage(
+      "4c_ScenarioGatenAnalist",
+      prompts["4c_ScenarioGatenAnalist"],
+      {
+        datum: currentDate,
+        rapport: fiscaalTechnischResult,
+        dossier: JSON.stringify(dossier, null, 2)
+      }
+    );
 
-5. Fiscale Accuratesse & Bronvermelding
-Gelimiteerde Bronnen: Gebruik uitsluitend belastingdienst.nl, wetten.overheid.nl, en rijksoverheid.nl.
-Geforceerd Zoekgedrag: Gebruik altijd de site: operator in je Google Search queries (bv. site:belastingdienst.nl schenkbelasting echtscheiding 2025).
-Verplichte Inline Citaties: Elke fiscale bewering (tarief, drempel, voorwaarde) MOET direct gevolgd worden door een [Bron X] verwijzing.
-Bronnenlijst: Sluit het rapport af met een genummerde sectie Geraadpleegde Bronnen met een lijst van de titels en volledige URL's die exact overeenkomt met de gebruikte citaties. Het is je ten strengste verboden te verwijzen naar of informatie te gebruiken van andere bronnen.
+    // Stage 4d: DeVertaler
+    console.log("Starting Stage 4d: DeVertaler");
+    const deVertalerResult = await this.executePromptStage(
+      "4d_DeVertaler",
+      prompts["4d_DeVertaler"],
+      {
+        datum: currentDate,
+        rapport: scenarioGatenResult,
+        dossier: JSON.stringify(dossier, null, 2),
+        bouwplan: JSON.stringify(bouwplan, null, 2)
+      }
+    );
 
-[FINALE ASSEMBLAGE]
-1. Prominente waarschuwing: Plaats de volgende tekst in een kader direct na de inleiding. Pas deze tekst niet aan.
-"Belangrijke kennisgeving: De aard van dit rapport
-Dit document is een initiële, diagnostische analyse, opgesteld op basis van de door u verstrekte informatie. Het doel is om de voornaamste fiscale aandachtspunten en potentiële risico's ('knelpunten') te identificeren en de onderliggende principes toe te lichten. Dit rapport biedt dus een analyse van de problematiek, geen kant-en-klare oplossingen.
-Het is nadrukkelijk geen definitief fiscaal advies en dient niet als basis voor het nemen van financiële, juridische of strategische beslissingen. De complexiteit en continue verandering van fiscale wetgeving maken een uitgebreid en persoonlijk adviestraject noodzakelijk.
-Daarom kunnen aan de informatie in dit document geen rechten worden ontleend en wordt iedere aansprakelijkheid voor beslissingen die hierop gebaseerd zijn, uitgesloten. Dit rapport kan dienen als startpunt voor een eventueel nader te overwegen, diepgaand adviestraject."
+    // Stage 4e: DeAdvocaat
+    console.log("Starting Stage 4e: DeAdvocaat");
+    const deAdvocaatResult = await this.executePromptStage(
+      "4e_DeAdvocaat",
+      prompts["4e_DeAdvocaat"],
+      {
+        datum: currentDate,
+        rapport: deVertalerResult,
+        dossier: JSON.stringify(dossier, null, 2)
+      }
+    );
 
-2. Rapport samenstelling volgens Bouwplan: Stel het rapport samen volgens de structuur in het bouwplan, eindigend met de sectie Geraadpleegde Bronnen.
+    // Stage 4f: DeKlantpsycholoog
+    console.log("Starting Stage 4f: DeKlantpsycholoog");
+    const deKlantpsycholoogResult = await this.executePromptStage(
+      "4f_DeKlantpsycholoog",
+      prompts["4f_DeKlantpsycholoog"],
+      {
+        datum: currentDate,
+        rapport: deAdvocaatResult,
+        dossier: JSON.stringify(dossier, null, 2)
+      }
+    );
 
-3. Standaard disclaimer (Allerlaatst): Plaats de onderstaande disclaimer altijd als allerlaatste onderdeel van het rapport, zonder enige aanpassing.
-"Disclaimer: Dit rapport bevat een initiële, algemene fiscale duiding en is (deels) geautomatiseerd opgesteld op basis van de door u verstrekte informatie. Het is geen vervanging van persoonlijk, professioneel fiscaal advies. Fiscale wet- en regelgeving kan wijzigen, wat invloed kan hebben op dit rapport. Fiscale wetgeving is complex en uw situatie kan een diepgaandere analyse vereisen die buiten de scope van dit rapport valt. Voor een advies waarop u beslissingen kunt baseren, dient u altijd gebruik te maken van onze uitgebreide adviesdienst. Aan de informatie in dit initiële rapport kunnen geen rechten worden ontleend. Wij aanvaarden geen aansprakelijkheid voor eventuele onjuistheden of omissies. Dit advies is specifiek voor uw situatie en kan niet zonder meer worden toegepast op andere situaties. Het invullen van de aangifte blijft uw eigen verantwoordelijkheid."
+    // Stage 4g: ChefEindredactie
+    console.log("Starting Stage 4g: ChefEindredactie");
+    const chefEindredactieResult = await this.executePromptStage(
+      "4g_ChefEindredactie",
+      prompts["4g_ChefEindredactie"],
+      {
+        datum: currentDate,
+        rapport: deKlantpsycholoogResult,
+        dossier: JSON.stringify(dossier, null, 2),
+        bouwplan: JSON.stringify(bouwplan, null, 2)
+      }
+    );
 
-Genereer nu een volledig HTML-geformatteerd rapport op basis van onderstaande inputs. Gebruik professionele HTML-styling die geschikt is voor weergave in een browser, inclusief CSS-klassen die compatibel zijn met Tailwind CSS.`;
+    // Final Check
+    console.log("Starting Final Check voor Mathijs");
+    const finalResult = await this.executePromptStage(
+      "final_check",
+      prompts["final_check"],
+      {
+        datum: currentDate,
+        rapport: chefEindredactieResult,
+        dossier: JSON.stringify(dossier, null, 2),
+        bouwplan: JSON.stringify(bouwplan, null, 2)
+      }
+    );
 
-    const userMessage = `[Input 1: Gevalideerd Dossier (JSON)]:
-${JSON.stringify(dossier, null, 2)}
+    console.log("All stages completed successfully");
+    return finalResult;
+  }
 
-[Input 2: Bouwplan Rapport]:
-${JSON.stringify(bouwplan, null, 2)}`;
-
+  private async executePromptStage(
+    stageName: string, 
+    promptTemplate: string, 
+    variables: Record<string, any>
+  ): Promise<string> {
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.1, // Low temperature for consistency and accuracy
-        },
-        contents: userMessage,
-      });
-
-      const generatedContent = response.text || "";
-      
-      if (!generatedContent) {
-        throw new Error("Geen inhoud gegenereerd door AI model");
+      if (!promptTemplate || promptTemplate.startsWith("PLACEHOLDER:")) {
+        console.warn(`Stage ${stageName} heeft nog geen custom prompt, gebruik fallback`);
+        return this.getFallbackPromptResult(stageName, variables);
       }
 
-      return generatedContent;
+      // Replace variables in prompt template
+      let processedPrompt = promptTemplate;
+      for (const [key, value] of Object.entries(variables)) {
+        const placeholder = `{{${key}}}`;
+        processedPrompt = processedPrompt.replace(new RegExp(placeholder, 'g'), String(value));
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-pro",
+        config: {
+          temperature: 0.1,
+        },
+        contents: processedPrompt,
+      });
+
+      const result = response.text || "";
+      
+      if (!result) {
+        throw new Error(`Geen response van AI voor stage ${stageName}`);
+      }
+
+      console.log(`Stage ${stageName} completed successfully`);
+      return result;
 
     } catch (error) {
-      console.error("Error generating report with Gemini:", error);
-      throw new Error("Fout bij het genereren van het rapport met AI. Probeer het opnieuw.");
+      console.error(`Error in stage ${stageName}:`, error);
+      
+      // Fallback to basic generation for this stage
+      console.log(`Using fallback for stage ${stageName}`);
+      return this.getFallbackPromptResult(stageName, variables);
     }
+  }
+
+  private getFallbackPromptResult(stageName: string, variables: Record<string, any>): string {
+    // Temporary fallback until user loads custom prompts
+    switch (stageName) {
+      case "1_informatiecheck":
+        return "Dossier informatie geverifieerd en gevalideerd.";
+      
+      case "2_complexiteitscheck":
+        return "Complexiteit van de fiscale situatie geanalyseerd.";
+      
+      case "3_generatie":
+        return this.generateBasicReport(variables);
+        
+      default:
+        if (variables.rapport) {
+          return variables.rapport;
+        }
+        return "Stage resultaat nog niet beschikbaar - configureer custom prompts.";
+    }
+  }
+
+  private generateBasicReport(variables: Record<string, any>): string {
+    const datum = variables.datum || new Date().toLocaleDateString('nl-NL');
+    const dossierData = variables.dossier ? JSON.parse(variables.dossier) : {};
+    
+    return `
+      <div class="space-y-6">
+        <h1 class="text-2xl font-bold text-foreground">Fiscaal Duidingsrapport</h1>
+        <p class="text-muted-foreground">Gegenereerd op: ${datum}</p>
+        
+        <div class="bg-accent/10 border-l-4 border-accent p-4 rounded-r-md">
+          <h3 class="font-semibold text-foreground mb-2">Belangrijke kennisgeving: De aard van dit rapport</h3>
+          <p class="text-sm text-muted-foreground">
+            Dit document is een initiële, diagnostische analyse, opgesteld op basis van de door u verstrekte informatie. 
+            Het rapport is gegenereerd met placeholder prompts - configureer de volledige prompt set via instellingen voor complete functionaliteit.
+          </p>
+        </div>
+        
+        <div class="space-y-4">
+          <h2 class="text-xl font-semibold">Klant Informatie</h2>
+          <p>Naam: ${dossierData.klant?.naam || 'Onbekend'}</p>
+          <p>Situatie: ${dossierData.klant?.situatie || 'Niet gespecificeerd'}</p>
+        </div>
+        
+        <div class="text-xs text-muted-foreground border-t pt-4">
+          <p><strong>Disclaimer:</strong> Dit rapport is gegenereerd met basis templates. Voor volledige functionaliteit, configureer alle 11 prompts via de instellingen.</p>
+        </div>
+      </div>
+    `;
   }
 }

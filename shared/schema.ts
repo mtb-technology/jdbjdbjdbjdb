@@ -16,7 +16,18 @@ export const reports = pgTable("reports", {
   dossierData: json("dossier_data").notNull(),
   bouwplanData: json("bouwplan_data").notNull(),
   generatedContent: text("generated_content"),
-  status: text("status").notNull().default("draft"), // draft, generated, exported
+  stageResults: json("stage_results"), // Store results from each prompt stage
+  currentStage: text("current_stage").default("1_informatiecheck"),
+  status: text("status").notNull().default("draft"), // draft, processing, generated, exported
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const promptConfigs = pgTable("prompt_configs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  config: json("config").notNull(), // PromptConfig object
+  isActive: boolean("is_active").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -54,6 +65,28 @@ export const bouwplanSchema = z.object({
   }),
 });
 
+// Multi-stage prompting workflow schema
+export const promptConfigSchema = z.object({
+  "1_informatiecheck": z.string().default(""),
+  "2_complexiteitscheck": z.string().default(""),
+  "3_generatie": z.string().default(""),
+  "4a_BronnenSpecialist": z.string().default(""),
+  "4b_FiscaalTechnischSpecialist": z.string().default(""),
+  "4c_ScenarioGatenAnalist": z.string().default(""),
+  "4d_DeVertaler": z.string().default(""),
+  "4e_DeAdvocaat": z.string().default(""),
+  "4f_DeKlantpsycholoog": z.string().default(""),
+  "4g_ChefEindredactie": z.string().default(""),
+  "final_check": z.string().default(""),
+});
+
+export const reportStageSchema = z.object({
+  stage: z.string(),
+  input: z.any(),
+  output: z.string(),
+  timestamp: z.date(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -70,11 +103,21 @@ export const insertSourceSchema = createInsertSchema(sources).omit({
   lastChecked: true,
 });
 
+export const insertPromptConfigSchema = createInsertSchema(promptConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Report = typeof reports.$inferSelect;
 export type InsertReport = z.infer<typeof insertReportSchema>;
 export type Source = typeof sources.$inferSelect;
 export type InsertSource = z.infer<typeof insertSourceSchema>;
+export type InsertPromptConfig = z.infer<typeof insertPromptConfigSchema>;
 export type DossierData = z.infer<typeof dossierSchema>;
 export type BouwplanData = z.infer<typeof bouwplanSchema>;
+export type PromptConfig = z.infer<typeof promptConfigSchema>;
+export type ReportStage = z.infer<typeof reportStageSchema>;
+export type PromptConfigRecord = typeof promptConfigs.$inferSelect;
