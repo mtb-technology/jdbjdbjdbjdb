@@ -212,66 +212,15 @@ De AI zal automatisch de belangrijke informatie extraheren en structureren."
           </Card>
         )}
 
-        {/* Step 2-3: Workflow Execution */}
+        {/* Direct naar workflow - geen extra stappen */}
         {showWorkflow && extractedDossier && extractedBouwplan && (
-          <div className="space-y-6">
-            
-            {/* Ruwe Data Klaar */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <CheckCircle className="mr-2 h-5 w-5 text-green-600" />
-                  Stap 2: Ruwe Data Klaar voor Prompts
-                </CardTitle>
-                <CardDescription>
-                  De ruwe tekst wordt direct doorgegeven aan de prompts - geen vooraf structurering
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="bg-muted/50 p-3 rounded-md">
-                  <Label className="text-sm font-medium">Ruwe Input</Label>
-                  <div className="mt-2 text-xs font-mono max-h-32 overflow-y-auto">
-                    {rawText.substring(0, 500)}...
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Deze tekst gaat direct naar de eerste prompt (informatiecheck) die zelf bepaalt wat ermee gebeurt
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Workflow Execution */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Zap className="mr-2 h-5 w-5" />
-                  Stap 3: Informatiecheck & Workflow
-                </CardTitle>
-                <CardDescription>
-                  Start met informatiecheck, daarna complexiteitscheck, dan generatie
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-4 border border-green-200 dark:border-green-800">
-                    <p className="text-sm text-green-700 dark:text-green-300">
-                      <strong>Stap 1 (Informatiecheck)</strong> start automatisch en controleert of alle data compleet is. 
-                      Na goedkeuring volgen de volgende stappen handmatig.
-                    </p>
-                  </div>
-                  
-                  <WorkflowInterface
-                    dossier={extractedDossier}
-                    bouwplan={extractedBouwplan}
-                    clientName="Klant"
-                    rawText={rawText}
-                    onComplete={handleWorkflowComplete}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-          </div>
+          <WorkflowInterface
+            dossier={extractedDossier}
+            bouwplan={extractedBouwplan}
+            clientName="Klant"
+            rawText={rawText}
+            onComplete={handleWorkflowComplete}
+          />
         )}
 
         {/* Step 4: Final Report */}
