@@ -343,12 +343,50 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
               <div className="text-sm text-green-700 dark:text-green-400 font-medium">
                 🌱 Dit rapport groeit en evolueert met elke specialist stap - kijk toe hoe het tot leven komt!
               </div>
-              <div className="bg-white dark:bg-gray-900 border border-green-200 dark:border-green-700 rounded-lg p-6 max-h-96 overflow-y-auto shadow-sm">
-                <div 
-                  className="prose prose-sm max-w-none text-sm leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: currentReport.generatedContent }}
-                />
+              
+              {/* PDF-achtige Document Preview */}
+              <div className="bg-white dark:bg-gray-50 border-2 border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                {/* Document Header */}
+                <div className="bg-gray-50 dark:bg-gray-100 border-b border-gray-200 px-8 py-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h1 className="text-lg font-bold text-gray-900">DE FISCALE ANALIST</h1>
+                      <p className="text-sm text-gray-600">Fiscaal Duidingsrapport</p>
+                    </div>
+                    <div className="text-right text-xs text-gray-600">
+                      <div>Datum: {new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                      <div>Client: {clientName}</div>
+                      <div className="mt-1">
+                        <Badge variant="outline" className="text-xs">
+                          Versie {Math.max(1, currentStageIndex - 1)} - Live Preview
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Document Content */}
+                <div className="px-8 py-6 max-h-[500px] overflow-y-auto">
+                  <div 
+                    className="prose prose-sm max-w-none text-gray-900 dark:text-gray-800"
+                    style={{
+                      fontFamily: 'system-ui, -apple-system, sans-serif',
+                      lineHeight: '1.6',
+                      fontSize: '14px'
+                    }}
+                    dangerouslySetInnerHTML={{ __html: currentReport.generatedContent }}
+                  />
+                </div>
+                
+                {/* Document Footer */}
+                <div className="bg-gray-50 dark:bg-gray-100 border-t border-gray-200 px-8 py-3">
+                  <div className="flex justify-between items-center text-xs text-gray-500">
+                    <div>© {new Date().getFullYear()} De Fiscale Analist - Concept Rapport</div>
+                    <div>Pagina 1</div>
+                  </div>
+                </div>
               </div>
+              
               {currentStageIndex >= 2 && currentStageIndex < WORKFLOW_STAGES.length - 1 && (
                 <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">
                   🔄 Volgende specialist ({WORKFLOW_STAGES[currentStageIndex]?.label}) gaat dit rapport verder verbeteren...
