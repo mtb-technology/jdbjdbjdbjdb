@@ -19,6 +19,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const sourceValidator = new SourceValidator();
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
+  // Test route voor AI - simpele test om te verifieren dat API werkt
+  app.get("/api/test-ai", async (req, res) => {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash-001",
+        contents: "Say hello in Dutch in 5 words"
+      });
+      res.json({ success: true, response: response.text });
+    } catch (error: any) {
+      console.error("Test AI error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // Extract dossier data from raw text using AI
   app.post("/api/extract-dossier", async (req, res) => {
     try {
@@ -73,15 +87,13 @@ Geef het resultaat terug als JSON in dit exacte formaat:
 ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
-        config: {
-          temperature: 0.1,
-          topP: 0.95,
-          topK: 20,
-          maxOutputTokens: 2048,
-          responseMimeType: "application/json",
-        },
+        model: "gemini-2.0-flash-001",
         contents: extractionPrompt,
+        temperature: 0.1,
+        topP: 0.95,
+        topK: 20,
+        maxOutputTokens: 2048,
+        responseMimeType: "application/json"
       });
 
       const extractedJson = response.text?.trim();

@@ -108,8 +108,9 @@ export class ReportGenerator {
       }
       
       // Get AI configuration from prompt config or use defaults
+      // Use gemini-2.0-flash-001 which is the latest model per NPM docs
       const aiConfig: AiConfig = prompts.aiConfig || {
-        model: "gemini-2.5-pro",
+        model: "gemini-2.0-flash-001" as any,
         temperature: 0.1,
         topP: 0.95,
         topK: 20,
@@ -132,15 +133,15 @@ export class ReportGenerator {
       // Combine prompt with input text - prompt gives instructions, currentWorkingText is the data to process
       const fullInput = `${processedPrompt}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
       
-      // Correct syntax for @google/genai v1.16
+      // Correct syntax for @google/genai v1.16 volgens NPM docs
       try {
         console.log(`Making AI call with model: ${aiConfig.model}`);
         
-        // Use the correct API method
+        // Use the correct API method - config params go directly in the object, not nested
         const response = await ai.models.generateContent({
           model: aiConfig.model,
           contents: fullInput,
-          config: generationConfig
+          ...generationConfig  // Spread the config directly
         });
         
         const result = response.text || "";
