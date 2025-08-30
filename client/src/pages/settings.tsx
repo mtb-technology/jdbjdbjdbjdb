@@ -19,7 +19,8 @@ import {
   Workflow,
   Brain,
   Zap,
-  Search
+  Search,
+  Info
 } from "lucide-react";
 import type { PromptConfigRecord, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 
@@ -293,14 +294,25 @@ export default function Settings() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">
-                        Prompt Template (gebruik {"{{variabele}}"} voor vervangingen)
-                      </Label>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-medium">
+                          Prompt Template
+                        </Label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs"
+                          onClick={() => alert('Beschikbare variabelen:\n\n{{datum}} - Huidige datum\n{{dossier}} - Klant dossier\n{{huidige_tekst}} - Tekst van vorige stap\n{{clientName}} - Client naam\n\nVorige stap resultaten:\n{{1_informatiecheck}}\n{{2_complexiteitscheck}}\n{{3_generatie}}\netc.')}
+                        >
+                          <Info className="h-3 w-3 mr-1" />
+                          Variabelen
+                        </Button>
+                      </div>
                       <Textarea
                         value={prompt}
                         onChange={(e) => handlePromptChange(stage.key, e.target.value)}
                         className="font-mono text-sm min-h-32"
-                        placeholder={`Voer hier de ${stage.label} prompt in...\n\nBeschikbare variabelen:\n- ${"{{datum}}"} - Huidige datum\n- ${"{{dossier}}"} - Klant dossier JSON\n- ${"{{bouwplan}}"} - Rapport structuur JSON\n- ${"{{oorspronkelijk_dossier}}"} - Origineel dossier (altijd beschikbaar)\n- ${"{{concept_rapport}}"} - Concept rapport uit stap 3 (voor technische analyse)\n- ${"{{1_informatiecheck}}"} - Resultaat informatiecheck\n- ${"{{3_generatie}}"} - Resultaat basis generatie\n- ${"{{4a_BronnenSpecialist}}"} - Resultaat bronnen specialist\n- (alle vorige stage resultaten beschikbaar)`}
+                        placeholder={`Voer hier de ${stage.label} prompt in...`}
                         data-testid={`textarea-prompt-${stage.key}`}
                       />
                     </div>

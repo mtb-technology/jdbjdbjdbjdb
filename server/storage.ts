@@ -473,7 +473,10 @@ export class DatabaseStorage implements IStorage {
   async initializeDefaultPrompts(): Promise<void> {
     // Check if any configs exist
     const existing = await this.getAllPromptConfigs();
-    if (existing.length > 0) return;
+    if (existing.length > 0) {
+      console.log("Prompt configs already exist, skipping initialization");
+      return;
+    }
     
     // Create default config
     const defaultConfig = {
