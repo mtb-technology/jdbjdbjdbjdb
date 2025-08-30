@@ -47,39 +47,21 @@ export default function Pipeline() {
     };
   }, [isExtracting, extractionStartTime]);
 
-  // Start workflow direct met ruwe tekst - geen vooraf structurering
-  const handleExtractData = async () => {
+  // Direct naar workflow - geen extra stappen
+  const handleStartWorkflow = () => {
     if (!rawText.trim()) return;
     
-    setIsExtracting(true);
-    setExtractionError(null);
-    setExtractionStartTime(Date.now());
+    // Direct workflow starten met ruwe tekst
+    setExtractedDossier({ 
+      klant: { naam: "Client", situatie: "Direct processing" },
+      fiscale_gegevens: { vermogen: 0, inkomsten: 0 }
+    });
+    setExtractedBouwplan({
+      taal: "nl",
+      structuur: { inleiding: true, knelpunten: [], scenario_analyse: true, vervolgstappen: true }
+    });
     
-    try {
-      // Geen data extractie - direct naar workflow met ruwe tekst
-      // De eerste prompt (informatiecheck) krijgt de ruwe tekst en bepaalt zelf de output
-      setExtractedDossier({ 
-        klant: { naam: "Dynamisch", situatie: "Bepaald door prompt" },
-        fiscale_gegevens: { vermogen: 0, inkomsten: 0 }
-      });
-      setExtractedBouwplan({
-        taal: "nl",
-        structuur: { inleiding: true, knelpunten: ["Dynamisch"], scenario_analyse: true, vervolgstappen: true }
-      });
-      
-      // Direct naar workflow - eerste prompt krijgt ruwe tekst
-      setTimeout(() => {
-        setShowWorkflow(true);
-      }, 500);
-      
-    } catch (error) {
-      console.error('Workflow start fout:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Onbekende fout bij starten workflow';
-      setExtractionError(errorMessage);
-    } finally {
-      setIsExtracting(false);
-      setExtractionStartTime(null);
-    }
+    setShowWorkflow(true);
   };
 
   const handleWorkflowComplete = (report: Report) => {
@@ -88,13 +70,12 @@ export default function Pipeline() {
 
   const getCurrentStepProgress = () => {
     if (!rawText.trim()) return { step: 1, label: "Tekst Invoeren" };
-    if (!extractedDossier) return { step: 2, label: "Data Extractie" };
-    if (!finalReport) return { step: 3, label: "Rapport Generatie" };
-    return { step: 4, label: "Voltooid" };
+    if (!finalReport) return { step: 2, label: "Pipeline Actief" };
+    return { step: 3, label: "Voltooid" };
   };
 
   const progress = getCurrentStepProgress();
-  const progressPercentage = (progress.step / 4) * 100;
+  const progressPercentage = (progress.step / 3) * 100;
 
   return (
     <div className="min-h-screen bg-background">
@@ -219,21 +200,12 @@ De AI zal automatisch de belangrijke informatie extraheren en structureren."
                 </div>
                 
                 <Button 
-                  onClick={handleExtractData}
-                  disabled={!rawText.trim() || isExtracting}
+                  onClick={handleStartWorkflow}
+                  disabled={!rawText.trim()}
                   data-testid="button-start-pipeline"
                 >
-                  {isExtracting ? (
-                    <>
-                      <Clock className="mr-2 h-4 w-4 animate-spin" />
-                      Extracteren...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="mr-2 h-4 w-4" />
-                      {extractionError ? 'Opnieuw Proberen' : 'Start Pipeline'}
-                    </>
-                  )}
+                  <Play className="mr-2 h-4 w-4" />
+                  Start Pipeline
                 </Button>
               </div>
             </CardContent>
