@@ -36,8 +36,35 @@ export default function ReportPreview({ report, isGenerating }: ReportPreviewPro
     document.body.removeChild(element);
   };
 
-  const handleShare = () => {
-    // TODO: Implement share functionality
+  const handleShare = async () => {
+    if (!report?.generatedContent) return;
+    
+    const shareData = {
+      title: `Fiscaal Rapport - ${report.clientName}`,
+      text: `Bekijk dit fiscale duidingsrapport voor ${report.clientName}`,
+      url: window.location.href
+    };
+    
+    try {
+      if (navigator.share && navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+      } else {
+        // Fallback: copy link to clipboard
+        await navigator.clipboard.writeText(window.location.href);
+        
+        // Show feedback to user
+        const button = document.querySelector('[data-testid="button-share"]');
+        if (button) {
+          const originalText = button.textContent;
+          button.textContent = '✓ Link gekopieerd';
+          setTimeout(() => {
+            button.textContent = originalText;
+          }, 2000);
+        }
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
   };
 
   if (isGenerating) {

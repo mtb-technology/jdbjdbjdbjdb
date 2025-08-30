@@ -32,11 +32,46 @@ export default function InputPanel({
   isGenerating,
 }: InputPanelProps) {
   const handleSave = () => {
-    // TODO: Implement save functionality
+    const saveData = {
+      dossier: dossierData,
+      bouwplan: bouwplanData,
+      timestamp: new Date().toISOString()
+    };
+    
+    localStorage.setItem('fiscale-pipeline-draft', JSON.stringify(saveData));
+    
+    // Show feedback to user
+    const button = document.querySelector('[data-testid="button-save"]');
+    if (button) {
+      const originalText = button.textContent;
+      button.textContent = '✓ Opgeslagen';
+      setTimeout(() => {
+        button.textContent = originalText;
+      }, 2000);
+    }
   };
 
   const handleLoad = () => {
-    // TODO: Implement load functionality
+    const savedData = localStorage.getItem('fiscale-pipeline-draft');
+    if (savedData) {
+      try {
+        const data = JSON.parse(savedData);
+        onDossierChange(data.dossier || '');
+        onBouwplanChange(data.bouwplan || '');
+        
+        // Show feedback to user
+        const button = document.querySelector('[data-testid="button-load"]');
+        if (button) {
+          const originalText = button.textContent;
+          button.textContent = '✓ Geladen';
+          setTimeout(() => {
+            button.textContent = originalText;
+          }, 2000);
+        }
+      } catch (error) {
+        console.error('Error loading saved data:', error);
+      }
+    }
   };
 
   return (

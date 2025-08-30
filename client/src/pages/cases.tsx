@@ -5,9 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, RefreshCw } from "lucide-react";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, RefreshCw, Menu } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { apiRequest } from "@/lib/queryClient";
 
 interface Case {
@@ -31,7 +33,9 @@ export default function Cases() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
 
   const { data: casesData, isLoading } = useQuery<CasesResponse>({
     queryKey: ["/api/cases", { page, search, status: statusFilter }],
@@ -108,27 +112,49 @@ export default function Cases() {
                 <FileText className="text-2xl text-primary mr-3 h-8 w-8" />
                 <span className="text-xl font-bold text-foreground">Case Management</span>
               </div>
+              {/* Desktop Navigation */}
               <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <Link href="/">
-                  <a className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
-                    Pipeline
-                  </a>
+                <Link href="/" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
+                  Pipeline
                 </Link>
-                <a href="/cases" className="text-primary font-medium" data-testid="nav-cases">
+                <Link href="/cases" className="text-primary font-medium" data-testid="nav-cases">
                   Cases
-                </a>
-                <Link href="/settings">
-                  <a className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
-                    Instellingen
-                  </a>
+                </Link>
+                <Link href="/settings" className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
+                  Instellingen
                 </Link>
               </nav>
             </div>
-            <Link href="/">
-              <Button data-testid="button-new-case">
-                Nieuwe Case
-              </Button>
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link href="/">
+                <Button data-testid="button-new-case">
+                  Nieuwe Case
+                </Button>
+              </Link>
+              {/* Mobile Navigation */}
+              <div className="md:hidden">
+                <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                  <SheetTrigger asChild>
+                    <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
+                      <Menu className="h-5 w-5" />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="w-64">
+                    <nav className="flex flex-col space-y-4 mt-8">
+                      <Link href="/" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-pipeline">
+                        Pipeline
+                      </Link>
+                      <Link href="/cases" className="text-primary font-medium p-2 rounded-md" data-testid="nav-mobile-cases">
+                        Cases
+                      </Link>
+                      <Link href="/settings" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-settings">
+                        Instellingen
+                      </Link>
+                    </nav>
+                  </SheetContent>
+                </Sheet>
+              </div>
+            </div>
           </div>
         </div>
       </header>
