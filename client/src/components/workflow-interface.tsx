@@ -407,7 +407,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
           <div className="bg-white shadow-2xl rounded-lg overflow-hidden max-w-4xl mx-auto">
             
             {/* Professional Blue Header - exact zoals in PDF */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-8 py-5">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-8 py-5" style={{ fontFamily: '"Google Sans", system-ui, -apple-system, sans-serif' }}>
               <div className="flex justify-between items-start">
                 <div>
                   <h1 className="text-xl font-bold tracking-wide">DE FISCALE ANALIST</h1>
@@ -445,7 +445,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
             <div className="px-10 py-8 bg-white" style={{ minHeight: '600px', maxHeight: '800px', overflowY: 'auto' }}>
               {/* Add report title if in later stages */}
               {currentStageIndex >= 3 && (
-                <div className="text-center mb-8">
+                <div className="text-center mb-8" style={{ fontFamily: '"Google Sans", system-ui, -apple-system, sans-serif' }}>
                   <h1 className="text-2xl font-bold text-gray-900">Fiscale Analyse</h1>
                   <p className="text-sm text-gray-600 mt-2">Aankoop Eigen Woning</p>
                 </div>
@@ -455,7 +455,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
               <div 
                 className="prose prose-lg max-w-none"
                 style={{
-                  fontFamily: 'Georgia, "Times New Roman", serif',
+                  fontFamily: '"Google Sans", system-ui, -apple-system, sans-serif',
                   fontSize: '14px',
                   lineHeight: '1.8',
                   color: '#2d3748'
