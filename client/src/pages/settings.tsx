@@ -435,6 +435,7 @@ const Settings = memo(function Settings() {
                               handleStageAiConfigChange(stage.key, "provider", value);
                               handleStageAiConfigChange(stage.key, "model", defaultModel);
                             }}
+                            data-testid={`select-stage-provider-${stage.key}`}
                           >
                             <SelectTrigger className="h-8 text-xs">
                               <SelectValue placeholder="Kies provider" />
