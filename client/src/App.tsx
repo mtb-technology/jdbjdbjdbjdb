@@ -7,6 +7,7 @@ import Dashboard from "@/pages/dashboard";
 import Settings from "@/pages/settings";
 import Pipeline from "@/pages/pipeline";
 import Cases from "@/pages/cases";
+import CaseDetail from "@/pages/case-detail";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -15,6 +16,7 @@ function Router() {
       <Route path="/" component={Pipeline} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/cases" component={Cases} />
+      <Route path="/cases/:id" component={CaseDetail} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
