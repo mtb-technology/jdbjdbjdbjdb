@@ -92,7 +92,7 @@ export const promptConfigSchema = z.object({
   "4d_DeVertaler": stageConfigSchema.default({ prompt: "", useGrounding: false }),
   "4e_DeAdvocaat": stageConfigSchema.default({ prompt: "", useGrounding: true }),
   "4f_DeKlantpsycholoog": stageConfigSchema.default({ prompt: "", useGrounding: false }),
-  "5_verwerker": stageConfigSchema.default({ prompt: "", useGrounding: false }),
+  "5_feedback_verwerker": stageConfigSchema.default({ prompt: "", useGrounding: false }),
   "final_check": stageConfigSchema.default({ prompt: "", useGrounding: false }),
   aiConfig: aiConfigSchema.optional(),
 });

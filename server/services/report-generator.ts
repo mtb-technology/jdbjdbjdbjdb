@@ -143,7 +143,7 @@ export class ReportGenerator {
         const response = await ai.models.generateContent({
           model: aiConfig.model,
           contents: fullInput,
-          generationConfig: generationConfig
+          config: generationConfig
         });
         
         const result = response.text || "";
@@ -156,33 +156,10 @@ export class ReportGenerator {
         
         console.log(`Stage ${stageName} completed successfully`);
         
-        // Check if this is a reviewer step that needs feedback processing
-        const stageConfig = prompts[stageName as keyof typeof prompts] as any;
-        const isReviewerStep = stageConfig?.stepType === "reviewer";
-        
-        if (isReviewerStep && stageConfig?.verwerkerPrompt) {
-          console.log(`Processing feedback for reviewer step: ${stageName}`);
-          
-          // Get the latest concept report from previous stages
-          const latestConceptReport = this.getLatestConceptReport(conceptReportVersions, stageName);
-          
-          // Apply the feedback to the current concept report
-          const updatedReport = await this.processFeedback(
-            result, // JSON feedback from reviewer
-            latestConceptReport, // Current concept report
-            stageConfig.verwerkerPrompt,
-            variables
-          );
-          
-          return {
-            stageOutput: result, // Keep original feedback
-            conceptReport: updatedReport // Updated concept report
-          };
-        }
-        
+        // Return result - cyclical flow logic handled by route handler
         return {
           stageOutput: result,
-          conceptReport: stageName === "3_generatie" ? result : "" // Only set concept on generation stage
+          conceptReport: stageName === "3_generatie" || stageName === "5_feedback_verwerker" ? result : ""
         };
         
       } catch (aiError: any) {
@@ -246,47 +223,43 @@ Lever een professionele fiscale analyse op basis van deze informatie.`;
     return descriptions[stageName] || "algemene";
   }
 
-  // Process reviewer feedback into concept report
-  private async processFeedback(
-    jsonFeedback: string, 
-    currentConceptReport: string, 
-    verwerkerPrompt: string,
-    variables: Record<string, any>
-  ): Promise<string> {
-    try {
-      // Replace variables in verwerker prompt
-      const processedPrompt = verwerkerPrompt.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-        return variables[key] || match;
-      });
 
-      const fullInput = `${processedPrompt}
-
---- CURRENT CONCEPT REPORT ---
-${currentConceptReport}
-
---- JSON FEEDBACK TO PROCESS ---
-${jsonFeedback}`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
-        contents: fullInput,
-        generationConfig: {
-          temperature: 0.1,
-          topP: 0.95,
-          maxOutputTokens: 8192,
-        }
-      });
-
-      const updatedReport = response.text || currentConceptReport;
-      console.log(`Feedback processed, updated report length: ${updatedReport.length}`);
+  // Get next stage in cyclical workflow: 4x→5→4x→5→4x→5 etc
+  getNextStage(currentStage: string): string | null {
+    const reviewerStages = ["4a_BronnenSpecialist", "4b_FiscaalTechnischSpecialist", "4c_ScenarioGatenAnalist", 
+                           "4d_DeVertaler", "4e_DeAdvocaat", "4f_DeKlantpsycholoog"];
+    
+    // Linear flow for initial stages
+    if (currentStage === "1_informatiecheck") return "2_complexiteitscheck";
+    if (currentStage === "2_complexiteitscheck") return "3_generatie";
+    if (currentStage === "3_generatie") return "4a_BronnenSpecialist";
+    
+    // Cyclical flow for review stages
+    if (currentStage === "5_feedback_verwerker") {
+      // After feedback processor, go to next reviewer
+      const lastReviewerIndex = reviewerStages.findIndex(stage => stage === this.lastReviewerStage);
+      const nextReviewerIndex = lastReviewerIndex + 1;
       
-      return updatedReport;
-      
-    } catch (error) {
-      console.error('Error processing feedback:', error);
-      return currentConceptReport; // Return original if processing fails
+      if (nextReviewerIndex < reviewerStages.length) {
+        return reviewerStages[nextReviewerIndex];
+      } else {
+        return "final_check"; // All reviewers done
+      }
     }
+    
+    // After any reviewer (4a-4f), go to feedback processor
+    if (reviewerStages.includes(currentStage)) {
+      this.lastReviewerStage = currentStage; // Track which reviewer we just completed
+      return "5_feedback_verwerker";
+    }
+    
+    // Final stage
+    if (currentStage === "final_check") return null;
+    
+    return null;
   }
+  
+  private lastReviewerStage: string = "";
 
   // Get the latest concept report from previous stages
   private getLatestConceptReport(conceptReportVersions: Record<string, string>, currentStage: string): string {
@@ -297,10 +270,8 @@ ${jsonFeedback}`;
       return ""; // No concept report yet
     }
     
-    // Sort by stage order (stage 3 is first concept, then 4a, 4b, etc.)
-    const stageOrder = ["3_generatie", "4a_BronnenSpecialist", "4b_FiscaalTechnischSpecialist", 
-                       "4c_ScenarioGatenAnalist", "4d_DeVertaler", "4e_DeAdvocaat", 
-                       "4f_DeKlantpsycholoog", "4g_ChefEindredactie"];
+    // Sort by stage order (stage 3 is first concept, then 5 updates it)
+    const stageOrder = ["3_generatie", "5_feedback_verwerker"];
     
     // Get the latest available concept report
     for (let i = stageOrder.length - 1; i >= 0; i--) {
@@ -386,9 +357,9 @@ ${jsonFeedback}`;
           conceptReport: variables.concept_rapport || ""
         };
         
-      case "4g_ChefEindredactie":
+      case "5_feedback_verwerker":
         return {
-          stageOutput: `✅ Eindredactie voltooid\n\nRapport is gefinaliseerd en klaar voor presentatie aan de klant.`,
+          stageOutput: `✅ Feedback verwerking voltooid\n\nJSON feedback is verwerkt en rapport is bijgewerkt.`,
           conceptReport: variables.concept_rapport || this.generateBasicReport(variables)
         };
         

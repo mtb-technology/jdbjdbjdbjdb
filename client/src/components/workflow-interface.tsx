@@ -106,7 +106,7 @@ const WORKFLOW_STAGES = [
   { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Review communicatie → JSON feedback", icon: CheckCircle, type: "reviewer" },
   { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", icon: CheckCircle, type: "reviewer" },
   { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "5_verwerker", label: "5. Verwerker", description: "Verwerkt alle JSON feedback in het rapport", icon: Zap, type: "processor" },
+  { key: "5_feedback_verwerker", label: "5. Feedback Verwerker", description: "Verwerkt JSON feedback in het rapport", icon: Zap, type: "processor" },
   { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", icon: Eye, type: "generator" },
 ] as const;
 
@@ -175,16 +175,18 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
     },
     onSuccess: (data: { report: Report; stageResult: string; conceptReport?: string }) => {
       setCurrentReport(data.report);
+      const currentStage = WORKFLOW_STAGES[currentStageIndex];
+      
       setStageResults(prev => ({
         ...prev,
-        [WORKFLOW_STAGES[currentStageIndex].key]: data.stageResult
+        [currentStage.key]: data.stageResult
       }));
       
       // Update concept report versions if provided
       if (data.conceptReport) {
         setConceptReportVersions(prev => ({
           ...prev,
-          [WORKFLOW_STAGES[currentStageIndex].key]: data.conceptReport as string
+          [currentStage.key]: data.conceptReport as string
         }));
       }
       
@@ -192,7 +194,6 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
       setEditingStage(null);
       
       // Special messaging for stage 3 - first living report
-      const currentStage = WORKFLOW_STAGES[currentStageIndex];
       if (currentStage.key === '3_generatie' && data.report.generatedContent) {
         toast({
           title: "🎉 Eerste rapport versie gereed!",
@@ -204,11 +205,36 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
           title: "📝 Rapport bijgewerkt",
           description: `${currentStage.label} heeft het rapport verder verfijnd.`,
         });
+      } else if (currentStage.key === '5_feedback_verwerker') {
+        toast({
+          title: "⚙️ Feedback verwerkt",
+          description: "JSON feedback is verwerkt en rapport is bijgewerkt.",
+        });
       } else {
         toast({
           title: "Stap voltooid",
           description: `${currentStage.label} is succesvol uitgevoerd.`,
         });
+      }
+      
+      // Auto-advance to next stage in cyclical workflow if auto-run is enabled
+      if (autoRunMode || isAutoRunning) {
+        const nextIndex = getNextStageIndex(currentStageIndex);
+        if (nextIndex !== null) {
+          setTimeout(() => {
+            setCurrentStageIndex(nextIndex);
+            // Auto-execute next stage
+            setTimeout(() => {
+              executeCurrentStage();
+            }, 1000);
+          }, 2000);
+        } else {
+          // Workflow complete
+          setIsAutoRunning(false);
+          if (currentReport) {
+            finalizeReportMutation.mutate(currentReport.id);
+          }
+        }
       }
     },
     onError: (error: Error) => {
@@ -318,9 +344,51 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
   };
 
 
+  // Cyclical workflow: 4x→5→4x→5→4x→5 etc
+  const getNextStageIndex = (currentIndex: number): number | null => {
+    const currentStage = WORKFLOW_STAGES[currentIndex];
+    const reviewerStages = ["4a_BronnenSpecialist", "4b_FiscaalTechnischSpecialist", "4c_ScenarioGatenAnalist", 
+                           "4d_DeVertaler", "4e_DeAdvocaat", "4f_DeKlantpsycholoog"];
+    
+    // Linear flow for initial stages
+    if (currentStage.key === "1_informatiecheck") return currentIndex + 1; // → 2
+    if (currentStage.key === "2_complexiteitscheck") return currentIndex + 1; // → 3  
+    if (currentStage.key === "3_generatie") {
+      // → 4a
+      return WORKFLOW_STAGES.findIndex(s => s.key === "4a_BronnenSpecialist");
+    }
+    
+    // Cyclical flow for review stages
+    if (currentStage.key === "5_feedback_verwerker") {
+      // After feedback processor, find next reviewer stage
+      const reviewerIndices = reviewerStages.map(stage => WORKFLOW_STAGES.findIndex(s => s.key === stage));
+      const completedReviewers = reviewerStages.filter(stage => stageResults[stage]);
+      
+      if (completedReviewers.length < reviewerStages.length) {
+        const nextReviewerStage = reviewerStages[completedReviewers.length];
+        return WORKFLOW_STAGES.findIndex(s => s.key === nextReviewerStage);
+      } else {
+        // All reviewers done → final check
+        return WORKFLOW_STAGES.findIndex(s => s.key === "final_check");
+      }
+    }
+    
+    // After any reviewer (4a-4f), go to feedback processor  
+    if (reviewerStages.includes(currentStage.key)) {
+      return WORKFLOW_STAGES.findIndex(s => s.key === "5_feedback_verwerker");
+    }
+    
+    // Final stage
+    if (currentStage.key === "final_check") return null;
+    
+    return currentIndex + 1; // Default fallback
+  };
+
   const goToNextStage = () => {
-    if (currentStageIndex < WORKFLOW_STAGES.length - 1) {
-      setCurrentStageIndex(prev => prev + 1);
+    const nextIndex = getNextStageIndex(currentStageIndex);
+    
+    if (nextIndex !== null) {
+      setCurrentStageIndex(nextIndex);
     } else {
       // Final stage reached, finalize report
       if (currentReport) {
