@@ -162,6 +162,31 @@ const Settings = memo(function Settings() {
     });
   }, [activeConfig]);
 
+  const handleStageAiConfigChange = useCallback((stageKey: string, aiConfigKey: keyof AiConfig, value: any) => {
+    if (!activeConfig) return;
+    
+    const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+    const currentAiConfig = currentStageConfig?.aiConfig || {
+      provider: "google",
+      model: "gemini-2.5-pro",
+      temperature: 0.1,
+      topP: 0.95,
+      topK: 20,
+      maxOutputTokens: 2048,
+    };
+    
+    setActiveConfig({
+      ...activeConfig,
+      [stageKey]: {
+        ...currentStageConfig,
+        aiConfig: {
+          ...currentAiConfig,
+          [aiConfigKey]: value,
+        },
+      },
+    });
+  }, [activeConfig]);
+
   const handleSave = useCallback(async () => {
     if (!activeConfig) return;
     
@@ -389,6 +414,76 @@ const Settings = memo(function Settings() {
                         onCheckedChange={(checked) => handleGroundingChange(stage.key, checked)}
                         data-testid={`switch-grounding-${stage.key}`}
                       />
+                    </div>
+
+                    {/* Per-Stage AI Configuration */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
+                      <div className="flex items-center space-x-2 mb-3">
+                        <Brain className="h-4 w-4 text-blue-600" />
+                        <Label className="text-sm font-medium text-blue-900">AI Model voor deze stap</Label>
+                        <Badge variant="outline" className="text-xs">Overschrijft global default</Badge>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Provider Selection per Stage */}
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">AI Provider</Label>
+                          <Select
+                            value={stageConfig?.aiConfig?.provider || aiConfig.provider}
+                            onValueChange={(value: "google" | "openai") => {
+                              const defaultModel = value === "google" ? "gemini-2.5-pro" : "gpt-4o";
+                              handleStageAiConfigChange(stage.key, "provider", value);
+                              handleStageAiConfigChange(stage.key, "model", defaultModel);
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Kies provider" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="google">
+                                <div className="flex items-center space-x-2">
+                                  <Brain className="h-3 w-3" />
+                                  <span>Google AI</span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="openai">
+                                <div className="flex items-center space-x-2">
+                                  <Zap className="h-3 w-3" />
+                                  <span>OpenAI</span>
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        
+                        {/* Model Selection per Stage */}
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">Model</Label>
+                          <Select
+                            value={stageConfig?.aiConfig?.model || aiConfig.model}
+                            onValueChange={(value) => handleStageAiConfigChange(stage.key, "model", value)}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Kies model" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {AI_MODELS[stageConfig?.aiConfig?.provider || aiConfig.provider] && 
+                               AI_MODELS[stageConfig?.aiConfig?.provider || aiConfig.provider].map((model) => (
+                                <SelectItem key={model.value} value={model.value}>
+                                  <span className="text-xs">{model.label}</span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      
+                      {/* Special indicators for specific models */}
+                      {(stageConfig?.aiConfig?.model || aiConfig.model).includes('o3') && (
+                        <div className="text-xs text-blue-700 bg-blue-100 p-2 rounded">
+                          🧠 <strong>Deep Research Mode:</strong> o3 gebruikt geavanceerde redenering voor complexe analyses
+                        </div>
+                      )}
                     </div>
 
                     {/* Main Prompt */}
