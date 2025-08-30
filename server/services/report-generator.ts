@@ -137,13 +137,13 @@ export class ReportGenerator {
         console.log(`Making AI call with model: ${aiConfig.model}`);
         
         // Use the correct API method
-        const model = (ai as any).getGenerativeModel({ model: aiConfig.model });
-        const response = await model.generateContent({
-          contents: [{ role: 'user', parts: [{ text: fullInput }] }],
-          generationConfig: generationConfig
+        const response = await ai.models.generateContent({
+          model: aiConfig.model,
+          contents: fullInput,
+          config: generationConfig
         });
         
-        const result = response.response.text() || "";
+        const result = response.text || "";
         console.log(`AI response received, length: ${result.length}`);
         
         if (!result) {
