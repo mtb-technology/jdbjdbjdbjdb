@@ -18,7 +18,9 @@ import {
   Eye,
   RotateCcw,
   FileText,
-  Zap
+  Zap,
+  Square,
+  Settings
 } from "lucide-react";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
@@ -152,10 +154,13 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
       // Sla report ID op in sessie om dubbele creatie te voorkomen
       sessionStorage.setItem('current-workflow-report-id', report.id);
       
-      // Auto-start informatiecheck (stap 1) direct na report aanmaken
-      setTimeout(() => {
-        executeCurrentStage();
-      }, 500);
+      // Only auto-start if auto-run mode is enabled
+      if (autoRunMode) {
+        setTimeout(() => {
+          setIsAutoRunning(true);
+          executeCurrentStage();
+        }, 500);
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -284,7 +289,12 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
       const sessionReportId = sessionStorage.getItem('current-workflow-report-id');
       
       if (!currentReport && !createReportMutation.isPending && !sessionReportId) {
-        createReportMutation.mutate();
+        // Add slight delay to prevent rapid successive calls
+        setTimeout(() => {
+          if (!currentReport && !createReportMutation.isPending) {
+            createReportMutation.mutate();
+          }
+        }, 100);
       }
     }
   }, [existingReport]); // Afhankelijk van existingReport
@@ -446,9 +456,23 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
               </div>
               
               <div className="bg-muted/50 rounded-lg p-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-sm">Case wordt aangemaakt...</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-sm">Case wordt aangemaakt...</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      sessionStorage.removeItem('current-workflow-report-id');
+                      window.location.reload();
+                    }}
+                    data-testid="button-reset-workflow"
+                  >
+                    <RotateCcw className="mr-1 h-3 w-3" />
+                    Reset
+                  </Button>
                 </div>
               </div>
             </div>
@@ -660,6 +684,33 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
           <CardTitle className="flex items-center justify-between">
             <span>Huidige Stap: {currentStage.label}</span>
             <div className="flex items-center space-x-2">
+              {/* Auto-run controls */}
+              <div className="flex items-center space-x-2 text-sm">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoRunMode}
+                    onChange={(e) => setAutoRunMode(e.target.checked)}
+                    className="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded"
+                    data-testid="checkbox-auto-run"
+                  />
+                  <span className="text-xs text-muted-foreground">Auto doorlopen</span>
+                </label>
+                
+                {/* Stop auto-run if running */}
+                {isAutoRunning && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setIsAutoRunning(false)}
+                    data-testid="button-stop-auto-run"
+                  >
+                    <Square className="mr-1 h-3 w-3" />
+                    Stop
+                  </Button>
+                )}
+              </div>
+              
               {currentStageIndex > 0 && (
                 <Button 
                   variant="outline" 
@@ -724,20 +775,44 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
             />
           </div>
 
-          {/* Manual Execute Button */}
+          {/* Execute Controls */}
           {!currentStageResult && (
-            <div className="space-y-2">
-              <Button
-                onClick={executeCurrentStage}
-                disabled={executeStageM.isPending}
-                className="w-full bg-primary"
-                data-testid="button-execute-stage"
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {executeStageM.isPending ? "Uitvoeren..." : `Voer ${currentStage.label} Uit`}
-              </Button>
+            <div className="space-y-3">
+              <div className="flex space-x-2">
+                <Button
+                  onClick={() => {
+                    setIsAutoRunning(false);
+                    executeCurrentStage();
+                  }}
+                  disabled={executeStageM.isPending}
+                  className="flex-1 bg-primary"
+                  data-testid="button-execute-stage"
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  {executeStageM.isPending ? "Uitvoeren..." : `Voer ${currentStage.label} Uit`}
+                </Button>
+                
+                {autoRunMode && !isAutoRunning && (
+                  <Button
+                    onClick={() => {
+                      setIsAutoRunning(true);
+                      executeCurrentStage();
+                    }}
+                    disabled={executeStageM.isPending}
+                    variant="secondary"
+                    data-testid="button-auto-run"
+                  >
+                    <Zap className="mr-2 h-4 w-4" />
+                    Auto Doorlopen
+                  </Button>
+                )}
+              </div>
+              
               <p className="text-xs text-muted-foreground text-center">
-                Elke stap wordt handmatig uitgevoerd voor volledige controle
+                {autoRunMode 
+                  ? "Auto doorlopen ingeschakeld - klik 'Auto Doorlopen' om alle stappen automatisch uit te voeren"
+                  : "Elke stap wordt handmatig uitgevoerd voor volledige controle"
+                }
               </p>
             </div>
           )}
