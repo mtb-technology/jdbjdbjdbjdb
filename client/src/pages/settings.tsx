@@ -210,8 +210,8 @@ export default function Settings() {
                 <a href="/" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
                   Pipeline
                 </a>
-                <a href="/dashboard" className="text-muted-foreground hover:text-foreground" data-testid="nav-dashboard">
-                  Dashboard
+                <a href="/cases" className="text-muted-foreground hover:text-foreground" data-testid="nav-cases">
+                  Cases
                 </a>
                 <a href="/settings" className="text-primary font-medium" data-testid="nav-settings">
                   Instellingen
