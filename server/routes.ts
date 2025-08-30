@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { ReportGenerator } from "./services/report-generator";
 import { SourceValidator } from "./services/source-validator";
+import { jobQueue } from "./jobQueue";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
 import type { DossierData, BouwplanData } from "@shared/schema";
 import { GoogleGenAI } from "@google/genai";
@@ -548,6 +549,85 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     } catch (error: any) {
       console.error("Error exporting case:", error);
       res.status(500).json({ message: "Fout bij exporteren case" });
+    }
+  });
+
+  // === JOB QUEUE ENDPOINTS ===
+
+  // Start a report generation job
+  app.post("/api/jobs/start-report", async (req, res) => {
+    try {
+      const { clientName, rawText } = req.body;
+      
+      if (!rawText || !clientName) {
+        res.status(400).json({ message: "Ruwe tekst en klantnaam zijn verplicht" });
+        return;
+      }
+      
+      // Create report in processing state
+      const report = await storage.createReport({
+        title: `Fiscaal Duidingsrapport - ${clientName}`,
+        clientName: clientName,
+        dossierData: { rawText, klant: { naam: clientName } },
+        bouwplanData: {},
+        generatedContent: null,
+        stageResults: {},
+        conceptReportVersions: {},
+        currentStage: "1_informatiecheck",
+        status: "processing",
+      });
+
+      // Create background job
+      const jobId = await jobQueue.createJob("report_generation", report.id);
+      
+      res.json({
+        jobId,
+        reportId: report.id,
+        message: "Rapport generatie gestart in achtergrond"
+      });
+    } catch (error) {
+      console.error("Error starting report job:", error);
+      res.status(500).json({ message: "Fout bij starten rapport job" });
+    }
+  });
+
+  // Get job status
+  app.get("/api/jobs/:id", async (req, res) => {
+    try {
+      const job = await jobQueue.getJob(req.params.id);
+      if (!job) {
+        res.status(404).json({ message: "Job niet gevonden" });
+        return;
+      }
+      res.json(job);
+    } catch (error) {
+      console.error("Error fetching job:", error);
+      res.status(500).json({ message: "Fout bij ophalen job status" });
+    }
+  });
+
+  // Get all jobs (for admin/debug purposes)
+  app.get("/api/jobs", async (req, res) => {
+    try {
+      const { status } = req.query;
+      let jobs;
+      
+      if (status && typeof status === "string") {
+        jobs = await jobQueue.getJobsByStatus(status as any);
+      } else {
+        // Get recent jobs from all statuses (implement this method in jobQueue)
+        jobs = await Promise.all([
+          jobQueue.getJobsByStatus("queued"),
+          jobQueue.getJobsByStatus("processing"),
+          jobQueue.getJobsByStatus("completed"),
+          jobQueue.getJobsByStatus("failed")
+        ]).then(results => results.flat());
+      }
+      
+      res.json(jobs);
+    } catch (error) {
+      console.error("Error fetching jobs:", error);
+      res.status(500).json({ message: "Fout bij ophalen jobs" });
     }
   });
 

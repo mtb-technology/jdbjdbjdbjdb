@@ -42,6 +42,19 @@ export const sources = pgTable("sources", {
   lastChecked: timestamp("last_checked").defaultNow(),
 });
 
+export const jobs = pgTable("jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: text("type").notNull(), // "report_generation"
+  status: text("status").notNull().default("queued"), // queued, processing, completed, failed
+  reportId: varchar("report_id").references(() => reports.id),
+  progress: text("progress"), // JSON object with current stage and progress info
+  result: json("result"), // Final result when completed
+  error: text("error"), // Error message if failed
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Zod schemas for validation
 export const dossierSchema = z.object({
   klant: z.object({
@@ -146,6 +159,13 @@ export const insertPromptConfigSchema = createInsertSchema(promptConfigs).omit({
   updatedAt: true,
 });
 
+export const insertJobSchema = createInsertSchema(jobs).omit({
+  id: true,
+  createdAt: true,
+  startedAt: true,
+  completedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Report = typeof reports.$inferSelect;
@@ -153,6 +173,8 @@ export type InsertReport = z.infer<typeof insertReportSchema>;
 export type Source = typeof sources.$inferSelect;
 export type InsertSource = z.infer<typeof insertSourceSchema>;
 export type InsertPromptConfig = z.infer<typeof insertPromptConfigSchema>;
+export type Job = typeof jobs.$inferSelect;
+export type InsertJob = z.infer<typeof insertJobSchema>;
 export type DossierData = z.infer<typeof dossierSchema>;
 export type BouwplanData = z.infer<typeof bouwplanSchema>;
 export type PromptConfig = z.infer<typeof promptConfigSchema>;

@@ -1,20 +1,49 @@
 import { useState, useCallback, memo } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Play, Zap, FolderOpen, Menu } from "lucide-react";
+import { Play, Zap, FolderOpen, Menu, Timer, Settings } from "lucide-react";
 import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import WorkflowInterface from "@/components/workflow-interface";
-import type { DossierData, BouwplanData, Report } from "@shared/schema";
+import { JobStatus } from "@/components/job-status";
+import type { DossierData, BouwplanData, Report, Job } from "@shared/schema";
 
 const Pipeline = memo(function Pipeline() {
   const [rawText, setRawText] = useState("");
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [finalReport, setFinalReport] = useState<string>("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [processingMode, setProcessingMode] = useState<"sync" | "background">("sync");
   const isMobile = useIsMobile();
+  const { toast } = useToast();
+
+  // Mutation to start background job
+  const startJobMutation = useMutation({
+    mutationFn: async (data: { clientName: string; rawText: string }) => {
+      const response = await apiRequest("POST", "/api/jobs/start-report", data);
+      return response.json();
+    },
+    onSuccess: (result) => {
+      setActiveJobId(result.jobId);
+      toast({
+        title: "Achtergrond taak gestart",
+        description: `Rapport generatie begonnen. Job ID: ${result.jobId.slice(0, 8)}...`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Fout bij starten job",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
   
   // Direct workflow data
   const dossierData: DossierData = { 
@@ -32,9 +61,24 @@ const Pipeline = memo(function Pipeline() {
 
   const startWorkflow = useCallback(() => {
     if (rawText.trim()) {
-      setShowWorkflow(true);
+      if (processingMode === "sync") {
+        setShowWorkflow(true);
+      } else {
+        // Start background job
+        startJobMutation.mutate({
+          clientName: "Client", // In real app, get from form
+          rawText: rawText.trim(),
+        });
+      }
     }
-  }, [rawText]);
+  }, [rawText, processingMode, startJobMutation]);
+
+  const handleJobComplete = useCallback((job: Job) => {
+    toast({
+      title: "Rapport voltooid!",
+      description: "Het fiscaal rapport is klaar en kan worden bekeken.",
+    });
+  }, [toast]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -91,12 +135,12 @@ const Pipeline = memo(function Pipeline() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
 
         {/* Input + Start */}
-        {!showWorkflow ? (
+        {!showWorkflow && !activeJobId ? (
           <Card>
             <CardHeader>
               <CardTitle>Fiscale Pipeline</CardTitle>
               <CardDescription>
-                Voer je tekst in en start direct de workflow. Elke nieuwe workflow wordt automatisch een case die je later kunt terugvinden.
+                Voer je tekst in en kies hoe je het rapport wilt genereren. Elke workflow wordt automatisch een case die je later kunt terugvinden.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -107,15 +151,55 @@ const Pipeline = memo(function Pipeline() {
                 className="min-h-32"
                 data-testid="textarea-raw-input"
               />
+              
+              {/* Processing Mode Selection */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg">
+                <div 
+                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                    processingMode === "sync" ? "border-primary bg-primary/10" : "border-muted"
+                  }`}
+                  onClick={() => setProcessingMode("sync")}
+                  data-testid="option-sync-mode"
+                >
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Settings className="h-5 w-5" />
+                    <span className="font-medium">Interactieve Workflow</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Volg elke stap live mee en pas prompts aan tijdens het proces
+                  </p>
+                </div>
+                
+                <div 
+                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                    processingMode === "background" ? "border-primary bg-primary/10" : "border-muted"
+                  }`}
+                  onClick={() => setProcessingMode("background")}
+                  data-testid="option-background-mode"
+                >
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Timer className="h-5 w-5" />
+                    <span className="font-medium">Achtergrond Verwerking</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Start proces in achtergrond, je kunt browser sluiten (5-10 min)
+                  </p>
+                </div>
+              </div>
+              
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button 
                   onClick={startWorkflow}
-                  disabled={!rawText.trim()}
+                  disabled={!rawText.trim() || startJobMutation.isPending}
                   data-testid="button-start-workflow"
                   className="flex-1"
                 >
-                  <Play className="mr-2 h-4 w-4" />
-                  Start Nieuwe Case
+                  {processingMode === "sync" ? (
+                    <><Play className="mr-2 h-4 w-4" /> Start Interactieve Case</>
+                  ) : (
+                    <><Timer className="mr-2 h-4 w-4" /> 
+                    {startJobMutation.isPending ? "Starten..." : "Start Achtergrond Job"}</>
+                  )}
                 </Button>
                 <Link href="/cases">
                   <Button variant="outline" data-testid="button-view-cases" className="sm:w-auto w-full">
@@ -126,6 +210,26 @@ const Pipeline = memo(function Pipeline() {
               </div>
             </CardContent>
           </Card>
+        ) : activeJobId ? (
+          <div className="space-y-6">
+            <JobStatus 
+              jobId={activeJobId} 
+              onComplete={handleJobComplete}
+              showReportLink={true}
+            />
+            <div className="flex justify-center">
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  setActiveJobId(null);
+                  setRawText("");
+                }}
+                data-testid="button-new-job"
+              >
+                Start Nieuwe Job
+              </Button>
+            </div>
+          </div>
         ) : (
           <WorkflowInterface
             dossier={dossierData}
