@@ -69,11 +69,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
       setStageResults(report.stageResults as Record<string, string> || {});
       setConceptReportVersions(report.conceptReportVersions as Record<string, string> || {});
       
-      // Automatically start auto-execution after report creation
-      setTimeout(() => {
-        setAutoRunMode(true);
-        setIsAutoRunning(true);
-      }, 500);
+      // Report created, ready for manual step execution
     },
     onError: (error: Error) => {
       toast({
@@ -109,12 +105,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
       setCustomInput("");
       setEditingStage(null);
       
-      // Auto-advance to next stage only if not in manual mode
-      if (autoRunMode && currentStageIndex < WORKFLOW_STAGES.length - 1) {
-        setTimeout(() => {
-          setCurrentStageIndex(prev => prev + 1);
-        }, 1000);
-      }
+      // Manual mode: user decides when to advance to next stage
       
       toast({
         title: "Stap voltooid",
@@ -157,17 +148,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
     createReportMutation.mutate();
   };
 
-  // Auto-execute next stage when in auto mode
-  useEffect(() => {
-    if (autoRunMode && isAutoRunning && currentReport && !stageResults[WORKFLOW_STAGES[currentStageIndex].key]) {
-      // Execute current stage after a short delay
-      const timer = setTimeout(() => {
-        executeCurrentStage();
-      }, 1000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [currentStageIndex, autoRunMode, isAutoRunning, currentReport]);
+  // Manual execution only - no auto-advance
 
   const executeCurrentStage = () => {
     if (!currentReport) return;
@@ -180,73 +161,6 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
     });
   };
 
-  // Auto-execute all remaining stages sequentially
-  const startAutoExecution = async () => {
-    if (!currentReport) return;
-    
-    setIsAutoRunning(true);
-    setAutoRunMode(true);
-    
-    try {
-      // Execute all remaining stages sequentially
-      for (let i = currentStageIndex; i < WORKFLOW_STAGES.length; i++) {
-        const stage = WORKFLOW_STAGES[i];
-        
-        // Skip if stage already completed
-        if (stageResults[stage.key]) {
-          setCurrentStageIndex(i);
-          continue;
-        }
-        
-        setCurrentStageIndex(i);
-        
-        // Execute stage
-        const response = await apiRequest("POST", `/api/reports/${currentReport.id}/stage/${stage.key}`, {
-          customInput: undefined,
-        });
-        
-        const data = await response.json();
-        
-        setCurrentReport(data.report);
-        setStageResults(prev => ({
-          ...prev,
-          [stage.key]: data.stageResult
-        }));
-        
-        // Update concept report versions if provided
-        if (data.conceptReport) {
-          setConceptReportVersions(prev => ({
-            ...prev,
-            [stage.key]: data.conceptReport
-          }));
-        }
-        
-        // Small delay between stages for better UX
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      
-      // Finalize report after all stages
-      const response = await apiRequest("POST", `/api/reports/${currentReport.id}/finalize`);
-      const finalReport = await response.json();
-      
-      setCurrentReport(finalReport);
-      onComplete(finalReport);
-      
-      toast({
-        title: "Workflow voltooid",
-        description: "Alle stappen zijn succesvol uitgevoerd en het rapport is gegenereerd.",
-      });
-      
-    } catch (error) {
-      toast({
-        title: "Fout in automatische uitvoering",
-        description: error instanceof Error ? error.message : "Onbekende fout",
-        variant: "destructive",
-      });
-    } finally {
-      setIsAutoRunning(false);
-    }
-  };
 
   const goToNextStage = () => {
     if (currentStageIndex < WORKFLOW_STAGES.length - 1) {
@@ -434,41 +348,24 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
             />
           </div>
 
-          {/* Auto Execute Buttons */}
-          {!autoRunMode && !currentStageResult && (
+          {/* Manual Execute Button */}
+          {!currentStageResult && (
             <div className="space-y-2">
               <Button
-                onClick={startAutoExecution}
-                disabled={isAutoRunning || executeStageM.isPending}
-                className="w-full bg-primary"
-                data-testid="button-auto-execute"
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {isAutoRunning ? "Automatisch uitvoeren..." : `Alle Stappen Automatisch Uitvoeren`}
-              </Button>
-              
-              <Button
                 onClick={executeCurrentStage}
-                disabled={executeStageM.isPending || isAutoRunning}
-                variant="outline"
-                className="w-full"
+                disabled={executeStageM.isPending}
+                className="w-full bg-primary"
                 data-testid="button-execute-stage"
               >
                 <Play className="mr-2 h-4 w-4" />
-                {executeStageM.isPending ? "Uitvoeren..." : `Alleen ${currentStage.label}`}
+                {executeStageM.isPending ? "Uitvoeren..." : `Voer ${currentStage.label} Uit`}
               </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                Elke stap wordt handmatig uitgevoerd voor volledige controle
+              </p>
             </div>
           )}
 
-          {/* Auto Running Status */}
-          {isAutoRunning && (
-            <div className="flex items-center justify-center p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
-              <Clock className="mr-2 h-4 w-4 animate-spin text-blue-600" />
-              <span className="text-blue-700 dark:text-blue-300 font-medium">
-                Automatisch uitvoeren stap {currentStageIndex + 1}/{WORKFLOW_STAGES.length}...
-              </span>
-            </div>
-          )}
 
           {/* Stage Result */}
           {currentStageResult && (
