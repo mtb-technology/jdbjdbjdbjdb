@@ -46,14 +46,17 @@ export class ReportGenerator {
     const promptTemplate = stageConfig.prompt || "";
     const useStageGrounding = stageConfig.useGrounding || false;
 
+    // Als er geen custom prompt is, gebruik een basis AI prompt
     if (!promptTemplate || promptTemplate.startsWith("PLACEHOLDER:")) {
-      console.warn(`Stage ${stageName} heeft nog geen custom prompt, gebruik fallback`);
-      return this.getFallbackPromptResult(stageName, {
-        datum: currentDate,
-        dossier: JSON.stringify(dossier, null, 2),
-        bouwplan: JSON.stringify(bouwplan, null, 2),
-        ...previousStageResults
-      });
+      console.warn(`Stage ${stageName} heeft nog geen custom prompt, gebruik basis AI prompt`);
+      processedPrompt = this.getDefaultPromptForStage(stageName, variables);
+    } else {
+      // Replace variables in custom prompt template
+      processedPrompt = promptTemplate;
+      for (const [key, value] of Object.entries(variables)) {
+        const placeholder = `{{${key}}}`;
+        processedPrompt = processedPrompt.replace(new RegExp(placeholder, 'g'), String(value));
+      }
     }
 
     // Get the current working text - starts with raw text, then evolves per stage
@@ -91,12 +94,7 @@ export class ReportGenerator {
     // Add clientName to variables for fallback prompts
     variables.clientName = JSON.parse(variables.dossier).klant?.naam || "Client";
 
-    // Replace variables in prompt template
-    let processedPrompt = promptTemplate;
-    for (const [key, value] of Object.entries(variables)) {
-      const placeholder = `{{${key}}}`;
-      processedPrompt = processedPrompt.replace(new RegExp(placeholder, 'g'), String(value));
-    }
+    // processedPrompt is already set above
 
     try {
       console.log(`Executing stage: ${stageName}`);
@@ -170,6 +168,42 @@ export class ReportGenerator {
     } catch (error) {
       console.error(`Error in stage ${stageName}:`, error);
       throw new Error(`Fout bij uitvoeren van stap ${stageName}: ${error}`);
+    }
+  }
+
+  private getDefaultPromptForStage(stageName: string, variables: Record<string, any>): string {
+    // Basis AI prompts die altijd de AI triggeren
+    const clientName = variables.clientName || "de klant";
+    const currentText = variables.huidige_tekst || variables.oorspronkelijke_tekst || "de dossier tekst";
+    
+    switch (stageName) {
+      case "1_informatiecheck":
+        return `Voer een informatiecheck uit op de volgende dossier tekst voor ${clientName}:
+
+${currentText}
+
+Analyseer of alle benodigde informatie aanwezig is voor een fiscale analyse. Geef een samenvatting van wat er gevonden is en wat er eventueel ontbreekt.`;
+
+      case "2_complexiteitscheck":
+        return `Analyseer de complexiteit van deze fiscale situatie voor ${clientName}:
+
+${currentText}
+
+Bepaal hoe complex deze fiscale kwestie is en of er specialistische expertise nodig is.`;
+
+      case "3_generatie":
+        return `Genereer een basis fiscaal duidingsrapport voor ${clientName} op basis van:
+
+${currentText}
+
+Maak een gestructureerd rapport met inleiding, analyse en conclusie.`;
+
+      default:
+        return `Analyseer en verwerk de volgende tekst voor stap ${stageName}:
+
+${currentText}
+
+Lever een professionele fiscale analyse op basis van deze informatie.`;
     }
   }
 
