@@ -43,8 +43,22 @@ export class ReportGenerator {
 
     const prompts = promptConfig.config as PromptConfig;
     const stageConfig = prompts[stageName as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
-    const promptTemplate = stageConfig.prompt || "";
-    const useStageGrounding = stageConfig.useGrounding || false;
+    
+    // Check if stage config exists and handle missing prompts
+    let promptTemplate: string;
+    let useStageGrounding: boolean;
+    
+    if (!stageConfig || !stageConfig.prompt) {
+      console.warn(`No stage config found for ${stageName}, using default prompt`);
+      promptTemplate = this.getDefaultPromptForStage(stageName, {
+        clientName: JSON.parse(JSON.stringify(dossier)).klant?.naam || "Client",
+        huidige_tekst: ""
+      });
+      useStageGrounding = false;
+    } else {
+      promptTemplate = stageConfig.prompt;
+      useStageGrounding = stageConfig.useGrounding || false;
+    }
 
     // Get the current working text - starts with raw text, then evolves per stage
     let currentWorkingText = (dossier as any).rawText || JSON.stringify(dossier, null, 2);
@@ -200,6 +214,20 @@ Bepaal hoe complex deze fiscale kwestie is en of er specialistische expertise no
 ${currentText}
 
 Maak een gestructureerd rapport met inleiding, analyse en conclusie.`;
+
+      case "5_feedback_verwerker":
+        return `Je bent de Feedback Verwerker. Je taak is om de feedback van alle reviewers (4a-4f) te verwerken in het concept rapport:
+
+CONCEPT RAPPORT:
+${currentText}
+
+Neem alle feedback serieus en verbeter het rapport waar nodig. Focus op:
+- Inhoudelijke correctheid
+- Duidelijke communicatie 
+- Praktische bruikbaarheid
+- Volledigheid van het antwoord
+
+Lever een verbeterde versie van het rapport op.`;
 
       default:
         return `Analyseer en verwerk de volgende tekst voor stap ${stageName}:

@@ -267,7 +267,7 @@ export class MemStorage implements IStorage {
         "4d_DeVertaler": { prompt: "PLACEHOLDER: Voer hier de DeVertaler prompt in", useGrounding: false },
         "4e_DeAdvocaat": { prompt: "PLACEHOLDER: Voer hier de DeAdvocaat prompt in", useGrounding: true },
         "4f_DeKlantpsycholoog": { prompt: "PLACEHOLDER: Voer hier de DeKlantpsycholoog prompt in", useGrounding: false },
-        "4g_ChefEindredactie": { prompt: "PLACEHOLDER: Voer hier de ChefEindredactie prompt in", useGrounding: false },
+        "5_feedback_verwerker": { prompt: "PLACEHOLDER: Voer hier de feedback verwerker prompt in", useGrounding: false },
         "final_check": { prompt: "PLACEHOLDER: Voer hier de final check prompt in", useGrounding: false },
         aiConfig: {
           model: "gemini-2.5-pro",
