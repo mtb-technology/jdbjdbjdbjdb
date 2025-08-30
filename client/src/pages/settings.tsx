@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,8 @@ import {
   AlertCircle,
   Workflow,
   Brain,
-  Zap
+  Zap,
+  Search
 } from "lucide-react";
 import type { PromptConfigRecord, PromptConfig, AiConfig } from "@shared/schema";
 
@@ -43,6 +45,7 @@ export default function Settings() {
     topP: 0.95,
     topK: 20,
     maxOutputTokens: 2048,
+    useGrounding: true,
   });
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -356,17 +359,34 @@ export default function Settings() {
               </div>
             </div>
 
+            {/* Google Search Grounding */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">Google Search Grounding</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Alternatief voor Deep Research - zoekt actuele informatie online
+                  </p>
+                </div>
+                <Switch
+                  checked={aiConfig.useGrounding}
+                  onCheckedChange={(checked) => handleAiConfigChange("useGrounding", checked)}
+                  data-testid="switch-grounding"
+                />
+              </div>
+            </div>
+
             {/* Deep Research Info */}
-            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
               <div className="flex items-start space-x-3">
-                <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                <Search className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
                 <div>
-                  <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-1">
-                    Deep Research Functionaliteit
+                  <h4 className="font-medium text-green-900 dark:text-green-100 mb-1">
+                    Research Functionaliteit 
                   </h4>
-                  <p className="text-sm text-blue-700 dark:text-blue-300">
-                    Deep Research is alleen beschikbaar via de Gemini web interface, niet via de API. 
-                    Voor de beste resultaten, gebruik Gemini 2.5 Pro met aangepaste temperature instellingen.
+                  <p className="text-sm text-green-700 dark:text-green-300">
+                    Google Search grounding is nu actief als alternatief voor Deep Research. 
+                    Dit geeft Gemini toegang tot actuele fiscale informatie van betrouwbare bronnen.
                   </p>
                 </div>
               </div>

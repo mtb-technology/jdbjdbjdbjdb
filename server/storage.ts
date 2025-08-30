@@ -166,6 +166,7 @@ export class MemStorage implements IStorage {
           topP: 0.95,
           topK: 20,
           maxOutputTokens: 2048,
+          useGrounding: true,
         }
       }
     };

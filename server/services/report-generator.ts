@@ -41,7 +41,7 @@ export class ReportGenerator {
     }
 
     const prompts = promptConfig.config as PromptConfig;
-    const promptTemplate = prompts[stageName as keyof PromptConfig];
+    const promptTemplate = prompts[stageName as keyof Omit<PromptConfig, 'aiConfig'>] as string;
 
     if (!promptTemplate || promptTemplate.startsWith("PLACEHOLDER:")) {
       console.warn(`Stage ${stageName} heeft nog geen custom prompt, gebruik fallback`);
@@ -83,16 +83,25 @@ export class ReportGenerator {
         topP: 0.95,
         topK: 20,
         maxOutputTokens: 2048,
+        useGrounding: true,
       };
+      
+      // Prepare generation config
+      const generationConfig: any = {
+        temperature: aiConfig.temperature,
+        topP: aiConfig.topP,
+        topK: aiConfig.topK,
+        maxOutputTokens: aiConfig.maxOutputTokens,
+      };
+
+      // Add grounding for research-like capabilities if enabled
+      if (aiConfig.useGrounding) {
+        generationConfig.tools = [{ google_search: {} }];
+      }
       
       const response = await ai.models.generateContent({
         model: aiConfig.model,
-        config: {
-          temperature: aiConfig.temperature,
-          topP: aiConfig.topP,
-          topK: aiConfig.topK,
-          maxOutputTokens: aiConfig.maxOutputTokens,
-        },
+        config: generationConfig,
         contents: processedPrompt,
       });
 

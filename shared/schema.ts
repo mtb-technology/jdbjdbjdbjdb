@@ -72,6 +72,7 @@ export const aiConfigSchema = z.object({
   topP: z.number().min(0).max(1).default(0.95),
   topK: z.number().min(1).max(40).default(20),
   maxOutputTokens: z.number().min(100).max(8192).default(2048),
+  useGrounding: z.boolean().default(true), // Google Search grounding als Deep Research alternatief
 });
 
 // Multi-stage prompting workflow schema
