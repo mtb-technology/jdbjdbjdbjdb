@@ -344,20 +344,9 @@ export default function Settings() {
 
                     {/* Main Prompt */}
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm font-medium">
-                          {isReviewer ? "Review Prompt (→ JSON feedback)" : "Generator Prompt (→ Rapport content)"}
-                        </Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-xs"
-                          onClick={() => alert('Beschikbare variabelen:\n\n{{datum}} - Huidige datum\n{{dossier}} - Klant dossier\n{{huidige_tekst}} - Tekst van vorige stap\n{{clientName}} - Client naam\n\nVorige stap resultaten:\n{{1_informatiecheck}}\n{{2_complexiteitscheck}}\n{{3_generatie}}\netc.')}
-                        >
-                          <Info className="h-3 w-3 mr-1" />
-                          Variabelen
-                        </Button>
-                      </div>
+                      <Label className="text-sm font-medium">
+                        {isReviewer ? "Review Prompt (→ JSON feedback)" : "Generator Prompt (→ Rapport content)"}
+                      </Label>
                       <Textarea
                         value={prompt}
                         onChange={(e) => handlePromptChange(stage.key, e.target.value)}
@@ -370,24 +359,6 @@ export default function Settings() {
                       />
                     </div>
 
-                    {/* Verwerker Prompt - only for reviewers */}
-                    {isReviewer && (
-                      <div className="space-y-2 border-t border-orange-200 pt-4">
-                        <Label className="text-sm font-medium text-orange-700">
-                          📝 Verwerker Prompt (JSON feedback → Rapport update)
-                        </Label>
-                        <p className="text-xs text-orange-600 mb-2">
-                          Deze prompt krijgt de JSON feedback en past het concept rapport dienovereenkomstig aan.
-                        </p>
-                        <Textarea
-                          value={verwerkerPrompt}
-                          onChange={(e) => handleVerwerkerPromptChange(stage.key, e.target.value)}
-                          className="font-mono text-sm min-h-24 border-orange-200"
-                          placeholder="Prompt om JSON feedback in het rapport te verwerken..."
-                          data-testid={`textarea-verwerker-${stage.key}`}
-                        />
-                      </div>
-                    )}
                   </div>
                 </CardContent>
               </Card>
