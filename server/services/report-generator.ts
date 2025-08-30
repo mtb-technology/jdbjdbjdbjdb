@@ -87,6 +87,9 @@ export class ReportGenerator {
     if (customInput) {
       variables.custom_input = customInput;
     }
+    
+    // Add clientName to variables for fallback prompts
+    variables.clientName = JSON.parse(variables.dossier).klant?.naam || "Client";
 
     // Replace variables in prompt template
     let processedPrompt = promptTemplate;
@@ -199,8 +202,10 @@ export class ReportGenerator {
     // Temporary fallback until user loads custom prompts
     switch (stageName) {
       case "1_informatiecheck":
+        const dossierInfo = JSON.parse(variables.dossier);
+        const clientName = dossierInfo.klant?.naam || variables.clientName || "Client";
         return {
-          stageOutput: `✅ Informatiecheck voltooid voor ${JSON.parse(variables.dossier).klant?.naam}\n\nDossier gevalideerd en bevat alle benodigde informatie voor fiscale analyse.`,
+          stageOutput: `✅ Informatiecheck voltooid voor ${clientName}\n\nDossier gevalideerd en bevat alle benodigde informatie voor fiscale analyse.`,
           conceptReport: ""
         };
       

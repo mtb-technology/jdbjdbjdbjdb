@@ -143,7 +143,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       const report = await storage.createReport({
         title: `Fiscaal Duidingsrapport - ${clientName}`,
         clientName: clientName,
-        dossierData: { rawText }, // Alleen ruwe tekst, geen schemas
+        dossierData: { rawText, klant: { naam: clientName } }, // Ruwe tekst + klantnaam voor fallback prompts
         bouwplanData: {},
         generatedContent: null,
         stageResults: {},
