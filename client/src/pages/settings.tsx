@@ -34,7 +34,6 @@ const PROMPT_STAGES = [
   { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Review communicatie → JSON feedback", type: "reviewer" },
   { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", type: "reviewer" },
   { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", type: "reviewer" },
-  { key: "4g_ChefEindredactie", label: "4g. Chef Eindredactie", description: "Finale review → JSON feedback", type: "reviewer" },
   { key: "5_verwerker", label: "5. Verwerker", description: "Verwerkt alle JSON feedback in het rapport", type: "processor" },
   { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", type: "generator" },
 ] as const;
