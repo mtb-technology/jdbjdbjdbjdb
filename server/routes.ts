@@ -112,14 +112,19 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
   // Create new report (start workflow)
   app.post("/api/reports/create", async (req, res) => {
     try {
-      const validatedData = generateReportSchema.parse(req.body);
+      const { clientName, rawText } = req.body;
       
-      // Create report in draft state
+      if (!rawText || !clientName) {
+        res.status(400).json({ message: "Ruwe tekst en klantnaam zijn verplicht" });
+        return;
+      }
+      
+      // Create report in draft state - sla alleen ruwe tekst op
       const report = await storage.createReport({
-        title: `Fiscaal Duidingsrapport - ${validatedData.clientName}`,
-        clientName: validatedData.clientName,
-        dossierData: validatedData.dossier,
-        bouwplanData: validatedData.bouwplan,
+        title: `Fiscaal Duidingsrapport - ${clientName}`,
+        clientName: clientName,
+        dossierData: { rawText }, // Alleen ruwe tekst, geen schemas
+        bouwplanData: {},
         generatedContent: null,
         stageResults: {},
         conceptReportVersions: {},

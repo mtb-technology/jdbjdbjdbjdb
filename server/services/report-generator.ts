@@ -59,9 +59,10 @@ export class ReportGenerator {
     // Prepare variables for prompt template with enhanced context
     const variables: Record<string, string> = {
       datum: currentDate,
+      ruwe_tekst: (dossier as any).rawText || JSON.stringify(dossier, null, 2), // Gebruik ruwe tekst als beschikbaar
       dossier: JSON.stringify(dossier, null, 2),
       bouwplan: JSON.stringify(bouwplan, null, 2),
-      oorspronkelijk_dossier: JSON.stringify(dossier, null, 2), // Always include original dossier for context
+      oorspronkelijk_dossier: JSON.stringify(dossier, null, 2),
       ...previousStageResults
     };
 

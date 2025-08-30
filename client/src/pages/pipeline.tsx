@@ -47,7 +47,7 @@ export default function Pipeline() {
     };
   }, [isExtracting, extractionStartTime]);
 
-  // Extract dossier data from raw text using AI
+  // Start workflow direct met ruwe tekst - geen vooraf structurering
   const handleExtractData = async () => {
     if (!rawText.trim()) return;
     
@@ -56,30 +56,25 @@ export default function Pipeline() {
     setExtractionStartTime(Date.now());
     
     try {
-      // Call API to extract structured data from raw text
-      const response = await fetch('/api/extract-dossier', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawText }),
+      // Geen data extractie - direct naar workflow met ruwe tekst
+      // De eerste prompt (informatiecheck) krijgt de ruwe tekst en bepaalt zelf de output
+      setExtractedDossier({ 
+        klant: { naam: "Dynamisch", situatie: "Bepaald door prompt" },
+        fiscale_gegevens: { vermogen: 0, inkomsten: 0 }
+      });
+      setExtractedBouwplan({
+        taal: "nl",
+        structuur: { inleiding: true, knelpunten: ["Dynamisch"], scenario_analyse: true, vervolgstappen: true }
       });
       
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Onbekende fout opgetreden' }));
-        throw new Error(errorData.message || `HTTP Error: ${response.status}`);
-      }
-      
-      const { dossier, bouwplan } = await response.json();
-      setExtractedDossier(dossier);
-      setExtractedBouwplan(bouwplan);
-      
-      // Na data extractie direct starten met informatiecheck (stap 1)
+      // Direct naar workflow - eerste prompt krijgt ruwe tekst
       setTimeout(() => {
         setShowWorkflow(true);
-      }, 1000);
+      }, 500);
       
     } catch (error) {
-      console.error('Data extractie fout:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Onbekende fout bij data extractie';
+      console.error('Workflow start fout:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Onbekende fout bij starten workflow';
       setExtractionError(errorMessage);
     } finally {
       setIsExtracting(false);
@@ -249,33 +244,26 @@ De AI zal automatisch de belangrijke informatie extraheren en structureren."
         {showWorkflow && extractedDossier && extractedBouwplan && (
           <div className="space-y-6">
             
-            {/* Extracted Data Preview */}
+            {/* Ruwe Data Klaar */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <CheckCircle className="mr-2 h-5 w-5 text-green-600" />
-                  Stap 2: Data Extractie Voltooid
+                  Stap 2: Ruwe Data Klaar voor Prompts
                 </CardTitle>
                 <CardDescription>
-                  De AI heeft succesvol gestructureerde gegevens uit je tekst geëxtraheerd
+                  De ruwe tekst wordt direct doorgegeven aan de prompts - geen vooraf structurering
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Klant Gegevens</Label>
-                    <div className="bg-muted/50 p-3 rounded-md font-mono text-xs">
-                      Naam: {extractedDossier.klant.naam}<br/>
-                      Situatie: {extractedDossier.klant.situatie}
-                    </div>
+                <div className="bg-muted/50 p-3 rounded-md">
+                  <Label className="text-sm font-medium">Ruwe Input</Label>
+                  <div className="mt-2 text-xs font-mono max-h-32 overflow-y-auto">
+                    {rawText.substring(0, 500)}...
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Fiscale Gegevens</Label>
-                    <div className="bg-muted/50 p-3 rounded-md font-mono text-xs">
-                      Vermogen: €{extractedDossier.fiscale_gegevens.vermogen.toLocaleString()}<br/>
-                      Inkomsten: €{extractedDossier.fiscale_gegevens.inkomsten.toLocaleString()}
-                    </div>
-                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Deze tekst gaat direct naar de eerste prompt (informatiecheck) die zelf bepaalt wat ermee gebeurt
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -303,7 +291,8 @@ De AI zal automatisch de belangrijke informatie extraheren en structureren."
                   <WorkflowInterface
                     dossier={extractedDossier}
                     bouwplan={extractedBouwplan}
-                    clientName={extractedDossier.klant.naam}
+                    clientName="Klant"
+                    rawText={rawText}
                     onComplete={handleWorkflowComplete}
                   />
                 </div>

@@ -39,10 +39,11 @@ interface WorkflowInterfaceProps {
   dossier: DossierData;
   bouwplan: BouwplanData;
   clientName: string;
+  rawText: string;  // Voeg ruwe tekst toe voor dynamische verwerking
   onComplete: (report: Report) => void;
 }
 
-export default function WorkflowInterface({ dossier, bouwplan, clientName, onComplete }: WorkflowInterfaceProps) {
+export default function WorkflowInterface({ dossier, bouwplan, clientName, rawText, onComplete }: WorkflowInterfaceProps) {
   const [currentReport, setCurrentReport] = useState<Report | null>(null);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [stageResults, setStageResults] = useState<Record<string, string>>({});
@@ -61,6 +62,7 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
         dossier,
         bouwplan,
         clientName,
+        rawText,  // Stuur ruwe tekst mee voor dynamische verwerking
       });
       return response.json();
     },
