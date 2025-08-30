@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Slab:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(210, 40%, 98%);
+  --foreground: hsl(210, 40%, 8%);
+  --card: hsl(210, 40%, 98%);
+  --card-foreground: hsl(210, 40%, 15%);
+  --popover: hsl(210, 40%, 98%);
+  --popover-foreground: hsl(210, 40%, 8%);
+  --primary: hsl(221, 83%, 30%);
+  --primary-foreground: hsl(210, 40%, 98%);
+  --secondary: hsl(210, 40%, 96%);
+  --secondary-foreground: hsl(210, 40%, 8%);
+  --muted: hsl(210, 40%, 96%);
+  --muted-foreground: hsl(210, 20%, 45%);
+  --accent: hsl(48, 96%, 53%);
+  --accent-foreground: hsl(210, 40%, 8%);
+  --destructive: hsl(0, 84%, 37%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --border: hsl(210, 40%, 90%);
+  --input: hsl(210, 40%, 94%);
+  --ring: hsl(221, 83%, 30%);
+  --radius: 8px;
+  --font-sans: "Roboto", system-ui, sans-serif;
+  --font-serif: "Roboto Slab", serif;
+  --font-mono: "Roboto Mono", monospace;
+  --shadow-2xs: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00);
+  --shadow-xs: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00);
+  --shadow-sm: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 1px 2px -1px hsl(221, 83%, 30%, 0.00);
+  --shadow: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 1px 2px -1px hsl(221, 83%, 30%, 0.00);
+  --shadow-md: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 2px 4px -1px hsl(221, 83%, 30%, 0.00);
+  --shadow-lg: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 4px 6px -1px hsl(221, 83%, 30%, 0.00);
+  --shadow-xl: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 8px 10px -1px hsl(221, 83%, 30%, 0.00);
+  --shadow-2xl: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+}
+
+.dark {
+  --background: hsl(0, 0%, 0%);
+  --foreground: hsl(200, 6.6667%, 91.1765%);
+  --card: hsl(228, 9.8039%, 10%);
+  --card-foreground: hsl(0, 0%, 85.0980%);
+  --popover: hsl(0, 0%, 0%);
+  --popover-foreground: hsl(200, 6.6667%, 91.1765%);
+  --primary: hsl(221, 83%, 30%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(195.0000, 15.3846%, 94.9020%);
+  --secondary-foreground: hsl(210, 25%, 7.8431%);
+  --muted: hsl(0, 0%, 9.4118%);
+  --muted-foreground: hsl(210, 3.3898%, 46.2745%);
+  --accent: hsl(48, 96%, 53%);
+  --accent-foreground: hsl(210, 40%, 8%);
+  --destructive: hsl(0, 84%, 37%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --border: hsl(210, 5.2632%, 14.9020%);
+  --input: hsl(207.6923, 27.6596%, 18.4314%);
+  --ring: hsl(221, 83%, 30%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
