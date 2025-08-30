@@ -69,7 +69,10 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, onCom
       setStageResults(report.stageResults as Record<string, string> || {});
       setConceptReportVersions(report.conceptReportVersions as Record<string, string> || {});
       
-      // Report created, ready for manual step execution
+      // Auto-start informatiecheck (stap 1) direct na report aanmaken
+      setTimeout(() => {
+        executeCurrentStage();
+      }, 500);
     },
     onError: (error: Error) => {
       toast({

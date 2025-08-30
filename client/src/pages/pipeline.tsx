@@ -71,7 +71,11 @@ export default function Pipeline() {
       const { dossier, bouwplan } = await response.json();
       setExtractedDossier(dossier);
       setExtractedBouwplan(bouwplan);
-      setShowWorkflow(true);
+      
+      // Na data extractie direct starten met informatiecheck (stap 1)
+      setTimeout(() => {
+        setShowWorkflow(true);
+      }, 1000);
       
     } catch (error) {
       console.error('Data extractie fout:', error);
@@ -281,18 +285,18 @@ De AI zal automatisch de belangrijke informatie extraheren en structureren."
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Zap className="mr-2 h-5 w-5" />
-                  Stap 3: 11-Stappen Workflow Uitvoering
+                  Stap 3: Informatiecheck & Workflow
                 </CardTitle>
                 <CardDescription>
-                  De AI doorloopt nu alle gespecialiseerde rollen voor een complete fiscale analyse
+                  Start met informatiecheck, daarna complexiteitscheck, dan generatie
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                    <p className="text-sm text-blue-700 dark:text-blue-300">
-                      <strong>Handmatige Workflow:</strong> Alle 11 stappen worden handmatig uitgevoerd voor volledige controle. 
-                      Elke stap krijgt het originele dossier + alle vorige resultaten voor complete context.
+                  <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-4 border border-green-200 dark:border-green-800">
+                    <p className="text-sm text-green-700 dark:text-green-300">
+                      <strong>Stap 1 (Informatiecheck)</strong> start automatisch en controleert of alle data compleet is. 
+                      Na goedkeuring volgen de volgende stappen handmatig.
                     </p>
                   </div>
                   
