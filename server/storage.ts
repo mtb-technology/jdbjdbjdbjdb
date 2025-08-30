@@ -136,10 +136,44 @@ export class MemStorage implements IStorage {
     return this.reports.get(id);
   }
 
-  async getAllReports(): Promise<Report[]> {
-    return Array.from(this.reports.values()).sort(
-      (a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
+  async getAllReports(options?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    search?: string;
+  }): Promise<{ reports: Report[]; total: number; page: number; totalPages: number }> {
+    let allReports = Array.from(this.reports.values());
+    
+    // Filter by status
+    if (options?.status) {
+      allReports = allReports.filter(r => r.status === options.status);
+    }
+    
+    // Filter by search (client name or title)
+    if (options?.search) {
+      const searchLower = options.search.toLowerCase();
+      allReports = allReports.filter(r => 
+        r.title.toLowerCase().includes(searchLower) ||
+        r.clientName.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Sort by creation date (newest first)
+    allReports.sort((a, b) => 
+      new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
     );
+    
+    const total = allReports.length;
+    const page = options?.page || 1;
+    const limit = options?.limit || 10;
+    const totalPages = Math.ceil(total / limit);
+    
+    // Paginate
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const reports = allReports.slice(startIndex, endIndex);
+    
+    return { reports, total, page, totalPages };
   }
 
   async createReport(insertReport: InsertReport): Promise<Report> {
@@ -158,6 +192,22 @@ export class MemStorage implements IStorage {
     };
     this.reports.set(id, report);
     return report;
+  }
+
+  async updateReportStatus(id: string, status: string): Promise<void> {
+    const existing = this.reports.get(id);
+    if (!existing) throw new Error("Report not found");
+    
+    const updated: Report = { 
+      ...existing, 
+      status, 
+      updatedAt: new Date() 
+    };
+    this.reports.set(id, updated);
+  }
+
+  async deleteReport(id: string): Promise<void> {
+    this.reports.delete(id);
   }
 
   async updateReport(id: string, updateData: Partial<Report>): Promise<Report | undefined> {

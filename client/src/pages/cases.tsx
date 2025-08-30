@@ -1,0 +1,322 @@
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, RefreshCw } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
+
+interface Case {
+  id: string;
+  title: string;
+  clientName: string;
+  status: "draft" | "processing" | "generated" | "exported" | "archived";
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+interface CasesResponse {
+  reports: Case[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+export default function Cases() {
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const queryClient = useQueryClient();
+
+  const { data: casesData, isLoading } = useQuery<CasesResponse>({
+    queryKey: ["/api/cases", { page, search, status: statusFilter }],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      params.set("page", page.toString());
+      params.set("limit", "10");
+      if (search) params.set("search", search);
+      if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
+      
+      return apiRequest(`/api/cases?${params.toString()}`);
+    }
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      return apiRequest(`/api/cases/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
+    },
+  });
+
+  const deleteCaseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest(`/api/cases/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
+    },
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "draft": return "secondary";
+      case "processing": return "default";
+      case "generated": return "default";
+      case "exported": return "default";
+      case "archived": return "secondary";
+      default: return "secondary";
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "draft": return "Concept";
+      case "processing": return "Bezig";
+      case "generated": return "Voltooid";
+      case "exported": return "Geëxporteerd";
+      case "archived": return "Gearchiveerd";
+      default: return status;
+    }
+  };
+
+  const handleExport = (caseId: string, format: string) => {
+    window.open(`/api/cases/${caseId}/export/${format}`, '_blank');
+  };
+
+  const cases = casesData?.reports || [];
+  const totalPages = casesData?.totalPages || 1;
+
+  return (
+    <div className="min-h-screen bg-background">
+      
+      {/* Header */}
+      <header className="border-b border-border bg-card shadow-sm">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between">
+            <div className="flex items-center">
+              <div className="flex-shrink-0 flex items-center">
+                <FileText className="text-2xl text-primary mr-3 h-8 w-8" />
+                <span className="text-xl font-bold text-foreground">Case Management</span>
+              </div>
+              <nav className="hidden md:ml-10 md:flex md:space-x-8">
+                <Link href="/">
+                  <a className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
+                    Pipeline
+                  </a>
+                </Link>
+                <a href="/cases" className="text-primary font-medium" data-testid="nav-cases">
+                  Cases
+                </a>
+                <Link href="/settings">
+                  <a className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
+                    Instellingen
+                  </a>
+                </Link>
+              </nav>
+            </div>
+            <Link href="/">
+              <Button data-testid="button-new-case">
+                Nieuwe Case
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+
+        {/* Filters */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Cases Overzicht</CardTitle>
+            <CardDescription>
+              Beheer al je fiscale cases en rapporten
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-4 items-center">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Zoek op klantnaam of titel..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10"
+                  data-testid="input-search-cases"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-48" data-testid="select-status-filter">
+                  <SelectValue placeholder="Alle statussen" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Alle statussen</SelectItem>
+                  <SelectItem value="draft">Concept</SelectItem>
+                  <SelectItem value="processing">Bezig</SelectItem>
+                  <SelectItem value="generated">Voltooid</SelectItem>
+                  <SelectItem value="exported">Geëxporteerd</SelectItem>
+                  <SelectItem value="archived">Gearchiveerd</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Cases List */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="h-6 w-6 animate-spin" />
+            <span className="ml-2">Cases laden...</span>
+          </div>
+        ) : cases.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Geen cases gevonden</h3>
+              <p className="text-muted-foreground mb-6">
+                {search || statusFilter ? "Geen cases gevonden die voldoen aan je filters" : "Je hebt nog geen cases aangemaakt"}
+              </p>
+              <Link href="/">
+                <Button data-testid="button-create-first-case">
+                  Eerste Case Aanmaken
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {cases.map((case_) => (
+              <Card key={case_.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-lg font-semibold">{case_.title}</h3>
+                        <Badge variant={getStatusColor(case_.status)}>
+                          {getStatusText(case_.status)}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-1">
+                          <User className="h-4 w-4" />
+                          {case_.clientName}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-4 w-4" />
+                          {new Date(case_.createdAt).toLocaleDateString('nl-NL')}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Link href={`/cases/${case_.id}`}>
+                        <Button variant="outline" size="sm" data-testid={`button-view-case-${case_.id}`}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          Bekijken
+                        </Button>
+                      </Link>
+                      {case_.status === "generated" && (
+                        <>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleExport(case_.id, "html")}
+                            data-testid={`button-export-html-${case_.id}`}
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            HTML
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleExport(case_.id, "json")}
+                            data-testid={`button-export-json-${case_.id}`}
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            JSON
+                          </Button>
+                        </>
+                      )}
+                      {case_.status !== "archived" && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => updateStatusMutation.mutate({ id: case_.id, status: "archived" })}
+                          data-testid={`button-archive-${case_.id}`}
+                        >
+                          <Archive className="h-4 w-4 mr-2" />
+                          Archiveren
+                        </Button>
+                      )}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" size="sm" data-testid={`button-delete-${case_.id}`}>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Verwijderen
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Case verwijderen</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Weet je zeker dat je deze case wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Annuleren</AlertDialogCancel>
+                            <AlertDialogAction 
+                              onClick={() => deleteCaseMutation.mutate(case_.id)}
+                              data-testid={`button-confirm-delete-${case_.id}`}
+                            >
+                              Verwijderen
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-8">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  data-testid="button-previous-page"
+                >
+                  Vorige
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Pagina {page} van {totalPages}
+                </span>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  data-testid="button-next-page"
+                >
+                  Volgende
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}

@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/dashboard";
 import Settings from "@/pages/settings";
 import Pipeline from "@/pages/pipeline";
+import Cases from "@/pages/cases";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -13,6 +14,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Pipeline} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/cases" component={Cases} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

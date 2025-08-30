@@ -89,11 +89,13 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       const response = await ai.models.generateContent({
         model: "gemini-2.5-pro",
         contents: extractionPrompt,
-        temperature: 0.1,
-        topP: 0.95,
-        topK: 20,
-        maxOutputTokens: 2048,
-        responseMimeType: "application/json"
+        config: {
+          temperature: 0.1,
+          topP: 0.95,
+          topK: 20,
+          maxOutputTokens: 2048,
+          responseMimeType: "application/json"
+        }
       });
 
       const extractedJson = response.text?.trim();
@@ -419,6 +421,104 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     } catch (error) {
       console.error("Error restoring backup:", error);
       res.status(500).json({ message: "Restore failed" });
+    }
+  });
+
+  // === CASE MANAGEMENT ENDPOINTS ===
+
+  // Get all cases/reports with pagination and filtering
+  app.get("/api/cases", async (req, res) => {
+    try {
+      const { page = 1, limit = 10, status, search } = req.query;
+      
+      const cases = await storage.getAllReports({
+        page: Number(page),
+        limit: Number(limit),
+        status: status as string,
+        search: search as string
+      });
+      
+      res.json(cases);
+    } catch (error: any) {
+      console.error("Error fetching cases:", error);
+      res.status(500).json({ message: "Fout bij ophalen cases" });
+    }
+  });
+
+  // Get specific case by ID
+  app.get("/api/cases/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const report = await storage.getReport(id);
+      
+      if (!report) {
+        res.status(404).json({ message: "Case niet gevonden" });
+        return;
+      }
+      
+      res.json(report);
+    } catch (error: any) {
+      console.error("Error fetching case:", error);
+      res.status(500).json({ message: "Fout bij ophalen case" });
+    }
+  });
+
+  // Update case status
+  app.patch("/api/cases/:id/status", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      
+      if (!["draft", "processing", "generated", "exported", "archived"].includes(status)) {
+        res.status(400).json({ message: "Ongeldige status" });
+        return;
+      }
+      
+      await storage.updateReportStatus(id, status);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error updating case status:", error);
+      res.status(500).json({ message: "Fout bij updaten status" });
+    }
+  });
+
+  // Delete case
+  app.delete("/api/cases/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteReport(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting case:", error);
+      res.status(500).json({ message: "Fout bij verwijderen case" });
+    }
+  });
+
+  // Export case as different formats
+  app.get("/api/cases/:id/export/:format", async (req, res) => {
+    try {
+      const { id, format } = req.params;
+      const report = await storage.getReport(id);
+      
+      if (!report) {
+        res.status(404).json({ message: "Case niet gevonden" });
+        return;
+      }
+      
+      if (format === "html") {
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Content-Disposition', `attachment; filename="case-${id}.html"`);
+        res.send(report.generatedContent || "Geen content beschikbaar");
+      } else if (format === "json") {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="case-${id}.json"`);
+        res.json(report);
+      } else {
+        res.status(400).json({ message: "Ongeldige export format" });
+      }
+    } catch (error: any) {
+      console.error("Error exporting case:", error);
+      res.status(500).json({ message: "Fout bij exporteren case" });
     }
   });
 
