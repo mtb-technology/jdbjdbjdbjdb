@@ -153,7 +153,18 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
       // Sla report ID op in sessie om dubbele creatie te voorkomen
       sessionStorage.setItem('current-workflow-report-id', report.id);
       
-      // No auto-start - user wants full manual control
+      // Auto-start eerste stap direct na case aanmaken
+      setTimeout(() => {
+        setStageStartTime(new Date());
+        setCurrentStageTimer(0);
+        
+        const firstStage = WORKFLOW_STAGES[0];
+        executeStageM.mutate({
+          reportId: report.id,
+          stage: firstStage.key,
+          customInput: undefined,
+        });
+      }, 100);
     },
     onError: (error: Error) => {
       toast({
