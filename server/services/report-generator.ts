@@ -3,7 +3,7 @@ import { SourceValidator } from "./source-validator";
 import { GoogleGenAI } from "@google/genai";
 import { storage } from "../storage";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "" });
 
 export class ReportGenerator {
   private sourceValidator: SourceValidator;
@@ -110,9 +110,9 @@ export class ReportGenerator {
       }
       
       // Get AI configuration from prompt config or use defaults
-      // Use gemini-1.5-pro for highest quality analysis
+      // Use gemini-2.5-pro for highest quality analysis
       const aiConfig: AiConfig = prompts.aiConfig || {
-        model: "gemini-1.5-pro",
+        model: "gemini-2.5-pro",
         temperature: 0.1,
         topP: 0.95,
         topK: 20,
@@ -139,11 +139,11 @@ export class ReportGenerator {
       try {
         console.log(`Making AI call with model: ${aiConfig.model}`);
         
-        // Use the correct API method - generation config needs to be nested
+        // Use the correct API method for GoogleGenAI
         const response = await ai.models.generateContent({
           model: aiConfig.model,
           contents: fullInput,
-          config: generationConfig
+          generationConfig
         });
         
         const result = response.text || "";

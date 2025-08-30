@@ -23,7 +23,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   const reportGenerator = new ReportGenerator();
   const sourceValidator = new SourceValidator();
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "" });
 
   // Test route voor AI - simpele test om te verifieren dat API werkt
   app.get("/api/test-ai", async (req, res) => {
@@ -95,7 +95,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       const response = await ai.models.generateContent({
         model: "gemini-2.5-pro",
         contents: extractionPrompt,
-        config: {
+        generationConfig: {
           temperature: 0.1,
           topP: 0.95,
           topK: 20,
