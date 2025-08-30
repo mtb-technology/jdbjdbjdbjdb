@@ -35,6 +35,7 @@ const PROMPT_STAGES = [
   { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", type: "reviewer" },
   { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", type: "reviewer" },
   { key: "4g_ChefEindredactie", label: "4g. Chef Eindredactie", description: "Finale review → JSON feedback", type: "reviewer" },
+  { key: "5_verwerker", label: "5. Verwerker", description: "Verwerkt alle JSON feedback in het rapport", type: "processor" },
   { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", type: "generator" },
 ] as const;
 
@@ -273,18 +274,24 @@ export default function Settings() {
             const prompt = stageConfig?.prompt || "";
             const useGrounding = stageConfig?.useGrounding || false;
             const stepType = stageConfig?.stepType || stage.type || "generator";
-            const verwerkerPrompt = stageConfig?.verwerkerPrompt || "";
             const isEmpty = isPromptEmpty(prompt);
             const isReviewer = stepType === "reviewer";
+            const isProcessor = stepType === "processor";
             
             return (
-              <Card key={stage.key} className={`shadow-sm ${isReviewer ? 'border-l-4 border-l-orange-400' : 'border-l-4 border-l-blue-400'}`}>
+              <Card key={stage.key} className={`shadow-sm ${
+                isReviewer ? 'border-l-4 border-l-orange-400' : 
+                isProcessor ? 'border-l-4 border-l-purple-400' : 
+                'border-l-4 border-l-blue-400'
+              }`}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
                         isEmpty ? 'bg-muted text-muted-foreground' : 
-                        isReviewer ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white'
+                        isReviewer ? 'bg-orange-500 text-white' : 
+                        isProcessor ? 'bg-purple-500 text-white' :
+                        'bg-blue-500 text-white'
                       }`}>
                         {isEmpty ? (
                           <AlertCircle className="h-4 w-4" />
@@ -295,8 +302,8 @@ export default function Settings() {
                       <div>
                         <div className="flex items-center space-x-2">
                           <CardTitle className="text-lg">{stage.label}</CardTitle>
-                          <Badge variant={isReviewer ? "destructive" : "default"} className="text-xs">
-                            {isReviewer ? "🔍 Review" : "📝 Generator"}
+                          <Badge variant={isReviewer ? "destructive" : isProcessor ? "secondary" : "default"} className="text-xs">
+                            {isReviewer ? "🔍 Review" : isProcessor ? "⚙️ Processor" : "📝 Generator"}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">{stage.description}</p>
@@ -319,7 +326,19 @@ export default function Settings() {
                           <span className="text-orange-700 font-medium text-sm">🔍 Review Stap</span>
                         </div>
                         <p className="text-xs text-orange-700">
-                          Deze stap geeft <strong>JSON feedback</strong> op het rapport. Gebruik de "Verwerker Prompt" om deze feedback automatisch in het rapport te verwerken.
+                          Deze stap geeft <strong>JSON feedback</strong> op het rapport. Stap 5 (Verwerker) verwerkt alle feedback automatisch.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Processor Type Indicator */}
+                    {isProcessor && (
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <span className="text-purple-700 font-medium text-sm">⚙️ Processor Stap</span>
+                        </div>
+                        <p className="text-xs text-purple-700">
+                          Deze stap verwerkt <strong>alle JSON feedback</strong> van stap 4a-4g en past het rapport aan.
                         </p>
                       </div>
                     )}
@@ -345,7 +364,9 @@ export default function Settings() {
                     {/* Main Prompt */}
                     <div className="space-y-2">
                       <Label className="text-sm font-medium">
-                        {isReviewer ? "Review Prompt (→ JSON feedback)" : "Generator Prompt (→ Rapport content)"}
+                        {isReviewer ? "Review Prompt (→ JSON feedback)" : 
+                         isProcessor ? "Processor Prompt (JSON feedback → Rapport update)" : 
+                         "Generator Prompt (→ Rapport content)"}
                       </Label>
                       <Textarea
                         value={prompt}
@@ -353,6 +374,8 @@ export default function Settings() {
                         className="font-mono text-sm min-h-32"
                         placeholder={isReviewer ? 
                           `Review prompt die JSON feedback geeft voor ${stage.label}...` :
+                          isProcessor ?
+                          `Processor prompt die alle JSON feedback verwerkt in het rapport...` :
                           `Generator prompt voor ${stage.label}...`
                         }
                         data-testid={`textarea-prompt-${stage.key}`}

@@ -17,7 +17,8 @@ import {
   Edit3,
   Eye,
   RotateCcw,
-  FileText
+  FileText,
+  Zap
 } from "lucide-react";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
@@ -106,6 +107,7 @@ const WORKFLOW_STAGES = [
   { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", icon: CheckCircle, type: "reviewer" },
   { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", icon: CheckCircle, type: "reviewer" },
   { key: "4g_ChefEindredactie", label: "4g. Chef Eindredactie", description: "Finale review → JSON feedback", icon: CheckCircle, type: "reviewer" },
+  { key: "5_verwerker", label: "5. Verwerker", description: "Verwerkt alle JSON feedback in het rapport", icon: Zap, type: "processor" },
   { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", icon: Eye, type: "generator" },
 ] as const;
 
