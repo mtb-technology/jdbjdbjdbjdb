@@ -403,64 +403,74 @@ export default function WorkflowInterface({ dossier, bouwplan, clientName, rawTe
             </div>
           </div>
           
-          {/* Document Container - A4 ratio */}
-          <div className="bg-white shadow-2xl rounded-lg overflow-hidden max-w-4xl mx-auto" style={{ aspectRatio: '210/297' }}>
+          {/* Document Container - Exact zoals finale PDF */}
+          <div className="bg-white shadow-2xl rounded-lg overflow-hidden max-w-4xl mx-auto">
             
-            {/* Official Letterhead */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-8 py-6">
+            {/* Professional Blue Header - exact zoals in PDF */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-8 py-5">
               <div className="flex justify-between items-start">
                 <div>
-                  <h1 className="text-2xl font-bold tracking-wide">DE FISCALE ANALIST</h1>
-                  <p className="text-blue-100 text-sm mt-1">Belastingadvies & Fiscale Duiding</p>
-                  <div className="mt-2 text-xs text-blue-100">
+                  <h1 className="text-xl font-bold tracking-wide">DE FISCALE ANALIST</h1>
+                  <p className="text-blue-100 text-xs mt-1">Belastingadvies & Fiscale Duiding</p>
+                  <div className="mt-2 text-xs text-blue-100 opacity-80">
                     BTW: NL123456789B01 | KvK: 12345678
                   </div>
                 </div>
-                <div className="text-right text-xs text-blue-100">
-                  <div className="font-medium">FISCAAL DUIDINGSRAPPORT</div>
-                  <div className="mt-1">Rapport ID: {currentReport.id.substring(0, 8).toUpperCase()}</div>
-                  <div>Datum: {new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                <div className="text-right">
+                  <div className="text-xs text-blue-100 font-medium uppercase tracking-wider">FISCAAL DUIDINGSRAPPORT</div>
+                  <div className="text-xs text-blue-100 mt-2">Rapport ID: {currentReport.id.substring(0, 8).toUpperCase()}</div>
+                  <div className="text-xs text-blue-100">Datum: {new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
                 </div>
               </div>
             </div>
 
-            {/* Client Information Bar */}
-            <div className="bg-gray-50 border-b border-gray-200 px-8 py-3">
+            {/* Client Info Bar - minimalist zoals in PDF */}
+            <div className="bg-gray-50 px-8 py-2 border-b border-gray-200">
               <div className="flex justify-between items-center">
-                <div className="text-sm">
-                  <span className="font-medium text-gray-700">Client:</span>
-                  <span className="ml-2 text-gray-900">{clientName}</span>
+                <div className="text-sm text-gray-700">
+                  <span className="font-medium">Client:</span> {clientName}
                 </div>
-                <div className="flex items-center space-x-4 text-xs text-gray-600">
+                <div className="flex items-center space-x-3 text-xs text-gray-500">
                   <div className="flex items-center space-x-1">
                     <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
                     <span>Versie {Math.max(1, currentStageIndex - 1)}</span>
                   </div>
-                  <div>Live Preview</div>
+                  <span className="text-gray-400">•</span>
+                  <span>Live Preview</span>
                 </div>
               </div>
             </div>
 
-            {/* Document Content */}
-            <div className="px-8 py-6 overflow-y-auto" style={{ height: 'calc(100% - 200px)' }}>
+            {/* Document Content - professional styling zoals PDF */}
+            <div className="px-10 py-8 bg-white" style={{ minHeight: '600px', maxHeight: '800px', overflowY: 'auto' }}>
+              {/* Add report title if in later stages */}
+              {currentStageIndex >= 3 && (
+                <div className="text-center mb-8">
+                  <h1 className="text-2xl font-bold text-gray-900">Fiscale Analyse</h1>
+                  <p className="text-sm text-gray-600 mt-2">Aankoop Eigen Woning</p>
+                </div>
+              )}
+              
+              {/* Formatted content */}
               <div 
-                className="text-gray-900 leading-relaxed"
+                className="prose prose-lg max-w-none"
                 style={{
-                  fontFamily: '"Times New Roman", Times, serif',
-                  fontSize: '15px',
-                  lineHeight: '1.8'
+                  fontFamily: 'Georgia, "Times New Roman", serif',
+                  fontSize: '14px',
+                  lineHeight: '1.8',
+                  color: '#2d3748'
                 }}
                 dangerouslySetInnerHTML={{ __html: formatReportContent(currentReport.generatedContent || '') }}
               />
             </div>
 
-            {/* Document Footer */}
-            <div className="absolute bottom-0 left-0 right-0 bg-gray-50 border-t border-gray-200 px-8 py-2">
+            {/* Professional Footer */}
+            <div className="bg-gray-50 border-t border-gray-200 px-8 py-3 mt-auto">
               <div className="flex justify-between items-center text-xs text-gray-500">
-                <div>© {new Date().getFullYear()} De Fiscale Analist | Concept versie - Niet voor officieel gebruik</div>
-                <div className="flex items-center space-x-2">
-                  <span>Pagina 1 van 1</span>
-                  <span>•</span>
+                <div>© {new Date().getFullYear()} De Fiscale Analist</div>
+                <div className="flex items-center space-x-4">
+                  <span>Pagina 1</span>
+                  <span className="text-gray-400">•</span>
                   <span>Laatste update: {new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
               </div>
