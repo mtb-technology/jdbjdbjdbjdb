@@ -133,17 +133,44 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     console.log(`OpenAI API call config for ${aiConfig.model} (web search: ${useWebSearch}):`, JSON.stringify(requestConfig, null, 2));
     const startTime = Date.now();
     
-    const response = await openaiClient.chat.completions.create(requestConfig);
+    let response;
     
-    const duration = Date.now() - startTime;
-    console.log(`OpenAI ${aiConfig.model} response took ${duration}ms`);
-    console.log(`OpenAI response metadata:`, {
-      model: response.model,
-      usage: response.usage,
-      choices_length: response.choices?.length
-    });
-    
-    return response.choices[0]?.message?.content || "";
+    // o3-deep-research models need to use the responses API instead of chat completions
+    if (aiConfig.model === 'o3-deep-research-2025-06-26') {
+      // Use the responses API for deep research models
+      const responsesConfig = {
+        model: aiConfig.model,
+        input: [{ role: "user", content: finalPrompt }],
+        max_completion_tokens: aiConfig.maxOutputTokens,
+      };
+      
+      console.log('Using responses API for o3-deep-research model');
+      const responsesResult = await (openaiClient as any).responses.create(responsesConfig);
+      
+      const duration = Date.now() - startTime;
+      console.log(`OpenAI ${aiConfig.model} response took ${duration}ms`);
+      console.log(`OpenAI response metadata:`, {
+        model: responsesResult.model,
+        usage: responsesResult.usage,
+        output_length: responsesResult.output?.length
+      });
+      
+      // Access the final output from responses API
+      return responsesResult.output?.[responsesResult.output.length - 1]?.content?.[0]?.text || "";
+    } else {
+      // Use regular chat completions for other models
+      response = await openaiClient.chat.completions.create(requestConfig);
+      
+      const duration = Date.now() - startTime;
+      console.log(`OpenAI ${aiConfig.model} response took ${duration}ms`);
+      console.log(`OpenAI response metadata:`, {
+        model: response.model,
+        usage: response.usage,
+        choices_length: response.choices?.length
+      });
+      
+      return response.choices[0]?.message?.content || "";
+    }
   }
 
   // Google AI API call method with optional grounding
