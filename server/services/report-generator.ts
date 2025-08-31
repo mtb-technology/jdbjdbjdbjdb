@@ -106,8 +106,6 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const isO3Model = aiConfig.model.includes('o3');
     const isDeepResearchModel = aiConfig.model.includes('o3-deep-research');
     
-    console.log(`[DEBUG] Model: ${aiConfig.model}, isO3Model: ${isO3Model}, isDeepResearchModel: ${isDeepResearchModel}`);
-    
     let finalPrompt = prompt;
     
     // Add web search context if requested
@@ -119,7 +117,6 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     
     // Special handling for o3-deep-research models - use /v1/responses endpoint with correct structure
     if (isDeepResearchModel) {
-      console.log(`[DEBUG] Using v1/responses endpoint for model: ${aiConfig.model}`);
       const requestConfig: any = {
         model: aiConfig.model,
         reasoning: { summary: "auto" },
