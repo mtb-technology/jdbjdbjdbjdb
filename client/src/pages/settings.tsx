@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -20,7 +20,11 @@ import {
   Brain,
   Zap,
   Search,
-  Info
+  Info,
+  Download,
+  Upload,
+  Shield,
+  Clock
 } from "lucide-react";
 import type { PromptConfigRecord, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 
@@ -63,6 +67,8 @@ const Settings = memo(function Settings() {
     topK: 20,
     maxOutputTokens: 2048,
   });
+  const [backupStatus, setBackupStatus] = useState<{hasBackup: boolean, lastBackupDate?: string, backupCount?: number} | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -106,7 +112,20 @@ const Settings = memo(function Settings() {
         setAiConfig(config.aiConfig);
       }
     }
+    checkBackupStatus();
   }, [activePromptConfig]);
+
+  const checkBackupStatus = async () => {
+    try {
+      const response = await fetch('/api/prompts/backup-status');
+      if (response.ok) {
+        const status = await response.json();
+        setBackupStatus(status);
+      }
+    } catch (error) {
+      console.error('Failed to check backup status:', error);
+    }
+  };
 
   const handlePromptChange = useCallback((stageKey: string, value: string) => {
     if (!activeConfig) return;
@@ -217,6 +236,76 @@ const Settings = memo(function Settings() {
     });
   }, [activeConfig, aiConfig, updatePromptMutation, activePromptConfig?.id]);
 
+  const handleBackup = async () => {
+    try {
+      // Sla eerst huidige wijzigingen op
+      await handleSave();
+      
+      const response = await fetch('/api/prompts/backup');
+      const data = await response.json();
+      
+      // Download als JSON file
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `prompt-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      // Update backup status
+      await checkBackupStatus();
+      
+      toast({
+        title: "Backup gemaakt",
+        description: "Prompts zijn veilig opgeslagen (lokaal + server backup)",
+      });
+    } catch (error) {
+      console.error('Backup failed:', error);
+      toast({
+        title: "Backup mislukt",
+        description: "Kon geen backup maken van de prompts",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRestore = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      const response = await apiRequest('POST', '/api/prompts/restore', data);
+      const result = await response.json();
+      
+      toast({
+        title: "Restore geslaagd",
+        description: result.message || "Prompts zijn hersteld uit backup",
+      });
+      
+      // Refresh de data
+      queryClient.invalidateQueries({ queryKey: ["/api/prompts/active"] });
+      refetch();
+    } catch (error) {
+      console.error('Restore failed:', error);
+      toast({
+        title: "Restore mislukt",
+        description: "Kon backup niet herstellen. Check of het bestand geldig is.",
+        variant: "destructive",
+      });
+    }
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleAiConfigChange = useCallback((key: keyof AiConfig, value: any) => {
     setAiConfig(prev => ({
       ...prev,
@@ -303,16 +392,71 @@ const Settings = memo(function Settings() {
                 <div className="text-xs text-muted-foreground">Prompts Ingesteld</div>
               </div>
               
-              <Button 
-                onClick={handleSave}
-                disabled={updatePromptMutation.isPending}
-                data-testid="button-save-config"
-              >
-                <Save className="mr-2 h-4 w-4" />
-                {updatePromptMutation.isPending ? "Opslaan..." : "Opslaan"}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={handleBackup}
+                  variant="outline"
+                  size="sm"
+                  data-testid="button-backup"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Backup
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleRestore}
+                  className="hidden"
+                  data-testid="input-restore-file"
+                />
+                <Button 
+                  onClick={() => fileInputRef.current?.click()}
+                  variant="outline"
+                  size="sm"
+                  data-testid="button-restore"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Restore
+                </Button>
+                <Button 
+                  onClick={handleSave}
+                  disabled={updatePromptMutation.isPending}
+                  data-testid="button-save-config"
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {updatePromptMutation.isPending ? "Opslaan..." : "Opslaan"}
+                </Button>
+              </div>
             </div>
           </div>
+          
+          {/* Backup Status Indicator */}
+          {backupStatus && (
+            <div className="mt-4 p-3 rounded-lg border">
+              {backupStatus.hasBackup ? (
+                <div className="flex items-center gap-2 text-sm">
+                  <Shield className="h-4 w-4 text-green-500" />
+                  <span className="font-medium">Backup aanwezig</span>
+                  <span className="text-muted-foreground">•</span>
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">
+                    Laatste backup: {new Date(backupStatus.lastBackupDate!).toLocaleString('nl-NL')}
+                  </span>
+                  <span className="text-muted-foreground">•</span>
+                  <span className="text-xs text-muted-foreground">
+                    {backupStatus.backupCount} automatische backups op server
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-orange-500">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="font-medium">Geen backups gevonden</span>
+                  <span className="text-muted-foreground">- Maak een backup om je prompts veilig te stellen</span>
+                </div>
+              )}
+            </div>
+          )}
           
           {/* Progress indicator */}
           <div className="mt-4">

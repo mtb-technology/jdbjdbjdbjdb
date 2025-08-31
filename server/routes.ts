@@ -348,12 +348,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/prompts/backup", async (req, res) => {
     try {
       const configs = await storage.getAllPromptConfigs();
+      const activeConfig = configs.find(c => c.isActive);
+      
+      // Maak ook een automatische backup op de server
+      const backupData = {
+        backup_date: new Date().toISOString(),
+        version: "2.0",
+        prompt_configs: configs
+      };
+      
+      // Sla backup op in JSON file
+      const fs = require('fs').promises;
+      const path = require('path');
+      const backupDir = path.join(process.cwd(), 'backups');
+      await fs.mkdir(backupDir, { recursive: true });
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupPath = path.join(backupDir, `prompts-backup-${timestamp}.json`);
+      await fs.writeFile(backupPath, JSON.stringify(backupData, null, 2));
+      
+      // Behoud alleen laatste 10 backups
+      const files = await fs.readdir(backupDir);
+      const backupFiles = files.filter(f => f.startsWith('prompts-backup-')).sort();
+      if (backupFiles.length > 10) {
+        for (const oldFile of backupFiles.slice(0, backupFiles.length - 10)) {
+          await fs.unlink(path.join(backupDir, oldFile));
+        }
+      }
+      
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', 'attachment; filename="prompt-backup.json"');
-      res.json({
-        backup_date: new Date().toISOString(),
-        prompt_configs: configs
-      });
+      res.json(backupData);
     } catch (error) {
       console.error("Error creating backup:", error);
       res.status(500).json({ message: "Backup failed" });
@@ -362,26 +387,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/prompts/restore", async (req, res) => {
     try {
-      const { prompt_configs } = req.body;
+      // Accepteer beide formaten: met of zonder wrapper
+      const data = req.body;
+      let prompt_configs;
       
-      if (!Array.isArray(prompt_configs)) {
+      if (data.prompt_configs && Array.isArray(data.prompt_configs)) {
+        // Nieuw format met metadata
+        prompt_configs = data.prompt_configs;
+      } else if (Array.isArray(data)) {
+        // Oud format - direct array
+        prompt_configs = data;
+      } else {
         res.status(400).json({ message: "Invalid backup format" });
         return;
       }
 
-      // Restore from backup by updating existing configs
+      // Maak eerst een backup van huidige staat
+      const currentConfigs = await storage.getAllPromptConfigs();
+      const fs = require('fs').promises;
+      const path = require('path');
+      const backupDir = path.join(process.cwd(), 'backups');
+      await fs.mkdir(backupDir, { recursive: true });
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const autoBackupPath = path.join(backupDir, `auto-backup-before-restore-${timestamp}.json`);
+      await fs.writeFile(autoBackupPath, JSON.stringify({
+        backup_date: new Date().toISOString(),
+        type: 'auto-before-restore',
+        prompt_configs: currentConfigs
+      }, null, 2));
+
+      // Restore from backup
       let restored = 0;
+      let created = 0;
+      
       for (const config of prompt_configs) {
         if (config.id) {
-          await storage.updatePromptConfig(config.id, config);
-          restored++;
+          // Probeer eerst te updaten
+          const existing = await storage.getPromptConfig(config.id);
+          if (existing) {
+            await storage.updatePromptConfig(config.id, config);
+            restored++;
+          } else {
+            // Als het niet bestaat, maak het aan
+            await storage.createPromptConfig(config);
+            created++;
+          }
         }
       }
       
-      res.json({ message: `${restored} prompt configuraties hersteld` });
+      res.json({ 
+        message: `Restore voltooid: ${restored} bijgewerkt, ${created} aangemaakt`,
+        restored,
+        created
+      });
     } catch (error) {
       console.error("Error restoring backup:", error);
-      res.status(500).json({ message: "Restore failed" });
+      res.status(500).json({ message: "Restore failed: " + error.message });
+    }
+  });
+
+  // Get laatste backup info
+  app.get("/api/prompts/backup-status", async (req, res) => {
+    try {
+      const fs = require('fs').promises;
+      const path = require('path');
+      const backupDir = path.join(process.cwd(), 'backups');
+      
+      try {
+        const files = await fs.readdir(backupDir);
+        const backupFiles = files.filter(f => f.startsWith('prompts-backup-')).sort();
+        
+        if (backupFiles.length > 0) {
+          const lastBackup = backupFiles[backupFiles.length - 1];
+          const stats = await fs.stat(path.join(backupDir, lastBackup));
+          res.json({
+            hasBackup: true,
+            lastBackupDate: stats.mtime,
+            backupCount: backupFiles.length,
+            fileName: lastBackup
+          });
+        } else {
+          res.json({ hasBackup: false });
+        }
+      } catch {
+        res.json({ hasBackup: false });
+      }
+    } catch (error) {
+      console.error("Error checking backup status:", error);
+      res.status(500).json({ message: "Could not check backup status" });
     }
   });
 
