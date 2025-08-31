@@ -118,9 +118,10 @@ const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, 
                   <AlertDialogCancel>Annuleren</AlertDialogCancel>
                   <AlertDialogAction 
                     onClick={() => deleteCaseMutation.mutate(case_.id)}
+                    disabled={deleteCaseMutation.isPending}
                     data-testid={`button-confirm-delete-${case_.id}`}
                   >
-                    Verwijderen
+                    {deleteCaseMutation.isPending ? "Verwijderen..." : "Verwijderen"}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -182,10 +183,15 @@ function Cases() {
       // Optimistically update to the new value
       queryClient.setQueryData(["/api/cases", { page, search, status: statusFilter }], (old: CasesResponse | undefined) => {
         if (!old) return old;
+        const filteredReports = old.reports.filter(case_ => case_.id !== deletedId);
+        const newTotal = old.total - 1;
+        const newTotalPages = Math.ceil(newTotal / 10);
+        
         return {
           ...old,
-          reports: old.reports.filter(case_ => case_.id !== deletedId),
-          total: old.total - 1
+          reports: filteredReports,
+          total: newTotal,
+          totalPages: newTotalPages
         };
       });
 
@@ -197,9 +203,7 @@ function Cases() {
       if (context?.previousCases) {
         queryClient.setQueryData(["/api/cases", { page, search, status: statusFilter }], context.previousCases);
       }
-    },
-    onSettled: () => {
-      // Always refetch after error or success
+      // Only invalidate on error to refresh data
       queryClient.invalidateQueries({ 
         queryKey: ["/api/cases"],
         exact: false 
@@ -458,9 +462,10 @@ function Cases() {
                             <AlertDialogCancel>Annuleren</AlertDialogCancel>
                             <AlertDialogAction 
                               onClick={() => deleteCaseMutation.mutate(case_.id)}
+                              disabled={deleteCaseMutation.isPending}
                               data-testid={`button-confirm-delete-${case_.id}`}
                             >
-                              Verwijderen
+                              {deleteCaseMutation.isPending ? "Verwijderen..." : "Verwijderen"}
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
