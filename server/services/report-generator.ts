@@ -104,7 +104,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     // However, o3 and o3-mini are the newest reasoning models for deep research
     
     const isO3Model = aiConfig.model.includes('o3');
-    const isDeepResearchModel = aiConfig.model.includes('o3-deep-research');
+    const isDeepResearchModel = aiConfig.model.includes('deep-research');
     
     let finalPrompt = prompt;
     
