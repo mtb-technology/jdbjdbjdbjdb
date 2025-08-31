@@ -115,17 +115,25 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     
     const startTime = Date.now();
     
-    // Special handling for o3-deep-research models - use /v1/responses endpoint
+    // Special handling for o3-deep-research models - use /v1/responses endpoint with correct structure
     if (isDeepResearchModel) {
       const requestConfig: any = {
         model: aiConfig.model,
-        input: finalPrompt,
-        max_tokens: aiConfig.maxOutputTokens,
+        reasoning: { summary: "auto" },
+        input: [
+          { 
+            role: "user", 
+            content: [{ 
+              type: "input_text", 
+              text: finalPrompt 
+            }] 
+          }
+        ]
       };
       
       // Add web search tool if requested
       if (useWebSearch) {
-        requestConfig.tools = ["web_search_preview"];
+        requestConfig.tools = [{ type: "web_search_preview" }];
       }
       
       // Make direct API call to /v1/responses endpoint
@@ -139,11 +147,15 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       });
       
       if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
       
       const result = await response.json();
-      return result.output || result.choices?.[0]?.message?.content || "";
+      console.log('o3-deep-research response:', JSON.stringify(result, null, 2));
+      
+      // Handle the response structure from o3-deep-research
+      return result.output || result.choices?.[0]?.message?.content || result.content || "";
     }
     
     // Regular OpenAI models using chat completions
