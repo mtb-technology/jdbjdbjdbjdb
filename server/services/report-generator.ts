@@ -255,8 +255,19 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     let currentWorkingText = (dossier as any).rawText || JSON.stringify(dossier, null, 2);
     
     // For stage 2+, use the output of the previous stage as the working text
+    // Special handling for stage 3: combine outputs from stage 1 and 2
     const previousStageKeys = Object.keys(previousStageResults);
-    if (previousStageKeys.length > 0) {
+    if (stageName === '3_generatie' && previousStageResults['1_informatiecheck'] && previousStageResults['2_complexiteitscheck']) {
+      // For stage 3, combine outputs from both stage 1 and 2
+      currentWorkingText = `=== OUTPUT VAN STAP 1 (INFORMATIECHECK) ===
+${previousStageResults['1_informatiecheck']}
+
+=== OUTPUT VAN STAP 2 (COMPLEXITEITSCHECK) ===
+${previousStageResults['2_complexiteitscheck']}
+
+=== ORIGINELE DOSSIER DATA ===
+${(dossier as any).rawText || JSON.stringify(dossier, null, 2)}`;
+    } else if (previousStageKeys.length > 0) {
       const lastStage = previousStageKeys[previousStageKeys.length - 1];
       currentWorkingText = previousStageResults[lastStage] || currentWorkingText;
     }
@@ -365,11 +376,19 @@ ${currentText}
 Bepaal hoe complex deze fiscale kwestie is en of er specialistische expertise nodig is.`;
 
       case "3_generatie":
-        return `Genereer een basis fiscaal duidingsrapport voor ${clientName} op basis van:
+        return `Je bent 'De Fiscale Analist'. Genereer een professioneel fiscaal duidingsrapport voor ${clientName}.
 
+Je hebt de volgende informatie tot je beschikking:
 ${currentText}
 
-Maak een gestructureerd rapport met inleiding, analyse en conclusie.`;
+Gebruik de informatiecheck (stap 1) en complexiteitscheck (stap 2) om een gestructureerd duidingsrapport te maken met:
+- Inleiding met situatieschets
+- Identificatie van knelpunten uit de analyses
+- Fiscale scenario's en implicaties  
+- Aanbevelingen voor vervolgstappen
+- Bronvermelding waar nodig
+
+Maak het rapport professioneel, helder en praktisch bruikbaar voor de klant.`;
 
       case "5_feedback_verwerker":
         return `Je bent de Feedback Verwerker. Je taak is om de feedback van alle reviewers (4a-4f) te verwerken in het concept rapport:
