@@ -138,7 +138,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       
       // Make direct API call to /v1/responses endpoint with timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minute timeout
       
       try {
         const response = await fetch('https://api.openai.com/v1/responses', {
@@ -166,7 +166,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       } catch (error: any) {
         clearTimeout(timeoutId);
         if (error.name === 'AbortError') {
-          throw new Error('Deep research model timed out after 5 minutes');
+          throw new Error('Deep research model timed out after 10 minutes');
         }
         throw error;
       }
