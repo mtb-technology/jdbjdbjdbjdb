@@ -122,7 +122,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       const responsesConfig = {
         model: aiConfig.model,
         input: [{ role: "user", content: finalPrompt }],
-        max_completion_tokens: aiConfig.maxOutputTokens,
+        max_output_tokens: aiConfig.maxOutputTokens,
       };
       
       console.log(`OpenAI Responses API config:`, JSON.stringify(responsesConfig, null, 2));
