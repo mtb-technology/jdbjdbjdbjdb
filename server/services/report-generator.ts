@@ -136,45 +136,59 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         requestConfig.tools = [{ type: "web_search_preview" }];
       }
       
-      // Make direct API call to /v1/responses endpoint
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestConfig),
-      });
+      // Make direct API call to /v1/responses endpoint with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
+      try {
+        const response = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestConfig),
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+      
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log('o3-deep-research response:', JSON.stringify(result, null, 2));
+        
+        // Handle the response structure from o3-deep-research
+        return result.output || result.choices?.[0]?.message?.content || result.content || "";
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Deep research model timed out after 5 minutes');
+        }
+        throw error;
       }
-      
-      const result = await response.json();
-      console.log('o3-deep-research response:', JSON.stringify(result, null, 2));
-      
-      // Handle the response structure from o3-deep-research
-      return result.output || result.choices?.[0]?.message?.content || result.content || "";
     }
     
     // Regular OpenAI models using chat completions
-    const requestConfig: any = {
+    const chatConfig: any = {
       model: aiConfig.model,
       messages: [{ role: "user", content: finalPrompt }],
     };
     
     // o3 models only support default temperature (1) and no top_p
     if (isO3Model) {
-      requestConfig.max_tokens = aiConfig.maxOutputTokens;
+      chatConfig.max_tokens = aiConfig.maxOutputTokens;
       // o3 models don't support custom temperature or top_p
     } else {
-      requestConfig.temperature = aiConfig.temperature;
-      requestConfig.top_p = aiConfig.topP;
-      requestConfig.max_tokens = aiConfig.maxOutputTokens;
+      chatConfig.temperature = aiConfig.temperature;
+      chatConfig.top_p = aiConfig.topP;
+      chatConfig.max_tokens = aiConfig.maxOutputTokens;
     }
     
-    const response = await openaiClient.chat.completions.create(requestConfig);
+    const response = await openaiClient.chat.completions.create(chatConfig);
     
     const duration = Date.now() - startTime;
     
