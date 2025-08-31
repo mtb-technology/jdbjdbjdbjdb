@@ -127,11 +127,32 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         }
       });
       
+      // Log response metadata for debugging
+      console.log('Google AI response metadata:', {
+        finishReason: response.candidates?.[0]?.finishReason,
+        usageMetadata: response.usageMetadata,
+        hasContent: !!response.candidates?.[0]?.content?.parts?.[0]?.text
+      });
+      
       const result = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || "";
+      const finishReason = response.candidates?.[0]?.finishReason;
+      
+      // Handle MAX_TOKENS - partial content may still be useful
+      if (finishReason === 'MAX_TOKENS') {
+        console.warn('Google AI hit token limit, but may have partial content');
+        if (result && result.trim().length > 50) {
+          console.log(`Partial content length: ${result.length} chars`);
+          return result; // Return partial content if substantial
+        }
+      }
       
       if (!result || result.trim() === '') {
-        console.error('Google AI returned empty response:', response);
-        throw new Error('Lege response van Google AI');
+        console.error('Google AI returned empty response:', JSON.stringify({
+          finishReason,
+          candidatesLength: response.candidates?.length || 0,
+          hasUsageMetadata: !!response.usageMetadata
+        }, null, 2));
+        throw new Error(`Lege response van Google AI (${finishReason || 'unknown reason'})`);
       }
       
       return result;

@@ -203,7 +203,8 @@ export class DatabaseStorage implements IStorage {
           temperature: 0.1,
           topP: 0.95,
           topK: 20,
-          maxOutputTokens: 2048
+          maxOutputTokens: 4096,
+          provider: "google"
         }
       }
     };
