@@ -31,20 +31,30 @@ export class ReportGenerator {
 
   // Google AI API call method  
   private async callGoogleAI(aiConfig: AiConfig, prompt: string): Promise<string> {
-    const generationConfig: any = {
-      temperature: aiConfig.temperature,
-      topP: aiConfig.topP,
-      topK: aiConfig.topK,
-      maxOutputTokens: aiConfig.maxOutputTokens,
-    };
-    
-    const response = await googleAI.models.generateContent({
-      model: aiConfig.model,
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: generationConfig
-    });
-    
-    return response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || "";
+    try {
+      const response = await googleAI.models.generateContent({
+        model: aiConfig.model,
+        contents: prompt,
+        config: {
+          temperature: aiConfig.temperature,
+          topP: aiConfig.topP,
+          topK: aiConfig.topK,
+          maxOutputTokens: aiConfig.maxOutputTokens,
+        }
+      });
+      
+      const result = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || "";
+      
+      if (!result || result.trim() === '') {
+        console.error('Google AI returned empty response:', response);
+        throw new Error('Lege response van Google AI');
+      }
+      
+      return result;
+    } catch (error: any) {
+      console.error('Google AI API error:', error);
+      throw new Error(`Google AI API fout: ${error.message}`);
+    }
   }
 
   async generateReport(dossier: DossierData, bouwplan: BouwplanData): Promise<string> {
