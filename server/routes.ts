@@ -386,46 +386,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/prompts/restore", async (req, res) => {
-    console.log("🔍 RESTORE ENDPOINT HIT - Request received");
-    console.log("🔍 Request headers:", req.headers);
-    console.log("🔍 Request body type:", typeof req.body);
-    console.log("🔍 Request body content:", JSON.stringify(req.body, null, 2));
-    
     try {
       // Accepteer beide formaten: met of zonder wrapper
       const data = req.body;
       let prompt_configs;
       
-      // Debug logging om te zien wat er wordt geüpload
-      console.log("Restore debug - incoming data type:", typeof data);
-      console.log("Restore debug - data keys:", data ? Object.keys(data) : 'null/undefined');
-      console.log("Restore debug - is array?", Array.isArray(data));
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        console.log("Restore debug - has prompt_configs?", 'prompt_configs' in data);
-        if ('prompt_configs' in data) {
-          console.log("Restore debug - prompt_configs is array?", Array.isArray(data.prompt_configs));
-        }
-      }
-      
       if (data.prompt_configs && Array.isArray(data.prompt_configs)) {
         // Nieuw format met metadata
         prompt_configs = data.prompt_configs;
-        console.log("Using new format with metadata");
       } else if (Array.isArray(data)) {
         // Oud format - direct array
         prompt_configs = data;
-        console.log("Using old format - direct array");
       } else {
-        console.log("Invalid format - data structure:", JSON.stringify(data, null, 2));
-        res.status(400).json({ 
-          message: "Invalid backup format", 
-          debug: {
-            dataType: typeof data,
-            isArray: Array.isArray(data),
-            keys: data ? Object.keys(data) : [],
-            hasPromptConfigs: data && 'prompt_configs' in data
-          }
-        });
+        res.status(400).json({ message: "Invalid backup format" });
         return;
       }
 

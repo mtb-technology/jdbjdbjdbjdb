@@ -293,17 +293,9 @@ const Settings = memo(function Settings() {
       refetch();
     } catch (error: any) {
       console.error('Restore failed:', error);
-      console.error('Error details:', error.message, error.stack);
-      
-      // Probeer de error response te lezen
-      if (error.response) {
-        const errorText = await error.response.text();
-        console.error('Server error response:', errorText);
-      }
-      
       toast({
         title: "Restore mislukt",
-        description: error.message || "Kon backup niet herstellen. Check of het bestand geldig is.",
+        description: "Kon backup niet herstellen. Check of het bestand geldig is.",
         variant: "destructive",
       });
     }
