@@ -5,7 +5,7 @@ import OpenAI from "openai";
 import { storage } from "../storage";
 
 const googleAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "" });
-const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
+const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_JDB || process.env.OPENAI_API_KEY || "" });
 
 export class ReportGenerator {
   private sourceValidator: SourceValidator;
