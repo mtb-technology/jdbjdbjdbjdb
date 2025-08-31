@@ -238,18 +238,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     let useStageWebSearch: boolean;
     
     if (!stageConfig || !stageConfig.prompt) {
-      console.warn(`No stage config found for ${stageName}, using default prompt`);
-      promptTemplate = this.getDefaultPromptForStage(stageName, {
-        clientName: JSON.parse(JSON.stringify(dossier)).klant?.naam || "Client",
-        huidige_tekst: ""
-      });
-      useStageGrounding = false;
-      useStageWebSearch = false;
-    } else {
-      promptTemplate = stageConfig.prompt;
-      useStageGrounding = stageConfig.useGrounding || false;
-      useStageWebSearch = stageConfig.useWebSearch || false;
+      throw new Error(`Geen prompt configuratie gevonden voor stage ${stageName} - configureer eerst alle prompts in de instellingen`);
     }
+    
+    promptTemplate = stageConfig.prompt;
+    useStageGrounding = stageConfig.useGrounding || false;
+    useStageWebSearch = stageConfig.useWebSearch || false;
 
     // Get the current working text - starts with raw text, then evolves per stage
     let currentWorkingText = (dossier as any).rawText || JSON.stringify(dossier, null, 2);
@@ -300,16 +294,16 @@ ${(dossier as any).rawText || JSON.stringify(dossier, null, 2)}`;
     // Declare and process the prompt template
     let processedPrompt: string;
     
-    // Als er geen custom prompt is, gebruik een basis AI prompt
-    if (!promptTemplate || promptTemplate.startsWith("PLACEHOLDER:")) {
-      processedPrompt = this.getDefaultPromptForStage(stageName, variables);
-    } else {
-      // Replace variables in custom prompt template
-      processedPrompt = promptTemplate;
-      for (const [key, value] of Object.entries(variables)) {
-        const placeholder = `{{${key}}}`;
-        processedPrompt = processedPrompt.replace(new RegExp(placeholder, 'g'), String(value));
-      }
+    // Always use the prompt from settings - no default prompts
+    if (!promptTemplate) {
+      throw new Error(`Geen prompt configuratie gevonden voor stage ${stageName}`);
+    }
+    
+    // Replace variables in custom prompt template
+    processedPrompt = promptTemplate;
+    for (const [key, value] of Object.entries(variables)) {
+      const placeholder = `{{${key}}}`;
+      processedPrompt = processedPrompt.replace(new RegExp(placeholder, 'g'), String(value));
     }
 
     try {
@@ -355,63 +349,6 @@ ${(dossier as any).rawText || JSON.stringify(dossier, null, 2)}`;
     }
   }
 
-  private getDefaultPromptForStage(stageName: string, variables: Record<string, any>): string {
-    // Basis AI prompts die altijd de AI triggeren
-    const clientName = variables.clientName || "de klant";
-    const currentText = variables.huidige_tekst || variables.oorspronkelijke_tekst || "de dossier tekst";
-    
-    switch (stageName) {
-      case "1_informatiecheck":
-        return `Voer een informatiecheck uit op de volgende dossier tekst voor ${clientName}:
-
-${currentText}
-
-Analyseer of alle benodigde informatie aanwezig is voor een fiscale analyse. Geef een samenvatting van wat er gevonden is en wat er eventueel ontbreekt.`;
-
-      case "2_complexiteitscheck":
-        return `Analyseer de complexiteit van deze fiscale situatie voor ${clientName}:
-
-${currentText}
-
-Bepaal hoe complex deze fiscale kwestie is en of er specialistische expertise nodig is.`;
-
-      case "3_generatie":
-        return `Je bent 'De Fiscale Analist'. Genereer een professioneel fiscaal duidingsrapport voor ${clientName}.
-
-Je hebt de volgende informatie tot je beschikking:
-${currentText}
-
-Gebruik de informatiecheck (stap 1) en complexiteitscheck (stap 2) om een gestructureerd duidingsrapport te maken met:
-- Inleiding met situatieschets
-- Identificatie van knelpunten uit de analyses
-- Fiscale scenario's en implicaties  
-- Aanbevelingen voor vervolgstappen
-- Bronvermelding waar nodig
-
-Maak het rapport professioneel, helder en praktisch bruikbaar voor de klant.`;
-
-      case "5_feedback_verwerker":
-        return `Je bent de Feedback Verwerker. Je taak is om de feedback van alle reviewers (4a-4f) te verwerken in het concept rapport:
-
-CONCEPT RAPPORT:
-${currentText}
-
-Neem alle feedback serieus en verbeter het rapport waar nodig. Focus op:
-- Inhoudelijke correctheid
-- Duidelijke communicatie 
-- Praktische bruikbaarheid
-- Volledigheid van het antwoord
-
-Lever een verbeterde versie van het rapport op.`;
-
-      default:
-        return `Analyseer en verwerk de volgende tekst voor stap ${stageName}:
-
-${currentText}
-
-Lever een professionele fiscale analyse op basis van deze informatie.`;
-    }
-  }
 
   private getStageDescription(stageName: string): string {
     const descriptions: Record<string, string> = {
