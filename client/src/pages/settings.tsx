@@ -37,9 +37,6 @@ const AI_MODELS = {
   openai: [
     { value: "gpt-4o", label: "GPT-4o" },
     { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-    { value: "o3-mini", label: "o3 Mini (Deep Research)" },
-    { value: "o3", label: "o3 (Deep Research)" },
-    { value: "o3-deep-research-2025-06-26", label: "o3 Deep Research (Extended Reasoning)" },
   ],
 } as const;
 
@@ -225,16 +222,12 @@ const Settings = memo(function Settings() {
   const handleSave = useCallback(async () => {
     if (!activeConfig || !activePromptConfig?.id) return;
     
-    const configWithAi = {
-      ...activeConfig,
-      aiConfig,
-    };
-    
+    // Don't add global aiConfig - per-stage configs are already in activeConfig
     updatePromptMutation.mutate({
       id: activePromptConfig.id,
-      config: configWithAi,
+      config: activeConfig,
     });
-  }, [activeConfig, aiConfig, updatePromptMutation, activePromptConfig?.id]);
+  }, [activeConfig, updatePromptMutation, activePromptConfig?.id]);
 
   const handleBackup = async () => {
     try {
