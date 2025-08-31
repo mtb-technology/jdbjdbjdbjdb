@@ -172,7 +172,34 @@ function Cases() {
       const response = await apiRequest("DELETE", `/api/cases/${id}`);
       return response.json();
     },
-    onSuccess: () => {
+    onMutate: async (deletedId: string) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/cases"] });
+
+      // Snapshot the previous value
+      const previousCases = queryClient.getQueryData(["/api/cases", { page, search, status: statusFilter }]);
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(["/api/cases", { page, search, status: statusFilter }], (old: CasesResponse | undefined) => {
+        if (!old) return old;
+        return {
+          ...old,
+          reports: old.reports.filter(case_ => case_.id !== deletedId),
+          total: old.total - 1
+        };
+      });
+
+      // Return a context object with the snapshotted value
+      return { previousCases };
+    },
+    onError: (err, deletedId, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousCases) {
+        queryClient.setQueryData(["/api/cases", { page, search, status: statusFilter }], context.previousCases);
+      }
+    },
+    onSettled: () => {
+      // Always refetch after error or success
       queryClient.invalidateQueries({ 
         queryKey: ["/api/cases"],
         exact: false 
