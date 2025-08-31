@@ -174,7 +174,14 @@ function Cases() {
     },
   });
 
-  const getStatusColor = useCallback((status: string) => {
+  // Auto-adjust page if current page exceeds total pages after deletion
+  useEffect(() => {
+    if (casesData && casesData.totalPages > 0 && page > casesData.totalPages) {
+      setPage(casesData.totalPages);
+    }
+  }, [casesData, page]);
+
+  const getStatusColor = useCallback((status: string): "secondary" | "default" | "outline" | "destructive" | undefined => {
     switch (status) {
       case "draft": return "secondary";
       case "processing": return "default";
