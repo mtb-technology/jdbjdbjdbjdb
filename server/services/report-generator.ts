@@ -103,12 +103,53 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
     // However, o3 and o3-mini are the newest reasoning models for deep research
     
-    
-    // Regular OpenAI models
     const isO3Model = aiConfig.model.includes('o3');
+    const isDeepResearchModel = aiConfig.model.includes('o3-deep-research');
+    
+    let finalPrompt = prompt;
+    
+    // Add web search context if requested
+    if (useWebSearch) {
+      finalPrompt = `${prompt}\n\nIMPORTANT: Voor deze analyse heb je toegang tot actuele online informatie. Zoek actief naar relevante fiscale regelgeving, jurisprudentie en Belastingdienst publicaties om je antwoord te onderbouwen. Gebruik alleen officiële Nederlandse bronnen zoals belastingdienst.nl, wetten.overheid.nl, en rijksoverheid.nl.`;
+    }
+    
+    const startTime = Date.now();
+    
+    // Special handling for o3-deep-research models - use /v1/responses endpoint
+    if (isDeepResearchModel) {
+      const requestConfig: any = {
+        model: aiConfig.model,
+        input: finalPrompt,
+        max_tokens: aiConfig.maxOutputTokens,
+      };
+      
+      // Add web search tool if requested
+      if (useWebSearch) {
+        requestConfig.tools = ["web_search_preview"];
+      }
+      
+      // Make direct API call to /v1/responses endpoint
+      const response = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestConfig),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      return result.output || result.choices?.[0]?.message?.content || "";
+    }
+    
+    // Regular OpenAI models using chat completions
     const requestConfig: any = {
       model: aiConfig.model,
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: finalPrompt }],
     };
     
     // o3 models only support default temperature (1) and no top_p
@@ -121,18 +162,6 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       requestConfig.max_tokens = aiConfig.maxOutputTokens;
     }
     
-    let finalPrompt = prompt;
-    
-    // Add web search context if requested
-    if (useWebSearch) {
-      finalPrompt = `${prompt}\n\nIMPORTANT: Voor deze analyse heb je toegang tot actuele online informatie. Zoek actief naar relevante fiscale regelgeving, jurisprudentie en Belastingdienst publicaties om je antwoord te onderbouwen. Gebruik alleen officiële Nederlandse bronnen zoals belastingdienst.nl, wetten.overheid.nl, en rijksoverheid.nl.`;
-    }
-    
-    requestConfig.messages = [{ role: "user", content: finalPrompt }];
-    
-    const startTime = Date.now();
-    
-    // Use regular chat completions for non-deep-research models
     const response = await openaiClient.chat.completions.create(requestConfig);
     
     const duration = Date.now() - startTime;
