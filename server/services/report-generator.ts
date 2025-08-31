@@ -103,7 +103,51 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
     // However, o3 and o3-mini are the newest reasoning models for deep research
     
-    // o3 and o3-mini models have specific requirements
+    console.log(`DEBUG: callOpenAI called with model: "${aiConfig.model}"`);
+    console.log(`DEBUG: Model includes 'o3-deep-research': ${aiConfig.model.includes('o3-deep-research')}`);
+    
+    // o3-deep-research models need special handling
+    const isO3DeepResearchModel = aiConfig.model.includes('o3-deep-research');
+    
+    // Check for o3-deep-research models FIRST, before building config
+    if (isO3DeepResearchModel) {
+      console.log('DEBUG: Using responses API for o3-deep-research model');
+      
+      let finalPrompt = prompt;
+      if (useWebSearch) {
+        console.log('Web search enabled for OpenAI call - enhancing prompt with search context');
+        finalPrompt = `${prompt}\n\nIMPORTANT: Voor deze analyse heb je toegang tot actuele online informatie. Zoek actief naar relevante fiscale regelgeving, jurisprudentie en Belastingdienst publicaties om je antwoord te onderbouwen. Gebruik alleen officiële Nederlandse bronnen zoals belastingdienst.nl, wetten.overheid.nl, en rijksoverheid.nl.`;
+      }
+      
+      const responsesConfig = {
+        model: aiConfig.model,
+        input: [{ role: "user", content: finalPrompt }],
+        max_completion_tokens: aiConfig.maxOutputTokens,
+      };
+      
+      console.log(`OpenAI Responses API config:`, JSON.stringify(responsesConfig, null, 2));
+      const startTime = Date.now();
+      
+      try {
+        const responsesResult = await (openaiClient as any).responses.create(responsesConfig);
+        
+        const duration = Date.now() - startTime;
+        console.log(`OpenAI ${aiConfig.model} response took ${duration}ms`);
+        console.log(`OpenAI response metadata:`, {
+          model: responsesResult.model,
+          usage: responsesResult.usage,
+          output_length: responsesResult.output?.length
+        });
+        
+        // Access the final output from responses API
+        return responsesResult.output?.[responsesResult.output.length - 1]?.content?.[0]?.text || "";
+      } catch (error: any) {
+        console.error('Responses API error:', error);
+        throw error;
+      }
+    }
+    
+    // Regular OpenAI models (not o3-deep-research)
     const isO3Model = aiConfig.model.includes('o3');
     const requestConfig: any = {
       model: aiConfig.model,
@@ -133,44 +177,18 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     console.log(`OpenAI API call config for ${aiConfig.model} (web search: ${useWebSearch}):`, JSON.stringify(requestConfig, null, 2));
     const startTime = Date.now();
     
-    let response;
+    // Use regular chat completions for non-deep-research models
+    const response = await openaiClient.chat.completions.create(requestConfig);
     
-    // o3-deep-research models need to use the responses API instead of chat completions
-    if (aiConfig.model.includes('o3-deep-research') || aiConfig.model === 'o3-deep-research-2025-06-26') {
-      // Use the responses API for deep research models
-      const responsesConfig = {
-        model: aiConfig.model,
-        input: [{ role: "user", content: finalPrompt }],
-        max_completion_tokens: aiConfig.maxOutputTokens,
-      };
-      
-      console.log('Using responses API for o3-deep-research model');
-      const responsesResult = await (openaiClient as any).responses.create(responsesConfig);
-      
-      const duration = Date.now() - startTime;
-      console.log(`OpenAI ${aiConfig.model} response took ${duration}ms`);
-      console.log(`OpenAI response metadata:`, {
-        model: responsesResult.model,
-        usage: responsesResult.usage,
-        output_length: responsesResult.output?.length
-      });
-      
-      // Access the final output from responses API
-      return responsesResult.output?.[responsesResult.output.length - 1]?.content?.[0]?.text || "";
-    } else {
-      // Use regular chat completions for other models
-      response = await openaiClient.chat.completions.create(requestConfig);
-      
-      const duration = Date.now() - startTime;
-      console.log(`OpenAI ${aiConfig.model} response took ${duration}ms`);
-      console.log(`OpenAI response metadata:`, {
-        model: response.model,
-        usage: response.usage,
-        choices_length: response.choices?.length
-      });
-      
-      return response.choices[0]?.message?.content || "";
-    }
+    const duration = Date.now() - startTime;
+    console.log(`OpenAI ${aiConfig.model} response took ${duration}ms`);
+    console.log(`OpenAI response metadata:`, {
+      model: response.model,
+      usage: response.usage,
+      choices_length: response.choices?.length
+    });
+    
+    return response.choices[0]?.message?.content || "";
   }
 
   // Google AI API call method with optional grounding
