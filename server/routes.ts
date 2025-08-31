@@ -6,7 +6,6 @@ import { SourceValidator } from "./services/source-validator";
 import { jobQueue } from "./jobQueue";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
 import type { DossierData, BouwplanData } from "@shared/schema";
-import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 
 const generateReportSchema = z.object({
@@ -24,16 +23,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   const reportGenerator = new ReportGenerator();
   const sourceValidator = new SourceValidator();
-  const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "" });
 
   // Test route voor AI - simpele test om te verifieren dat API werkt
   app.get("/api/test-ai", async (req, res) => {
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
-        contents: "Say hello in Dutch in 5 words"
-      });
-      res.json({ success: true, response: response.text });
+      const result = await reportGenerator.testAI("Say hello in Dutch in 5 words");
+      res.json({ success: true, response: result });
     } catch (error: any) {
       console.error("Test AI error:", error);
       res.status(500).json({ success: false, error: error.message });
@@ -50,69 +45,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const extractionPrompt = `Extraheer uit de volgende tekst de belangrijkste klant- en fiscale gegevens en structureer deze in JSON formaat.
-
-Gegeven tekst:
-${rawText}
-
-Extraheer de volgende informatie:
-
-1. KLANT GEGEVENS:
-- naam: Volledige naam van de klant (voor- en achternaam)
-- situatie: Korte samenvatting van de fiscale situatie/vraag
-
-2. FISCALE GEGEVENS:
-- vermogen: Geschat vermogen in euro's (gebruik 0 als niet bekend)
-- inkomsten: Geschat jaarinkomen in euro's (gebruik 0 als niet bekend)
-
-3. RAPPORT STRUCTUUR:
-- Bepaal welke knelpunten/problemen er zijn (minimaal 1)
-
-Geef het resultaat terug als JSON in dit exacte formaat:
-{
-  "dossier": {
-    "klant": {
-      "naam": "...",
-      "situatie": "..."
-    },
-    "fiscale_gegevens": {
-      "vermogen": 0,
-      "inkomsten": 0
-    }
-  },
-  "bouwplan": {
-    "taal": "nl",
-    "structuur": {
-      "inleiding": true,
-      "knelpunten": ["knelpunt 1", "knelpunt 2"],
-      "scenario_analyse": true,
-      "vervolgstappen": true
-    }
-  }
-}
-
-ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
-        contents: extractionPrompt,
-        config: {
-          temperature: 0.1,
-          topP: 0.95,
-          topK: 20,
-          maxOutputTokens: 2048,
-          responseMimeType: "application/json"
-        }
-      });
-
-      const extractedJson = (response.candidates?.[0]?.content?.parts?.[0]?.text || response.text)?.trim();
-      if (!extractedJson) {
-        console.error('No JSON extracted from AI response:', response);
-        res.status(500).json({ message: "Geen data geëxtraheerd" });
-        return;
-      }
-
-      const parsedData = JSON.parse(extractedJson);
+      const parsedData = await reportGenerator.extractDossierData(rawText);
       
       // Validate extracted data against schemas
       const validatedDossier = dossierSchema.parse(parsedData.dossier);

@@ -14,6 +14,90 @@ export class ReportGenerator {
     this.sourceValidator = new SourceValidator();
   }
 
+  // Test method for AI functionality
+  async testAI(prompt: string): Promise<string> {
+    try {
+      const response = await googleAI.models.generateContent({
+        model: "gemini-2.5-pro",
+        contents: prompt
+      });
+      return response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || "";
+    } catch (error: any) {
+      console.error('Test AI error:', error);
+      throw new Error(`AI test failed: ${error.message}`);
+    }
+  }
+
+  // Extract dossier data from raw text using AI
+  async extractDossierData(rawText: string): Promise<any> {
+    const extractionPrompt = `Extraheer uit de volgende tekst de belangrijkste klant- en fiscale gegevens en structureer deze in JSON formaat.
+
+Gegeven tekst:
+${rawText}
+
+Extraheer de volgende informatie:
+
+1. KLANT GEGEVENS:
+- naam: Volledige naam van de klant (voor- en achternaam)
+- situatie: Korte samenvatting van de fiscale situatie/vraag
+
+2. FISCALE GEGEVENS:
+- vermogen: Geschat vermogen in euro's (gebruik 0 als niet bekend)
+- inkomsten: Geschat jaarinkomen in euro's (gebruik 0 als niet bekend)
+
+3. RAPPORT STRUCTUUR:
+- Bepaal welke knelpunten/problemen er zijn (minimaal 1)
+
+Geef het resultaat terug als JSON in dit exacte formaat:
+{
+  "dossier": {
+    "klant": {
+      "naam": "...",
+      "situatie": "..."
+    },
+    "fiscale_gegevens": {
+      "vermogen": 0,
+      "inkomsten": 0
+    }
+  },
+  "bouwplan": {
+    "taal": "nl",
+    "structuur": {
+      "inleiding": true,
+      "knelpunten": ["knelpunt 1", "knelpunt 2"],
+      "scenario_analyse": true,
+      "vervolgstappen": true
+    }
+  }
+}
+
+ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
+
+    try {
+      const response = await googleAI.models.generateContent({
+        model: "gemini-2.5-pro",
+        contents: extractionPrompt,
+        config: {
+          temperature: 0.1,
+          topP: 0.95,
+          topK: 20,
+          maxOutputTokens: 2048,
+          responseMimeType: "application/json"
+        }
+      });
+
+      const extractedJson = (response.candidates?.[0]?.content?.parts?.[0]?.text || response.text)?.trim();
+      if (!extractedJson) {
+        throw new Error('No JSON extracted from AI response');
+      }
+
+      return JSON.parse(extractedJson);
+    } catch (error: any) {
+      console.error('Extract dossier error:', error);
+      throw new Error(`Failed to extract dossier data: ${error.message}`);
+    }
+  }
+
   // OpenAI API call method
   private async callOpenAI(aiConfig: AiConfig, prompt: string): Promise<string> {
     // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
