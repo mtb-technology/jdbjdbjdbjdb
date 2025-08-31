@@ -98,8 +98,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     }
   }
 
-  // OpenAI API call method
-  private async callOpenAI(aiConfig: AiConfig, prompt: string): Promise<string> {
+  // OpenAI API call method with optional web search
+  private async callOpenAI(aiConfig: AiConfig, prompt: string, useWebSearch: boolean = false): Promise<string> {
     // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
     // However, o3 and o3-mini are the newest reasoning models for deep research
     
@@ -120,7 +120,17 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       requestConfig.max_tokens = aiConfig.maxOutputTokens;
     }
     
-    console.log(`OpenAI API call config for ${aiConfig.model}:`, JSON.stringify(requestConfig, null, 2));
+    let finalPrompt = prompt;
+    
+    // Add web search context if requested
+    if (useWebSearch) {
+      console.log('Web search enabled for OpenAI call - enhancing prompt with search context');
+      finalPrompt = `${prompt}\n\nIMPORTANT: Voor deze analyse heb je toegang tot actuele online informatie. Zoek actief naar relevante fiscale regelgeving, jurisprudentie en Belastingdienst publicaties om je antwoord te onderbouwen. Gebruik alleen officiële Nederlandse bronnen zoals belastingdienst.nl, wetten.overheid.nl, en rijksoverheid.nl.`;
+    }
+    
+    requestConfig.messages = [{ role: "user", content: finalPrompt }];
+    
+    console.log(`OpenAI API call config for ${aiConfig.model} (web search: ${useWebSearch}):`, JSON.stringify(requestConfig, null, 2));
     const startTime = Date.now();
     
     const response = await openaiClient.chat.completions.create(requestConfig);
@@ -136,8 +146,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     return response.choices[0]?.message?.content || "";
   }
 
-  // Google AI API call method  
-  private async callGoogleAI(aiConfig: AiConfig, prompt: string): Promise<string> {
+  // Google AI API call method with optional grounding
+  private async callGoogleAI(aiConfig: AiConfig, prompt: string, useGrounding: boolean = false): Promise<string> {
     try {
       const response = await googleAI.models.generateContent({
         model: aiConfig.model,
@@ -205,11 +215,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     // Helper function to call the appropriate AI service
     const callAI = async (aiConfig: AiConfig, prompt: string): Promise<string> => {
       console.log(`Using AI Provider: ${aiConfig.provider}, Model: ${aiConfig.model} for stage: ${stageName}`);
+      console.log(`Search settings - Grounding: ${useStageGrounding}, Web Search: ${useStageWebSearch}`);
       
       if (aiConfig.provider === "openai") {
-        return this.callOpenAI(aiConfig, prompt);
+        return this.callOpenAI(aiConfig, prompt, useStageWebSearch);
       } else {
-        return this.callGoogleAI(aiConfig, prompt);
+        return this.callGoogleAI(aiConfig, prompt, useStageGrounding);
       }
     };
     const currentDate = new Date().toLocaleDateString('nl-NL', {
@@ -230,6 +241,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     // Check if stage config exists and handle missing prompts
     let promptTemplate: string;
     let useStageGrounding: boolean;
+    let useStageWebSearch: boolean;
     
     if (!stageConfig || !stageConfig.prompt) {
       console.warn(`No stage config found for ${stageName}, using default prompt`);
@@ -238,9 +250,11 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         huidige_tekst: ""
       });
       useStageGrounding = false;
+      useStageWebSearch = false;
     } else {
       promptTemplate = stageConfig.prompt;
       useStageGrounding = stageConfig.useGrounding || false;
+      useStageWebSearch = stageConfig.useWebSearch || false;
     }
 
     // Get the current working text - starts with raw text, then evolves per stage

@@ -82,7 +82,7 @@ export const bouwplanSchema = z.object({
 export const aiProviderSchema = z.enum(["google", "openai"]);
 
 export const googleModelSchema = z.enum(["gemini-2.5-pro", "gemini-2.5-flash"]);
-export const openaiModelSchema = z.enum(["gpt-4o", "gpt-4o-mini", "o3-mini", "o3"]);
+export const openaiModelSchema = z.enum(["gpt-4o", "gpt-4o-mini", "o3-mini", "o3", "o3-deep-research-2025-06-26"]);
 
 export const aiConfigSchema = z.object({
   provider: aiProviderSchema.default("google"),
@@ -107,7 +107,8 @@ export const validateModelForProvider = (provider: string, model: string): boole
 // Stage-specific configuration with per-stage AI provider choice
 export const stageConfigSchema = z.object({
   prompt: z.string().default(""),
-  useGrounding: z.boolean().default(false),
+  useGrounding: z.boolean().default(false), // For Google/Gemini models only
+  useWebSearch: z.boolean().default(false), // For OpenAI models only
   stepType: z.enum(["generator", "reviewer", "processor"]).default("generator"),
   aiConfig: aiConfigSchema.optional(), // Per-stage AI configuration override
 });

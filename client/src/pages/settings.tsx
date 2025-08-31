@@ -35,6 +35,7 @@ const AI_MODELS = {
     { value: "gpt-4o-mini", label: "GPT-4o Mini" },
     { value: "o3-mini", label: "o3 Mini (Deep Research)" },
     { value: "o3", label: "o3 (Deep Research)" },
+    { value: "o3-deep-research-2025-06-26", label: "o3 Deep Research (Extended Reasoning)" },
   ],
 } as const;
 
@@ -131,6 +132,20 @@ const Settings = memo(function Settings() {
       [stageKey]: {
         ...currentStageConfig,
         useGrounding,
+      },
+    });
+  }, [activeConfig]);
+
+  const handleWebSearchChange = useCallback((stageKey: string, useWebSearch: boolean) => {
+    if (!activeConfig) return;
+    
+    const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+    
+    setActiveConfig({
+      ...activeConfig,
+      [stageKey]: {
+        ...currentStageConfig,
+        useWebSearch,
       },
     });
   }, [activeConfig]);
@@ -316,6 +331,7 @@ const Settings = memo(function Settings() {
             const stageConfig = activeConfig?.[stage.key as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
             const prompt = stageConfig?.prompt || "";
             const useGrounding = stageConfig?.useGrounding || false;
+            const useWebSearch = stageConfig?.useWebSearch || false;
             const stepType = stageConfig?.stepType || stage.type || "generator";
             const isEmpty = isPromptEmpty(prompt);
             const isReviewer = stepType === "reviewer";
@@ -406,6 +422,26 @@ const Settings = memo(function Settings() {
                       </div>
                     )}
 
+                    {/* Web Search Toggle per Stage - Only for OpenAI provider */}
+                    {(stageConfig?.aiConfig?.provider || aiConfig.provider) === "openai" && (
+                      <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                        <div className="space-y-1">
+                          <Label className="text-sm font-medium flex items-center">
+                            <Search className="mr-2 h-4 w-4" />
+                            Web Search voor deze stap
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            Gebruikt web search voor actuele informatie tijdens deze prompt stap
+                          </p>
+                        </div>
+                        <Switch
+                          checked={useWebSearch}
+                          onCheckedChange={(checked) => handleWebSearchChange(stage.key, checked)}
+                          data-testid={`switch-websearch-${stage.key}`}
+                        />
+                      </div>
+                    )}
+
                     {/* Per-Stage AI Configuration */}
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
                       <div className="flex items-center space-x-2 mb-3">
@@ -439,6 +475,7 @@ const Settings = memo(function Settings() {
                                 [stage.key]: {
                                   ...currentStageConfig,
                                   useGrounding: value === "google" ? (currentStageConfig?.useGrounding || false) : false,
+                                  useWebSearch: value === "openai" ? (currentStageConfig?.useWebSearch || false) : false,
                                   aiConfig: {
                                     ...currentAiConfig,
                                     provider: value,
