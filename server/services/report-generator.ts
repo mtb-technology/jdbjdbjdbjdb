@@ -123,6 +123,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         model: aiConfig.model,
         input: [{ role: "user", content: finalPrompt }],
         max_output_tokens: aiConfig.maxOutputTokens,
+        tools: [{ type: "web_search_preview" }],
       };
       
       console.log(`OpenAI Responses API config:`, JSON.stringify(responsesConfig, null, 2));
