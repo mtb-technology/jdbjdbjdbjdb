@@ -32,7 +32,7 @@ interface CasesResponse {
 // Memoized Case Item Component for better performance
 const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, handleExport, updateStatusMutation, deleteCaseMutation }: {
   case_: Case;
-  getStatusColor: (status: string) => string;
+  getStatusColor: (status: string) => "secondary" | "default" | "outline" | "destructive" | undefined;
   getStatusText: (status: string, report?: any) => string;
   handleExport: (caseId: string, format: string) => void;
   updateStatusMutation: any;
@@ -160,7 +160,10 @@ function Cases() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/cases"],
+        exact: false 
+      });
     },
   });
 
@@ -170,7 +173,10 @@ function Cases() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/cases"],
+        exact: false 
+      });
     },
   });
 
