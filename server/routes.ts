@@ -386,6 +386,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/prompts/restore", async (req, res) => {
+    console.log("🔍 RESTORE ENDPOINT HIT - Request received");
+    console.log("🔍 Request headers:", req.headers);
+    console.log("🔍 Request body type:", typeof req.body);
+    console.log("🔍 Request body content:", JSON.stringify(req.body, null, 2));
+    
     try {
       // Accepteer beide formaten: met of zonder wrapper
       const data = req.body;

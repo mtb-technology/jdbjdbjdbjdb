@@ -291,11 +291,19 @@ const Settings = memo(function Settings() {
       // Refresh de data
       queryClient.invalidateQueries({ queryKey: ["/api/prompts/active"] });
       refetch();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Restore failed:', error);
+      console.error('Error details:', error.message, error.stack);
+      
+      // Probeer de error response te lezen
+      if (error.response) {
+        const errorText = await error.response.text();
+        console.error('Server error response:', errorText);
+      }
+      
       toast({
         title: "Restore mislukt",
-        description: "Kon backup niet herstellen. Check of het bestand geldig is.",
+        description: error.message || "Kon backup niet herstellen. Check of het bestand geldig is.",
         variant: "destructive",
       });
     }
