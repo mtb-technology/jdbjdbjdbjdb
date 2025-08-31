@@ -120,7 +120,18 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       requestConfig.max_tokens = aiConfig.maxOutputTokens;
     }
     
+    console.log(`OpenAI API call config for ${aiConfig.model}:`, JSON.stringify(requestConfig, null, 2));
+    const startTime = Date.now();
+    
     const response = await openaiClient.chat.completions.create(requestConfig);
+    
+    const duration = Date.now() - startTime;
+    console.log(`OpenAI ${aiConfig.model} response took ${duration}ms`);
+    console.log(`OpenAI response metadata:`, {
+      model: response.model,
+      usage: response.usage,
+      choices_length: response.choices?.length
+    });
     
     return response.choices[0]?.message?.content || "";
   }
