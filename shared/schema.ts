@@ -115,17 +115,17 @@ export const stageConfigSchema = z.object({
 
 // Multi-stage prompting workflow schema  
 export const promptConfigSchema = z.object({
-  "1_informatiecheck": stageConfigSchema.default({ prompt: "", useGrounding: false }),
-  "2_complexiteitscheck": stageConfigSchema.default({ prompt: "", useGrounding: false }),
-  "3_generatie": stageConfigSchema.default({ prompt: "", useGrounding: true }),
-  "4a_BronnenSpecialist": stageConfigSchema.default({ prompt: "", useGrounding: true }),
-  "4b_FiscaalTechnischSpecialist": stageConfigSchema.default({ prompt: "", useGrounding: true }),
-  "4c_ScenarioGatenAnalist": stageConfigSchema.default({ prompt: "", useGrounding: true }),
-  "4d_DeVertaler": stageConfigSchema.default({ prompt: "", useGrounding: false }),
-  "4e_DeAdvocaat": stageConfigSchema.default({ prompt: "", useGrounding: true }),
-  "4f_DeKlantpsycholoog": stageConfigSchema.default({ prompt: "", useGrounding: false }),
-  "5_feedback_verwerker": stageConfigSchema.default({ prompt: "", useGrounding: false }),
-  "final_check": stageConfigSchema.default({ prompt: "", useGrounding: false }),
+  "1_informatiecheck": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+  "2_complexiteitscheck": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+  "3_generatie": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
+  "4a_BronnenSpecialist": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
+  "4b_FiscaalTechnischSpecialist": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
+  "4c_ScenarioGatenAnalist": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
+  "4d_DeVertaler": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+  "4e_DeAdvocaat": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
+  "4f_DeKlantpsycholoog": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+  "5_feedback_verwerker": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+  "final_check": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   aiConfig: aiConfigSchema.optional(),
 });
 
