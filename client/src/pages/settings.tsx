@@ -37,6 +37,9 @@ const AI_MODELS = {
   openai: [
     { value: "gpt-4o", label: "GPT-4o" },
     { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+    { value: "o3-mini", label: "o3-mini (Reasoning)" },
+    { value: "o3", label: "o3 (Advanced Reasoning)" },
+    { value: "o3-deep-research-2025-06-26", label: "o3 Deep Research (2025-06-26)" },
   ],
 } as const;
 
