@@ -156,7 +156,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     
     // o3 models only support default temperature (1) and no top_p
     if (isO3Model) {
-      requestConfig.max_completion_tokens = aiConfig.maxOutputTokens;
+      requestConfig.max_tokens = aiConfig.maxOutputTokens;
       // o3 models don't support custom temperature or top_p
     } else {
       requestConfig.temperature = aiConfig.temperature;
