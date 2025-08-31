@@ -102,13 +102,25 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
   private async callOpenAI(aiConfig: AiConfig, prompt: string): Promise<string> {
     // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
     // However, o3 and o3-mini are the newest reasoning models for deep research
-    const response = await openaiClient.chat.completions.create({
+    
+    // o3 and o3-mini models have specific requirements
+    const isO3Model = aiConfig.model.includes('o3');
+    const requestConfig: any = {
       model: aiConfig.model,
       messages: [{ role: "user", content: prompt }],
-      temperature: aiConfig.temperature,
-      max_tokens: aiConfig.maxOutputTokens,
-      top_p: aiConfig.topP,
-    });
+    };
+    
+    // o3 models only support default temperature (1) and no top_p
+    if (isO3Model) {
+      requestConfig.max_completion_tokens = aiConfig.maxOutputTokens;
+      // o3 models don't support custom temperature or top_p
+    } else {
+      requestConfig.temperature = aiConfig.temperature;
+      requestConfig.top_p = aiConfig.topP;
+      requestConfig.max_tokens = aiConfig.maxOutputTokens;
+    }
+    
+    const response = await openaiClient.chat.completions.create(requestConfig);
     
     return response.choices[0]?.message?.content || "";
   }
