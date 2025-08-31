@@ -136,7 +136,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     let response;
     
     // o3-deep-research models need to use the responses API instead of chat completions
-    if (aiConfig.model === 'o3-deep-research-2025-06-26') {
+    if (aiConfig.model.includes('o3-deep-research') || aiConfig.model === 'o3-deep-research-2025-06-26') {
       // Use the responses API for deep research models
       const responsesConfig = {
         model: aiConfig.model,
