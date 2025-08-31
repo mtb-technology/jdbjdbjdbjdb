@@ -82,6 +82,7 @@ const Settings = memo(function Settings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/prompts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/prompts/active"] });
       toast({
         title: "Configuratie opgeslagen",
         description: "Prompt configuratie is succesvol bijgewerkt.",
@@ -188,20 +189,7 @@ const Settings = memo(function Settings() {
   }, [activeConfig]);
 
   const handleSave = useCallback(async () => {
-    if (!activeConfig) return;
-    
-    // Refetch to ensure we have the latest ID
-    const result = await refetch();
-    const latestConfig = result.data;
-    
-    if (!latestConfig?.id) {
-      toast({
-        title: "Geen actieve configuratie gevonden",
-        description: "Vernieuw de pagina en probeer opnieuw.",
-        variant: "destructive",
-      });
-      return;
-    }
+    if (!activeConfig || !activePromptConfig?.id) return;
     
     const configWithAi = {
       ...activeConfig,
@@ -209,10 +197,10 @@ const Settings = memo(function Settings() {
     };
     
     updatePromptMutation.mutate({
-      id: latestConfig.id,
+      id: activePromptConfig.id,
       config: configWithAi,
     });
-  }, [activeConfig, aiConfig, updatePromptMutation, refetch, toast]);
+  }, [activeConfig, aiConfig, updatePromptMutation, activePromptConfig?.id]);
 
   const handleAiConfigChange = useCallback((key: keyof AiConfig, value: any) => {
     setAiConfig(prev => ({
