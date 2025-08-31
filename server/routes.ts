@@ -1,5 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { promises as fs } from "fs";
+import * as path from "path";
 import { storage } from "./storage";
 import { ReportGenerator } from "./services/report-generator";
 import { SourceValidator } from "./services/source-validator";
@@ -358,8 +360,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       // Sla backup op in JSON file
-      const fs = require('fs').promises;
-      const path = require('path');
       const backupDir = path.join(process.cwd(), 'backups');
       await fs.mkdir(backupDir, { recursive: true });
       
@@ -404,8 +404,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Maak eerst een backup van huidige staat
       const currentConfigs = await storage.getAllPromptConfigs();
-      const fs = require('fs').promises;
-      const path = require('path');
       const backupDir = path.join(process.cwd(), 'backups');
       await fs.mkdir(backupDir, { recursive: true });
       
@@ -441,7 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         restored,
         created
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error restoring backup:", error);
       res.status(500).json({ message: "Restore failed: " + error.message });
     }
@@ -450,13 +448,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get laatste backup info
   app.get("/api/prompts/backup-status", async (req, res) => {
     try {
-      const fs = require('fs').promises;
-      const path = require('path');
       const backupDir = path.join(process.cwd(), 'backups');
       
       try {
         const files = await fs.readdir(backupDir);
-        const backupFiles = files.filter(f => f.startsWith('prompts-backup-')).sort();
+        const backupFiles = files.filter((f: string) => f.startsWith('prompts-backup-')).sort();
         
         if (backupFiles.length > 0) {
           const lastBackup = backupFiles[backupFiles.length - 1];
