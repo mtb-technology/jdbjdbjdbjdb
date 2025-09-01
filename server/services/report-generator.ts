@@ -193,18 +193,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       messages: [{ role: "user", content: finalPrompt }],
     };
     
-    // GPT-5 and o3 models use different parameter names
-    const isGPT5 = aiConfig.model === 'gpt-5';
-    
-    if (isGPT5) {
-      // GPT-5 uses max_completion_tokens instead of max_tokens
-      chatConfig.max_completion_tokens = aiConfig.maxOutputTokens;
-      chatConfig.temperature = aiConfig.temperature;
-      chatConfig.top_p = aiConfig.topP;
-    } else if (isO3Model) {
+    // o3 models have special parameter requirements
+    if (isO3Model) {
       chatConfig.max_tokens = aiConfig.maxOutputTokens;
       // o3 models don't support custom temperature or top_p
     } else {
+      // Standard models (gpt-4o, gpt-4o-mini, etc.)
       chatConfig.temperature = aiConfig.temperature;
       chatConfig.top_p = aiConfig.topP;
       chatConfig.max_tokens = aiConfig.maxOutputTokens;
