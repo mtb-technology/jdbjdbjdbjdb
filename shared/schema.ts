@@ -93,9 +93,9 @@ export const aiConfigSchema = z.object({
   maxOutputTokens: z.number().min(100).max(8192).default(2048),
   // OpenAI-specific parameters
   reasoning: z.object({
-    effort: z.enum(["low", "medium", "high"]).optional(),
+    effort: z.enum(["minimal", "low", "medium", "high"]).optional(),
   }).optional(),
-  verbosity: z.enum(["quiet", "normal", "verbose"]).optional(),
+  verbosity: z.enum(["low", "medium", "high"]).optional(),
 });
 
 // Provider-specific validation
