@@ -486,14 +486,17 @@ ${(dossier as any).rawText || JSON.stringify(dossier, null, 2)}`;
       try {
         const result = await callAI(aiConfig, fullInput);
         
-        if (!result || result.trim() === '') {
+        // Ensure result is a string before calling trim()
+        const resultString = typeof result === 'string' ? result : String(result || '');
+        
+        if (!resultString || resultString.trim() === '') {
           throw new Error(`Lege response van AI voor stage ${stageName}`);
         }
         
         // Return result - cyclical flow logic handled by route handler
         return {
-          stageOutput: result,
-          conceptReport: stageName === "3_generatie" || stageName === "5_feedback_verwerker" ? result : ""
+          stageOutput: resultString,
+          conceptReport: stageName === "3_generatie" || stageName === "5_feedback_verwerker" ? resultString : ""
         };
         
       } catch (aiError: any) {
