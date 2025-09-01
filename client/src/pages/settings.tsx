@@ -26,6 +26,7 @@ import {
   Shield,
   Clock
 } from "lucide-react";
+import { DarkModeToggle } from "@/components/dark-mode-toggle";
 import type { PromptConfigRecord, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 
 // Available AI models by provider
@@ -363,6 +364,9 @@ const Settings = memo(function Settings() {
                   Instellingen
                 </a>
               </nav>
+            </div>
+            <div className="flex items-center space-x-4">
+              <DarkModeToggle />
             </div>
           </div>
         </div>

@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { apiRequest } from "@/lib/queryClient";
+import { DarkModeToggle } from "@/components/dark-mode-toggle";
 
 interface Case {
   id: string;
@@ -287,6 +288,7 @@ function Cases() {
               </nav>
             </div>
             <div className="flex items-center gap-3">
+              <DarkModeToggle />
               <Link href="/">
                 <Button data-testid="button-new-case">
                   Nieuwe Case

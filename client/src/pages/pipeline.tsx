@@ -11,6 +11,7 @@ import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import WorkflowInterface from "@/components/workflow-interface";
 import { JobStatus } from "@/components/job-status";
+import { DarkModeToggle } from "@/components/dark-mode-toggle";
 import type { DossierData, BouwplanData, Report, Job } from "@shared/schema";
 
 const Pipeline = memo(function Pipeline() {
@@ -105,8 +106,10 @@ const Pipeline = memo(function Pipeline() {
                 </Link>
               </nav>
             </div>
-            {/* Mobile Navigation */}
-            <div className="md:hidden">
+            <div className="flex items-center space-x-4">
+              <DarkModeToggle />
+              {/* Mobile Navigation */}
+              <div className="md:hidden">
               <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                 <SheetTrigger asChild>
                   <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
@@ -127,6 +130,7 @@ const Pipeline = memo(function Pipeline() {
                   </nav>
                 </SheetContent>
               </Sheet>
+              </div>
             </div>
           </div>
         </div>
