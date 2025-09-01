@@ -718,9 +718,9 @@ const Settings = memo(function Settings() {
                       
                       {/* OpenAI-specific parameters */}
                       {(stageConfig?.aiConfig?.provider || aiConfig.provider) === "openai" && (
-                        <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                        <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
                           <div className="col-span-2">
-                            <Label className="text-xs font-medium text-orange-900 mb-2 flex items-center">
+                            <Label className="text-xs font-medium text-orange-900 dark:text-orange-100 mb-2 flex items-center">
                               <Zap className="h-3 w-3 mr-1" />
                               OpenAI Specifieke Parameters
                             </Label>
@@ -801,7 +801,7 @@ const Settings = memo(function Settings() {
 
                       {/* Special indicators for specific models */}
                       {(stageConfig?.aiConfig?.model || aiConfig.model).includes('o3') && (
-                        <div className="text-xs text-blue-700 bg-blue-100 p-2 rounded">
+                        <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/20 p-2 rounded">
                           🧠 <strong>Deep Research Mode:</strong> o3 gebruikt geavanceerde redenering voor complexe analyses
                         </div>
                       )}
