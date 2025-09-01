@@ -221,8 +221,13 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           resultKeys: Object.keys(result || {})
         });
         
-        // Handle the response structure safely
-        const content = result?.output || result?.choices?.[0]?.message?.content || result?.content || "";
+        // Handle GPT-5 Responses API format correctly
+        // GPT-5 returns: { output_text: "text", output: [{ type: "text", content: "text" }] }
+        const content = result?.output_text || 
+                       result?.output?.[0]?.content || 
+                       result?.choices?.[0]?.message?.content || 
+                       result?.content || "";
+        
         const contentString = typeof content === 'string' ? content : String(content || '');
         if (!contentString || contentString.trim() === "") {
           throw new Error(`Empty response from ${aiConfig.model} - no usable content found`);
