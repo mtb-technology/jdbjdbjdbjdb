@@ -382,7 +382,7 @@ ${rawText}`;
       promptTemplate = promptTemplate.replace(new RegExp(placeholder, 'g'), String(value));
     }
     
-    // Combine with input data like backend does
+    // Combine with input data exactly like backend does
     const fullPrompt = `${promptTemplate}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
     
     return fullPrompt;
