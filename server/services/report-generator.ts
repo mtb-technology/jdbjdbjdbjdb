@@ -133,27 +133,21 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       let requestConfig: any;
       
       if (isGPT5) {
-        // GPT-5 specific configuration - no temperature support
+        // GPT-5 specific configuration according to OpenAI documentation
+        // Use simpler input format for better compatibility
         requestConfig = {
           model: "gpt-5",
-          reasoning: {
-            effort: useWebSearch ? "medium" : "minimal"  // Medium effort needed for web_search
+          input: finalPrompt,  // GPT-5 accepts direct string input
+          text: {
+            verbosity: "high",  // Get detailed responses for reports
+            reasoning_effort: useWebSearch ? "medium" : "minimal"
           },
-          max_output_tokens: 10000,  // Long reports
-          input: [
-            { 
-              role: "user", 
-              content: [{ 
-                type: "input_text", 
-                text: finalPrompt 
-              }] 
-            }
-          ]
+          max_output_tokens: 10000  // Long reports
         };
         
-        // Add web search for GPT-5
+        // Add web search tool for GPT-5
         if (useWebSearch) {
-          requestConfig.tools = [{ type: "web_search_preview" }];
+          requestConfig.tools = [{ type: "web_search" }];  // Use "web_search" not "web_search_preview"
         }
       } else {
         // Deep research models configuration
@@ -234,22 +228,52 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         // Handle GPT-5 Responses API format correctly - try multiple extraction methods
         let content = "";
         
-        // Try different possible response formats
+        // Try different possible response formats according to OpenAI Responses API documentation
+        // GPT-5 Responses API format: { output_text: "...", output: [{ type: "message", content: [{ type: "output_text", text: "..." }] }] }
+        
+        // 1. Try direct output_text field (primary GPT-5 response field)
         if (result?.output_text && typeof result.output_text === 'string') {
           content = result.output_text;
-        } else if (result?.output && Array.isArray(result.output) && result.output.length > 0) {
-          // Try output array format: [{ type: "text", content: "text" }]
+          console.log(`✅ [${jobId}] Found content in output_text field`);
+        } 
+        // 2. Try nested output array structure (fallback for detailed response)
+        else if (result?.output && Array.isArray(result.output) && result.output.length > 0) {
           const firstOutput = result.output[0];
-          if (firstOutput?.content && typeof firstOutput.content === 'string') {
+          
+          // Check if content is an array of objects (GPT-5 format)
+          if (Array.isArray(firstOutput?.content) && firstOutput.content.length > 0) {
+            const firstContent = firstOutput.content[0];
+            if (firstContent?.text && typeof firstContent.text === 'string') {
+              content = firstContent.text;
+              console.log(`✅ [${jobId}] Found content in output[0].content[0].text`);
+            } else if (firstContent?.content && typeof firstContent.content === 'string') {
+              content = firstContent.content;
+              console.log(`✅ [${jobId}] Found content in output[0].content[0].content`);
+            }
+          } 
+          // Check if content is a direct string (older format)
+          else if (firstOutput?.content && typeof firstOutput.content === 'string') {
             content = firstOutput.content;
-          } else if (firstOutput?.text && typeof firstOutput.text === 'string') {
+            console.log(`✅ [${jobId}] Found content in output[0].content (string)`);
+          } 
+          // Check if firstOutput has a text field directly
+          else if (firstOutput?.text && typeof firstOutput.text === 'string') {
             content = firstOutput.text;
-          } else if (typeof firstOutput === 'string') {
+            console.log(`✅ [${jobId}] Found content in output[0].text`);
+          } 
+          // Check if firstOutput itself is a string
+          else if (typeof firstOutput === 'string') {
             content = firstOutput;
+            console.log(`✅ [${jobId}] Found content in output[0] (string)`);
           }
-        } else if (result?.choices?.[0]?.message?.content) {
+        } 
+        // 3. Try standard Chat Completions format (shouldn't happen for GPT-5)
+        else if (result?.choices?.[0]?.message?.content) {
           content = result.choices[0].message.content;
-        } else if (result?.content && typeof result.content === 'string') {
+          console.log(`⚠️ [${jobId}] Using choices format (unexpected for GPT-5)`);
+        } 
+        // 4. Try other possible fields
+        else if (result?.content && typeof result.content === 'string') {
           content = result.content;
         } else if (result?.text && typeof result.text === 'string') {
           content = result.text;
