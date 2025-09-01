@@ -223,11 +223,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         
         // Handle the response structure safely
         const content = result?.output || result?.choices?.[0]?.message?.content || result?.content || "";
-        if (!content || content.trim() === "") {
+        const contentString = typeof content === 'string' ? content : String(content || '');
+        if (!contentString || contentString.trim() === "") {
           throw new Error(`Empty response from ${aiConfig.model} - no usable content found`);
         }
         
-        return content;
+        return contentString;
       } catch (error: any) {
         clearTimeout(timeoutId);
         console.error(`🚨 [${jobId}] ${aiConfig.model} API call failed:`, {
