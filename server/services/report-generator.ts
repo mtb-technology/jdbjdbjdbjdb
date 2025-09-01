@@ -236,33 +236,46 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         } 
         // 2. Try nested output array structure (fallback for detailed response)
         else if (result?.output && Array.isArray(result.output) && result.output.length > 0) {
-          const firstOutput = result.output[0];
+          // For GPT-5, look for the last item which is usually type "message"
+          const messageOutput = result.output.find((item: any) => item?.type === 'message') || result.output[result.output.length - 1];
           
           // Check if content is an array of objects (GPT-5 format)
-          if (Array.isArray(firstOutput?.content) && firstOutput.content.length > 0) {
-            const firstContent = firstOutput.content[0];
+          if (Array.isArray(messageOutput?.content) && messageOutput.content.length > 0) {
+            const firstContent = messageOutput.content[0];
             if (firstContent?.text && typeof firstContent.text === 'string') {
               content = firstContent.text;
-              console.log(`✅ [${jobId}] Found content in output[0].content[0].text`);
+              console.log(`✅ [${jobId}] Found content in message.content[0].text`);
             } else if (firstContent?.content && typeof firstContent.content === 'string') {
               content = firstContent.content;
-              console.log(`✅ [${jobId}] Found content in output[0].content[0].content`);
+              console.log(`✅ [${jobId}] Found content in message.content[0].content`);
+            } else if (typeof firstContent === 'string') {
+              content = firstContent;
+              console.log(`✅ [${jobId}] Found content in message.content[0] (string)`);
             }
           } 
           // Check if content is a direct string (older format)
-          else if (firstOutput?.content && typeof firstOutput.content === 'string') {
-            content = firstOutput.content;
-            console.log(`✅ [${jobId}] Found content in output[0].content (string)`);
+          else if (messageOutput?.content && typeof messageOutput.content === 'string') {
+            content = messageOutput.content;
+            console.log(`✅ [${jobId}] Found content in message.content (string)`);
           } 
-          // Check if firstOutput has a text field directly
-          else if (firstOutput?.text && typeof firstOutput.text === 'string') {
-            content = firstOutput.text;
-            console.log(`✅ [${jobId}] Found content in output[0].text`);
+          // Check if messageOutput has a text field directly
+          else if (messageOutput?.text && typeof messageOutput.text === 'string') {
+            content = messageOutput.text;
+            console.log(`✅ [${jobId}] Found content in message.text`);
           } 
-          // Check if firstOutput itself is a string
-          else if (typeof firstOutput === 'string') {
-            content = firstOutput;
-            console.log(`✅ [${jobId}] Found content in output[0] (string)`);
+          // Try the first output if no message type found
+          else {
+            const firstOutput = result.output[0];
+            if (firstOutput?.content && typeof firstOutput.content === 'string') {
+              content = firstOutput.content;
+              console.log(`✅ [${jobId}] Found content in output[0].content`);
+            } else if (firstOutput?.text && typeof firstOutput.text === 'string') {
+              content = firstOutput.text;
+              console.log(`✅ [${jobId}] Found content in output[0].text`);
+            } else if (typeof firstOutput === 'string') {
+              content = firstOutput;
+              console.log(`✅ [${jobId}] Found content in output[0] (string)`);
+            }
           }
         } 
         // 3. Try standard Chat Completions format (shouldn't happen for GPT-5)
@@ -510,7 +523,20 @@ ${(dossier as any).rawText || JSON.stringify(dossier, null, 2)}`;
       variables.concept_rapport = conceptReportVersions[latestKey];
     }
 
-    // Add custom input if provided
+    // Check for manual mode (only for stage 3_generatie)
+    if (customInput && customInput.startsWith("MANUAL_MODE:") && stageName === "3_generatie") {
+      // Extract the manual content
+      const manualContent = customInput.substring("MANUAL_MODE:".length);
+      console.log(`📝 [${jobId}] Using manual mode for stage 3_generatie`);
+      
+      // Return the manual content directly without AI processing
+      return {
+        stageOutput: manualContent,
+        conceptReport: manualContent // Stage 3 generates the concept report
+      };
+    }
+    
+    // Add custom input if provided (regular mode)
     if (customInput) {
       variables.custom_input = customInput;
     }

@@ -8,6 +8,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { 
   Play,
   ArrowRight,
@@ -20,7 +30,10 @@ import {
   FileText,
   Zap,
   Square,
-  Settings
+  Settings,
+  Copy,
+  Wand2,
+  PenTool
 } from "lucide-react";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
@@ -132,6 +145,10 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   const [viewMode, setViewMode] = useState<"stage" | "concept">("stage");
   const [stageStartTime, setStageStartTime] = useState<Date | null>(null);
   const [currentStageTimer, setCurrentStageTimer] = useState(0);
+  const [showManualDialog, setShowManualDialog] = useState(false);
+  const [manualMode, setManualMode] = useState<"ai" | "manual">("ai");
+  const [manualContent, setManualContent] = useState("");
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -307,10 +324,66 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   });
 
 
-  // Manual execution only - no auto-advance
+  // Generate prompt for manual stage 3 execution
+  const generateStage3Prompt = useCallback(() => {
+    if (!currentReport || !stageResults["1_informatiecheck"] || !stageResults["2_complexiteitscheck"]) {
+      return "";
+    }
+    
+    // Bouw de volledige prompt op zoals die naar de AI zou gaan
+    const prompt = `Je bent een senior fiscaal adviseur die een professioneel fiscaal duidingsrapport opstelt voor een klant.
 
+## KLANTGEGEVENS
+${stageResults["1_informatiecheck"]}
+
+## COMPLEXITEITSANALYSE  
+${stageResults["2_complexiteitscheck"]}
+
+## BOUWPLAN INSTRUCTIES
+${JSON.stringify(bouwplan, null, 2)}
+
+## OPDRACHT
+Schrijf een compleet fiscaal duidingsrapport in het Nederlands volgens het opgegeven bouwplan. Het rapport moet:
+
+1. **Professioneel en helder** zijn, geschreven voor de klant (niet-fiscalist)
+2. **Volledig uitgewerkt** zijn met alle secties uit het bouwplan
+3. **Concrete antwoorden** geven op de klantvraag
+4. **Wettelijke onderbouwing** bevatten met verwijzingen naar relevante wet- en regelgeving
+5. **Praktische adviezen** en vervolgstappen bevatten
+
+### STRUCTUUR VAN HET RAPPORT:
+Volg exact de structuur uit het bouwplan, inclusief:
+- Inleiding met probleemstelling
+- Fiscale analyse per knelpunt
+- Scenario analyse indien relevant
+- Conclusie en advies
+- Vervolgstappen
+
+### FORMAAT:
+- Gebruik Markdown opmaak
+- Gebruik duidelijke koppen (##, ###)
+- Gebruik bullets voor opsommingen
+- Markeer belangrijke bedragen en percentages
+
+Schrijf nu het volledige rapport:`;
+    
+    return prompt;
+  }, [currentReport, stageResults, bouwplan]);
+
+  // Manual execution only - no auto-advance
   const executeCurrentStage = () => {
-    // If no current report, create one first
+    const currentStage = WORKFLOW_STAGES[currentStageIndex];
+    
+    // Voor stap 3, toon eerst de keuze dialog
+    if (currentStage.key === "3_generatie") {
+      setShowManualDialog(true);
+      setManualMode("ai");
+      setManualContent("");
+      setCopiedPrompt(false);
+      return;
+    }
+    
+    // Voor andere stappen, voer direct uit
     if (!currentReport) {
       createReportMutation.mutate();
       return;
@@ -319,11 +392,48 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
     setStageStartTime(new Date());
     setCurrentStageTimer(0);
     
-    const currentStage = WORKFLOW_STAGES[currentStageIndex];
     executeStageM.mutate({
       reportId: currentReport.id,
       stage: currentStage.key,
       customInput: customInput || undefined,
+    });
+  };
+  
+  // Execute stage 3 with manual content
+  const executeStage3Manual = () => {
+    if (!currentReport || !manualContent.trim()) {
+      toast({
+        title: "Invoer vereist",
+        description: "Voer eerst het gegenereerde rapport in.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setStageStartTime(new Date());
+    setCurrentStageTimer(0);
+    
+    // Stuur de handmatige content als customInput met een speciale marker
+    executeStageM.mutate({
+      reportId: currentReport.id,
+      stage: "3_generatie",
+      customInput: `MANUAL_MODE:${manualContent}`,
+    });
+    
+    setShowManualDialog(false);
+    setManualContent("");
+  };
+  
+  // Copy prompt to clipboard
+  const copyPromptToClipboard = () => {
+    const prompt = generateStage3Prompt();
+    navigator.clipboard.writeText(prompt).then(() => {
+      setCopiedPrompt(true);
+      toast({
+        title: "Prompt gekopieerd!",
+        description: "Plak deze in ChatGPT of Gemini om het rapport te genereren.",
+      });
+      setTimeout(() => setCopiedPrompt(false), 3000);
     });
   };
 
@@ -977,6 +1087,130 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
           </CardContent>
         </Card>
       )}
+
+      {/* Manual Mode Dialog for Stage 3 */}
+      <Dialog open={showManualDialog} onOpenChange={setShowManualDialog}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Stap 3: Basis Rapport Generatie
+            </DialogTitle>
+            <DialogDescription>
+              Kies hoe je het rapport wilt genereren
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-4">
+            {/* Mode Selection */}
+            <RadioGroup value={manualMode} onValueChange={(value: "ai" | "manual") => setManualMode(value)}>
+              <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/50">
+                <RadioGroupItem value="ai" id="ai-mode" />
+                <Label htmlFor="ai-mode" className="flex-1 cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <Wand2 className="h-4 w-4 text-blue-600" />
+                    <span className="font-medium">AI Generatie</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Laat de AI het rapport automatisch genereren (kan soms fouten geven)
+                  </p>
+                </Label>
+              </div>
+              
+              <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/50">
+                <RadioGroupItem value="manual" id="manual-mode" />
+                <Label htmlFor="manual-mode" className="flex-1 cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <PenTool className="h-4 w-4 text-green-600" />
+                    <span className="font-medium">Handmatige Invoer</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Kopieer de prompt naar ChatGPT/Gemini en plak het resultaat hier
+                  </p>
+                </Label>
+              </div>
+            </RadioGroup>
+
+            {/* Manual Mode Content */}
+            {manualMode === "manual" && (
+              <div className="space-y-4 pt-4 border-t">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label className="text-sm font-medium">Stap 1: Kopieer de prompt</Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyPromptToClipboard}
+                      data-testid="button-copy-prompt"
+                    >
+                      <Copy className="mr-1 h-3 w-3" />
+                      {copiedPrompt ? "Gekopieerd!" : "Kopieer Prompt"}
+                    </Button>
+                  </div>
+                  <div className="bg-muted rounded-lg p-3 max-h-48 overflow-y-auto">
+                    <pre className="text-xs whitespace-pre-wrap font-mono">
+                      {generateStage3Prompt().substring(0, 500)}...
+                    </pre>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Plak deze prompt in ChatGPT, Claude, of Gemini om het rapport te genereren
+                  </p>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">
+                    Stap 2: Plak het gegenereerde rapport hier
+                  </Label>
+                  <Textarea
+                    value={manualContent}
+                    onChange={(e) => setManualContent(e.target.value)}
+                    placeholder="Plak hier het complete rapport dat je van de AI hebt ontvangen..."
+                    className="min-h-[200px] mt-2"
+                    data-testid="textarea-manual-content"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setShowManualDialog(false)}
+              data-testid="button-cancel-manual"
+            >
+              Annuleren
+            </Button>
+            {manualMode === "ai" ? (
+              <Button
+                onClick={() => {
+                  setShowManualDialog(false);
+                  setStageStartTime(new Date());
+                  setCurrentStageTimer(0);
+                  executeStageM.mutate({
+                    reportId: currentReport!.id,
+                    stage: "3_generatie",
+                    customInput: customInput || undefined,
+                  });
+                }}
+                data-testid="button-run-ai"
+              >
+                <Wand2 className="mr-2 h-4 w-4" />
+                Start AI Generatie
+              </Button>
+            ) : (
+              <Button
+                onClick={executeStage3Manual}
+                disabled={!manualContent.trim()}
+                data-testid="button-submit-manual"
+              >
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Rapport Toepassen
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
