@@ -178,7 +178,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       
       // Make direct API call to /v1/responses endpoint with timeout
       const modelLabel = isGPT5 ? "GPT-5 (Responses API)" : "Deep research";
-      const timeoutDuration = isGPT5 ? 120000 : 600000; // 2 min for GPT-5, 10 min for deep research
+      const timeoutDuration = isGPT5 ? 300000 : 600000; // 5 min for GPT-5, 10 min for deep research
       console.log(`🕒 [${jobId}] ${modelLabel} API call started (${aiConfig.model})...`);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
@@ -214,7 +214,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       } catch (error: any) {
         clearTimeout(timeoutId);
         if (error.name === 'AbortError') {
-          const timeoutMsg = isGPT5 ? '2 minutes' : '10 minutes';
+          const timeoutMsg = isGPT5 ? '5 minutes' : '10 minutes';
           throw new Error(`${aiConfig.model} timed out after ${timeoutMsg}`);
         }
         throw error;
