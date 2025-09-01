@@ -35,6 +35,7 @@ const AI_MODELS = {
     { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   ],
   openai: [
+    { value: "gpt-5", label: "GPT-5 (Nieuwste)" },
     { value: "gpt-4o", label: "GPT-4o" },
     { value: "gpt-4o-mini", label: "GPT-4o Mini" },
     { value: "o3-mini", label: "o3-mini (Reasoning)" },
