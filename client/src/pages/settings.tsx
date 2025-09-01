@@ -35,13 +35,12 @@ const AI_MODELS = {
     { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   ],
   openai: [
-    { value: "gpt-5", label: "GPT-5 (Nieuwste)" },
-    { value: "gpt-4o", label: "GPT-4o" },
-    { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+    { value: "gpt-4o", label: "GPT-4o (Beste keuze)" },
+    { value: "gpt-4o-mini", label: "GPT-4o Mini (Sneller)" },
     { value: "o3-mini", label: "o3-mini (Reasoning)" },
     { value: "o3", label: "o3 (Advanced Reasoning)" },
-    { value: "o3-deep-research-2025-06-26", label: "o3 Deep Research (2025-06-26)" },
-    { value: "o4-mini-deep-research-2025-06-26", label: "o4-mini Deep Research (2025-06-26)" },
+    { value: "o3-deep-research-2025-06-26", label: "o3 Deep Research (Experimenteel)" },
+    { value: "o4-mini-deep-research-2025-06-26", label: "o4-mini Deep Research (Experimenteel)" },
   ],
 } as const;
 

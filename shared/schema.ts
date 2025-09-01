@@ -82,7 +82,7 @@ export const bouwplanSchema = z.object({
 export const aiProviderSchema = z.enum(["google", "openai"]);
 
 export const googleModelSchema = z.enum(["gemini-2.5-pro", "gemini-2.5-flash"]);
-export const openaiModelSchema = z.enum(["gpt-5", "gpt-4o", "gpt-4o-mini", "o3-mini", "o3", "o3-deep-research-2025-06-26", "o4-mini-deep-research-2025-06-26"]);
+export const openaiModelSchema = z.enum(["gpt-4o", "gpt-4o-mini", "o3-mini", "o3", "o3-deep-research-2025-06-26", "o4-mini-deep-research-2025-06-26"]);
 
 export const aiConfigSchema = z.object({
   provider: aiProviderSchema.default("google"),
