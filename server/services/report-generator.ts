@@ -109,9 +109,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     // Log detailed AI call information
     console.log(`🤖 [${jobId}] Starting OpenAI call:`, {
       model: aiConfig.model,
-      useWebSearch,
+      modelExact: `'${aiConfig.model}'`,  // Show exact string with quotes
+      isGPT5,
       isO3Model,
       isDeepResearchModel,
+      useResponsesAPI,
+      useWebSearch,
       promptLength: prompt.length
     });
     
@@ -224,8 +227,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       messages: [{ role: "user", content: finalPrompt }],
     };
     
-    // o3 models have special parameter requirements
-    if (isO3Model) {
+    // Different models have different parameter requirements
+    if (aiConfig.model === 'gpt-5') {
+      // GPT-5 should never reach here, but if it does, handle it
+      console.error(`⚠️ GPT-5 reached chat completions path - this is a bug!`);
+      throw new Error('GPT-5 must use /v1/responses endpoint, not chat completions');
+    } else if (isO3Model) {
       chatConfig.max_tokens = aiConfig.maxOutputTokens;
       // o3 models don't support custom temperature or top_p
     } else {
