@@ -184,6 +184,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
       
       try {
+        console.log(`🔗 [${jobId}] Making fetch request to OpenAI...`);
         const response = await fetch('https://api.openai.com/v1/responses', {
           method: 'POST',
           headers: {
@@ -192,32 +193,55 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           },
           body: JSON.stringify(requestConfig),
           signal: controller.signal,
+        }).catch(fetchError => {
+          console.error(`🚨 [${jobId}] Fetch failed:`, fetchError);
+          throw new Error(`Network error: ${fetchError.message}`);
         });
         
         clearTimeout(timeoutId);
+        console.log(`📡 [${jobId}] Response received, status: ${response.status}`);
       
         if (!response.ok) {
-          const errorText = await response.text();
+          const errorText = await response.text().catch(() => 'Could not read error response');
+          console.error(`❌ [${jobId}] API Error Response:`, errorText);
           throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
         }
         
-        const result = await response.json();
+        const result = await response.json().catch(jsonError => {
+          console.error(`🚨 [${jobId}] JSON parse failed:`, jsonError);
+          throw new Error(`Invalid JSON response from OpenAI API`);
+        });
+        
         console.log(`✅ [${jobId}] ${isGPT5 ? 'GPT-5' : 'Deep research'} response ontvangen:`, {
           model: aiConfig.model,
           hasOutput: !!result.output,
           outputLength: result.output?.length || 0,
-          duration: `${(Date.now() - startTime) / 1000}s`
+          duration: `${(Date.now() - startTime) / 1000}s`,
+          resultKeys: Object.keys(result || {})
         });
         
-        // Handle the response structure from o3-deep-research
-        return result.output || result.choices?.[0]?.message?.content || result.content || "";
+        // Handle the response structure safely
+        const content = result?.output || result?.choices?.[0]?.message?.content || result?.content || "";
+        if (!content || content.trim() === "") {
+          throw new Error(`Empty response from ${aiConfig.model} - no usable content found`);
+        }
+        
+        return content;
       } catch (error: any) {
         clearTimeout(timeoutId);
+        console.error(`🚨 [${jobId}] ${aiConfig.model} API call failed:`, {
+          errorName: error.name,
+          errorMessage: error.message,
+          errorStack: error.stack?.split('\n').slice(0, 3)
+        });
+        
         if (error.name === 'AbortError') {
           const timeoutMsg = isGPT5 ? '5 minutes' : '10 minutes';
           throw new Error(`${aiConfig.model} timed out after ${timeoutMsg}`);
         }
-        throw error;
+        
+        // Re-throw with more context
+        throw new Error(`${aiConfig.model} API call failed: ${error.message}`);
       }
     }
     
