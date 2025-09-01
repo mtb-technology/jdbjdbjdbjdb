@@ -207,11 +207,19 @@ export class JobQueue {
         currentStage: stageLabel,
         stageNumber: i + 1,
         totalStages: stageKeys.length,
-        message: `AI verwerkt ${stageLabel}...`,
+        message: `🔄 Bezig met ${stageLabel} - AI model wordt aangeroepen...`,
       });
 
       try {
-        console.log(`Executing stage: ${stageKey} (${stageLabel})`);
+        console.log(`🚀 [${job.id}] Starting stage: ${stageKey} (${stageLabel})`);
+        
+        // Update progress with more detailed message
+        await this.updateJobProgress(job.id, {
+          currentStage: stageLabel,
+          stageNumber: i + 1,
+          totalStages: stageKeys.length,
+          message: `🤖 ${stageLabel} - AI model analyse gestart...`,
+        });
         
         // Execute the actual AI-powered stage
         const stageExecution = await this.reportGenerator.executeStage(
@@ -219,7 +227,9 @@ export class JobQueue {
           dossier,
           bouwplan,
           stageResults,
-          conceptReportVersions
+          conceptReportVersions,
+          undefined, // customInput
+          job.id // jobId for detailed logging
         );
 
         // Update stage results
