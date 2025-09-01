@@ -776,6 +776,7 @@ const Settings = memo(function Settings() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
+                                <SelectItem value="minimal">Minimal (Snelst, GPT-5 only)</SelectItem>
                                 <SelectItem value="low">Low (Snel)</SelectItem>
                                 <SelectItem value="medium">Medium (Balans)</SelectItem>
                                 <SelectItem value="high">High (Diep)</SelectItem>
@@ -787,16 +788,16 @@ const Settings = memo(function Settings() {
                           <div className="space-y-2">
                             <Label className="text-xs font-medium">Verbosity</Label>
                             <Select
-                              value={stageConfig?.aiConfig?.verbosity ?? "normal"}
+                              value={stageConfig?.aiConfig?.verbosity ?? "medium"}
                               onValueChange={(value) => handleStageOpenAIParamsChange(stage.key, "verbosity", value)}
                             >
                               <SelectTrigger className="h-8 text-xs">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="quiet">Quiet (Beknopt)</SelectItem>
-                                <SelectItem value="normal">Normal (Standaard)</SelectItem>
-                                <SelectItem value="verbose">Verbose (Uitgebreid)</SelectItem>
+                                <SelectItem value="low">Low (Beknopt)</SelectItem>
+                                <SelectItem value="medium">Medium (Standaard)</SelectItem>
+                                <SelectItem value="high">High (Uitgebreid)</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
