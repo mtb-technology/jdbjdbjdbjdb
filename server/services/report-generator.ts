@@ -132,16 +132,11 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       let requestConfig: any;
       
       if (isGPT5) {
-        // GPT-5 specific configuration with correct Responses API structure
+        // GPT-5 specific configuration - no temperature support
         requestConfig = {
           model: "gpt-5",
-          temperature: 0.2,  // Conservative, less fluff
           reasoning: {
-            effort: "minimal"  // Saves latency/costs
-          },
-          response: {
-            type: "text",
-            verbosity: "high"  // Full report
+            effort: useWebSearch ? "medium" : "minimal"  // Medium effort needed for web_search
           },
           max_output_tokens: 10000,  // Long reports
           input: [
