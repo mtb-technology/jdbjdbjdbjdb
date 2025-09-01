@@ -329,8 +329,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       if (finishReason === 'MAX_TOKENS') {
         console.warn('Google AI hit token limit, but may have partial content');
         const resultString = typeof result === 'string' ? result : String(result || '');
-        if (resultString && resultString.trim().length > 50) {
-          console.log(`Partial content length: ${result.length} chars`);
+        if (resultString && resultString.trim().length > 10) { // Lower threshold for complex prompts
+          console.log(`✅ [${jobId}] Accepting partial content: ${result.length} chars`);
           return result; // Return partial content if substantial
         }
       }
@@ -481,20 +481,13 @@ ${(dossier as any).rawText || JSON.stringify(dossier, null, 2)}`;
       const globalAiConfig = prompts.aiConfig;
       
       const aiConfig: AiConfig = {
-        provider: stageAiConfig?.provider || globalAiConfig?.provider || "openai",
-        model: stageAiConfig?.model || globalAiConfig?.model || "gpt-4o",
+        provider: stageAiConfig?.provider || globalAiConfig?.provider || "google",
+        model: stageAiConfig?.model || globalAiConfig?.model || "gemini-2.5-pro",
         temperature: stageAiConfig?.temperature || globalAiConfig?.temperature || 0.1,
         topP: stageAiConfig?.topP || globalAiConfig?.topP || 0.95,
         topK: stageAiConfig?.topK || globalAiConfig?.topK || 20,
         maxOutputTokens: stageAiConfig?.maxOutputTokens || globalAiConfig?.maxOutputTokens || 8192,
       };
-      
-      // Force reliable OpenAI for critical customer issues - Google hitting MAX_TOKENS
-      if (stageName === "2_complexiteitscheck" && aiConfig.provider === "google") {
-        aiConfig.provider = "openai";
-        aiConfig.model = "gpt-4o";
-        console.log(`🚀 [${jobId}] Switched stage ${stageName} to OpenAI gpt-4o for reliability`);
-      }
       
       // Combine prompt with input text - prompt gives instructions, currentWorkingText is the data to process
       const fullInput = `${processedPrompt}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
