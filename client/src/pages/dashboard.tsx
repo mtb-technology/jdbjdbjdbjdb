@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Bell, User, ChartLine } from "lucide-react";
 import ReportGenerator from "@/components/report-generator";
+import { DarkModeToggle } from "@/components/dark-mode-toggle";
 
 export default function Dashboard() {
   return (
@@ -32,6 +33,7 @@ export default function Dashboard() {
               </nav>
             </div>
             <div className="flex items-center space-x-4">
+              <DarkModeToggle />
               <Button variant="ghost" size="icon" data-testid="button-notifications">
                 <Bell className="h-5 w-5 text-muted-foreground" />
               </Button>
