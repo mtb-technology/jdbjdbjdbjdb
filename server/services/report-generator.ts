@@ -144,10 +144,13 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
             verbosity: "high"  // Full report
           },
           max_output_tokens: 10000,  // Long reports
-          messages: [
+          input: [
             { 
               role: "user", 
-              content: finalPrompt
+              content: [{ 
+                type: "input_text", 
+                text: finalPrompt 
+              }] 
             }
           ]
         };
