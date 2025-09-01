@@ -136,21 +136,16 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       let requestConfig: any;
       
       if (isGPT5) {
-        // GPT-5 specific configuration according to OpenAI documentation
-        // Use simpler input format for better compatibility
+        // GPT-5 specific configuration - simplified for compatibility
         requestConfig = {
           model: "gpt-5",
           input: finalPrompt,  // GPT-5 accepts direct string input
-          text: {
-            verbosity: "high",  // Get detailed responses for reports
-            reasoning_effort: useWebSearch ? "medium" : "minimal"
-          },
           max_output_tokens: 10000  // Long reports
         };
         
         // Add web search tool for GPT-5
         if (useWebSearch) {
-          requestConfig.tools = [{ type: "web_search" }];  // Use "web_search" not "web_search_preview"
+          requestConfig.tools = [{ type: "web_search" }];
         }
       } else {
         // Deep research models configuration
