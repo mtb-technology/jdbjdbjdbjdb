@@ -481,13 +481,20 @@ ${(dossier as any).rawText || JSON.stringify(dossier, null, 2)}`;
       const globalAiConfig = prompts.aiConfig;
       
       const aiConfig: AiConfig = {
-        provider: stageAiConfig?.provider || globalAiConfig?.provider || "google",
-        model: stageAiConfig?.model || globalAiConfig?.model || "gemini-2.5-pro",
+        provider: stageAiConfig?.provider || globalAiConfig?.provider || "openai",
+        model: stageAiConfig?.model || globalAiConfig?.model || "gpt-4o",
         temperature: stageAiConfig?.temperature || globalAiConfig?.temperature || 0.1,
         topP: stageAiConfig?.topP || globalAiConfig?.topP || 0.95,
         topK: stageAiConfig?.topK || globalAiConfig?.topK || 20,
         maxOutputTokens: stageAiConfig?.maxOutputTokens || globalAiConfig?.maxOutputTokens || 8192,
       };
+      
+      // Force reliable OpenAI for critical customer issues - Google hitting MAX_TOKENS
+      if (stageName === "2_complexiteitscheck" && aiConfig.provider === "google") {
+        aiConfig.provider = "openai";
+        aiConfig.model = "gpt-4o";
+        console.log(`🚀 [${jobId}] Switched stage ${stageName} to OpenAI gpt-4o for reliability`);
+      }
       
       // Combine prompt with input text - prompt gives instructions, currentWorkingText is the data to process
       const fullInput = `${processedPrompt}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
