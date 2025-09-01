@@ -140,8 +140,22 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         requestConfig = {
           model: "gpt-5",
           input: finalPrompt,  // GPT-5 accepts direct string input
-          max_output_tokens: 10000  // Long reports
+          max_output_tokens: aiConfig.maxOutputTokens || 10000  // Use per-step config or default
         };
+        
+        // Add OpenAI-specific parameters if available
+        if (aiConfig.temperature !== undefined) {
+          requestConfig.temperature = aiConfig.temperature;
+        }
+        if (aiConfig.reasoning?.effort) {
+          requestConfig.reasoning = { 
+            ...requestConfig.reasoning,
+            effort: aiConfig.reasoning.effort 
+          };
+        }
+        if (aiConfig.verbosity) {
+          requestConfig.verbosity = aiConfig.verbosity;
+        }
         
         // Add web search tool for GPT-5
         if (useWebSearch) {
@@ -162,6 +176,23 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
             }
           ]
         };
+        
+        // Add OpenAI-specific parameters for deep research models
+        if (aiConfig.maxOutputTokens) {
+          requestConfig.max_output_tokens = aiConfig.maxOutputTokens;
+        }
+        if (aiConfig.temperature !== undefined) {
+          requestConfig.temperature = aiConfig.temperature;
+        }
+        if (aiConfig.reasoning?.effort) {
+          requestConfig.reasoning = { 
+            ...requestConfig.reasoning,
+            effort: aiConfig.reasoning.effort 
+          };
+        }
+        if (aiConfig.verbosity) {
+          requestConfig.verbosity = aiConfig.verbosity;
+        }
         
         // Add web search tool if requested - deep research models also use "web_search"
         if (useWebSearch) {
@@ -337,12 +368,27 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       throw new Error('GPT-5 must use /v1/responses endpoint, not chat completions');
     } else if (isO3Model) {
       chatConfig.max_tokens = aiConfig.maxOutputTokens;
+      // Add OpenAI-specific parameters for o3 models
+      if (aiConfig.reasoning?.effort) {
+        chatConfig.reasoning = { effort: aiConfig.reasoning.effort };
+      }
+      if (aiConfig.verbosity) {
+        chatConfig.verbosity = aiConfig.verbosity;
+      }
       // o3 models don't support custom temperature or top_p
     } else {
       // Standard models (gpt-4o, gpt-4o-mini, etc.)
       chatConfig.temperature = aiConfig.temperature;
       chatConfig.top_p = aiConfig.topP;
       chatConfig.max_tokens = aiConfig.maxOutputTokens;
+      
+      // Add OpenAI-specific parameters for standard models
+      if (aiConfig.reasoning?.effort) {
+        chatConfig.reasoning = { effort: aiConfig.reasoning.effort };
+      }
+      if (aiConfig.verbosity) {
+        chatConfig.verbosity = aiConfig.verbosity;
+      }
     }
     
     console.log(`⚡ [${jobId}] Standard OpenAI API call (${aiConfig.model})...`);
