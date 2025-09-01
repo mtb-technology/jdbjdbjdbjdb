@@ -101,11 +101,13 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
   // OpenAI API call method with optional web search
   private async callOpenAI(aiConfig: AiConfig, prompt: string, useWebSearch: boolean = false, jobId?: string): Promise<string> {
-    // GPT-5 and deep research models use the new /v1/responses endpoint
-    const isO3Model = aiConfig.model.includes('o3');
-    const isDeepResearchModel = aiConfig.model.includes('deep-research');
-    const isGPT5 = aiConfig.model === 'gpt-5';
-    const useResponsesAPI = isGPT5 || isDeepResearchModel;
+    // Detect model types for correct API endpoint and configuration
+    const modelLower = aiConfig.model.toLowerCase();
+    const isO3Model = modelLower.includes('o3') || modelLower.includes('o4');  // o3 and o4 series
+    const isDeepResearchModel = modelLower.includes('deep-research');
+    const isGPT5 = modelLower === 'gpt-5';
+    const isReasoningModel = isO3Model && !isDeepResearchModel;  // o3/o3-mini but not deep research
+    const useResponsesAPI = isGPT5 || isDeepResearchModel;  // Only GPT-5 and deep research use /v1/responses
     
     // Log detailed AI call information
     console.log(`🤖 [${jobId}] Starting OpenAI call:`, {
@@ -113,6 +115,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       modelExact: `'${aiConfig.model}'`,  // Show exact string with quotes
       isGPT5,
       isO3Model,
+      isReasoningModel,
       isDeepResearchModel,
       useResponsesAPI,
       useWebSearch,
@@ -165,9 +168,9 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           ]
         };
         
-        // Add web search tool if requested
+        // Add web search tool if requested - deep research models also use "web_search"
         if (useWebSearch) {
-          requestConfig.tools = [{ type: "web_search_preview" }];
+          requestConfig.tools = [{ type: "web_search" }];
         }
       }
       
