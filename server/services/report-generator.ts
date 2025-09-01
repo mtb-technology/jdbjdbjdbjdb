@@ -99,12 +99,21 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
   }
 
   // OpenAI API call method with optional web search
-  private async callOpenAI(aiConfig: AiConfig, prompt: string, useWebSearch: boolean = false): Promise<string> {
+  private async callOpenAI(aiConfig: AiConfig, prompt: string, useWebSearch: boolean = false, jobId?: string): Promise<string> {
     // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
     // However, o3 and o3-mini are the newest reasoning models for deep research
     
     const isO3Model = aiConfig.model.includes('o3');
     const isDeepResearchModel = aiConfig.model.includes('deep-research');
+    
+    // Log detailed AI call information
+    console.log(`🤖 [${jobId}] Starting OpenAI call:`, {
+      model: aiConfig.model,
+      useWebSearch,
+      isO3Model,
+      isDeepResearchModel,
+      promptLength: prompt.length
+    });
     
     let finalPrompt = prompt;
     
@@ -137,6 +146,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       }
       
       // Make direct API call to /v1/responses endpoint with timeout
+      console.log(`🕒 [${jobId}] Deep research API call started (${aiConfig.model}) - kan 5-10 minuten duren...`);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minute timeout
       
@@ -159,7 +169,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         }
         
         const result = await response.json();
-        console.log('o3-deep-research response:', JSON.stringify(result, null, 2));
+        console.log(`✅ [${jobId}] Deep research response ontvangen:`, {
+          model: aiConfig.model,
+          hasOutput: !!result.output,
+          outputLength: result.output?.length || 0,
+          duration: Date.now() - startTime
+        });
         
         // Handle the response structure from o3-deep-research
         return result.output || result.choices?.[0]?.message?.content || result.content || "";
@@ -188,15 +203,31 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       chatConfig.max_tokens = aiConfig.maxOutputTokens;
     }
     
+    console.log(`⚡ [${jobId}] Standard OpenAI API call (${aiConfig.model})...`);
     const response = await openaiClient.chat.completions.create(chatConfig);
     
     const duration = Date.now() - startTime;
+    const content = response.choices[0]?.message?.content || "";
     
-    return response.choices[0]?.message?.content || "";
+    console.log(`✅ [${jobId}] OpenAI response ontvangen:`, {
+      model: aiConfig.model,
+      responseLength: content.length,
+      duration: `${duration}ms`,
+      usage: response.usage
+    });
+    
+    return content;
   }
 
   // Google AI API call method with optional grounding
-  private async callGoogleAI(aiConfig: AiConfig, prompt: string, useGrounding: boolean = false): Promise<string> {
+  private async callGoogleAI(aiConfig: AiConfig, prompt: string, useGrounding: boolean = false, jobId?: string): Promise<string> {
+    console.log(`🌎 [${jobId}] Starting Google AI call:`, {
+      model: aiConfig.model,
+      useGrounding,
+      promptLength: prompt.length
+    });
+    
+    const startTime = Date.now();
     try {
       const response = await googleAI.models.generateContent({
         model: aiConfig.model,
@@ -209,14 +240,19 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         }
       });
       
+      const duration = Date.now() - startTime;
+      const result = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || "";
+      
       // Log response metadata for debugging
-      console.log('Google AI response metadata:', {
+      console.log(`✅ [${jobId}] Google AI response ontvangen:`, {
+        model: aiConfig.model,
         finishReason: response.candidates?.[0]?.finishReason,
+        responseLength: result.length,
+        duration: `${duration}ms`,
         usageMetadata: response.usageMetadata,
-        hasContent: !!response.candidates?.[0]?.content?.parts?.[0]?.text
+        hasContent: !!result
       });
       
-      const result = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text || "";
       const finishReason = response.candidates?.[0]?.finishReason;
       
       // Handle MAX_TOKENS - partial content may still be useful
@@ -259,17 +295,22 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     bouwplan: BouwplanData,
     previousStageResults: Record<string, string>,
     conceptReportVersions: Record<string, string>,
-    customInput?: string
+    customInput?: string,
+    jobId?: string
   ): Promise<{ stageOutput: string; conceptReport: string }> {
     // Helper function to call the appropriate AI service
     const callAI = async (aiConfig: AiConfig, prompt: string): Promise<string> => {
-      console.log(`Using AI Provider: ${aiConfig.provider}, Model: ${aiConfig.model} for stage: ${stageName}`);
-      console.log(`Search settings - Grounding: ${useStageGrounding}, Web Search: ${useStageWebSearch}`);
+      console.log(`🎯 [${jobId}] Starting stage ${stageName}:`, {
+        provider: aiConfig.provider,
+        model: aiConfig.model,
+        grounding: useStageGrounding,
+        webSearch: useStageWebSearch
+      });
       
       if (aiConfig.provider === "openai") {
-        return this.callOpenAI(aiConfig, prompt, useStageWebSearch);
+        return this.callOpenAI(aiConfig, prompt, useStageWebSearch, jobId);
       } else {
-        return this.callGoogleAI(aiConfig, prompt, useStageGrounding);
+        return this.callGoogleAI(aiConfig, prompt, useStageGrounding, jobId);
       }
     };
     const currentDate = new Date().toLocaleDateString('nl-NL', {

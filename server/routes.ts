@@ -124,7 +124,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         report.bouwplanData as BouwplanData,
         report.stageResults as Record<string, string> || {},
         report.conceptReportVersions as Record<string, string> || {},
-        customInput
+        customInput,
+        id // Pass reportId as jobId for logging
       );
 
       // Update report with both stage output and concept report version

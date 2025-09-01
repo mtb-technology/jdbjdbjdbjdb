@@ -22,12 +22,26 @@ interface JobStatusProps {
 
 export function JobStatus({ jobId, onComplete, showReportLink = true }: JobStatusProps) {
   const [isPolling, setIsPolling] = useState(true);
+  const [stageTimer, setStageTimer] = useState(0);
+  const [lastStageChange, setLastStageChange] = useState<Date | null>(null);
 
   const { data: job, refetch } = useQuery<Job>({
     queryKey: ["/api/jobs", jobId],
     refetchInterval: isPolling ? 3000 : false, // Poll every 3 seconds when active
     enabled: !!jobId,
   });
+
+  // Log job updates to console for user visibility
+  useEffect(() => {
+    if (job?.status === "processing" && job.progress) {
+      const progress = JSON.parse(job.progress);
+      console.log(`📊 [Job Update] Stage ${progress.stageNumber}/${progress.totalStages}: ${progress.currentStage}`, {
+        status: job.status,
+        message: progress.message,
+        jobId: job.id
+      });
+    }
+  }, [job?.progress, job?.status, job?.id]);
 
   // Stop polling when job is complete or failed
   useEffect(() => {
@@ -38,6 +52,30 @@ export function JobStatus({ jobId, onComplete, showReportLink = true }: JobStatu
       }
     }
   }, [job, onComplete]);
+
+  // Track stage changes and reset timer
+  useEffect(() => {
+    if (job && job.progress) {
+      const progress = JSON.parse(job.progress);
+      const currentStageKey = `${progress.stageNumber}_${progress.currentStage}`;
+      const lastStageKey = lastStageChange ? `${JSON.parse(job.progress).stageNumber}_${JSON.parse(job.progress).currentStage}` : null;
+      
+      if (currentStageKey !== lastStageKey) {
+        setLastStageChange(new Date());
+        setStageTimer(0);
+      }
+    }
+  }, [job?.progress]);
+
+  // Update stage timer every second
+  useEffect(() => {
+    if (job?.status === "processing" && lastStageChange) {
+      const interval = setInterval(() => {
+        setStageTimer(Math.floor((Date.now() - lastStageChange.getTime()) / 1000));
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [job?.status, lastStageChange]);
 
   if (!job) {
     return (
@@ -116,9 +154,37 @@ export function JobStatus({ jobId, onComplete, showReportLink = true }: JobStatu
 
         {/* Current Stage Info */}
         {progress && (
-          <div className="bg-muted/50 rounded-lg p-3">
-            <p className="text-sm font-medium">{progress.currentStage}</p>
-            <p className="text-xs text-muted-foreground mt-1">{progress.message}</p>
+          <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+            <div className="flex justify-between items-center">
+              <p className="text-sm font-medium">{progress.currentStage}</p>
+              {job.status === "processing" && (
+                <div className="text-xs bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded">
+                  {Math.floor(stageTimer / 60)}:{(stageTimer % 60).toString().padStart(2, '0')}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">{progress.message}</p>
+            
+            {/* AI Model Info Section */}
+            {job.status === "processing" && (
+              <div className="mt-2 pt-2 border-t border-muted-foreground/20">
+                <div className="text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">AI Status:</span>
+                    <span className="text-blue-600 dark:text-blue-400">
+                      🔄 Bezig met model aanroep...
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Stage Timer:</span>
+                    <span className="font-mono">{stageTimer}s</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    📝 Check console (F12) voor gedetailleerde AI logs
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
