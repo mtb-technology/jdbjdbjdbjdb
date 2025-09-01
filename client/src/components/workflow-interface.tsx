@@ -338,7 +338,7 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
     }
     
     // Get the REAL prompt template from settings
-    const stage3Config = promptConfig.config?.["3_generatie"];
+    const stage3Config = (promptConfig as any)?.config?.["3_generatie"];
     if (!stage3Config?.prompt) {
       return "Geen prompt configuratie gevonden voor stap 3 in de instellingen";
     }
@@ -984,7 +984,7 @@ ${rawText}`;
                   </Button>
                 </div>
               ) : (
-                <div className="bg-muted/50 rounded-lg p-4 max-h-64 overflow-y-auto">
+                <div className="bg-muted/50 rounded-lg p-4 max-h-96 overflow-y-auto">
                   <div className="text-xs text-blue-600 dark:text-blue-400 mb-2 font-medium">
                     {viewMode === "stage" ? "Specialist Output:" : "Bijgewerkt Concept Rapport:"}
                   </div>
