@@ -86,7 +86,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         }
       });
 
-      const extractedJson = (response.candidates?.[0]?.content?.parts?.[0]?.text || response.text)?.trim();
+      const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text || response.text;
+      const extractedJson = typeof rawText === 'string' ? rawText.trim() : String(rawText || '').trim();
       if (!extractedJson) {
         throw new Error('No JSON extracted from AI response');
       }
@@ -321,13 +322,15 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       // Handle MAX_TOKENS - partial content may still be useful
       if (finishReason === 'MAX_TOKENS') {
         console.warn('Google AI hit token limit, but may have partial content');
-        if (result && result.trim().length > 50) {
+        const resultString = typeof result === 'string' ? result : String(result || '');
+        if (resultString && resultString.trim().length > 50) {
           console.log(`Partial content length: ${result.length} chars`);
           return result; // Return partial content if substantial
         }
       }
       
-      if (!result || result.trim() === '') {
+      const resultString = typeof result === 'string' ? result : String(result || '');
+      if (!resultString || resultString.trim() === '') {
         console.error('Google AI returned empty response:', JSON.stringify({
           finishReason,
           candidatesLength: response.candidates?.length || 0,
