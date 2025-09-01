@@ -100,11 +100,11 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
   // OpenAI API call method with optional web search
   private async callOpenAI(aiConfig: AiConfig, prompt: string, useWebSearch: boolean = false, jobId?: string): Promise<string> {
-    // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-    // However, o3 and o3-mini are the newest reasoning models for deep research
-    
+    // GPT-5 and deep research models use the new /v1/responses endpoint
     const isO3Model = aiConfig.model.includes('o3');
     const isDeepResearchModel = aiConfig.model.includes('deep-research');
+    const isGPT5 = aiConfig.model === 'gpt-5';
+    const useResponsesAPI = isGPT5 || isDeepResearchModel;
     
     // Log detailed AI call information
     console.log(`🤖 [${jobId}] Starting OpenAI call:`, {
@@ -124,31 +124,61 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     
     const startTime = Date.now();
     
-    // Special handling for o3-deep-research models - use /v1/responses endpoint with correct structure
-    if (isDeepResearchModel) {
-      const requestConfig: any = {
-        model: aiConfig.model,
-        reasoning: { summary: "auto" },
-        input: [
-          { 
-            role: "user", 
-            content: [{ 
-              type: "input_text", 
-              text: finalPrompt 
-            }] 
-          }
-        ]
-      };
+    // Special handling for GPT-5 and deep-research models - use /v1/responses endpoint
+    if (useResponsesAPI) {
+      let requestConfig: any;
       
-      // Add web search tool if requested
-      if (useWebSearch) {
-        requestConfig.tools = [{ type: "web_search_preview" }];
+      if (isGPT5) {
+        // GPT-5 specific configuration according to user specs
+        requestConfig = {
+          model: "gpt-5",
+          temperature: 0.2,  // Conservative, less fluff
+          reasoning_effort: "minimal",  // Saves latency/costs
+          verbosity: "high",  // Full report
+          max_output_tokens: 10000,  // Long reports
+          input: [
+            { 
+              role: "user", 
+              content: [{ 
+                type: "input_text", 
+                text: finalPrompt 
+              }] 
+            }
+          ]
+        };
+        
+        // Add web search for GPT-5
+        if (useWebSearch) {
+          requestConfig.tools = [{ type: "web_search_preview" }];
+        }
+      } else {
+        // Deep research models configuration
+        requestConfig = {
+          model: aiConfig.model,
+          reasoning: { summary: "auto" },
+          input: [
+            { 
+              role: "user", 
+              content: [{ 
+                type: "input_text", 
+                text: finalPrompt 
+              }] 
+            }
+          ]
+        };
+        
+        // Add web search tool if requested
+        if (useWebSearch) {
+          requestConfig.tools = [{ type: "web_search_preview" }];
+        }
       }
       
       // Make direct API call to /v1/responses endpoint with timeout
-      console.log(`🕒 [${jobId}] Deep research API call started (${aiConfig.model}) - kan 5-10 minuten duren...`);
+      const modelLabel = isGPT5 ? "GPT-5 (Responses API)" : "Deep research";
+      const timeoutDuration = isGPT5 ? 120000 : 600000; // 2 min for GPT-5, 10 min for deep research
+      console.log(`🕒 [${jobId}] ${modelLabel} API call started (${aiConfig.model})...`);
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minute timeout
+      const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
       
       try {
         const response = await fetch('https://api.openai.com/v1/responses', {
@@ -169,11 +199,11 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         }
         
         const result = await response.json();
-        console.log(`✅ [${jobId}] Deep research response ontvangen:`, {
+        console.log(`✅ [${jobId}] ${isGPT5 ? 'GPT-5' : 'Deep research'} response ontvangen:`, {
           model: aiConfig.model,
           hasOutput: !!result.output,
           outputLength: result.output?.length || 0,
-          duration: Date.now() - startTime
+          duration: `${(Date.now() - startTime) / 1000}s`
         });
         
         // Handle the response structure from o3-deep-research
@@ -181,7 +211,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       } catch (error: any) {
         clearTimeout(timeoutId);
         if (error.name === 'AbortError') {
-          throw new Error('Deep research model timed out after 10 minutes');
+          const timeoutMsg = isGPT5 ? '2 minutes' : '10 minutes';
+          throw new Error(`${aiConfig.model} timed out after ${timeoutMsg}`);
         }
         throw error;
       }
