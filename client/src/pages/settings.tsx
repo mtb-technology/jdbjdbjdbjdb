@@ -225,6 +225,47 @@ const Settings = memo(function Settings() {
     });
   }, [activeConfig]);
 
+  // Special handler for nested OpenAI parameters
+  const handleStageOpenAIParamsChange = useCallback((stageKey: string, paramType: 'reasoning' | 'verbosity', value: any) => {
+    if (!activeConfig) return;
+    
+    const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+    const currentAiConfig = currentStageConfig?.aiConfig || {
+      provider: "google",
+      model: "gemini-2.5-pro",
+      temperature: 0.1,
+      topP: 0.95,
+      topK: 20,
+      maxOutputTokens: 2048,
+    };
+    
+    if (paramType === 'reasoning') {
+      setActiveConfig({
+        ...activeConfig,
+        [stageKey]: {
+          ...currentStageConfig,
+          aiConfig: {
+            ...currentAiConfig,
+            reasoning: {
+              effort: value,
+            },
+          },
+        },
+      });
+    } else if (paramType === 'verbosity') {
+      setActiveConfig({
+        ...activeConfig,
+        [stageKey]: {
+          ...currentStageConfig,
+          aiConfig: {
+            ...currentAiConfig,
+            verbosity: value,
+          },
+        },
+      });
+    }
+  }, [activeConfig]);
+
   const handleSave = useCallback(async () => {
     if (!activeConfig || !activePromptConfig?.id) return;
     
@@ -674,6 +715,94 @@ const Settings = memo(function Settings() {
                         </div>
                       </div>
                       
+                      {/* OpenAI-specific parameters */}
+                      {(stageConfig?.aiConfig?.provider || aiConfig.provider) === "openai" && (
+                        <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                          <div className="col-span-2">
+                            <Label className="text-xs font-medium text-orange-900 mb-2 flex items-center">
+                              <Zap className="h-3 w-3 mr-1" />
+                              OpenAI Specifieke Parameters
+                            </Label>
+                          </div>
+                          
+                          {/* Temperature */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Temperature</Label>
+                            <Select
+                              value={String(stageConfig?.aiConfig?.temperature ?? aiConfig.temperature)}
+                              onValueChange={(value) => handleStageAiConfigChange(stage.key, "temperature", parseFloat(value))}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="0">0 (Precies)</SelectItem>
+                                <SelectItem value="0.1">0.1 (Zeer laag)</SelectItem>
+                                <SelectItem value="0.3">0.3 (Laag)</SelectItem>
+                                <SelectItem value="0.5">0.5 (Medium)</SelectItem>
+                                <SelectItem value="0.7">0.7 (Hoog)</SelectItem>
+                                <SelectItem value="1">1 (Zeer hoog)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Max Output Tokens */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Max Output Tokens</Label>
+                            <Select
+                              value={String(stageConfig?.aiConfig?.maxOutputTokens ?? aiConfig.maxOutputTokens)}
+                              onValueChange={(value) => handleStageAiConfigChange(stage.key, "maxOutputTokens", parseInt(value))}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1024">1024 (Kort)</SelectItem>
+                                <SelectItem value="2048">2048 (Medium)</SelectItem>
+                                <SelectItem value="4096">4096 (Lang)</SelectItem>
+                                <SelectItem value="8192">8192 (Zeer lang)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Reasoning Effort */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Reasoning Effort</Label>
+                            <Select
+                              value={stageConfig?.aiConfig?.reasoning?.effort ?? "medium"}
+                              onValueChange={(value) => handleStageOpenAIParamsChange(stage.key, "reasoning", value)}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="low">Low (Snel)</SelectItem>
+                                <SelectItem value="medium">Medium (Balans)</SelectItem>
+                                <SelectItem value="high">High (Diep)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Verbosity */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Verbosity</Label>
+                            <Select
+                              value={stageConfig?.aiConfig?.verbosity ?? "normal"}
+                              onValueChange={(value) => handleStageOpenAIParamsChange(stage.key, "verbosity", value)}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="quiet">Quiet (Beknopt)</SelectItem>
+                                <SelectItem value="normal">Normal (Standaard)</SelectItem>
+                                <SelectItem value="verbose">Verbose (Uitgebreid)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Special indicators for specific models */}
                       {(stageConfig?.aiConfig?.model || aiConfig.model).includes('o3') && (
                         <div className="text-xs text-blue-700 bg-blue-100 p-2 rounded">
