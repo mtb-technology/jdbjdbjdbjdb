@@ -324,51 +324,69 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   });
 
 
-  // Generate prompt for manual stage 3 execution
+  // Fetch active prompt config for manual mode
+  const { data: promptConfig } = useQuery({
+    queryKey: ['/api/prompts/active'],
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Generate prompt for manual stage 3 execution using REAL settings
   const generateStage3Prompt = useCallback(() => {
-    if (!currentReport || !stageResults["1_informatiecheck"] || !stageResults["2_complexiteitscheck"]) {
+    if (!currentReport || !stageResults["1_informatiecheck"] || !stageResults["2_complexiteitscheck"] || !promptConfig) {
       return "";
     }
     
-    // Bouw de volledige prompt op zoals die naar de AI zou gaan
-    const prompt = `Je bent een senior fiscaal adviseur die een professioneel fiscaal duidingsrapport opstelt voor een klant.
-
-## KLANTGEGEVENS
+    // Get the REAL prompt template from settings
+    const stage3Config = promptConfig.config?.["3_generatie"];
+    if (!stage3Config?.prompt) {
+      return "Geen prompt configuratie gevonden voor stap 3 in de instellingen";
+    }
+    
+    let promptTemplate = stage3Config.prompt;
+    
+    // Prepare variables exactly like the backend does
+    const currentDate = new Date().toLocaleDateString('nl-NL', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    
+    // Recreate the working text exactly as backend does for stage 3
+    const currentWorkingText = `=== OUTPUT VAN STAP 1 (INFORMATIECHECK) ===
 ${stageResults["1_informatiecheck"]}
 
-## COMPLEXITEITSANALYSE  
+=== OUTPUT VAN STAP 2 (COMPLEXITEITSCHECK) ===
 ${stageResults["2_complexiteitscheck"]}
 
-## BOUWPLAN INSTRUCTIES
-${JSON.stringify(bouwplan, null, 2)}
-
-## OPDRACHT
-Schrijf een compleet fiscaal duidingsrapport in het Nederlands volgens het opgegeven bouwplan. Het rapport moet:
-
-1. **Professioneel en helder** zijn, geschreven voor de klant (niet-fiscalist)
-2. **Volledig uitgewerkt** zijn met alle secties uit het bouwplan
-3. **Concrete antwoorden** geven op de klantvraag
-4. **Wettelijke onderbouwing** bevatten met verwijzingen naar relevante wet- en regelgeving
-5. **Praktische adviezen** en vervolgstappen bevatten
-
-### STRUCTUUR VAN HET RAPPORT:
-Volg exact de structuur uit het bouwplan, inclusief:
-- Inleiding met probleemstelling
-- Fiscale analyse per knelpunt
-- Scenario analyse indien relevant
-- Conclusie en advies
-- Vervolgstappen
-
-### FORMAAT:
-- Gebruik Markdown opmaak
-- Gebruik duidelijke koppen (##, ###)
-- Gebruik bullets voor opsommingen
-- Markeer belangrijke bedragen en percentages
-
-Schrijf nu het volledige rapport:`;
+=== ORIGINELE DOSSIER DATA ===
+${rawText}`;
     
-    return prompt;
-  }, [currentReport, stageResults, bouwplan]);
+    // Variables that backend uses - complete list
+    const variables: Record<string, string> = {
+      datum: currentDate,
+      dossier: JSON.stringify(dossier, null, 2),
+      bouwplan: JSON.stringify(bouwplan, null, 2),
+      "1_informatiecheck": stageResults["1_informatiecheck"] || "",
+      "2_complexiteitscheck": stageResults["2_complexiteitscheck"] || "",
+      rapport_id: currentReport.id,
+      stage_naam: "3_generatie",
+      working_text: currentWorkingText,
+      rawText: rawText,
+      clientName: dossier.klant?.naam || "Client"
+    };
+    
+    // Replace placeholders exactly like backend does
+    for (const [key, value] of Object.entries(variables)) {
+      const placeholder = `{{${key}}}`;
+      promptTemplate = promptTemplate.replace(new RegExp(placeholder, 'g'), String(value));
+    }
+    
+    // Combine with input data like backend does
+    const fullPrompt = `${promptTemplate}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
+    
+    return fullPrompt;
+  }, [currentReport, stageResults, bouwplan, dossier, rawText, promptConfig]);
 
   // Manual execution only - no auto-advance
   const executeCurrentStage = () => {
@@ -1147,13 +1165,13 @@ Schrijf nu het volledige rapport:`;
                       {copiedPrompt ? "Gekopieerd!" : "Kopieer Prompt"}
                     </Button>
                   </div>
-                  <div className="bg-muted rounded-lg p-3 max-h-48 overflow-y-auto">
+                  <div className="bg-muted rounded-lg p-3 max-h-64 overflow-y-auto">
                     <pre className="text-xs whitespace-pre-wrap font-mono">
-                      {generateStage3Prompt().substring(0, 500)}...
+                      {generateStage3Prompt()}
                     </pre>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Plak deze prompt in ChatGPT, Claude, of Gemini om het rapport te genereren
+                    📋 Dit is de exacte prompt uit je instellingen met alle data ingevuld. Plak deze volledige prompt in ChatGPT, Claude, of Gemini.
                   </p>
                 </div>
 
