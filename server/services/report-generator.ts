@@ -220,16 +220,53 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           duration: `${(Date.now() - startTime) / 1000}s`,
           resultKeys: Object.keys(result || {})
         });
+
+        // Debug: Log the full response structure to understand the format
+        console.log(`🔍 [${jobId}] Full response structure for debugging:`, {
+          result_output_text: result?.output_text,
+          result_output: result?.output,
+          result_choices: result?.choices,
+          result_content: result?.content,
+          result_text: result?.text,
+          fullResultSample: JSON.stringify(result).substring(0, 500) + "..."
+        });
         
-        // Handle GPT-5 Responses API format correctly
-        // GPT-5 returns: { output_text: "text", output: [{ type: "text", content: "text" }] }
-        const content = result?.output_text || 
-                       result?.output?.[0]?.content || 
-                       result?.choices?.[0]?.message?.content || 
-                       result?.content || "";
+        // Handle GPT-5 Responses API format correctly - try multiple extraction methods
+        let content = "";
+        
+        // Try different possible response formats
+        if (result?.output_text && typeof result.output_text === 'string') {
+          content = result.output_text;
+        } else if (result?.output && Array.isArray(result.output) && result.output.length > 0) {
+          // Try output array format: [{ type: "text", content: "text" }]
+          const firstOutput = result.output[0];
+          if (firstOutput?.content && typeof firstOutput.content === 'string') {
+            content = firstOutput.content;
+          } else if (firstOutput?.text && typeof firstOutput.text === 'string') {
+            content = firstOutput.text;
+          } else if (typeof firstOutput === 'string') {
+            content = firstOutput;
+          }
+        } else if (result?.choices?.[0]?.message?.content) {
+          content = result.choices[0].message.content;
+        } else if (result?.content && typeof result.content === 'string') {
+          content = result.content;
+        } else if (result?.text && typeof result.text === 'string') {
+          content = result.text;
+        } else if (result?.output && typeof result.output === 'string') {
+          content = result.output;
+        }
         
         const contentString = typeof content === 'string' ? content : String(content || '');
         if (!contentString || contentString.trim() === "") {
+          console.error(`🚨 [${jobId}] No usable content found in response. Tried extracting from:`, {
+            hasOutputText: !!result?.output_text,
+            hasOutput: !!result?.output,
+            outputType: Array.isArray(result?.output) ? 'array' : typeof result?.output,
+            hasChoices: !!result?.choices,
+            hasContent: !!result?.content,
+            hasText: !!result?.text
+          });
           throw new Error(`Empty response from ${aiConfig.model} - no usable content found`);
         }
         
