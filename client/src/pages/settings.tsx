@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -728,41 +729,35 @@ const Settings = memo(function Settings() {
                           {/* Temperature */}
                           <div className="space-y-2">
                             <Label className="text-xs font-medium">Temperature</Label>
-                            <Select
-                              value={String(stageConfig?.aiConfig?.temperature ?? aiConfig.temperature)}
-                              onValueChange={(value) => handleStageAiConfigChange(stage.key, "temperature", parseFloat(value))}
-                            >
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="0">0 (Precies)</SelectItem>
-                                <SelectItem value="0.1">0.1 (Zeer laag)</SelectItem>
-                                <SelectItem value="0.3">0.3 (Laag)</SelectItem>
-                                <SelectItem value="0.5">0.5 (Medium)</SelectItem>
-                                <SelectItem value="0.7">0.7 (Hoog)</SelectItem>
-                                <SelectItem value="1">1 (Zeer hoog)</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="2"
+                              value={stageConfig?.aiConfig?.temperature ?? aiConfig.temperature}
+                              onChange={(e) => handleStageAiConfigChange(stage.key, "temperature", parseFloat(e.target.value) || 0)}
+                              className="h-8 text-xs"
+                              placeholder="0.0 - 2.0"
+                              data-testid={`input-temperature-${stage.key}`}
+                            />
+                            <p className="text-xs text-muted-foreground">0 = precies, 1 = gebalanceerd, 2 = creatief</p>
                           </div>
 
                           {/* Max Output Tokens */}
                           <div className="space-y-2">
                             <Label className="text-xs font-medium">Max Output Tokens</Label>
-                            <Select
-                              value={String(stageConfig?.aiConfig?.maxOutputTokens ?? aiConfig.maxOutputTokens)}
-                              onValueChange={(value) => handleStageAiConfigChange(stage.key, "maxOutputTokens", parseInt(value))}
-                            >
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="1024">1024 (Kort)</SelectItem>
-                                <SelectItem value="2048">2048 (Medium)</SelectItem>
-                                <SelectItem value="4096">4096 (Lang)</SelectItem>
-                                <SelectItem value="8192">8192 (Zeer lang)</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <Input
+                              type="number"
+                              step="256"
+                              min="100"
+                              max="8192"
+                              value={stageConfig?.aiConfig?.maxOutputTokens ?? aiConfig.maxOutputTokens}
+                              onChange={(e) => handleStageAiConfigChange(stage.key, "maxOutputTokens", parseInt(e.target.value) || 2048)}
+                              className="h-8 text-xs"
+                              placeholder="100 - 8192"
+                              data-testid={`input-max-tokens-${stage.key}`}
+                            />
+                            <p className="text-xs text-muted-foreground">Maximaal aantal tokens in de response</p>
                           </div>
 
                           {/* Reasoning Effort */}
@@ -927,67 +922,69 @@ const Settings = memo(function Settings() {
 
             {/* Temperature */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Creativiteit (Temperature)</Label>
-                <span className="text-sm text-muted-foreground">{aiConfig.temperature}</span>
-              </div>
-              <Slider
-                value={[aiConfig.temperature]}
-                onValueChange={([value]) => handleAiConfigChange("temperature", value)}
-                min={0}
-                max={2}
-                step={0.1}
-                className="w-full"
-                data-testid="slider-temperature"
+              <Label className="text-sm font-medium">Creativiteit (Temperature)</Label>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                max="2"
+                value={aiConfig.temperature}
+                onChange={(e) => handleAiConfigChange("temperature", parseFloat(e.target.value) || 0)}
+                placeholder="0.0 - 2.0"
+                data-testid="input-temperature"
               />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Precies (0)</span>
-                <span>Gebalanceerd (1)</span>
-                <span>Creatief (2)</span>
-              </div>
+              <p className="text-xs text-muted-foreground">0 = precies, 1 = gebalanceerd, 2 = creatief</p>
             </div>
 
             {/* Top P */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Focus (Top P)</Label>
-                <span className="text-sm text-muted-foreground">{aiConfig.topP}</span>
-              </div>
-              <Slider
-                value={[aiConfig.topP]}
-                onValueChange={([value]) => handleAiConfigChange("topP", value)}
-                min={0.1}
-                max={1}
-                step={0.05}
-                className="w-full"
-                data-testid="slider-topP"
+              <Label className="text-sm font-medium">Focus (Top P)</Label>
+              <Input
+                type="number"
+                step="0.05"
+                min="0.1"
+                max="1"
+                value={aiConfig.topP}
+                onChange={(e) => handleAiConfigChange("topP", parseFloat(e.target.value) || 0.95)}
+                placeholder="0.1 - 1.0"
+                data-testid="input-topP"
               />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Gefocust (0.1)</span>
-                <span>Gevarieerd (1.0)</span>
-              </div>
+              <p className="text-xs text-muted-foreground">0.1 = gefocust, 1.0 = gevarieerd</p>
             </div>
 
             {/* Max Output Tokens */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Max Output Tokens</Label>
-                <span className="text-sm text-muted-foreground">{aiConfig.maxOutputTokens}</span>
-              </div>
-              <Slider
-                value={[aiConfig.maxOutputTokens]}
-                onValueChange={([value]) => handleAiConfigChange("maxOutputTokens", value)}
-                min={500}
-                max={8192}
-                step={256}
-                className="w-full"
-                data-testid="slider-max-tokens"
+              <Label className="text-sm font-medium">Max Output Tokens</Label>
+              <Input
+                type="number"
+                step="256"
+                min="100"
+                max="8192"
+                value={aiConfig.maxOutputTokens}
+                onChange={(e) => handleAiConfigChange("maxOutputTokens", parseInt(e.target.value) || 2048)}
+                placeholder="100 - 8192"
+                data-testid="input-max-tokens"
               />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Kort (500)</span>
-                <span>Uitgebreid (8192)</span>
-              </div>
+              <p className="text-xs text-muted-foreground">Maximaal aantal tokens in de response</p>
             </div>
+
+            {/* Top K (Google models only) */}
+            {aiConfig.provider === "google" && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Top K (Google modellen)</Label>
+                <Input
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="40"
+                  value={aiConfig.topK}
+                  onChange={(e) => handleAiConfigChange("topK", parseInt(e.target.value) || 20)}
+                  placeholder="1 - 40"
+                  data-testid="input-topK"
+                />
+                <p className="text-xs text-muted-foreground">Aantal top kandidaten voor sampling (alleen Google AI)</p>
+              </div>
+            )}
 
             {/* Deep Research Info */}
             <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
