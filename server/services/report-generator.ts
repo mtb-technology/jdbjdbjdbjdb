@@ -107,8 +107,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const isDeepResearchModel = modelLower.includes('deep-research');
     const isGPT5 = modelLower === 'gpt-5';
     const isReasoningModel = isO3Model && !isDeepResearchModel;  // o3/o3-mini but not deep research
-    // Force Chat Completions API for all models unless explicitly deep-research
-    const useResponsesAPI = false;  // Use Chat Completions API for consistency
+    const useResponsesAPI = isDeepResearchModel;  // Deep research models need Responses API
     
     // Log detailed AI call information
     console.log(`🤖 [${jobId}] Starting OpenAI call:`, {
@@ -320,14 +319,38 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           content = result.output;
         }
         
-        // Handle incomplete responses - check if we have partial content from reasoning
+        // Handle incomplete responses and complex Responses API structure
         if (!content || (typeof content === 'string' && content.trim() === "")) {
-          // Try to extract from reasoning summaries for incomplete responses
           if (result?.output && Array.isArray(result.output)) {
-            for (const item of result.output) {
+            // Look for the final message type in the output array (most recent response)
+            const outputTypes = result.output.map((item: any) => item?.type).join(', ');
+            console.log(`🔍 [${jobId}] Output types found: ${outputTypes}`);
+            
+            // Try to find the final message/response in the output chain
+            for (let i = result.output.length - 1; i >= 0; i--) {
+              const item = result.output[i];
+              
+              // Look for message type with content
+              if (item?.type === 'message' && item?.content) {
+                if (Array.isArray(item.content)) {
+                  for (const contentItem of item.content) {
+                    if (contentItem?.text && typeof contentItem.text === 'string') {
+                      content = contentItem.text;
+                      console.log(`✅ [${jobId}] Found content in message.content[].text`);
+                      break;
+                    }
+                  }
+                } else if (typeof item.content === 'string') {
+                  content = item.content;
+                  console.log(`✅ [${jobId}] Found content in message.content`);
+                }
+                if (content) break;
+              }
+              
+              // Look for reasoning with summary text
               if (item?.type === 'reasoning' && item?.summary && Array.isArray(item.summary)) {
                 for (const summaryItem of item.summary) {
-                  if (summaryItem?.type === 'summary_text' && summaryItem?.text) {
+                  if (summaryItem?.type === 'summary_text' && summaryItem?.text && summaryItem.text.length > 50) {
                     content = summaryItem.text;
                     console.log(`✅ [${jobId}] Found content in reasoning summary`);
                     break;
