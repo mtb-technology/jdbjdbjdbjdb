@@ -143,10 +143,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           max_output_tokens: aiConfig.maxOutputTokens || 10000  // Use per-step config or default
         };
         
-        // Add OpenAI-specific parameters if available
-        if (aiConfig.temperature !== undefined) {
-          requestConfig.temperature = aiConfig.temperature;
-        }
+        // Add OpenAI-specific parameters if available (GPT-5 doesn't support temperature)
+        // Note: GPT-5 models don't support temperature parameter
         if (aiConfig.reasoning?.effort) {
           requestConfig.reasoning = { 
             ...requestConfig.reasoning,
@@ -181,9 +179,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         if (aiConfig.maxOutputTokens) {
           requestConfig.max_output_tokens = aiConfig.maxOutputTokens;
         }
-        if (aiConfig.temperature !== undefined) {
-          requestConfig.temperature = aiConfig.temperature;
-        }
+        // Deep research models don't support temperature parameter
         if (aiConfig.reasoning?.effort) {
           requestConfig.reasoning = { 
             ...requestConfig.reasoning,
@@ -619,6 +615,11 @@ ${(dossier as any).rawText || JSON.stringify(dossier, null, 2)}`;
         topK: stageAiConfig?.topK || globalAiConfig?.topK || 20,
         maxOutputTokens: stageAiConfig?.maxOutputTokens || globalAiConfig?.maxOutputTokens || 8192,
       };
+
+      // GPT-5 doesn't support temperature parameter
+      if (aiConfig.model === 'gpt-5') {
+        aiConfig.temperature = undefined;
+      }
       
       // Combine prompt with input text - prompt gives instructions, currentWorkingText is the data to process
       const fullInput = `${processedPrompt}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
