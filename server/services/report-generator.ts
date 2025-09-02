@@ -107,7 +107,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const isDeepResearchModel = modelLower.includes('deep-research');
     const isGPT5 = modelLower === 'gpt-5';
     const isReasoningModel = isO3Model && !isDeepResearchModel;  // o3/o3-mini but not deep research
-    const useResponsesAPI = isGPT5 || isDeepResearchModel;  // Only GPT-5 and deep research use /v1/responses
+    const useResponsesAPI = isDeepResearchModel;  // Only deep research models use /v1/responses, GPT-5 can use chat completions
     
     // Log detailed AI call information
     console.log(`🤖 [${jobId}] Starting OpenAI call:`, {
@@ -358,10 +358,18 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     };
     
     // Different models have different parameter requirements
-    if (aiConfig.model === 'gpt-5') {
-      // GPT-5 should never reach here, but if it does, handle it
-      console.error(`⚠️ GPT-5 reached chat completions path - this is a bug!`);
-      throw new Error('GPT-5 must use /v1/responses endpoint, not chat completions');
+    if (isGPT5) {
+      // GPT-5 using Chat Completions API - standard parameters
+      chatConfig.temperature = aiConfig.temperature;
+      chatConfig.max_tokens = aiConfig.maxOutputTokens;
+      
+      // Add OpenAI-specific parameters for GPT-5
+      if (aiConfig.reasoning?.effort) {
+        chatConfig.reasoning = { effort: aiConfig.reasoning.effort };
+      }
+      if (aiConfig.verbosity) {
+        chatConfig.verbosity = aiConfig.verbosity;
+      }
     } else if (isO3Model) {
       chatConfig.max_tokens = aiConfig.maxOutputTokens;
       // Add OpenAI-specific parameters for o3 models
@@ -616,10 +624,7 @@ ${(dossier as any).rawText || JSON.stringify(dossier, null, 2)}`;
         maxOutputTokens: stageAiConfig?.maxOutputTokens || globalAiConfig?.maxOutputTokens || 8192,
       };
 
-      // GPT-5 doesn't support temperature parameter
-      if (aiConfig.model === 'gpt-5') {
-        aiConfig.temperature = undefined;
-      }
+      // Keep temperature for all models
       
       // Combine prompt with input text - prompt gives instructions, currentWorkingText is the data to process
       const fullInput = `${processedPrompt}\n\n--- INPUT DATA ---\n${currentWorkingText}`;
