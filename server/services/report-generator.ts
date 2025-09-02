@@ -101,13 +101,14 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
   // OpenAI API call method with optional web search
   private async callOpenAI(aiConfig: AiConfig, prompt: string, useWebSearch: boolean = false, jobId?: string): Promise<string> {
-    // Detect model types for correct API endpoint and configuration
+    // Use exact model from settings - no automatic switching
     const modelLower = aiConfig.model.toLowerCase();
     const isO3Model = modelLower.includes('o3') || modelLower.includes('o4');  // o3 and o4 series
     const isDeepResearchModel = modelLower.includes('deep-research');
     const isGPT5 = modelLower === 'gpt-5';
     const isReasoningModel = isO3Model && !isDeepResearchModel;  // o3/o3-mini but not deep research
-    const useResponsesAPI = isDeepResearchModel;  // Only deep research models use /v1/responses, GPT-5 can use chat completions
+    // Force Chat Completions API for all models unless explicitly deep-research
+    const useResponsesAPI = false;  // Use Chat Completions API for consistency
     
     // Log detailed AI call information
     console.log(`🤖 [${jobId}] Starting OpenAI call:`, {
