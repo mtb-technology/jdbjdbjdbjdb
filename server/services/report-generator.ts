@@ -142,6 +142,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       verbosity: stageAiConfig?.verbosity || globalAiConfig?.verbosity
     };
 
+    // Increase max tokens for reviewer stages that need detailed feedback
+    if (stageName.startsWith("4") && aiConfig.maxOutputTokens < 4096) {
+      aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 4096);
+      console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for reviewer stage ${stageName}`);
+    }
+
     // Get stage-specific settings
     const useGrounding = stageConfig?.useGrounding ?? globalConfig?.useGrounding ?? false;
     const useWebSearch = stageConfig?.useWebSearch ?? globalConfig?.useWebSearch ?? false;
@@ -214,6 +220,17 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     };
 
     try {
+      // Log the full prompt for debugging reviewer stages
+      if (stageName.startsWith("4")) {
+        console.log(`📝 [${jobId}] Full prompt for ${stageName}:`, {
+          promptLength: prompt.length,
+          conceptReportLength: conceptReportVersions["3_generatie"]?.length || 0,
+          hasConceptReport: !!conceptReportVersions["3_generatie"],
+          firstPromptChars: prompt.substring(0, 200) + "...",
+          conceptReportPreview: conceptReportVersions["3_generatie"]?.substring(0, 100) + "..." || "EMPTY"
+        });
+      }
+
       const response = await this.modelFactory.callModel(aiConfig, prompt, options);
       
       // Process the response based on stage type
