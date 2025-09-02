@@ -359,8 +359,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     
     // Different models have different parameter requirements
     if (isGPT5) {
-      // GPT-5 doesn't support temperature - only reasoning_effort and verbosity
-      chatConfig.max_tokens = aiConfig.maxOutputTokens;
+      // GPT-5 uses max_completion_tokens instead of max_tokens
+      chatConfig.max_completion_tokens = aiConfig.maxOutputTokens;
       
       // Add OpenAI-specific parameters for GPT-5 (no temperature)
       if (aiConfig.reasoning?.effort) {
