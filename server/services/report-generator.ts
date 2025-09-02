@@ -140,7 +140,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         requestConfig = {
           model: "gpt-5",
           input: finalPrompt,  // GPT-5 accepts direct string input
-          max_output_tokens: aiConfig.maxOutputTokens || 10000  // Use per-step config or default
+          max_output_tokens: aiConfig.maxOutputTokens || 32000  // Increase default for complex reports
         };
         
         // Add OpenAI-specific parameters if available (GPT-5 doesn't support temperature)
@@ -319,6 +319,25 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           content = result.output;
         }
         
+        // Handle incomplete responses - check if we have partial content from reasoning
+        if (!content || (typeof content === 'string' && content.trim() === "")) {
+          // Try to extract from reasoning summaries for incomplete responses
+          if (result?.output && Array.isArray(result.output)) {
+            for (const item of result.output) {
+              if (item?.type === 'reasoning' && item?.summary && Array.isArray(item.summary)) {
+                for (const summaryItem of item.summary) {
+                  if (summaryItem?.type === 'summary_text' && summaryItem?.text) {
+                    content = summaryItem.text;
+                    console.log(`✅ [${jobId}] Found content in reasoning summary`);
+                    break;
+                  }
+                }
+                if (content) break;
+              }
+            }
+          }
+        }
+
         const contentString = typeof content === 'string' ? content : String(content || '');
         if (!contentString || contentString.trim() === "") {
           console.error(`🚨 [${jobId}] No usable content found in response. Tried extracting from:`, {
@@ -327,8 +346,17 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
             outputType: Array.isArray(result?.output) ? 'array' : typeof result?.output,
             hasChoices: !!result?.choices,
             hasContent: !!result?.content,
-            hasText: !!result?.text
+            hasText: !!result?.text,
+            status: result?.status,
+            incompleteDetails: result?.incomplete_details
           });
+          
+          // If response is incomplete, still throw but with more info
+          if (result?.status === 'incomplete') {
+            const reason = result?.incomplete_details?.reason || 'unknown';
+            throw new Error(`Incomplete response from ${aiConfig.model}: ${reason}. Try increasing max_output_tokens.`);
+          }
+          
           throw new Error(`Empty response from ${aiConfig.model} - no usable content found`);
         }
         
