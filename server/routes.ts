@@ -9,6 +9,7 @@ import { jobQueue } from "./jobQueue";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
 import type { DossierData, BouwplanData } from "@shared/schema";
 import { z } from "zod";
+import modelTestRoutes from "./routes/model-test";
 
 const generateReportSchema = z.object({
   dossier: dossierSchema,
@@ -654,6 +655,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Fout bij ophalen jobs" });
     }
   });
+
+  // Register model test routes
+  app.use(modelTestRoutes);
 
   const httpServer = createServer(app);
   return httpServer;
