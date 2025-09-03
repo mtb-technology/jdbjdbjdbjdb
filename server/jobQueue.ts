@@ -166,7 +166,7 @@ export class JobQueue {
       structuur: { inleiding: true, knelpunten: ["Algemene fiscale vraag"], scenario_analyse: true, vervolgstappen: true }
     };
 
-    // Define processing stages in correct grouping
+    // Define processing stages in cyclical pattern: reviewer → feedback processing
     const preparationStages = [
       "1_informatiecheck",
       "2_complexiteitscheck", 
@@ -183,12 +183,20 @@ export class JobQueue {
     ];
 
     const finalizationStages = [
-      "5_feedback_verwerker",
       "final_check"
     ];
 
-    // Combine all stages for progress tracking
-    const allStages = [...preparationStages, ...reviewerStages, ...finalizationStages];
+    // Build cyclical workflow: reviewer followed by feedback processing
+    let allStages = [...preparationStages];
+    
+    // Add each reviewer followed by feedback processing
+    for (const reviewer of reviewerStages) {
+      allStages.push(reviewer);
+      allStages.push("5_feedback_verwerker"); // After each reviewer
+    }
+    
+    // Add final stages
+    allStages.push(...finalizationStages);
     
     const stageLabels: Record<string, string> = {
       "1_informatiecheck": "1. Informatiecheck",
@@ -207,9 +215,13 @@ export class JobQueue {
     let stageResults: Record<string, string> = {};
     let conceptReportVersions: Record<string, string> = {};
 
-    // Helper function to execute a stage
-    const executeStage = async (stageKey: string, stageNumber: number) => {
+    // Execute all stages sequentially: preparation → (reviewer → feedback processing) cycles → final
+    console.log(`🏁 [${job.id}] Starting cyclical workflow with ${allStages.length} total stages`);
+    
+    for (let i = 0; i < allStages.length; i++) {
+      const stageKey = allStages[i];
       const stageLabel = stageLabels[stageKey];
+      const stageNumber = i + 1;
       
       // Update progress
       await this.updateJobProgress(job.id, {
@@ -220,7 +232,7 @@ export class JobQueue {
       });
 
       try {
-        console.log(`🚀 [${job.id}] Starting stage: ${stageKey} (${stageLabel})`);
+        console.log(`🚀 [${job.id}] Starting stage ${stageNumber}/${allStages.length}: ${stageKey} (${stageLabel})`);
         
         // Update progress with more detailed message
         await this.updateJobProgress(job.id, {
@@ -253,61 +265,28 @@ export class JobQueue {
         // Log the stage output length for debugging
         console.log(`📄 [${job.id}] Stage ${stageKey} output length: ${stageExecution.stageOutput.length} characters`);
 
+        // Save progress after critical stages (every 3rd stage, reviewers, and feedback processing)
+        const isReviewer = stageKey.startsWith("4");
+        const isFeedbackProcessor = stageKey === "5_feedback_verwerker";
+        const isPreparationStage = ["1_informatiecheck", "2_complexiteitscheck", "3_generatie"].includes(stageKey);
+        
+        if (isPreparationStage || isReviewer || isFeedbackProcessor || i === allStages.length - 1) {
+          console.log(`💾 [${job.id}] Saving progress after ${stageKey}`);
+          await db
+            .update(reports)
+            .set({
+              stageResults: stageResults,
+              conceptReportVersions: conceptReportVersions,
+              currentStage: stageKey,
+              updatedAt: new Date(),
+            })
+            .where(eq(reports.id, job.reportId));
+        }
+
       } catch (error) {
         console.error(`❌ [${job.id}] Error in stage ${stageKey}:`, error);
         throw new Error(`Fout in ${stageLabel}: ${error instanceof Error ? error.message : String(error)}`);
       }
-    };
-
-    // Phase 1: Execute preparation stages (1-3)
-    console.log(`🏁 [${job.id}] Starting Phase 1: Preparation stages (1-3)`);
-    for (let i = 0; i < preparationStages.length; i++) {
-      await executeStage(preparationStages[i], i + 1);
-      
-      // Save progress after critical stages
-      await db
-        .update(reports)
-        .set({
-          stageResults: stageResults,
-          conceptReportVersions: conceptReportVersions,
-          currentStage: preparationStages[i],
-          updatedAt: new Date(),
-        })
-        .where(eq(reports.id, job.reportId));
-    }
-
-    // Phase 2: Execute all reviewer stages (4a-4f) - they all run in parallel conceptually but sequentially
-    console.log(`🏁 [${job.id}] Starting Phase 2: Reviewer stages (4a-4f)`);
-    for (let i = 0; i < reviewerStages.length; i++) {
-      await executeStage(reviewerStages[i], preparationStages.length + i + 1);
-    }
-
-    // Save all reviewer results
-    await db
-      .update(reports)
-      .set({
-        stageResults: stageResults,
-        conceptReportVersions: conceptReportVersions,
-        currentStage: "reviews_completed",
-        updatedAt: new Date(),
-      })
-      .where(eq(reports.id, job.reportId));
-
-    console.log(`🏁 [${job.id}] Starting Phase 3: Finalization stages (5, final_check)`);
-    // Phase 3: Execute finalization stages (5, final_check)
-    for (let i = 0; i < finalizationStages.length; i++) {
-      await executeStage(finalizationStages[i], preparationStages.length + reviewerStages.length + i + 1);
-      
-      // Save progress after each finalization stage
-      await db
-        .update(reports)
-        .set({
-          stageResults: stageResults,
-          conceptReportVersions: conceptReportVersions,
-          currentStage: finalizationStages[i],
-          updatedAt: new Date(),
-        })
-        .where(eq(reports.id, job.reportId));
     }
 
     // Get the final report content (latest concept report version)
