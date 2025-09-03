@@ -90,40 +90,63 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
 
       // Extract content from Deep Research Responses API format
       let content = "";
+      let messageContent = "";
+      let reasoningContent = "";
       
-      // Try different extraction methods
-      if (result?.output_text && typeof result.output_text === 'string') {
-        content = result.output_text;
-      } else if (result?.output && Array.isArray(result.output) && result.output.length > 0) {
-        // Look for content in the output array
+      // First, scan for actual message content (the AI's real response)
+      if (result?.output && Array.isArray(result.output) && result.output.length > 0) {
         for (let i = result.output.length - 1; i >= 0; i--) {
           const item = result.output[i];
           
-          // Look for message type with content
+          // Prioritize message type with content (this is the actual AI response)
           if (item?.type === 'message' && item?.content) {
             if (Array.isArray(item.content)) {
               for (const contentItem of item.content) {
                 if (contentItem?.text && typeof contentItem.text === 'string') {
-                  content = contentItem.text;
+                  messageContent = contentItem.text;
                   break;
                 }
               }
             } else if (typeof item.content === 'string') {
-              content = item.content;
+              messageContent = item.content;
             }
-            if (content) break;
+            if (messageContent) break;
           }
           
-          // Look for reasoning summary
+          // Collect reasoning summary as fallback
           if (item?.type === 'reasoning' && item?.summary && Array.isArray(item.summary)) {
             for (const summaryItem of item.summary) {
               if (summaryItem?.type === 'summary_text' && summaryItem?.text && summaryItem.text.length > 50) {
-                content = summaryItem.text;
+                reasoningContent = summaryItem.text;
                 break;
               }
             }
-            if (content) break;
           }
+        }
+      }
+      
+      // Check if we have direct output_text
+      const outputText = result?.output_text && typeof result.output_text === 'string' ? result.output_text : "";
+      
+      // Prioritize message content over reasoning and output_text
+      if (messageContent) {
+        content = messageContent;
+        console.log(`📄 [${jobId}] Using message content (${messageContent.length} chars)`);
+      } else if (outputText) {
+        content = outputText;
+        console.log(`📄 [${jobId}] Using output_text (${outputText.length} chars)`);
+      } else if (reasoningContent) {
+        content = reasoningContent;
+        console.log(`⚠️ [${jobId}] Falling back to reasoning content (${reasoningContent.length} chars)`);
+      }
+      
+      // Additional JSON detection for reviewer stages
+      if (content && jobId && content.includes('"score"') && content.includes('"positief"')) {
+        // Try to extract just the JSON from the content
+        const jsonMatch = content.match(/\{[\s\S]*?"suggesties"[\s\S]*?\}/);
+        if (jsonMatch) {
+          content = jsonMatch[0];
+          console.log(`🎯 [${jobId}] Extracted JSON from content (${content.length} chars)`);
         }
       }
 
