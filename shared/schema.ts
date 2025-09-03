@@ -18,6 +18,7 @@ export const reports = pgTable("reports", {
   generatedContent: text("generated_content"),
   stageResults: json("stage_results"), // Store stage-specific outputs from each specialist
   conceptReportVersions: json("concept_report_versions"), // Store evolving concept report through stages
+  substepResults: json("substep_results"), // Store substep results for reviewers (review + processing)
   currentStage: text("current_stage").default("1_informatiecheck"),
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),
@@ -152,6 +153,10 @@ export const insertReportSchema = createInsertSchema(reports).omit({
   updatedAt: true,
 }).extend({
   conceptReportVersions: z.record(z.string()).optional(),
+  substepResults: z.record(z.object({
+    review: z.string().optional(),
+    processing: z.string().optional(),
+  })).optional(),
 });
 
 export const insertSourceSchema = createInsertSchema(sources).omit({

@@ -33,7 +33,8 @@ import {
   Settings,
   Copy,
   Wand2,
-  PenTool
+  PenTool,
+  ChevronRight
 } from "lucide-react";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
@@ -199,6 +200,7 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [stageResults, setStageResults] = useState<Record<string, string>>({});
   const [conceptReportVersions, setConceptReportVersions] = useState<Record<string, string>>({});
+  const [substepResults, setSubstepResults] = useState<Record<string, { review?: string, processing?: string }>>({});
   const [editingStage, setEditingStage] = useState<string | null>(null);
   const [customInput, setCustomInput] = useState("");
   // Auto-run functionality removed per user request
@@ -315,6 +317,82 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
     },
   });
 
+  // New mutation for executing substeps
+  const executeSubstepM = useMutation({
+    mutationFn: async ({ substepKey, substepType, reportId }: { substepKey: string; substepType: "review" | "processing"; reportId: string }) => {
+      if (substepType === "review") {
+        // Execute the reviewer stage
+        const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${substepKey}`, {
+          customInput: customInput,
+        });
+        return { type: "review", data: response.json() };
+      } else {
+        // Execute feedback processing
+        const response = await apiRequest("POST", `/api/reports/${reportId}/stage/5_feedback_verwerker`, {
+          customInput: customInput,
+        });
+        return { type: "processing", data: response.json() };
+      }
+    },
+    onSuccess: async (result) => {
+      const data = await result.data;
+      const currentStage = WORKFLOW_STAGES[currentStageIndex];
+      
+      if (result.type === "review") {
+        // Store review result
+        setSubstepResults(prev => ({
+          ...prev,
+          [currentStage.key]: {
+            ...prev[currentStage.key],
+            review: data.stageResult
+          }
+        }));
+        
+        setStageResults(prev => ({
+          ...prev,
+          [currentStage.key]: data.stageResult
+        }));
+        
+        toast({
+          title: "✅ Review voltooid",
+          description: `${currentStage.label} heeft JSON feedback gegenereerd.`,
+        });
+      } else {
+        // Store processing result and update report
+        setSubstepResults(prev => ({
+          ...prev,
+          [currentStage.key]: {
+            ...prev[currentStage.key],
+            processing: data.stageResult
+          }
+        }));
+        
+        setCurrentReport(data.report);
+        
+        if (data.conceptReport) {
+          setConceptReportVersions(prev => ({
+            ...prev,
+            [currentStage.key]: data.conceptReport as string
+          }));
+        }
+        
+        toast({
+          title: "📝 Rapport bijgewerkt",
+          description: `Feedback van ${currentStage.label} is verwerkt in het rapport.`,
+        });
+      }
+      
+      setCustomInput("");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Fout bij uitvoeren substep",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Timer voor huidige stap
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -338,6 +416,7 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
       setCurrentReport(existingReport);
       setStageResults(existingReport.stageResults as Record<string, string> || {});
       setConceptReportVersions(existingReport.conceptReportVersions as Record<string, string> || {});
+      setSubstepResults(existingReport.substepResults as Record<string, { review?: string, processing?: string }> || {});
       
       // Set current stage index based on completed stages
       const completedStages = Object.keys(existingReport.stageResults as Record<string, string> || {});
@@ -556,8 +635,16 @@ ${rawText}`;
       return WORKFLOW_STAGES.findIndex(s => s.key === "4a_BronnenSpecialist");
     }
     
-    // For reviewer stages, go to next reviewer or final check
+    // For reviewer stages, only go to next if both substeps are completed
     if (currentStage.type === "reviewer") {
+      const substepResultsForStage = substepResults[currentStage.key] || {};
+      const bothSubstepsCompleted = substepResultsForStage.review && substepResultsForStage.processing;
+      
+      if (!bothSubstepsCompleted) {
+        // Stay on current stage until both substeps are done
+        return currentIndex;
+      }
+      
       const currentReviewerIndex = reviewerStages.indexOf(currentStage.key);
       
       if (currentReviewerIndex < reviewerStages.length - 1) {
@@ -828,25 +915,55 @@ ${rawText}`;
                     {(stage as any).substeps && status !== "pending" && (
                       <div className="mt-2 space-y-1">
                         {(stage as any).substeps.map((substep: any, substepIndex: number) => {
-                          const hasSubstepResult = !!stageResults[substep.key];
-                          const isCurrentSubstep = status === "current" && substep.type === "review";
-                          const isProcessingSubstep = status === "current" && substep.type === "processing" && hasSubstepResult;
+                          const substepResultsForStage = substepResults[stage.key] || {};
+                          const hasReviewResult = !!substepResultsForStage.review;
+                          const hasProcessingResult = !!substepResultsForStage.processing;
+                          const isReviewSubstep = substep.type === "review";
+                          const isProcessingSubstep = substep.type === "processing";
+                          
+                          const isCompleted = isReviewSubstep ? hasReviewResult : hasProcessingResult;
+                          const canExecute = status === "current" && 
+                                           (isReviewSubstep || (isProcessingSubstep && hasReviewResult));
+                          const isExecuting = executeSubstepM.isPending && 
+                                           executeSubstepM.variables?.substepType === substep.type;
                           
                           return (
-                            <div key={substep.key} className="flex items-center text-xs">
-                              <div className={`w-3 h-3 rounded-full mr-2 ${
-                                hasSubstepResult && substep.type === "review" ? "bg-green-400" :
-                                isCurrentSubstep ? "bg-blue-400" :
-                                isProcessingSubstep ? "bg-orange-400" :
-                                "bg-gray-300"
-                              }`}></div>
-                              <span className={`${
-                                hasSubstepResult ? "text-green-600 dark:text-green-400" :
-                                isCurrentSubstep || isProcessingSubstep ? "text-blue-600 dark:text-blue-400" :
-                                "text-muted-foreground"
-                              }`}>
-                                {substep.label}
-                              </span>
+                            <div 
+                              key={`${substep.key}-${substep.type}`} 
+                              className={`flex items-center justify-between text-xs p-2 rounded border transition-all ${
+                                canExecute ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/20 border-blue-200" :
+                                isCompleted ? "bg-green-50 dark:bg-green-950/20 border-green-200" :
+                                "border-gray-200"
+                              }`}
+                              onClick={() => canExecute && currentReport && executeSubstepM.mutate({
+                                substepKey: isReviewSubstep ? stage.key : "5_feedback_verwerker",
+                                substepType: substep.type,
+                                reportId: currentReport.id
+                              })}
+                            >
+                              <div className="flex items-center">
+                                <div className={`w-3 h-3 rounded-full mr-2 ${
+                                  isCompleted ? "bg-green-400" :
+                                  isExecuting ? "bg-orange-400" :
+                                  canExecute ? "bg-blue-400" :
+                                  "bg-gray-300"
+                                }`}></div>
+                                <span className={`${
+                                  isCompleted ? "text-green-600 dark:text-green-400" :
+                                  canExecute || isExecuting ? "text-blue-600 dark:text-blue-400" :
+                                  "text-muted-foreground"
+                                }`}>
+                                  {substep.label}
+                                </span>
+                              </div>
+                              
+                              {canExecute && (
+                                <ChevronRight className="h-3 w-3 text-blue-400" />
+                              )}
+                              
+                              {isExecuting && (
+                                <div className="w-3 h-3 border-2 border-orange-400 border-t-transparent rounded-full animate-spin"></div>
+                              )}
                             </div>
                           );
                         })}
