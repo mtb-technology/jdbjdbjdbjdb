@@ -127,9 +127,6 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
         }
       }
 
-      // Always log the structure for debugging until we fix this issue
-      console.log(`🔍 [${jobId}] Deep Research response structure:`, JSON.stringify(result, null, 2).substring(0, 1500));
-
       if (!content) {
         
         if (result?.status === 'incomplete') {
