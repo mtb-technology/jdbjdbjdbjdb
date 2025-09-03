@@ -111,18 +111,77 @@ function formatReportContent(content: string): string {
     .replace(/<\/p>\s*<p/g, '</p>\n\n<p');
 }
 
-// Static workflow stages - simplified approach to avoid duplicates
+// Workflow stages with substeps for reviewers
 const WORKFLOW_STAGES = [
   { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Ruwe tekst → Gestructureerde informatie", icon: FileText, type: "generator" },
   { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Analyse van complexiteit en scope", icon: AlertCircle, type: "generator" },
   { key: "3_generatie", label: "3. Generatie", description: "Basis rapport generatie", icon: FileText, type: "generator" },
-  { key: "4a_BronnenSpecialist", label: "4a. Bronnen Specialist", description: "Review bronnen → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4b_FiscaalTechnischSpecialist", label: "4b. Fiscaal Technisch Specialist", description: "Review fiscale techniek → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4c_ScenarioGatenAnalist", label: "4c. Scenario Gaten Analist", description: "Review scenarios → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Review communicatie → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "5_feedback_verwerker", label: "↻ Feedback Verwerking", description: "Integreert alle reviewer feedback cyclisch", icon: Zap, type: "processor" },
+  { 
+    key: "4a_BronnenSpecialist", 
+    label: "4a. Bronnen Specialist", 
+    description: "Review bronnen → JSON feedback → Rapport update", 
+    icon: CheckCircle, 
+    type: "reviewer",
+    substeps: [
+      { key: "4a_BronnenSpecialist", label: "Review & JSON feedback", type: "review" },
+      { key: "5_feedback_verwerker", label: "Rapport update", type: "processing" }
+    ]
+  },
+  { 
+    key: "4b_FiscaalTechnischSpecialist", 
+    label: "4b. Fiscaal Technisch Specialist", 
+    description: "Review fiscale techniek → JSON feedback → Rapport update", 
+    icon: CheckCircle, 
+    type: "reviewer",
+    substeps: [
+      { key: "4b_FiscaalTechnischSpecialist", label: "Review & JSON feedback", type: "review" },
+      { key: "5_feedback_verwerker", label: "Rapport update", type: "processing" }
+    ]
+  },
+  { 
+    key: "4c_ScenarioGatenAnalist", 
+    label: "4c. Scenario Gaten Analist", 
+    description: "Review scenarios → JSON feedback → Rapport update", 
+    icon: CheckCircle, 
+    type: "reviewer",
+    substeps: [
+      { key: "4c_ScenarioGatenAnalist", label: "Review & JSON feedback", type: "review" },
+      { key: "5_feedback_verwerker", label: "Rapport update", type: "processing" }
+    ]
+  },
+  { 
+    key: "4d_DeVertaler", 
+    label: "4d. De Vertaler", 
+    description: "Review communicatie → JSON feedback → Rapport update", 
+    icon: CheckCircle, 
+    type: "reviewer",
+    substeps: [
+      { key: "4d_DeVertaler", label: "Review & JSON feedback", type: "review" },
+      { key: "5_feedback_verwerker", label: "Rapport update", type: "processing" }
+    ]
+  },
+  { 
+    key: "4e_DeAdvocaat", 
+    label: "4e. De Advocaat", 
+    description: "Review juridisch → JSON feedback → Rapport update", 
+    icon: CheckCircle, 
+    type: "reviewer",
+    substeps: [
+      { key: "4e_DeAdvocaat", label: "Review & JSON feedback", type: "review" },
+      { key: "5_feedback_verwerker", label: "Rapport update", type: "processing" }
+    ]
+  },
+  { 
+    key: "4f_DeKlantpsycholoog", 
+    label: "4f. De Klantpsycholoog", 
+    description: "Review klant focus → JSON feedback → Rapport update", 
+    icon: CheckCircle, 
+    type: "reviewer",
+    substeps: [
+      { key: "4f_DeKlantpsycholoog", label: "Review & JSON feedback", type: "review" },
+      { key: "5_feedback_verwerker", label: "Rapport update", type: "processing" }
+    ]
+  },
   { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", icon: Eye, type: "generator" },
 ] as const;
 
@@ -145,15 +204,11 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   // Auto-run functionality removed per user request
   const [viewMode, setViewMode] = useState<"stage" | "concept">("stage");
   
-  // Update view mode when switching stages
+  // Update view mode when switching stages - removed processor logic since it's now substeps
   useEffect(() => {
-    const stage = WORKFLOW_STAGES[currentStageIndex];
-    if (stage?.type === "processor" && conceptReportVersions[stage.key]) {
-      setViewMode("concept");
-    } else {
-      setViewMode("stage");
-    }
-  }, [currentStageIndex, conceptReportVersions]);
+    // Always default to stage view for now, can be manually switched
+    setViewMode("stage");
+  }, [currentStageIndex]);
   const [stageStartTime, setStageStartTime] = useState<Date | null>(null);
   const [currentStageTimer, setCurrentStageTimer] = useState(0);
   const [showManualDialog, setShowManualDialog] = useState(false);
@@ -241,11 +296,6 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
         toast({
           title: "📝 Rapport bijgewerkt",
           description: `${currentStage.label} heeft het rapport verder verfijnd.`,
-        });
-      } else if (currentStage.key === '5_feedback_verwerker') {
-        toast({
-          title: "⚙️ Feedback verwerkt",
-          description: "JSON feedback is verwerkt en rapport is bijgewerkt.",
         });
       } else {
         toast({
@@ -474,16 +524,7 @@ ${rawText}`;
       return rawText; // First stage gets the original raw text
     }
     
-    // Voor Feedback Verwerker: gebruik het concept rapport
-    if (currentStage.key === "5_feedback_verwerker") {
-      // Zoek het meest recente concept rapport
-      const conceptReports = Object.values(conceptReportVersions);
-      if (conceptReports.length > 0) {
-        return conceptReports[conceptReports.length - 1]; // Laatste concept rapport
-      }
-      // Fallback naar generatie stap output als er geen concept rapport is
-      return stageResults["3_generatie"] || rawText;
-    }
+    // Note: Feedback processing is now handled as substeps, no separate logic needed
     
     // Voor reviewer stappen (4a-4f): gebruik het concept rapport
     if (currentStage.key.startsWith("4")) {
@@ -501,7 +542,7 @@ ${rawText}`;
   }, [currentStageIndex, rawText, stageResults, conceptReportVersions]);
 
 
-  // Cyclical workflow: 4x→5→4x→5→4x→5 etc
+  // Linear workflow with substeps - each reviewer stage includes feedback processing  
   const getNextStageIndex = useCallback((currentIndex: number): number | null => {
     const currentStage = WORKFLOW_STAGES[currentIndex];
     const reviewerStages = ["4a_BronnenSpecialist", "4b_FiscaalTechnischSpecialist", "4c_ScenarioGatenAnalist", 
@@ -515,24 +556,18 @@ ${rawText}`;
       return WORKFLOW_STAGES.findIndex(s => s.key === "4a_BronnenSpecialist");
     }
     
-    // Cyclical flow for review stages
-    if (currentStage.key === "5_feedback_verwerker") {
-      // After feedback processor, find next reviewer stage
-      const reviewerIndices = reviewerStages.map(stage => WORKFLOW_STAGES.findIndex(s => s.key === stage));
-      const completedReviewers = reviewerStages.filter(stage => stageResults[stage]);
+    // For reviewer stages, go to next reviewer or final check
+    if (currentStage.type === "reviewer") {
+      const currentReviewerIndex = reviewerStages.indexOf(currentStage.key);
       
-      if (completedReviewers.length < reviewerStages.length) {
-        const nextReviewerStage = reviewerStages[completedReviewers.length];
+      if (currentReviewerIndex < reviewerStages.length - 1) {
+        // Go to next reviewer
+        const nextReviewerStage = reviewerStages[currentReviewerIndex + 1];
         return WORKFLOW_STAGES.findIndex(s => s.key === nextReviewerStage);
       } else {
         // All reviewers done → final check
         return WORKFLOW_STAGES.findIndex(s => s.key === "final_check");
       }
-    }
-    
-    // After any reviewer (4a-4f), go to feedback processor  
-    if (reviewerStages.includes(currentStage.key)) {
-      return WORKFLOW_STAGES.findIndex(s => s.key === "5_feedback_verwerker");
     }
     
     // Final stage
@@ -576,9 +611,7 @@ ${rawText}`;
   const currentStageResult = stageResults[currentStage.key];
   const progressPercentage = (Object.keys(stageResults).length / WORKFLOW_STAGES.length) * 100;
   
-  // For feedback processing stages, automatically show concept report if available
-  const shouldShowConceptForCurrentStage = currentStage.type === "processor" && conceptReportVersions[currentStage.key];
-  const defaultViewMode = shouldShowConceptForCurrentStage ? "concept" : "stage";
+  // Removed processor logic since feedback processing is now substeps
 
   // Show case creation status if no current report yet
   const isCreatingCase = createReportMutation.isPending;
@@ -790,6 +823,36 @@ ${rawText}`;
                   <div className="flex-1">
                     <div className="font-medium">{stage.label}</div>
                     <div className="text-sm text-muted-foreground">{stage.description}</div>
+                    
+                    {/* Show substeps for reviewer stages */}
+                    {(stage as any).substeps && status !== "pending" && (
+                      <div className="mt-2 space-y-1">
+                        {(stage as any).substeps.map((substep: any, substepIndex: number) => {
+                          const hasSubstepResult = !!stageResults[substep.key];
+                          const isCurrentSubstep = status === "current" && substep.type === "review";
+                          const isProcessingSubstep = status === "current" && substep.type === "processing" && hasSubstepResult;
+                          
+                          return (
+                            <div key={substep.key} className="flex items-center text-xs">
+                              <div className={`w-3 h-3 rounded-full mr-2 ${
+                                hasSubstepResult && substep.type === "review" ? "bg-green-400" :
+                                isCurrentSubstep ? "bg-blue-400" :
+                                isProcessingSubstep ? "bg-orange-400" :
+                                "bg-gray-300"
+                              }`}></div>
+                              <span className={`${
+                                hasSubstepResult ? "text-green-600 dark:text-green-400" :
+                                isCurrentSubstep || isProcessingSubstep ? "text-blue-600 dark:text-blue-400" :
+                                "text-muted-foreground"
+                              }`}>
+                                {substep.label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    
                     {status === "current" && executeStageM.isPending && index === currentStageIndex && (
                       <div className="text-xs text-orange-600 dark:text-orange-400 mt-1 font-medium">
                         AI bezig... {currentStageTimer}s
@@ -838,7 +901,6 @@ ${rawText}`;
               <Badge variant="secondary">
                 {currentStageIndex === 0 ? "Ruwe Input (emails, etc.)" : 
                  currentStageIndex === 1 ? "Gestructureerde Info (uit stap 1)" :
-                 WORKFLOW_STAGES[currentStageIndex].key === "5_feedback_verwerker" ? "Concept Rapport (te verwerken)" :
                  WORKFLOW_STAGES[currentStageIndex].key.startsWith("4") ? "Concept Rapport (te reviewen)" :
                  `Verfijnde Data (uit ${WORKFLOW_STAGES[currentStageIndex - 1]?.label})`}
               </Badge>
