@@ -405,6 +405,21 @@ Gebruik alleen officiële Nederlandse belastingbronnen.`;
     
     const taskPrompt = "Geef gestructureerde feedback op het rapport.";
 
+    // For Deep Research models, we need stronger JSON formatting instructions
+    const jsonInstructions = `
+### KRITIEKE INSTRUCTIE - FORMAAT VEREIST:
+Je output MOET precies beginnen met '{' en eindigen met '}' - geen andere tekst, geen uitleg, alleen pure JSON.
+
+Geef feedback in dit exacte JSON formaat:
+{
+  "score": 7,
+  "positief": ["punt1", "punt2"],
+  "verbeterpunten": ["punt1", "punt2"],
+  "suggesties": ["suggestie1", "suggestie2"]
+}
+
+GEEN TEKST VOOR OF NA DE JSON. ALLEEN JSON.`;
+
     return `${systemPrompt}
 
 ${taskPrompt}
@@ -420,14 +435,7 @@ ${JSON.stringify(dossier, null, 2)}
 ### Bouwplan:
 ${JSON.stringify(bouwplan, null, 2)}
 
-### Instructies:
-Geef feedback in JSON formaat:
-{
-  "score": 1-10,
-  "positief": ["punt1", "punt2"],
-  "verbeterpunten": ["punt1", "punt2"],
-  "suggesties": ["suggestie1", "suggestie2"]
-}`;
+${jsonInstructions}`;
   }
 
   private buildFeedbackVerwerkerPrompt(
