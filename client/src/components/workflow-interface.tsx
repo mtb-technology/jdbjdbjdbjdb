@@ -1061,36 +1061,106 @@ ${rawText}`;
           </div>
 
           {/* Execute Controls */}
-          {!currentStageResult && (
+          {/* Show substeps for reviewer stages or normal execution for others */}
+          {currentStage.type === "reviewer" ? (
+            // Reviewer stage - show substeps
             <div className="space-y-3">
-              <Button
-                onClick={executeCurrentStage}
-                disabled={executeStageM.isPending || isCreatingCase}
-                className="w-full bg-primary"
-                data-testid="button-execute-stage"
-              >
-                {executeStageM.isPending ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                    AI bezig...
-                  </>
-                ) : isCreatingCase ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2"></div>
-                    Case wordt aangemaakt...
-                  </>
-                ) : (
-                  <>
-                    <Play className="mr-2 h-4 w-4" />
-                    Voer {currentStage.label} Uit
-                  </>
-                )}
-              </Button>
+              <div className="text-sm font-medium text-primary mb-2">Substappen voor {currentStage.label}:</div>
               
-              <p className="text-xs text-muted-foreground text-center">
-                Elke stap wordt handmatig uitgevoerd voor volledige controle
-              </p>
+              {(currentStage as any).substeps?.map((substep: any, index: number) => {
+                const substepResultsForStage = substepResults[currentStage.key] || {};
+                const hasReviewResult = !!substepResultsForStage.review;
+                const hasProcessingResult = !!substepResultsForStage.processing;
+                const isReviewSubstep = substep.type === "review";
+                const isProcessingSubstep = substep.type === "processing";
+                
+                const isCompleted = isReviewSubstep ? hasReviewResult : hasProcessingResult;
+                const canExecute = isReviewSubstep || (isProcessingSubstep && hasReviewResult);
+                const isExecuting = executeSubstepM.isPending && 
+                                 executeSubstepM.variables?.substepType === substep.type;
+                
+                return (
+                  <Button
+                    key={`${substep.key}-${substep.type}`}
+                    onClick={() => canExecute && currentReport && executeSubstepM.mutate({
+                      substepKey: isReviewSubstep ? currentStage.key : "5_feedback_verwerker",
+                      substepType: substep.type,
+                      reportId: currentReport.id
+                    })}
+                    disabled={!canExecute || isExecuting}
+                    className={`w-full ${
+                      isCompleted ? "bg-green-600 hover:bg-green-700" : 
+                      canExecute ? "bg-primary" : "bg-gray-400"
+                    }`}
+                    data-testid={`button-substep-${substep.type}`}
+                  >
+                    {isExecuting ? (
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>AI bezig...</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        {isCompleted ? (
+                          <CheckCircle className="w-4 h-4" />
+                        ) : (
+                          <Play className="w-4 h-4" />
+                        )}
+                        <span>
+                          {isCompleted ? "✓" : ""} {substep.label}
+                        </span>
+                      </div>
+                    )}
+                  </Button>
+                );
+              })}
+              
+              {/* Show progress indicator */}
+              <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded text-sm">
+                {!substepResults[currentStage.key]?.review && (
+                  <span className="text-blue-700 dark:text-blue-400">👆 Klik eerst op "Review & JSON feedback" om te starten</span>
+                )}
+                {substepResults[currentStage.key]?.review && !substepResults[currentStage.key]?.processing && (
+                  <span className="text-orange-700 dark:text-orange-400">👆 JSON feedback klaar! Klik nu op "Rapport update" om feedback te verwerken</span>
+                )}
+                {substepResults[currentStage.key]?.review && substepResults[currentStage.key]?.processing && (
+                  <span className="text-green-700 dark:text-green-400">✅ Beide substappen voltooid! Je kunt nu naar de volgende reviewer</span>
+                )}
+              </div>
             </div>
+          ) : (
+            // Non-reviewer stage - normal execution
+            !currentStageResult && (
+              <div className="space-y-3">
+                <Button
+                  onClick={executeCurrentStage}
+                  disabled={executeStageM.isPending || isCreatingCase}
+                  className="w-full bg-primary"
+                  data-testid="button-execute-stage"
+                >
+                  {executeStageM.isPending ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                      AI bezig...
+                    </>
+                  ) : isCreatingCase ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2"></div>
+                      Case wordt aangemaakt...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="mr-2 h-4 w-4" />
+                      Voer {currentStage.label} Uit
+                    </>
+                  )}
+                </Button>
+                
+                <p className="text-xs text-muted-foreground text-center">
+                  Elke stap wordt handmatig uitgevoerd voor volledige controle
+                </p>
+              </div>
+            )
           )}
 
 
