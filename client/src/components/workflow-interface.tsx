@@ -111,19 +111,49 @@ function formatReportContent(content: string): string {
     .replace(/<\/p>\s*<p/g, '</p>\n\n<p');
 }
 
-const WORKFLOW_STAGES = [
-  { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Ruwe tekst → Gestructureerde informatie", icon: FileText, type: "generator" },
-  { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Analyse van complexiteit en scope", icon: AlertCircle, type: "generator" },
-  { key: "3_generatie", label: "3. Generatie", description: "Basis rapport generatie", icon: FileText, type: "generator" },
-  { key: "4a_BronnenSpecialist", label: "4a. Bronnen Specialist", description: "Review bronnen → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4b_FiscaalTechnischSpecialist", label: "4b. Fiscaal Technisch Specialist", description: "Review fiscale techniek → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4c_ScenarioGatenAnalist", label: "4c. Scenario Gaten Analist", description: "Review scenarios → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Review communicatie → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", icon: CheckCircle, type: "reviewer" },
-  { key: "5_feedback_verwerker", label: "5. Feedback Verwerker", description: "Verwerkt JSON feedback in het rapport", icon: Zap, type: "processor" },
-  { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", icon: Eye, type: "generator" },
-] as const;
+// Build dynamic workflow stages based on cyclical pattern
+const buildWorkflowStages = () => {
+  const baseStages = [
+    { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Ruwe tekst → Gestructureerde informatie", icon: FileText, type: "generator" },
+    { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Analyse van complexiteit en scope", icon: AlertCircle, type: "generator" },
+    { key: "3_generatie", label: "3. Generatie", description: "Basis rapport generatie", icon: FileText, type: "generator" },
+  ];
+  
+  const reviewers = [
+    { key: "4a_BronnenSpecialist", label: "4a. Bronnen Specialist", description: "Review bronnen → JSON feedback", icon: CheckCircle, type: "reviewer" },
+    { key: "4b_FiscaalTechnischSpecialist", label: "4b. Fiscaal Technisch Specialist", description: "Review fiscale techniek → JSON feedback", icon: CheckCircle, type: "reviewer" },
+    { key: "4c_ScenarioGatenAnalist", label: "4c. Scenario Gaten Analist", description: "Review scenarios → JSON feedback", icon: CheckCircle, type: "reviewer" },
+    { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Review communicatie → JSON feedback", icon: CheckCircle, type: "reviewer" },
+    { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", icon: CheckCircle, type: "reviewer" },
+    { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", icon: CheckCircle, type: "reviewer" },
+  ];
+  
+  const finalStages = [
+    { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", icon: Eye, type: "generator" },
+  ];
+  
+  // Build cyclical workflow: each reviewer followed by feedback processing
+  let allStages = [...baseStages];
+  
+  reviewers.forEach((reviewer, index) => {
+    allStages.push(reviewer);
+    // Add feedback processing after each reviewer with unique key
+    const reviewerCode = reviewer.key.split('_')[0]; // e.g., "4a" from "4a_BronnenSpecialist"
+    allStages.push({ 
+      key: "5_feedback_verwerker", // Keep same key for backend compatibility
+      label: `↻ Verwerking ${reviewerCode} feedback`, 
+      description: `Integreert ${reviewer.label.split('. ')[1]} feedback in rapport`, 
+      icon: Zap, 
+      type: "processor",
+      reviewerContext: reviewerCode // Add context for display
+    });
+  });
+  
+  allStages.push(...finalStages);
+  return allStages;
+};
+
+const WORKFLOW_STAGES = buildWorkflowStages();
 
 interface WorkflowInterfaceProps {
   dossier: DossierData;
