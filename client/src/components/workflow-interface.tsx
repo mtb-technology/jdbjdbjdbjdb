@@ -144,6 +144,16 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   const [customInput, setCustomInput] = useState("");
   // Auto-run functionality removed per user request
   const [viewMode, setViewMode] = useState<"stage" | "concept">("stage");
+  
+  // Update view mode when switching stages
+  useEffect(() => {
+    const stage = WORKFLOW_STAGES[currentStageIndex];
+    if (stage?.type === "processor" && conceptReportVersions[stage.key]) {
+      setViewMode("concept");
+    } else {
+      setViewMode("stage");
+    }
+  }, [currentStageIndex, conceptReportVersions]);
   const [stageStartTime, setStageStartTime] = useState<Date | null>(null);
   const [currentStageTimer, setCurrentStageTimer] = useState(0);
   const [showManualDialog, setShowManualDialog] = useState(false);
@@ -554,15 +564,21 @@ ${rawText}`;
     const stage = WORKFLOW_STAGES[index];
     const hasResult = !!stageResults[stage.key];
     
+    // Only show as completed if index is less than current OR if we're viewing an existing report
     if (index < currentStageIndex) return "completed";
     if (index === currentStageIndex) return "current";
-    if (hasResult) return "completed";
+    // Only mark as completed if it has result AND we're viewing existing report
+    if (hasResult && existingReport) return "completed";
     return "pending";
   };
 
   const currentStage = WORKFLOW_STAGES[currentStageIndex];
   const currentStageResult = stageResults[currentStage.key];
   const progressPercentage = (Object.keys(stageResults).length / WORKFLOW_STAGES.length) * 100;
+  
+  // For feedback processing stages, automatically show concept report if available
+  const shouldShowConceptForCurrentStage = currentStage.type === "processor" && conceptReportVersions[currentStage.key];
+  const defaultViewMode = shouldShowConceptForCurrentStage ? "concept" : "stage";
 
   // Show case creation status if no current report yet
   const isCreatingCase = createReportMutation.isPending;
