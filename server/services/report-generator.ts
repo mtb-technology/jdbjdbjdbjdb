@@ -334,14 +334,9 @@ Maak een professioneel rapport met:
     currentDate: string,
     stageConfig?: any
   ): string {
-    const systemPrompt = stageConfig?.prompt || 
-      "Je bent een informatiecheck specialist. Valideer de volledigheid van het dossier.";
-    
-    const taskPrompt = "Controleer of alle benodigde informatie aanwezig is in het dossier.";
+    const prompt = stageConfig?.prompt || "";
 
-    return `${systemPrompt}
-
-${taskPrompt}
+    return `${prompt}
 
 ### Datum: ${currentDate}
 
@@ -349,13 +344,7 @@ ${taskPrompt}
 ${JSON.stringify(dossier, null, 2)}
 
 ### Bouwplan:
-${JSON.stringify(bouwplan, null, 2)}
-
-### Instructies:
-- Controleer volledigheid van klantgegevens
-- Verifieer fiscale informatie
-- Identificeer ontbrekende informatie
-- Geef een samenvatting van je bevindingen`;
+${JSON.stringify(bouwplan, null, 2)}`;
   }
 
   private buildComplexiteitsCheckPrompt(
@@ -364,14 +353,9 @@ ${JSON.stringify(bouwplan, null, 2)}
     currentDate: string,
     stageConfig?: any
   ): string {
-    const systemPrompt = stageConfig?.prompt || 
-      "Je bent een complexiteitscheck specialist. Bepaal de complexiteit van de casus.";
-    
-    const taskPrompt = "Analyseer de complexiteit van de fiscale situatie.";
+    const prompt = stageConfig?.prompt || "";
 
-    return `${systemPrompt}
-
-${taskPrompt}
+    return `${prompt}
 
 ### Datum: ${currentDate}
 
@@ -379,13 +363,7 @@ ${taskPrompt}
 ${JSON.stringify(dossier, null, 2)}
 
 ### Bouwplan:
-${JSON.stringify(bouwplan, null, 2)}
-
-### Instructies:
-- Bepaal complexiteitsniveau (laag/middel/hoog)
-- Identificeer complexe fiscale aspecten
-- Adviseer over benodigde expertise
-- Geef een complexiteitscore`;
+${JSON.stringify(bouwplan, null, 2)}`;
   }
 
   private buildGeneratiePrompt(
@@ -394,14 +372,9 @@ ${JSON.stringify(bouwplan, null, 2)}
     currentDate: string,
     stageConfig?: any
   ): string {
-    const systemPrompt = stageConfig?.prompt || 
-      "Je bent een expert fiscaal adviseur. Genereer een uitgebreid fiscaal rapport.";
-    
-    const taskPrompt = "Schrijf een professioneel fiscaal adviesrapport.";
+    const prompt = stageConfig?.prompt || "";
 
-    return `${systemPrompt}
-
-${taskPrompt}
+    return `${prompt}
 
 ### Datum: ${currentDate}
 
@@ -409,17 +382,7 @@ ${taskPrompt}
 ${JSON.stringify(dossier, null, 2)}
 
 ### Bouwplan:
-${JSON.stringify(bouwplan, null, 2)}
-
-### Rapport Structuur:
-Genereer een volledig HTML rapport met:
-1. Inleiding
-2. Knelpunten analyse
-3. Scenario analyse (indien gevraagd)
-4. Vervolgstappen (indien gevraagd)
-5. Bronvermelding
-
-Gebruik alleen officiële Nederlandse belastingbronnen.`;
+${JSON.stringify(bouwplan, null, 2)}`;
   }
 
   private buildReviewerPrompt(
@@ -430,29 +393,9 @@ Gebruik alleen officiële Nederlandse belastingbronnen.`;
     currentDate: string,
     stageConfig?: any
   ): string {
-    const systemPrompt = stageConfig?.prompt || 
-      `Je bent een ${stageName} reviewer. Review het concept rapport.`;
-    
-    const taskPrompt = "Geef gestructureerde feedback op het rapport.";
+    const prompt = stageConfig?.prompt || "";
 
-    // For Deep Research models, we need stronger JSON formatting instructions
-    const jsonInstructions = `
-### KRITIEKE INSTRUCTIE - FORMAAT VEREIST:
-Je output MOET precies beginnen met '{' en eindigen met '}' - geen andere tekst, geen uitleg, alleen pure JSON.
-
-Geef feedback in dit exacte JSON formaat:
-{
-  "score": 7,
-  "positief": ["punt1", "punt2"],
-  "verbeterpunten": ["punt1", "punt2"],
-  "suggesties": ["suggestie1", "suggestie2"]
-}
-
-GEEN TEKST VOOR OF NA DE JSON. ALLEEN JSON.`;
-
-    return `${systemPrompt}
-
-${taskPrompt}
+    return `${prompt}
 
 ### Datum: ${currentDate}
 
@@ -463,9 +406,7 @@ ${conceptReport}
 ${JSON.stringify(dossier, null, 2)}
 
 ### Bouwplan:
-${JSON.stringify(bouwplan, null, 2)}
-
-${jsonInstructions}`;
+${JSON.stringify(bouwplan, null, 2)}`;
   }
 
   private buildFeedbackVerwerkerPrompt(
@@ -476,10 +417,7 @@ ${jsonInstructions}`;
     currentDate: string,
     stageConfig?: any
   ): string {
-    const systemPrompt = stageConfig?.prompt || 
-      "Je bent een feedback verwerker. Integreer alle feedback in het rapport.";
-    
-    const taskPrompt = "Verwerk alle feedback en verbeter het rapport.";
+    const prompt = stageConfig?.prompt || "";
 
     // Collect all reviewer feedback
     const reviewerFeedback = Object.entries(previousStageResults)
@@ -487,9 +425,7 @@ ${jsonInstructions}`;
       .map(([key, value]) => `### ${key}:\n${value}`)
       .join("\n\n");
 
-    return `${systemPrompt}
-
-${taskPrompt}
+    return `${prompt}
 
 ### Datum: ${currentDate}
 
@@ -500,13 +436,7 @@ ${conceptReportVersions["3_generatie"] || ""}
 ${reviewerFeedback}
 
 ### Dossier:
-${JSON.stringify(dossier, null, 2)}
-
-### Instructies:
-- Integreer alle positieve feedback
-- Verwerk alle verbeterpunten
-- Behoud de originele structuur
-- Verbeter de kwaliteit en volledigheid`;
+${JSON.stringify(dossier, null, 2)}`;
   }
 
   private buildFinalCheckPrompt(
@@ -516,14 +446,9 @@ ${JSON.stringify(dossier, null, 2)}
     currentDate: string,
     stageConfig?: any
   ): string {
-    const systemPrompt = stageConfig?.prompt || 
-      "Je bent de finale kwaliteitscontroleur. Doe een laatste check.";
-    
-    const taskPrompt = "Controleer en finaliseer het rapport.";
+    const prompt = stageConfig?.prompt || "";
 
-    return `${systemPrompt}
-
-${taskPrompt}
+    return `${prompt}
 
 ### Datum: ${currentDate}
 
@@ -531,13 +456,6 @@ ${taskPrompt}
 ${latestReport}
 
 ### Dossier:
-${JSON.stringify(dossier, null, 2)}
-
-### Instructies:
-- Controleer op consistentie
-- Verifieer alle bronvermeldingen
-- Check taalgebruik en leesbaarheid
-- Zorg voor professionele afwerking
-- Retourneer het definitieve rapport`;
+${JSON.stringify(dossier, null, 2)}`;
   }
 }
