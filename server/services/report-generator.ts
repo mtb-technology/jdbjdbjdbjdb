@@ -144,7 +144,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     conceptReportVersions: Record<string, string>,
     customInput?: string,
     jobId?: string
-  ): Promise<{ stageOutput: string; conceptReport: string }> {
+  ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
     const currentDate = new Date().toLocaleDateString('nl-NL', {
       year: 'numeric',
       month: 'long', 
@@ -271,7 +271,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         conceptReport = conceptReportVersions["latest"] || "";
       }
 
-      return { stageOutput, conceptReport };
+      return { stageOutput, conceptReport, prompt };
 
     } catch (error: any) {
       console.error(`Stage ${stageName} execution error:`, error);

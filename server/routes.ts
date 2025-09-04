@@ -119,7 +119,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id // Pass reportId as jobId for logging
       );
 
-      // Update report with both stage output and concept report version
+      // Update report with stage output, concept report version, and prompt
       const updatedStageResults = {
         ...(report.stageResults as Record<string, string> || {}),
         [stage]: stageExecution.stageOutput
@@ -132,10 +132,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         : report.conceptReportVersions;
 
+      // Store the prompt used for this stage for input tracking
+      const updatedStagePrompts = {
+        ...(report.stagePrompts as Record<string, string> || {}),
+        [stage]: stageExecution.prompt
+      };
+
       // Special handling for stage 3 (generatie) and specialist stages
       let updateData: any = {
         stageResults: updatedStageResults,
         conceptReportVersions: updatedConceptVersions,
+        stagePrompts: updatedStagePrompts,
         currentStage: stage,
       };
 
@@ -156,6 +163,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         report: updatedReport,
         stageResult: stageExecution.stageOutput,
         conceptReport: stageExecution.conceptReport,
+        prompt: stageExecution.prompt,
       });
 
     } catch (error) {

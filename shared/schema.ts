@@ -19,6 +19,7 @@ export const reports = pgTable("reports", {
   stageResults: json("stage_results"), // Store stage-specific outputs from each specialist
   conceptReportVersions: json("concept_report_versions"), // Store evolving concept report through stages
   substepResults: json("substep_results"), // Store substep results for reviewers (review + processing)
+  stagePrompts: json("stage_prompts"), // Store the exact prompts sent to AI for each stage - for input tracking
   currentStage: text("current_stage").default("1_informatiecheck"),
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),
