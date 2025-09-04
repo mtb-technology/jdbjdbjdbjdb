@@ -34,7 +34,8 @@ import {
   Copy,
   Wand2,
   PenTool,
-  ChevronRight
+  ChevronRight,
+  Workflow
 } from "lucide-react";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
@@ -213,6 +214,8 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   }, [currentStageIndex]);
   const [stageStartTime, setStageStartTime] = useState<Date | null>(null);
   const [currentStageTimer, setCurrentStageTimer] = useState(0);
+  const [stageTimes, setStageTimes] = useState<Record<string, number>>({});
+  const [stageProcessing, setStageProcessing] = useState<Record<string, boolean>>({});
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [manualMode, setManualMode] = useState<"ai" | "manual">("ai");
   const [manualContent, setManualContent] = useState("");
@@ -230,7 +233,19 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
       });
       return response.json();
     },
+    onMutate: () => {
+      // Start tracking validation time
+      setStageProcessing(prev => ({ ...prev, "validation": true }));
+      setStageStartTime(new Date());
+      setCurrentStageTimer(0);
+    },
     onSuccess: (report: Report) => {
+      // Save validation time
+      if (stageStartTime) {
+        const elapsed = Math.floor((Date.now() - stageStartTime.getTime()) / 1000);
+        setStageTimes(prev => ({ ...prev, "validation": elapsed }));
+      }
+      setStageProcessing(prev => ({ ...prev, "validation": false }));
       setCurrentReport(report);
       setStageResults(report.stageResults as Record<string, string> || {});
       setConceptReportVersions(report.conceptReportVersions as Record<string, string> || {});
@@ -252,6 +267,7 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
       }, 100);
     },
     onError: (error: Error) => {
+      setStageProcessing(prev => ({ ...prev, "validation": false }));
       toast({
         title: "Fout bij aanmaken",
         description: error.message,
@@ -267,9 +283,24 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
       });
       return response.json();
     },
+    onMutate: ({ stage }) => {
+      // Start tracking this stage's processing
+      setStageProcessing(prev => ({ ...prev, [stage]: true }));
+      setStageStartTime(new Date());
+      setCurrentStageTimer(0);
+    },
     onSuccess: (data: { report: Report; stageResult: string; conceptReport?: string }) => {
       setCurrentReport(data.report);
       const currentStage = WORKFLOW_STAGES[currentStageIndex];
+      
+      // Save the time this stage took
+      if (stageStartTime) {
+        const elapsed = Math.floor((Date.now() - stageStartTime.getTime()) / 1000);
+        setStageTimes(prev => ({ ...prev, [currentStage.key]: elapsed }));
+      }
+      
+      // Mark stage as not processing anymore
+      setStageProcessing(prev => ({ ...prev, [currentStage.key]: false }));
       
       setStageResults(prev => ({
         ...prev,
@@ -308,7 +339,9 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
       
       // No auto-advance - user must manually click to proceed
     },
-    onError: (error: Error) => {
+    onError: (error: Error, variables) => {
+      // Stop tracking on error
+      setStageProcessing(prev => ({ ...prev, [variables.stage]: false }));
       toast({
         title: "Fout bij uitvoeren stap",
         description: error.message,
@@ -334,7 +367,24 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
         return { type: "processing", data: response.json() };
       }
     },
-    onSuccess: async (result) => {
+    onMutate: ({ substepKey, substepType }) => {
+      // Start tracking substep processing
+      const trackingKey = `${substepKey}_${substepType}`;
+      setStageProcessing(prev => ({ ...prev, [trackingKey]: true }));
+      setStageStartTime(new Date());
+      setCurrentStageTimer(0);
+    },
+    onSuccess: async (result, variables) => {
+      const trackingKey = `${variables.substepKey}_${variables.substepType}`;
+      
+      // Save time for this substep
+      if (stageStartTime) {
+        const elapsed = Math.floor((Date.now() - stageStartTime.getTime()) / 1000);
+        setStageTimes(prev => ({ ...prev, [trackingKey]: elapsed }));
+      }
+      
+      // Stop tracking
+      setStageProcessing(prev => ({ ...prev, [trackingKey]: false }));
       const data = await result.data;
       const currentStage = WORKFLOW_STAGES[currentStageIndex];
       
@@ -384,7 +434,9 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
       
       setCustomInput("");
     },
-    onError: (error: Error) => {
+    onError: (error: Error, variables) => {
+      const trackingKey = `${variables.substepKey}_${variables.substepType}`;
+      setStageProcessing(prev => ({ ...prev, [trackingKey]: false }));
       toast({
         title: "Fout bij uitvoeren substep",
         description: error.message,
@@ -393,21 +445,23 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
     },
   });
 
-  // Timer voor huidige stap
+  // Timer voor alle actieve stappen
   useEffect(() => {
     let interval: NodeJS.Timeout;
     
-    if (executeStageM.isPending && stageStartTime) {
+    const hasActiveStages = Object.values(stageProcessing).some(p => p) || executeStageM.isPending || executeSubstepM.isPending;
+    
+    if (hasActiveStages && stageStartTime) {
       interval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - stageStartTime.getTime()) / 1000);
         setCurrentStageTimer(elapsed);
-      }, 1000);
+      }, 100); // Update every 100ms for smoother animation
     }
     
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [executeStageM.isPending, stageStartTime]);
+  }, [stageProcessing, executeStageM.isPending, executeSubstepM.isPending, stageStartTime]);
 
   // Initialize with existing report or create new one
   useEffect(() => {
@@ -783,6 +837,18 @@ ${rawText}`;
   // Show case creation status if no current report yet
   const isCreatingCase = createReportMutation.isPending;
 
+  // Calculate total workflow time
+  const totalWorkflowTime = useMemo(() => {
+    return Object.values(stageTimes).reduce((total, time) => total + time, 0);
+  }, [stageTimes]);
+
+  // Calculate average time per step
+  const averageStepTime = useMemo(() => {
+    const times = Object.values(stageTimes).filter(t => t > 0);
+    if (times.length === 0) return 0;
+    return Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+  }, [stageTimes]);
+
   return (
     <div className="space-y-6">
       
@@ -792,10 +858,14 @@ ${rawText}`;
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-              <div>
-                <p className="font-medium text-blue-700 dark:text-blue-300">Case wordt aangemaakt...</p>
+              <div className="flex-1">
+                <p className="font-medium text-blue-700 dark:text-blue-300">Case wordt aangemaakt... (Validatie stap)</p>
                 <p className="text-sm text-blue-600 dark:text-blue-400">Workflow start automatisch zodra de case gereed is</p>
               </div>
+              <Badge className="animate-pulse">
+                <Clock className="h-3 w-3 mr-1" />
+                {currentStageTimer || 0}s
+              </Badge>
               <Button
                 variant="outline"
                 size="sm"
@@ -920,18 +990,44 @@ ${rawText}`;
         </div>
       )}
 
-      {/* Progress Header */}
-      <Card>
+      {/* Progress Header with Enhanced Stats */}
+      <Card className="bg-gradient-to-br from-background to-muted/20">
         <CardContent className="p-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Rapport Workflow - {clientName}</h2>
-              <Badge variant="outline">
-                {Object.keys(stageResults).length}/{WORKFLOW_STAGES.length} Stappen Voltooid
-              </Badge>
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                {/* Live status indicator */}
+                {Object.values(stageProcessing).some(p => p) && (
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-green-500 rounded-full animate-ping opacity-25"></div>
+                    <div className="relative w-3 h-3 bg-green-500 rounded-full"></div>
+                  </div>
+                )}
+                Rapport Workflow - {clientName}
+              </h2>
+              <div className="flex items-center gap-2">
+                {stageTimes.validation && (
+                  <Badge variant="secondary" className="text-xs">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Validatie: {stageTimes.validation}s
+                  </Badge>
+                )}
+                <Badge variant="outline">
+                  {Object.keys(stageResults).length}/{WORKFLOW_STAGES.length} Stappen
+                </Badge>
+              </div>
             </div>
             
-            <Progress value={progressPercentage} className="w-full" />
+            <div className="relative">
+              <Progress value={progressPercentage} className="w-full h-3" />
+              {/* Animated indicator on progress bar */}
+              {Object.values(stageProcessing).some(p => p) && (
+                <div 
+                  className="absolute top-0 h-3 w-1 bg-primary animate-pulse"
+                  style={{ left: `${progressPercentage}%`, transition: 'left 0.3s ease' }}
+                />
+              )}
+            </div>
             
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span>Huidige stap: {currentStage.label}</span>
@@ -943,18 +1039,41 @@ ${rawText}`;
                   </span>
                 </div>
               )}
+              {/* Total time display */}
+              {Object.keys(stageTimes).length > 0 && (
+                <div className="ml-auto text-xs flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Totaal: {Object.values(stageTimes).reduce((a, b) => a + b, 0)}s
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Workflow Steps Overview */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Workflow Stappen</CardTitle>
+      <Card className="overflow-hidden">
+        <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Workflow className="h-5 w-5 text-primary" />
+              Workflow Stappen
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {Object.keys(stageProcessing).filter(key => stageProcessing[key]).length > 0 && (
+                <Badge className="animate-pulse" variant="default">
+                  <div className="w-2 h-2 bg-white rounded-full animate-ping mr-1"></div>
+                  Processing...
+                </Badge>
+              )}
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-2">
+        <CardContent className="p-0">
+          <div className="relative">
+            {/* Progress line */}
+            <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary via-primary/50 to-transparent"></div>
+            <div className="grid gap-0">
             {WORKFLOW_STAGES.map((stage, index) => {
               const status = getStageStatus(index);
               const IconComponent = stage.icon;
@@ -962,40 +1081,57 @@ ${rawText}`;
               return (
                 <div
                   key={stage.key}
-                  className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
+                  className={`relative flex items-center p-4 cursor-pointer transition-all hover:bg-accent/50 border-l-4 ${
                     status === "current" 
                       ? executeStageM.isPending && index === currentStageIndex
-                        ? "bg-orange-50 dark:bg-orange-950/20 border-orange-300 dark:border-orange-700"
-                        : "bg-primary/10 border-primary" 
+                        ? "bg-orange-50 dark:bg-orange-950/20 border-l-orange-500"
+                        : "bg-primary/5 border-l-primary" 
                       : status === "completed" 
-                      ? "bg-green-50 dark:bg-green-950/20 border-green-300 dark:border-green-700" 
-                      : "bg-background border-border opacity-60"
+                      ? "bg-green-50/50 dark:bg-green-950/10 border-l-green-500" 
+                      : "bg-background border-l-transparent opacity-60"
                   }`}
                   onClick={() => status !== "pending" && setCurrentStageIndex(index)}
                   data-testid={`stage-${stage.key}`}
                 >
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${
-                    status === "completed" ? "bg-green-500 text-white" :
+                  <div className={`z-10 w-10 h-10 rounded-full flex items-center justify-center mr-3 ring-4 ring-background transition-all ${
+                    status === "completed" ? "bg-gradient-to-br from-green-500 to-green-600 text-white shadow-green-200 shadow-lg" :
                     status === "current" ? 
                       executeStageM.isPending && index === currentStageIndex ?
-                        "bg-orange-500 text-white" : "bg-primary text-primary-foreground" :
+                        "bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-orange-200 shadow-lg animate-pulse" : 
+                        "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-primary/20 shadow-lg" :
                     "bg-muted text-muted-foreground"
                   }`}>
                     {status === "completed" ? (
-                      <CheckCircle className="h-4 w-4" />
+                      <CheckCircle className="h-5 w-5" />
                     ) : status === "current" ? (
                       executeStageM.isPending && index === currentStageIndex ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                       ) : (
-                        <Clock className="h-4 w-4" />
+                        <ArrowRight className="h-5 w-5" />
                       )
                     ) : (
-                      <IconComponent className="h-4 w-4" />
+                      <span className="text-xs font-bold">{index + 1}</span>
                     )}
                   </div>
                   
                   <div className="flex-1">
-                    <div className="font-medium">{stage.label}</div>
+                    <div className="font-medium flex items-center gap-2">
+                      {stage.label}
+                      {/* Show timer for completed stages */}
+                      {stageTimes[stage.key] && (
+                        <Badge variant="secondary" className="text-xs font-normal">
+                          <Clock className="h-3 w-3 mr-1" />
+                          {stageTimes[stage.key]}s
+                        </Badge>
+                      )}
+                      {/* Show live timer for processing stages */}
+                      {stageProcessing[stage.key] && (
+                        <Badge variant="default" className="text-xs font-normal animate-pulse">
+                          <Clock className="h-3 w-3 mr-1 animate-spin" />
+                          {currentStageTimer}s
+                        </Badge>
+                      )}
+                    </div>
                     <div className="text-sm text-muted-foreground">{stage.description}</div>
                     
                     {/* Show substeps for reviewer stages */}
@@ -1011,8 +1147,10 @@ ${rawText}`;
                           const isCompleted = isReviewSubstep ? hasReviewResult : hasProcessingResult;
                           const canExecute = status === "current" && 
                                            (isReviewSubstep || (isProcessingSubstep && hasReviewResult));
-                          const isExecuting = executeSubstepM.isPending && 
-                                           executeSubstepM.variables?.substepType === substep.type;
+                          const trackingKey = `${isReviewSubstep ? stage.key : "5_feedback_verwerker"}_${substep.type}`;
+                          const isExecuting = stageProcessing[trackingKey] || (executeSubstepM.isPending && 
+                                           executeSubstepM.variables?.substepType === substep.type);
+                          const substepTime = stageTimes[trackingKey];
                           
                           return (
                             <div 
@@ -1028,10 +1166,10 @@ ${rawText}`;
                                 reportId: currentReport.id
                               })}
                             >
-                              <div className="flex items-center">
+                              <div className="flex items-center flex-1">
                                 <div className={`w-3 h-3 rounded-full mr-2 ${
                                   isCompleted ? "bg-green-400" :
-                                  isExecuting ? "bg-orange-400" :
+                                  isExecuting ? "bg-orange-400 animate-pulse" :
                                   canExecute ? "bg-blue-400" :
                                   "bg-gray-300"
                                 }`}></div>
@@ -1042,6 +1180,17 @@ ${rawText}`;
                                 }`}>
                                   {substep.label}
                                 </span>
+                                {/* Show timer for substep */}
+                                {substepTime && (
+                                  <span className="ml-2 text-[10px] text-muted-foreground">
+                                    ({substepTime}s)
+                                  </span>
+                                )}
+                                {isExecuting && (
+                                  <span className="ml-2 text-[10px] text-orange-500 font-medium">
+                                    ({currentStageTimer}s)
+                                  </span>
+                                )}
                               </div>
                               
                               {canExecute && (
@@ -1058,18 +1207,28 @@ ${rawText}`;
                     )}
                     
                     {status === "current" && executeStageM.isPending && index === currentStageIndex && (
-                      <div className="text-xs text-orange-600 dark:text-orange-400 mt-1 font-medium">
+                      <div className="text-xs text-orange-600 dark:text-orange-400 mt-1 font-medium flex items-center gap-1">
+                        <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
                         AI bezig... {currentStageTimer}s
                       </div>
                     )}
                   </div>
                   
-                  {status === "current" && (
-                    <ArrowRight className="h-4 w-4 text-primary" />
-                  )}
+                  {/* Status indicator on the right */}
+                  <div className="ml-auto flex items-center gap-2">
+                    {status === "current" && !executeStageM.isPending && (
+                      <Badge variant="default" className="animate-pulse">
+                        Actief
+                      </Badge>
+                    )}
+                    {status === "completed" && (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    )}
+                  </div>
                 </div>
               );
             })}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1582,6 +1741,43 @@ ${rawText}`;
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Workflow Summary - Show when completed */}
+      {currentStageIndex === WORKFLOW_STAGES.length - 1 && Object.keys(stageResults).length === WORKFLOW_STAGES.length && (
+        <Card className="border-green-200 bg-gradient-to-br from-green-50 to-green-100/20 dark:from-green-950/20 dark:to-green-900/10">
+          <CardHeader>
+            <CardTitle className="text-green-700 dark:text-green-400 flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" />
+              Workflow Voltooid!
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-3 bg-white dark:bg-gray-900 rounded-lg">
+                <div className="text-2xl font-bold text-green-600">{WORKFLOW_STAGES.length}</div>
+                <div className="text-xs text-muted-foreground">Stappen Voltooid</div>
+              </div>
+              <div className="text-center p-3 bg-white dark:bg-gray-900 rounded-lg">
+                <div className="text-2xl font-bold text-blue-600">{totalWorkflowTime}s</div>
+                <div className="text-xs text-muted-foreground">Totale Tijd</div>
+              </div>
+              <div className="text-center p-3 bg-white dark:bg-gray-900 rounded-lg">
+                <div className="text-2xl font-bold text-purple-600">{averageStepTime}s</div>
+                <div className="text-xs text-muted-foreground">Gemiddeld/Stap</div>
+              </div>
+              <div className="text-center p-3 bg-white dark:bg-gray-900 rounded-lg">
+                <div className="text-2xl font-bold text-orange-600">100%</div>
+                <div className="text-xs text-muted-foreground">Compleet</div>
+              </div>
+            </div>
+            <div className="mt-4 p-3 bg-green-100 dark:bg-green-900/20 rounded-lg">
+              <p className="text-sm text-green-700 dark:text-green-400">
+                🎉 Het fiscale rapport is volledig gegenereerd en klaar voor gebruik!
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
     </div>
   );
