@@ -237,8 +237,8 @@ export const REPORT_CONFIG = {
       timeout: 120000,
       maxTokens: 16384
     },
-    '4a_JuridischAdviseur': {
-      name: 'Juridisch Adviseur Review',
+    '4a_BronnenSpecialist': {
+      name: 'Bronnen Specialist Review',
       timeout: 90000,
       maxTokens: 8192
     },
