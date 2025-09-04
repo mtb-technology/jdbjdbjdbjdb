@@ -257,6 +257,19 @@ export const insertReportSchema = createInsertSchema(reports).omit({
   substepResults: z.record(z.object({
     review: z.string().optional(),
     processing: z.string().optional(),
+    changeProposals: z.array(z.object({
+      id: z.string(),
+      type: z.enum(["content_addition", "text_replacement", "content_removal", "structure_change", "source_addition"]),
+      section: z.string(),
+      description: z.string(),
+      reasoning: z.string(),
+      impact: z.enum(["low", "medium", "high"]),
+      specificText: z.string().optional(),
+      currentText: z.string().optional(),
+      newText: z.string().optional(),
+      location: z.string().optional(),
+      approved: z.boolean().optional(), // User approval status
+    })).optional(),
   })).optional(),
 });
 
