@@ -2,6 +2,8 @@ import type { DossierData, BouwplanData, PromptConfig, AiConfig, StageConfig } f
 import { SourceValidator } from "./source-validator";
 import { AIModelFactory, AIModelParameters } from "./ai-models/ai-model-factory";
 import { storage } from "../storage";
+import { ServerError } from "../middleware/errorHandler";
+import { ERROR_CODES } from "@shared/errors";
 
 export class ReportGenerator {
   private sourceValidator: SourceValidator;
@@ -14,16 +16,16 @@ export class ReportGenerator {
 
   // Test method for AI functionality
   async testAI(prompt: string): Promise<string> {
-    try {
-      const defaultConfig: AiConfig = {
-        provider: "google",
-        model: "gemini-2.5-pro",
-        temperature: 0.1,
-        topP: 0.95,
-        topK: 20,
-        maxOutputTokens: 2048
-      };
+    const defaultConfig: AiConfig = {
+      provider: "google",
+      model: "gemini-2.5-pro",
+      temperature: 0.1,
+      topP: 0.95,
+      topK: 20,
+      maxOutputTokens: 2048
+    };
 
+    try {
       const response = await this.modelFactory.callModel(defaultConfig, prompt, {
         jobId: "test-ai"
       });
@@ -31,12 +33,22 @@ export class ReportGenerator {
       return response.content;
     } catch (error: any) {
       console.error('Test AI error:', error);
-      throw new Error(`AI test failed: ${error.message}`);
+      throw ServerError.ai(
+        'AI service test mislukt. Controleer de AI configuratie.',
+        { prompt: prompt.substring(0, 100), error: error.message }
+      );
     }
   }
 
   // Extract dossier data from raw text using AI
   async extractDossierData(rawText: string): Promise<any> {
+    if (!rawText || rawText.trim().length === 0) {
+      throw ServerError.validation(
+        'Empty rawText provided',
+        'Tekst mag niet leeg zijn voor dossier extractie'
+      );
+    }
+
     const extractionPrompt = `Extraheer uit de volgende tekst de belangrijkste klant- en fiscale gegevens en structureer deze in JSON formaat.
 
 Gegeven tekst:
@@ -96,13 +108,31 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
       const extractedJson = response.content.trim();
       if (!extractedJson) {
-        throw new Error('No JSON extracted from AI response');
+        throw ServerError.business(
+          ERROR_CODES.AI_INVALID_RESPONSE,
+          'AI heeft geen bruikbare data geëxtraheerd uit de tekst'
+        );
       }
 
-      return JSON.parse(extractedJson);
+      try {
+        return JSON.parse(extractedJson);
+      } catch (parseError) {
+        console.error('JSON parse error:', parseError, 'Raw content:', extractedJson);
+        throw ServerError.business(
+          ERROR_CODES.AI_INVALID_RESPONSE,
+          'AI heeft geen geldig JSON formaat teruggegeven'
+        );
+      }
     } catch (error: any) {
+      if (error instanceof ServerError) {
+        throw error;
+      }
+      
       console.error('Extract dossier error:', error);
-      throw new Error(`Failed to extract dossier data: ${error.message}`);
+      throw ServerError.ai(
+        'Kon geen dossiergegevens extraheren uit de tekst. Probeer het opnieuw of pas de tekst aan.',
+        { textLength: rawText.length, error: error.message }
+      );
     }
   }
 
