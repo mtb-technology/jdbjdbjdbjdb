@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { promises as fs } from "fs";
 import * as path from "path";
@@ -10,6 +10,8 @@ import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared
 import type { DossierData, BouwplanData } from "@shared/schema";
 import { z } from "zod";
 import modelTestRoutes from "./routes/model-test";
+import { ServerError, asyncHandler } from "./middleware/errorHandler";
+import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 
 const generateReportSchema = z.object({
   dossier: dossierSchema,
@@ -28,44 +30,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const sourceValidator = new SourceValidator();
 
   // Test route voor AI - simpele test om te verifieren dat API werkt
-  app.get("/api/test-ai", async (req, res) => {
-    try {
-      const result = await reportGenerator.testAI("Say hello in Dutch in 5 words");
-      res.json({ success: true, response: result });
-    } catch (error: any) {
-      console.error("Test AI error:", error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
+  app.get("/api/test-ai", asyncHandler(async (req: Request, res: Response) => {
+    const result = await reportGenerator.testAI("Say hello in Dutch in 5 words");
+    res.json(createApiSuccessResponse({ response: result }, "AI test succesvol uitgevoerd"));
+  }));
 
   // Extract dossier data from raw text using AI
-  app.post("/api/extract-dossier", async (req, res) => {
-    try {
-      const { rawText } = req.body;
-      
-      if (!rawText || typeof rawText !== 'string') {
-        res.status(400).json({ message: "Tekst is verplicht" });
-        return;
-      }
-
-      const parsedData = await reportGenerator.extractDossierData(rawText);
-      
-      // Validate extracted data against schemas
-      const validatedDossier = dossierSchema.parse(parsedData.dossier);
-      const validatedBouwplan = bouwplanSchema.parse(parsedData.bouwplan);
-
-      res.json({
-        dossier: validatedDossier,
-        bouwplan: validatedBouwplan,
-      });
-
-    } catch (error) {
-      console.error("Error extracting dossier data:", error);
-      res.status(500).json({ 
-        message: "Fout bij extraheren van dossiergegevens uit tekst" 
-      });
+  app.post("/api/extract-dossier", asyncHandler(async (req: Request, res: Response) => {
+    const { rawText } = req.body;
+    
+    if (!rawText || typeof rawText !== 'string') {
+      throw ServerError.validation(
+        'Missing or invalid rawText parameter',
+        'Tekst is verplicht voor het extraheren van dossiergegevens'
+      );
     }
-  });
+
+    const parsedData = await reportGenerator.extractDossierData(rawText);
+    
+    // Validate extracted data against schemas - Zod errors are caught by error handler
+    const validatedDossier = dossierSchema.parse(parsedData.dossier);
+    const validatedBouwplan = bouwplanSchema.parse(parsedData.bouwplan);
+
+    res.json(createApiSuccessResponse({
+      dossier: validatedDossier,
+      bouwplan: validatedBouwplan,
+    }, "Dossiergegevens succesvol geëxtraheerd"));
+  }));
 
   // Create new report (start workflow)
   app.post("/api/reports/create", async (req, res) => {

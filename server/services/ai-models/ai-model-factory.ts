@@ -6,6 +6,9 @@ import { OpenAIReasoningHandler } from "./openai-reasoning-handler";
 import { OpenAIGPT5Handler } from "./openai-gpt5-handler";
 import { OpenAIDeepResearchHandler } from "./openai-deep-research-handler";
 import type { AiConfig } from "@shared/schema";
+import { config, getAIModelConfig, type AIModelName } from "../../config";
+import { ServerError } from "../../middleware/errorHandler";
+import { ERROR_CODES } from "@shared/errors";
 
 export type { AIModelParameters } from "./base-handler";
 
@@ -15,6 +18,11 @@ export interface ModelInfo {
   supportedParameters: string[];
   requiresResponsesAPI?: boolean;
   timeout?: number;
+  defaultConfig: Record<string, any>;
+  limits: {
+    maxTokensPerRequest: number;
+    maxRequestsPerMinute: number;
+  };
 }
 
 export class AIModelFactory {
@@ -35,80 +43,31 @@ export class AIModelFactory {
   }
 
   private initializeModelRegistry() {
-    // Google AI Models
-    this.modelRegistry.set("gemini-2.5-pro", {
-      provider: "google",
-      handlerType: "google",
-      supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding']
-    });
-    
-    this.modelRegistry.set("gemini-2.5-flash", {
-      provider: "google",
-      handlerType: "google",
-      supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding']
-    });
-
-    // OpenAI Standard Models
-    this.modelRegistry.set("gpt-4o", {
-      provider: "openai",
-      handlerType: "openai-standard",
-      supportedParameters: ['temperature', 'topP', 'maxOutputTokens', 'reasoning', 'verbosity']
-    });
-    
-    this.modelRegistry.set("gpt-4o-mini", {
-      provider: "openai",
-      handlerType: "openai-standard",
-      supportedParameters: ['temperature', 'topP', 'maxOutputTokens', 'reasoning', 'verbosity']
-    });
-
-    // OpenAI GPT-5
-    this.modelRegistry.set("gpt-5", {
-      provider: "openai",
-      handlerType: "openai-gpt5",
-      supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
-      requiresResponsesAPI: true,
-      timeout: 300000 // 5 minutes
-    });
-
-    // OpenAI Reasoning Models (o3 series)
-    this.modelRegistry.set("o3-mini", {
-      provider: "openai",
-      handlerType: "openai-reasoning",
-      supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity']
-    });
-    
-    this.modelRegistry.set("o3", {
-      provider: "openai",
-      handlerType: "openai-reasoning",
-      supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity']
-    });
-
-    // OpenAI Deep Research Models
-    this.modelRegistry.set("o3-deep-research-2025-06-26", {
-      provider: "openai",
-      handlerType: "openai-deep-research",
-      supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
-      requiresResponsesAPI: true,
-      timeout: 600000 // 10 minutes
-    });
-    
-    this.modelRegistry.set("o4-mini-deep-research-2025-06-26", {
-      provider: "openai",
-      handlerType: "openai-deep-research",
-      supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
-      requiresResponsesAPI: true,
-      timeout: 600000 // 10 minutes
-    });
+    // Load model configurations from centralized config
+    for (const [modelName, modelConfig] of Object.entries(config.aiModels)) {
+      this.modelRegistry.set(modelName, {
+        provider: modelConfig.provider,
+        handlerType: modelConfig.handlerType,
+        supportedParameters: [...modelConfig.supportedParameters], // Convert readonly to mutable
+        requiresResponsesAPI: (modelConfig as any).requiresResponsesAPI || false,
+        timeout: (modelConfig as any).timeout || config.AI_REQUEST_TIMEOUT_MS,
+        defaultConfig: modelConfig.defaultConfig,
+        limits: modelConfig.limits
+      });
+    }
   }
 
   private initializeHandlers() {
-    // Get API keys from environment
-    const googleApiKey = process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "";
-    const openaiApiKey = process.env.OPENAI_API_KEY_JDB || process.env.OPENAI_API_KEY || "";
+    // Get API keys from centralized config
+    const googleApiKey = config.GOOGLE_AI_API_KEY;
+    const openaiApiKey = config.OPENAI_API_KEY;
 
     // Initialize Google handler
     if (googleApiKey) {
       this.handlers.set("google", new GoogleAIHandler(googleApiKey));
+      console.log('✅ Google AI handler initialized');
+    } else {
+      console.warn('⚠️ Google AI API key not configured');
     }
 
     // Initialize OpenAI handlers
@@ -120,6 +79,10 @@ export class AIModelFactory {
       // Create deep research handlers for each model
       this.handlers.set("openai-deep-research-o3", new OpenAIDeepResearchHandler(openaiApiKey, "o3-deep-research"));
       this.handlers.set("openai-deep-research-o4", new OpenAIDeepResearchHandler(openaiApiKey, "o4-mini-deep-research"));
+      
+      console.log('✅ OpenAI handlers initialized');
+    } else {
+      console.warn('⚠️ OpenAI API key not configured');
     }
   }
 
