@@ -40,7 +40,7 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
         requestConfig.reasoning = { effort: config.reasoning.effort };
       }
       if (config.verbosity) {
-        requestConfig.verbosity = config.verbosity;
+        requestConfig.text = { verbosity: config.verbosity };
       }
 
       // Add web search tool if requested
