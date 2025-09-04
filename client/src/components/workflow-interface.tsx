@@ -1187,7 +1187,7 @@ ${rawText}`;
                     <div className="text-sm text-muted-foreground">{stage.description}</div>
                     
                     {/* Show substeps for reviewer stages */}
-                    {(stage as any).substeps && status !== "pending" && (
+                    {(stage as any).substeps && status === "current" && (
                       <div className="mt-2 space-y-1">
                         {(stage as any).substeps.map((substep: any, substepIndex: number) => {
                           const substepResultsForStage = substepResults[stage.key] || {};
