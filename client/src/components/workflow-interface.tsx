@@ -254,7 +254,12 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
         clientName,
         rawText,  // Stuur ruwe tekst mee voor dynamische verwerking
       });
-      return response.json();
+      const data = await response.json();
+      // Handle new API response format
+      if (data && typeof data === 'object' && 'success' in data && data.success === true) {
+        return data.data;
+      }
+      return data;
     },
     onMutate: () => {
       // Start tracking validation time
@@ -304,7 +309,12 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
       const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
         customInput,
       });
-      return response.json();
+      const data = await response.json();
+      // Handle new API response format
+      if (data && typeof data === 'object' && 'success' in data && data.success === true) {
+        return data.data;
+      }
+      return data;
     },
     onMutate: ({ stage }) => {
       // Start tracking this stage's processing
@@ -389,13 +399,19 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
         const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${substepKey}`, {
           customInput: customInput,
         });
-        return { type: "review", data: response.json() };
+        const data = await response.json();
+        // Handle new API response format
+        const reviewData = data && typeof data === 'object' && 'success' in data && data.success === true ? data.data : data;
+        return { type: "review", data: reviewData };
       } else {
         // Execute feedback processing
         const response = await apiRequest("POST", `/api/reports/${reportId}/stage/5_feedback_verwerker`, {
           customInput: customInput,
         });
-        return { type: "processing", data: response.json() };
+        const data = await response.json();
+        // Handle new API response format
+        const processingData = data && typeof data === 'object' && 'success' in data && data.success === true ? data.data : data;
+        return { type: "processing", data: processingData };
       }
     },
     onMutate: ({ substepKey, substepType }) => {
@@ -529,7 +545,12 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   const finalizeReportMutation = useMutation({
     mutationFn: async (reportId: string) => {
       const response = await apiRequest("POST", `/api/reports/${reportId}/finalize`);
-      return response.json();
+      const data = await response.json();
+      // Handle new API response format
+      if (data && typeof data === 'object' && 'success' in data && data.success === true) {
+        return data.data;
+      }
+      return data;
     },
     onSuccess: (report: Report) => {
       setCurrentReport(report);

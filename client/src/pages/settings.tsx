@@ -89,7 +89,12 @@ const Settings = memo(function Settings() {
         config: data.config,
         isActive: true,
       });
-      return response.json();
+      const responseData = await response.json();
+      // Handle new API response format
+      if (responseData && typeof responseData === 'object' && 'success' in responseData && responseData.success === true) {
+        return responseData.data;
+      }
+      return responseData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/prompts"] });
@@ -123,7 +128,9 @@ const Settings = memo(function Settings() {
     try {
       const response = await fetch('/api/prompts/backup-status');
       if (response.ok) {
-        const status = await response.json();
+        const statusData = await response.json();
+        // Handle new API response format
+        const status = statusData && typeof statusData === 'object' && 'success' in statusData && statusData.success === true ? statusData.data : statusData;
         setBackupStatus(status);
       }
     } catch (error) {
@@ -283,7 +290,9 @@ const Settings = memo(function Settings() {
       await handleSave();
       
       const response = await fetch('/api/prompts/backup');
-      const data = await response.json();
+      const responseData = await response.json();
+      // Handle new API response format
+      const data = responseData && typeof responseData === 'object' && 'success' in responseData && responseData.success === true ? responseData.data : responseData;
       
       // Download als JSON file
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -322,7 +331,9 @@ const Settings = memo(function Settings() {
       const data = JSON.parse(text);
       
       const response = await apiRequest('POST', '/api/prompts/restore', data);
-      const result = await response.json();
+      const responseData = await response.json();
+      // Handle new API response format
+      const result = responseData && typeof responseData === 'object' && 'success' in responseData && responseData.success === true ? responseData.data : responseData;
       
       toast({
         title: "Restore geslaagd",
