@@ -163,7 +163,7 @@ export const AI_MODELS = {
   },
   'o3-deep-research-2025-06-26': {
     provider: 'openai' as const,
-    handlerType: 'openai-deep-research-o3' as const,
+    handlerType: 'openai-deep-research' as const,
     supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
     defaultConfig: {
       maxOutputTokens: 16384
@@ -177,7 +177,7 @@ export const AI_MODELS = {
   },
   'o4-mini-deep-research-2025-06-26': {
     provider: 'openai' as const,
-    handlerType: 'openai-deep-research-o4' as const,
+    handlerType: 'openai-deep-research' as const,
     supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
     defaultConfig: {
       maxOutputTokens: 16384
