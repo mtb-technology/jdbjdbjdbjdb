@@ -12,6 +12,9 @@ import modelTestRoutes from "./routes/model-test";
 import { ServerError, asyncHandler } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 
+// Track active stage requests to prevent duplicates
+const activeStageRequests = new Set<string>();
+
 const generateReportSchema = z.object({
   dossier: dossierSchema,
   bouwplan: bouwplanSchema,
@@ -98,6 +101,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Execute specific stage of report generation
   app.post("/api/reports/:id/stage/:stage", async (req, res) => {
+    const requestKey = `${req.params.id}-${req.params.stage}`;
+    
+    // Simple in-memory deduplication to prevent concurrent requests
+    if (activeStageRequests.has(requestKey)) {
+      res.status(409).json({ message: "Stage wordt al uitgevoerd, wacht even..." });
+      return;
+    }
+    
+    activeStageRequests.add(requestKey);
     try {
       const { id, stage } = req.params;
       const { customInput } = req.body;
@@ -120,8 +132,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       // Update report with stage output, concept report version, and prompt
+      // Ensure we always overwrite with the latest result
+      const currentStageResults = report.stageResults as Record<string, string> || {};
       const updatedStageResults = {
-        ...(report.stageResults as Record<string, string> || {}),
+        ...currentStageResults,
         [stage]: stageExecution.stageOutput
       };
 
@@ -171,6 +185,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         message: `Fout bij uitvoeren van stap ${req.params.stage}` 
       });
+    } finally {
+      // Always clean up the tracking
+      activeStageRequests.delete(requestKey);
     }
   });
 

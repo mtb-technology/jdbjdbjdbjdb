@@ -21,6 +21,7 @@ import { WorkflowStageList } from "./WorkflowStageList";
 import { WorkflowStageExecutor } from "./WorkflowStageExecutor";
 import { WorkflowStageResults } from "./WorkflowStageResults";
 import { WORKFLOW_STAGES } from "./constants";
+import { cleanStageResults } from "@/lib/stageResultsHelper";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
 // Format plain text/markdown to professional fiscal report HTML - ONLY styling, no structure changes
@@ -135,7 +136,15 @@ function WorkflowManagerContent({
       }
       dispatch({ type: "SET_STAGE_PROCESSING", stage: "validation", isProcessing: false });
       dispatch({ type: "SET_REPORT", payload: report });
-      dispatch({ type: "LOAD_EXISTING_REPORT", report });
+      
+      // Clean stage results to ensure we only have the latest for each stage
+      const cleanedStageResults = cleanStageResults(report.stageResults as Record<string, string> || {});
+      const reportWithCleanedResults = {
+        ...report,
+        stageResults: cleanedStageResults
+      };
+      
+      dispatch({ type: "LOAD_EXISTING_REPORT", report: reportWithCleanedResults });
       
       // Save report ID in session to prevent double creation
       sessionStorage.setItem('current-workflow-report-id', report.id);
@@ -372,7 +381,14 @@ function WorkflowManagerContent({
   // Initialize with existing report
   useEffect(() => {
     if (existingReport && !state.currentReport) {
-      dispatch({ type: "LOAD_EXISTING_REPORT", report: existingReport });
+      // Clean stage results to ensure we only have the latest for each stage
+      const cleanedStageResults = cleanStageResults(existingReport.stageResults as Record<string, string> || {});
+      const reportWithCleanedResults = {
+        ...existingReport,
+        stageResults: cleanedStageResults
+      };
+      
+      dispatch({ type: "LOAD_EXISTING_REPORT", report: reportWithCleanedResults });
       
       // Set current stage index based on completed stages
       const completedStages = Object.keys(existingReport.stageResults as Record<string, string> || {});
