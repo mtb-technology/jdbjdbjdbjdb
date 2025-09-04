@@ -689,9 +689,33 @@ ${rawText}`;
     // Current step is always "current"
     if (index === currentStageIndex) return "current";
     
-    // Only show as completed if step has actual results AND is before current step
-    // OR if we're viewing an existing completed report
-    if (hasResult && (index < currentStageIndex || existingReport)) return "completed";
+    // For existing completed reports, all steps with results are completed
+    if (existingReport && hasResult) return "completed";
+    
+    // For workflow in progress: only show as completed if step has results 
+    // AND is logically before current step in workflow progression
+    if (hasResult) {
+      // Determine logical workflow order
+      const currentStage = WORKFLOW_STAGES[currentStageIndex];
+      
+      // Steps 1-3 are always sequential
+      if (index <= 2 && currentStageIndex > index) return "completed";
+      
+      // If current is step 3 (generation), only 1-2 can be completed
+      if (currentStage.key === "3_generatie" && index <= 1) return "completed";
+      
+      // If current is a reviewer step (4a-4f), only 1-3 can be completed
+      if (currentStage.type === "reviewer" && index <= 2) return "completed";
+      
+      // If current is final_check, all previous steps with results are completed
+      if (currentStage.key === "final_check" && hasResult) return "completed";
+      
+      // For reviewer steps, they are completed only if both their substeps are done
+      if (stage.type === "reviewer" && currentStageIndex > index) {
+        const substepResultsForStage = substepResults[stage.key] || {};
+        return (substepResultsForStage.review && substepResultsForStage.processing) ? "completed" : "pending";
+      }
+    }
     
     return "pending";
   };
