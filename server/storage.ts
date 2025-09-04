@@ -59,50 +59,56 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     search?: string;
   }): Promise<{ reports: Report[]; total: number; page: number; totalPages: number }> {
-    const page = options?.page || 1;
-    const limit = options?.limit || 10;
-    const offset = (page - 1) * limit;
+    try {
+      const page = options?.page || 1;
+      const limit = options?.limit || 10;
+      const offset = (page - 1) * limit;
 
-    // Build where conditions
-    const conditions = [];
-    if (options?.status) {
-      conditions.push(eq(reports.status, options.status));
+      // Build where conditions
+      const conditions = [];
+      if (options?.status) {
+        conditions.push(eq(reports.status, options.status));
+      }
+      if (options?.search) {
+        const searchTerm = `%${options.search}%`;
+        conditions.push(
+          or(
+            ilike(reports.title, searchTerm),
+            ilike(reports.clientName, searchTerm)
+          )
+        );
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      // Get total count
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(reports)
+        .where(whereClause);
+
+      // Get paginated results
+      const reportList = await db
+        .select()
+        .from(reports)
+        .where(whereClause)
+        .orderBy(desc(reports.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const totalPages = Math.ceil(Number(total) / limit);
+
+      const result = {
+        reports: reportList,
+        total: Number(total),
+        page,
+        totalPages,
+      };
+      return result;
+    } catch (error) {
+      console.error(`❌ Error in getAllReports:`, error);
+      throw error;
     }
-    if (options?.search) {
-      const searchTerm = `%${options.search}%`;
-      conditions.push(
-        or(
-          ilike(reports.title, searchTerm),
-          ilike(reports.clientName, searchTerm)
-        )
-      );
-    }
-
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    // Get total count
-    const [{ total }] = await db
-      .select({ total: count() })
-      .from(reports)
-      .where(whereClause);
-
-    // Get paginated results
-    const reportList = await db
-      .select()
-      .from(reports)
-      .where(whereClause)
-      .orderBy(desc(reports.createdAt))
-      .limit(limit)
-      .offset(offset);
-
-    const totalPages = Math.ceil(Number(total) / limit);
-
-    return {
-      reports: reportList,
-      total: Number(total),
-      page,
-      totalPages,
-    };
   }
 
   async createReport(insertReport: InsertReport): Promise<Report> {
