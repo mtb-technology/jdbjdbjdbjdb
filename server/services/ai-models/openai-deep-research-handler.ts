@@ -64,9 +64,10 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
         requestConfig.tools = [{ type: "web_search" }];
       }
 
-      // Make direct API call to /v1/responses endpoint
+      // Make direct API call to /v1/responses endpoint  
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes timeout
+      const timeoutMs = (config.maxOutputTokens && config.maxOutputTokens > 8192) ? 600000 : 300000; // 5-10 min based on token count
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
@@ -85,7 +86,12 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
         throw new Error(`Deep Research API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        throw new Error(`Failed to parse Deep Research response as JSON: ${jsonError.message}`);
+      }
       const duration = Date.now() - startTime;
 
       // Extract content from Deep Research Responses API format
