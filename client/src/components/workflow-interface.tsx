@@ -18,6 +18,11 @@ import {
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { 
   Play,
   ArrowRight,
@@ -35,7 +40,11 @@ import {
   Wand2,
   PenTool,
   ChevronRight,
-  Workflow
+  ChevronDown,
+  ChevronUp,
+  Workflow,
+  Info,
+  History
 } from "lucide-react";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
@@ -201,17 +210,31 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [stageResults, setStageResults] = useState<Record<string, string>>({});
   const [conceptReportVersions, setConceptReportVersions] = useState<Record<string, string>>({});
+  const [stagePrompts, setStagePrompts] = useState<Record<string, string>>({});
   const [substepResults, setSubstepResults] = useState<Record<string, { review?: string, processing?: string }>>({});
   const [editingStage, setEditingStage] = useState<string | null>(null);
   const [customInput, setCustomInput] = useState("");
   // Auto-run functionality removed per user request
   const [viewMode, setViewMode] = useState<"stage" | "concept">("stage");
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
   
   // Update view mode when switching stages - removed processor logic since it's now substeps
   useEffect(() => {
     // Always default to stage view for now, can be manually switched
     setViewMode("stage");
   }, [currentStageIndex]);
+
+  const toggleStepExpansion = (stageKey: string) => {
+    setExpandedSteps(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(stageKey)) {
+        newSet.delete(stageKey);
+      } else {
+        newSet.add(stageKey);
+      }
+      return newSet;
+    });
+  };
   const [stageStartTime, setStageStartTime] = useState<Date | null>(null);
   const [currentStageTimer, setCurrentStageTimer] = useState(0);
   const [stageTimes, setStageTimes] = useState<Record<string, number>>({});
@@ -312,6 +335,14 @@ const WorkflowInterface = memo(function WorkflowInterface({ dossier, bouwplan, c
         setConceptReportVersions(prev => ({
           ...prev,
           [currentStage.key]: data.conceptReport as string
+        }));
+      }
+      
+      // Update stage prompts if provided
+      if ((data as any).prompt) {
+        setStagePrompts(prev => ({
+          ...prev,
+          [currentStage.key]: (data as any).prompt as string
         }));
       }
       
@@ -1542,7 +1573,10 @@ ${rawText}`;
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Voltooide Stappen</span>
+              <div className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                <span>Stap Verloop & Output</span>
+              </div>
               
               {/* Latest Concept Report Preview */}
               {Object.keys(conceptReportVersions).length > 0 && (
@@ -1576,44 +1610,122 @@ ${rawText}`;
                 if (!stageResult) return null;
                 
                 const isReviewer = stage.type === "reviewer";
+                const isExpanded = expandedSteps.has(stage.key);
                 
                 return (
-                  <div key={stage.key} className={`border rounded-lg p-3 ${isReviewer ? 'border-l-4 border-l-orange-400 bg-orange-50/20' : 'border-l-4 border-l-blue-400'}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center space-x-2">
-                        <h5 className="font-medium text-sm">{stage.label}</h5>
-                        <Badge variant={isReviewer ? "destructive" : "default"} className="text-xs">
-                          {isReviewer ? "🔍 Review" : "📝 Generator"}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Badge variant="secondary" className="text-xs">Voltooid</Badge>
-                        {conceptResult && (
-                          <Badge variant="outline" className="text-xs text-blue-600">
-                            + Rapport Update
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground max-h-20 overflow-y-auto">
-                      <div className="font-medium text-muted-foreground mb-1">
-                        {isReviewer ? "JSON Feedback:" : "Specialist Output:"}
-                      </div>
-                      {stageResult.length > 150 ? `${stageResult.substring(0, 150)}...` : stageResult}
-                      
-                      {conceptResult && (
-                        <div className="mt-2 pt-2 border-t border-muted">
-                          <div className="font-medium text-blue-600 dark:text-blue-400 mb-1">Rapport Update Toegepast:</div>
-                          <div className="text-blue-700 dark:text-blue-300">
-                            {conceptResult.length > 100 ? `${conceptResult.substring(0, 100)}...` : conceptResult}
+                  <Collapsible key={stage.key} open={isExpanded} onOpenChange={() => toggleStepExpansion(stage.key)}>
+                    <div className={`border rounded-lg ${isReviewer ? 'border-l-4 border-l-orange-400 bg-orange-50/20' : 'border-l-4 border-l-blue-400'}`}>
+                      <CollapsibleTrigger className="w-full">
+                        <div className="flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
+                          <div className="flex items-center space-x-2">
+                            <h5 className="font-medium text-sm">{stage.label}</h5>
+                            <Badge variant={isReviewer ? "destructive" : "default"} className="text-xs">
+                              {isReviewer ? "🔍 Review" : "📝 Generator"}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Badge variant="secondary" className="text-xs">Voltooid</Badge>
+                            {conceptResult && (
+                              <Badge variant="outline" className="text-xs text-blue-600">
+                                + Rapport Update
+                              </Badge>
+                            )}
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </div>
                         </div>
-                      )}
+                      </CollapsibleTrigger>
+                      
+                      <CollapsibleContent>
+                        <div className="px-3 pb-3 border-t border-border/50">
+                          {/* Quick Summary */}
+                          <div className="text-xs text-muted-foreground mb-3 pt-2">
+                            <div className="font-medium text-muted-foreground mb-1">
+                              {isReviewer ? "Quick Overview:" : "Samenvatting:"}
+                            </div>
+                            {stageResult.length > 150 ? `${stageResult.substring(0, 150)}...` : stageResult}
+                          </div>
+                          
+                          {/* Detailed Input & Output */}
+                          <div className="space-y-3 text-sm">
+                            {/* AI Input Section */}
+                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Info className="h-4 w-4 text-blue-600" />
+                                <span className="font-medium text-blue-700 dark:text-blue-400">AI Input (Prompt)</span>
+                              </div>
+                              <div className="text-xs bg-white dark:bg-slate-800 rounded border p-2 max-h-32 overflow-y-auto font-mono">
+                                {stagePrompts[stage.key] ? (
+                                  <pre className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+                                    {stagePrompts[stage.key].length > 500 ? 
+                                      stagePrompts[stage.key].substring(0, 500) + '\n\n... (prompt afgekort)' : 
+                                      stagePrompts[stage.key]
+                                    }
+                                  </pre>
+                                ) : (
+                                  <div className="text-muted-foreground italic">
+                                    Prompt wordt geladen na voltooiing van stap...
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* AI Output Section */}
+                            <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                <span className="font-medium text-green-700 dark:text-green-400">
+                                  {isReviewer ? "Review Output" : "AI Output"}
+                                </span>
+                              </div>
+                              <div className="text-xs bg-white dark:bg-slate-800 rounded border p-2 max-h-40 overflow-y-auto">
+                                <pre className="whitespace-pre-wrap">{stageResult}</pre>
+                              </div>
+                            </div>
+                            
+                            {/* Rapport Update Section */}
+                            {conceptResult && (
+                              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <FileText className="h-4 w-4 text-blue-600" />
+                                  <span className="font-medium text-blue-700 dark:text-blue-400">Rapport Wijziging</span>
+                                </div>
+                                <div className="text-xs bg-white dark:bg-slate-800 rounded border p-2 max-h-40 overflow-y-auto">
+                                  <div className="text-muted-foreground italic mb-2">Deze wijzigingen zijn toegepast op het rapport:</div>
+                                  <div className="prose prose-xs max-w-none" dangerouslySetInnerHTML={{ __html: conceptResult.substring(0, 500) + (conceptResult.length > 500 ? '...' : '') }} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </CollapsibleContent>
                     </div>
-                  </div>
+                  </Collapsible>
                 );
               })}
             </div>
+            
+            {/* Report Evolution Summary */}
+            {Object.keys(conceptReportVersions).length > 0 && (
+              <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center gap-2 mb-3">
+                  <Workflow className="h-5 w-5 text-blue-600" />
+                  <h4 className="font-semibold text-blue-700 dark:text-blue-400">Rapport Evolutie</h4>
+                </div>
+                <div className="text-sm text-blue-600 dark:text-blue-300 mb-2">
+                  Het rapport heeft {Object.keys(conceptReportVersions).length} versie{Object.keys(conceptReportVersions).length !== 1 ? 's' : ''} doorlopen:
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.keys(conceptReportVersions).map((stageKey, index) => {
+                    const stage = WORKFLOW_STAGES.find(s => s.key === stageKey);
+                    return (
+                      <Badge key={stageKey} variant="outline" className="text-xs bg-white dark:bg-slate-800 border-blue-300">
+                        V{index + 1}: {stage?.label || stageKey}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
