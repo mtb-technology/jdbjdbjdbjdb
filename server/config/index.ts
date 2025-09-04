@@ -242,28 +242,28 @@ export const REPORT_CONFIG = {
       timeout: 90000,
       maxTokens: 8192
     },
-    '4b_FiscaalSpecialist': {
-      name: 'Fiscaal Specialist Review',
+    '4b_FiscaalTechnischSpecialist': {
+      name: 'Fiscaal Technisch Specialist Review',
       timeout: 90000,
       maxTokens: 8192
     },
-    '4c_ComplianceExpert': {
-      name: 'Compliance Expert Review',
+    '4c_ScenarioGatenAnalist': {
+      name: 'Scenario Gaten Analist Review',
       timeout: 90000,
       maxTokens: 8192
     },
-    '4d_RisicoAnalist': {
-      name: 'Risico Analist Review',
+    '4d_DeVertaler': {
+      name: 'De Vertaler Review',
       timeout: 90000,
       maxTokens: 8192
     },
-    '4e_KlantenAdviseur': {
-      name: 'Klanten Adviseur Review',
+    '4e_DeAdvocaat': {
+      name: 'De Advocaat Review',
       timeout: 90000,
       maxTokens: 8192
     },
-    '4f_KwaliteitsControleur': {
-      name: 'Kwaliteits Controleur Review',
+    '4f_DeKlantpsycholoog': {
+      name: 'De Klantpsycholoog Review',
       timeout: 90000,
       maxTokens: 8192
     },

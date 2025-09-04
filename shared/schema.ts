@@ -223,6 +223,7 @@ export const promptConfigSchema = z.object({
   "4d_DeVertaler": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "4e_DeAdvocaat": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
   "4f_DeKlantpsycholoog": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+  "4g_ChefEindredactie": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "5_feedback_verwerker": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "final_check": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   aiConfig: aiConfigSchema.optional(),

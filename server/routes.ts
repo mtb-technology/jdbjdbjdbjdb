@@ -80,7 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "processing",
       });
 
-      res.json(report);
+      res.json(createApiSuccessResponse(report, "Rapport succesvol aangemaakt"));
     } catch (error) {
       console.error("Error creating report:", error);
       if (error instanceof z.ZodError) {
@@ -159,12 +159,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updatedReport = await storage.updateReport(id, updateData);
 
-      res.json({
+      res.json(createApiSuccessResponse({
         report: updatedReport,
         stageResult: stageExecution.stageOutput,
         conceptReport: stageExecution.conceptReport,
         prompt: stageExecution.prompt,
-      });
+      }, "Stage succesvol uitgevoerd"));
 
     } catch (error) {
       console.error(`Error executing stage ${req.params.stage}:`, error);
@@ -198,7 +198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "generated",
       });
 
-      res.json(finalizedReport);
+      res.json(createApiSuccessResponse(finalizedReport, "Rapport succesvol gefinaliseerd"));
 
     } catch (error) {
       console.error("Error finalizing report:", error);
@@ -214,7 +214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const reports = await storage.getAllReports();
       // Add caching headers for better performance
       res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-      res.json(reports);
+      res.json(createApiSuccessResponse(reports));
     } catch (error) {
       console.error("Error fetching reports:", error);
       res.status(500).json({ message: "Fout bij ophalen rapporten" });
@@ -229,7 +229,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ message: "Rapport niet gevonden" });
         return;
       }
-      res.json(report);
+      res.json(createApiSuccessResponse(report));
     } catch (error) {
       console.error("Error fetching report:", error);
       res.status(500).json({ message: "Fout bij ophalen rapport" });
@@ -246,7 +246,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const isValid = await sourceValidator.validateSource(url);
-      res.json({ valid: isValid });
+      res.json(createApiSuccessResponse({ valid: isValid }));
     } catch (error) {
       console.error("Error validating source:", error);
       res.status(500).json({ message: "Fout bij valideren bron" });
@@ -259,7 +259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sources = await storage.getAllSources();
       // Cache sources for longer as they rarely change
       res.set('Cache-Control', 'public, max-age=600, stale-while-revalidate=1200');
-      res.json(sources);
+      res.json(createApiSuccessResponse(sources));
     } catch (error) {
       console.error("Error fetching sources:", error);
       res.status(500).json({ message: "Fout bij ophalen bronnen" });
@@ -270,7 +270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/prompts", async (req, res) => {
     try {
       const prompts = await storage.getAllPromptConfigs();
-      res.json(prompts);
+      res.json(createApiSuccessResponse(prompts));
     } catch (error) {
       console.error("Error fetching prompt configs:", error);
       res.status(500).json({ message: "Fout bij ophalen prompt configuraties" });
@@ -434,11 +434,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      res.json({ 
+      res.json(createApiSuccessResponse({ 
         message: `Restore voltooid: ${restored} bijgewerkt, ${created} aangemaakt`,
         restored,
         created
-      });
+      }, "Backup restore succesvol voltooid"));
     } catch (error: any) {
       console.error("Error restoring backup:", error);
       res.status(500).json({ message: "Restore failed: " + error.message });
@@ -457,17 +457,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (backupFiles.length > 0) {
           const lastBackup = backupFiles[backupFiles.length - 1];
           const stats = await fs.stat(path.join(backupDir, lastBackup));
-          res.json({
+          res.json(createApiSuccessResponse({
             hasBackup: true,
             lastBackupDate: stats.mtime,
             backupCount: backupFiles.length,
             fileName: lastBackup
-          });
+          }));
         } else {
-          res.json({ hasBackup: false });
+          res.json(createApiSuccessResponse({ hasBackup: false }));
         }
       } catch {
-        res.json({ hasBackup: false });
+        res.json(createApiSuccessResponse({ hasBackup: false }));
       }
     } catch (error) {
       console.error("Error checking backup status:", error);
@@ -491,7 +491,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Add caching headers for case list
       res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
-      res.json(cases);
+      res.json(createApiSuccessResponse(cases));
     } catch (error: any) {
       console.error("Error fetching cases:", error);
       res.status(500).json({ message: "Fout bij ophalen cases" });
@@ -509,7 +509,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       
-      res.json(report);
+      res.json(createApiSuccessResponse(report));
     } catch (error: any) {
       console.error("Error fetching case:", error);
       res.status(500).json({ message: "Fout bij ophalen case" });
@@ -528,7 +528,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       await storage.updateReportStatus(id, status);
-      res.json({ success: true });
+      res.json(createApiSuccessResponse({ success: true }, "Status succesvol bijgewerkt"));
     } catch (error: any) {
       console.error("Error updating case status:", error);
       res.status(500).json({ message: "Fout bij updaten status" });
@@ -540,7 +540,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       await storage.deleteReport(id);
-      res.json({ success: true });
+      res.json(createApiSuccessResponse({ success: true }, "Case succesvol verwijderd"));
     } catch (error: any) {
       console.error("Error deleting case:", error);
       res.status(500).json({ message: "Fout bij verwijderen case" });
@@ -565,7 +565,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (format === "json") {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename="case-${id}.json"`);
-        res.json(report);
+        res.json(createApiSuccessResponse(report));
       } else {
         res.status(400).json({ message: "Ongeldige export format" });
       }
