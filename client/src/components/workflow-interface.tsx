@@ -686,12 +686,68 @@ ${rawText}`;
     const stage = WORKFLOW_STAGES[index];
     const hasResult = !!stageResults[stage.key];
     
-    // Only show as completed if index is less than current OR if we're viewing an existing report
-    if (index < currentStageIndex) return "completed";
+    // Current step is always "current"
     if (index === currentStageIndex) return "current";
-    // Only mark as completed if it has result AND we're viewing existing report
-    if (hasResult && existingReport) return "completed";
+    
+    // Only show as completed if step has actual results AND is before current step
+    // OR if we're viewing an existing completed report
+    if (hasResult && (index < currentStageIndex || existingReport)) return "completed";
+    
     return "pending";
+  };
+
+  // Get report version for current step - shows historical version when navigating back
+  const getCurrentStepReportVersion = () => {
+    const currentStage = WORKFLOW_STAGES[currentStageIndex];
+    
+    // First try to get version for current step
+    if (conceptReportVersions[currentStage.key]) {
+      return conceptReportVersions[currentStage.key];
+    }
+    
+    // Fall back to most recent version before current step
+    for (let i = currentStageIndex - 1; i >= 0; i--) {
+      const prevStage = WORKFLOW_STAGES[i];
+      if (conceptReportVersions[prevStage.key]) {
+        return conceptReportVersions[prevStage.key];
+      }
+    }
+    
+    // Final fallback to current report content
+    return currentReport?.generatedContent || '';
+  };
+
+  // Check if user is viewing a historical version or live version
+  const isViewingHistoricalVersion = () => {
+    // Get the highest completed stage index
+    const completedStageIndexes = Object.keys(stageResults)
+      .map(key => WORKFLOW_STAGES.findIndex(stage => stage.key === key))
+      .filter(index => index !== -1);
+    
+    const highestCompletedIndex = Math.max(-1, ...completedStageIndexes);
+    
+    // If current step is behind the highest completed step, it's historical
+    return currentStageIndex < highestCompletedIndex;
+  };
+
+  // Get version info for display
+  const getVersionInfo = () => {
+    const currentStage = WORKFLOW_STAGES[currentStageIndex];
+    
+    // Find which step's version we're actually showing
+    if (conceptReportVersions[currentStage.key]) {
+      return { step: currentStage.label, isHistorical: isViewingHistoricalVersion() };
+    }
+    
+    // Find most recent version before current step
+    for (let i = currentStageIndex - 1; i >= 0; i--) {
+      const prevStage = WORKFLOW_STAGES[i];
+      if (conceptReportVersions[prevStage.key]) {
+        return { step: prevStage.label, isHistorical: true };
+      }
+    }
+    
+    return { step: "Basis", isHistorical: false };
   };
 
   const currentStage = WORKFLOW_STAGES[currentStageIndex];
@@ -737,12 +793,19 @@ ${rawText}`;
       {/* Professional Document Artifact */}
       {currentReport?.generatedContent && (
         <div className="relative">
-          {/* Live Report Indicator */}
+          {/* Report Status Indicator */}
           <div className="absolute -top-2 -right-2 z-10">
-            <div className="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg flex items-center space-x-1">
-              <div className="h-2 w-2 bg-white rounded-full animate-pulse"></div>
-              <span>LIVE</span>
-            </div>
+            {isViewingHistoricalVersion() ? (
+              <div className="bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg flex items-center space-x-1">
+                <div className="h-2 w-2 bg-white rounded-full"></div>
+                <span>REVIEW</span>
+              </div>
+            ) : (
+              <div className="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg flex items-center space-x-1">
+                <div className="h-2 w-2 bg-white rounded-full animate-pulse"></div>
+                <span>LIVE</span>
+              </div>
+            )}
           </div>
           
           {/* Document Container - Exact zoals finale PDF */}
@@ -774,11 +837,11 @@ ${rawText}`;
                 </div>
                 <div className="flex items-center space-x-3 text-xs text-gray-500">
                   <div className="flex items-center space-x-1">
-                    <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span>Versie {Math.max(1, currentStageIndex - 1)}</span>
+                    <div className={`h-2 w-2 rounded-full ${isViewingHistoricalVersion() ? 'bg-orange-500' : 'bg-green-500 animate-pulse'}`}></div>
+                    <span>{getVersionInfo().step}</span>
                   </div>
                   <span className="text-gray-400">•</span>
-                  <span>Live Preview</span>
+                  <span>{isViewingHistoricalVersion() ? 'Historische Versie' : 'Live Preview'}</span>
                 </div>
               </div>
             </div>
@@ -802,7 +865,7 @@ ${rawText}`;
                   lineHeight: '1.8',
                   color: '#2d3748'
                 }}
-                dangerouslySetInnerHTML={{ __html: formatReportContent(currentReport.generatedContent || '') }}
+                dangerouslySetInnerHTML={{ __html: formatReportContent(getCurrentStepReportVersion()) }}
               />
             </div>
 
