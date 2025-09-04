@@ -151,8 +151,23 @@ function Cases() {
       if (search) params.set("search", search);
       if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
       
-      const response = await apiRequest("GET", `/api/cases?${params.toString()}`);
-      return response.json();
+      // Use standard queryFn that handles API response format automatically
+      const response = await fetch(`/api/cases?${params.toString()}`, {
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Extract data from API response format
+      if (data && typeof data === 'object' && 'success' in data && data.success === true) {
+        return data.data;
+      }
+      
+      return data;
     }
   });
 
