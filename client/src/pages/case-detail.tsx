@@ -13,11 +13,7 @@ export default function CaseDetail() {
   const reportId = params.id;
 
   const { data: report, isLoading, error } = useQuery<Report>({
-    queryKey: [`/api/reports/${reportId}`],
-    queryFn: async () => {
-      const response = await apiRequest("GET", `/api/reports/${reportId}`);
-      return response.json();
-    },
+    queryKey: [`/api/reports`, reportId],
     enabled: !!reportId,
   });
 

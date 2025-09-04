@@ -19,7 +19,12 @@ const ReportGenerator = memo(function ReportGenerator() {
   const generateReportMutation = useMutation({
     mutationFn: async (data: { dossier: DossierData; bouwplan: BouwplanData; clientName: string }) => {
       const response = await apiRequest("POST", "/api/reports/generate", data);
-      return response.json();
+      const responseData = await response.json();
+      // Handle new API response format
+      if (responseData && typeof responseData === 'object' && 'success' in responseData && responseData.success === true) {
+        return responseData.data;
+      }
+      return responseData;
     },
     onSuccess: (report: Report) => {
       setCurrentReport(report);
