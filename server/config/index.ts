@@ -132,6 +132,62 @@ export const AI_MODELS = {
     },
     requiresResponsesAPI: true,
     timeout: 300000 // 5 minutes
+  },
+  'o3-mini': {
+    provider: 'openai' as const,
+    handlerType: 'openai-reasoning' as const,
+    supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity'],
+    defaultConfig: {
+      maxOutputTokens: 8192
+    },
+    limits: {
+      maxTokensPerRequest: 128000,
+      maxRequestsPerMinute: 100
+    },
+    requiresResponsesAPI: false,
+    timeout: 180000 // 3 minutes
+  },
+  'o3': {
+    provider: 'openai' as const,
+    handlerType: 'openai-reasoning' as const,
+    supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity'],
+    defaultConfig: {
+      maxOutputTokens: 8192
+    },
+    limits: {
+      maxTokensPerRequest: 128000,
+      maxRequestsPerMinute: 50
+    },
+    requiresResponsesAPI: false,
+    timeout: 300000 // 5 minutes
+  },
+  'o3-deep-research-2025-06-26': {
+    provider: 'openai' as const,
+    handlerType: 'openai-deep-research-o3' as const,
+    supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
+    defaultConfig: {
+      maxOutputTokens: 16384
+    },
+    limits: {
+      maxTokensPerRequest: 200000,
+      maxRequestsPerMinute: 30
+    },
+    requiresResponsesAPI: true,
+    timeout: 600000 // 10 minutes
+  },
+  'o4-mini-deep-research-2025-06-26': {
+    provider: 'openai' as const,
+    handlerType: 'openai-deep-research-o4' as const,
+    supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
+    defaultConfig: {
+      maxOutputTokens: 16384
+    },
+    limits: {
+      maxTokensPerRequest: 200000,
+      maxRequestsPerMinute: 100
+    },
+    requiresResponsesAPI: true,
+    timeout: 600000 // 10 minutes
   }
 } as const;
 
