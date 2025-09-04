@@ -220,4 +220,31 @@ export class AIModelFactory {
     const info = this.modelRegistry.get(modelName);
     return info?.timeout || 120000; // Default 2 minutes
   }
+
+  // Additional methods for health check service
+  getSupportedModels(): string[] {
+    const models: string[] = [];
+    this.modelRegistry.forEach((_, modelName) => {
+      models.push(modelName);
+    });
+    return models;
+  }
+
+  getHandler(modelName: string): BaseAIHandler | null {
+    const modelInfo = this.modelRegistry.get(modelName);
+    if (!modelInfo) {
+      return null;
+    }
+    
+    // Handle special cases for deep research models
+    if (modelInfo.handlerType === "openai-deep-research") {
+      if (modelName.includes("o3")) {
+        return this.handlers.get("openai-deep-research-o3") || null;
+      } else if (modelName.includes("o4")) {
+        return this.handlers.get("openai-deep-research-o4") || null;
+      }
+    }
+    
+    return this.handlers.get(modelInfo.handlerType) || null;
+  }
 }
