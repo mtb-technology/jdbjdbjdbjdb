@@ -129,6 +129,9 @@ function WorkflowManagerContent({
       dispatch({ type: "UPDATE_TIMER", time: 0 });
     },
     onSuccess: (report: Report) => {
+      // Save report ID in session FIRST to prevent race conditions
+      sessionStorage.setItem('current-workflow-report-id', report.id);
+      
       // Save validation time
       if (state.stageStartTime) {
         const elapsed = Math.floor((Date.now() - state.stageStartTime.getTime()) / 1000);
@@ -145,9 +148,6 @@ function WorkflowManagerContent({
       };
       
       dispatch({ type: "LOAD_EXISTING_REPORT", report: reportWithCleanedResults });
-      
-      // Save report ID in session to prevent double creation
-      sessionStorage.setItem('current-workflow-report-id', report.id);
       
       // Auto-start first step
       setTimeout(() => {
