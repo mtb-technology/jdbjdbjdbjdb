@@ -190,34 +190,58 @@ function WorkflowManagerContent({
       dispatch({ type: "SET_STAGE_START_TIME", time: new Date() });
       dispatch({ type: "UPDATE_TIMER", time: 0 });
     },
-    onSuccess: (data: { report: Report; stageResult: string; conceptReport?: string }, variables) => {
-      dispatch({ type: "SET_REPORT", payload: data.report });
+    onSuccess: (data: any, variables) => {
+      // Handle both old and new API response formats
+      const stageResult = data.stageResult || data.stageOutput || "";
+      const conceptReport = data.conceptReport;
+      const updatedReport = data.report;
+      
+      console.log("✅ ExecuteStage Success:", { 
+        stage: variables.stage, 
+        stageResult: stageResult?.slice(0, 100) + "...",
+        hasConceptReport: !!conceptReport,
+        hasReport: !!updatedReport
+      });
+      
+      if (updatedReport) {
+        dispatch({ type: "SET_REPORT", payload: updatedReport });
+        // Refresh stage results from the updated report
+        dispatch({ type: "LOAD_EXISTING_REPORT", report: updatedReport });
+      }
+      
       const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
       
       // Save the time this stage took
       if (state.stageStartTime) {
         const elapsed = Math.floor((Date.now() - state.stageStartTime.getTime()) / 1000);
-        dispatch({ type: "SET_STAGE_TIME", stage: currentStage.key, time: elapsed });
+        dispatch({ type: "SET_STAGE_TIME", stage: variables.stage, time: elapsed });
       }
       
-      dispatch({ type: "SET_STAGE_PROCESSING", stage: currentStage.key, isProcessing: false });
-      dispatch({ type: "SET_STAGE_RESULT", stage: currentStage.key, result: data.stageResult });
+      dispatch({ type: "SET_STAGE_PROCESSING", stage: variables.stage, isProcessing: false });
+      
+      // Always update the result for the executed stage
+      if (stageResult) {
+        dispatch({ type: "SET_STAGE_RESULT", stage: variables.stage, result: stageResult });
+      }
       
       // Update concept report versions if provided
-      if (data.conceptReport) {
-        dispatch({ type: "SET_CONCEPT_VERSION", stage: currentStage.key, content: data.conceptReport });
+      if (conceptReport) {
+        dispatch({ type: "SET_CONCEPT_VERSION", stage: variables.stage, content: conceptReport });
       }
       
       // Show completion toast
+      const stageInfo = WORKFLOW_STAGES.find(s => s.key === variables.stage);
       toast({
         title: "Stap voltooid",
-        description: `${currentStage.label} is succesvol uitgevoerd.`,
+        description: `${stageInfo?.label || variables.stage} is succesvol uitgevoerd.`,
       });
       
-      // Auto-advance to next stage
-      const nextIndex = getNextStageIndex();
-      if (nextIndex !== state.currentStageIndex) {
-        dispatch({ type: "SET_STAGE_INDEX", payload: nextIndex });
+      // Only auto-advance if we're still on the same stage that was executed
+      if (variables.stage === currentStage.key) {
+        const nextIndex = getNextStageIndex();
+        if (nextIndex !== state.currentStageIndex) {
+          dispatch({ type: "SET_STAGE_INDEX", payload: nextIndex });
+        }
       }
     },
     onError: (error: Error, variables) => {
