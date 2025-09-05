@@ -162,12 +162,20 @@ function Cases() {
       
       const data = await response.json();
       
-      // Extract data from API response format
+      // Extract data from API response format with proper null checking
       if (data && typeof data === 'object' && 'success' in data && data.success === true) {
-        return data.data;
+        if (data.data && typeof data.data === 'object') {
+          return data.data;
+        }
+        throw new Error('Invalid API response format: missing data field');
       }
       
-      return data;
+      // Validate fallback data structure
+      if (data && typeof data === 'object' && 'reports' in data) {
+        return data;
+      }
+      
+      throw new Error('Invalid API response format');
     }
   });
 

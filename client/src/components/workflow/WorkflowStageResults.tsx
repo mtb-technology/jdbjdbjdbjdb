@@ -30,17 +30,10 @@ export function WorkflowStageResults({
   const [editingContent, setEditingContent] = useState("");
 
   const currentStage = WORKFLOW_STAGES[currentStageIndex];
-  const currentStageResult = stageResults[currentStage.key];
+  const currentStageResult = currentStage ? stageResults[currentStage.key] : undefined;
 
-  // Debug logging
-  console.log("🔍 StageResults Debug:", {
-    currentStageKey: currentStage.key,
-    hasResult: !!currentStageResult,
-    resultLength: currentStageResult?.length,
-    resultPreview: currentStageResult?.slice(0, 100)
-  });
-
-  if (!currentStageResult) return null;
+  // Early return if no stage or result
+  if (!currentStage || !currentStageResult) return null;
 
   const executeCurrentStage = () => {
     if (!currentReport) return;
@@ -72,7 +65,7 @@ export function WorkflowStageResults({
   const handleStartEdit = () => {
     const content = viewMode === "stage" 
       ? currentStageResult 
-      : (conceptReportVersions[currentStage.key] || "");
+      : (conceptReportVersions?.[currentStage.key] || "");
     setEditingContent(content);
     dispatch({ type: "SET_EDITING_STAGE", stage: currentStage.key });
   };

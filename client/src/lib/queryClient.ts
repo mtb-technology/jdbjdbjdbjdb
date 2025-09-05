@@ -104,10 +104,18 @@ export const getQueryFn: <T>(options: {
       
       // Extract data from API response if it follows our standard format
       if (data && typeof data === 'object' && 'success' in data && data.success === true) {
-        return data.data;
+        if ('data' in data) {
+          return data.data;
+        }
+        throw new Error('API response missing data field despite success: true');
       }
       
-      return data;
+      // Return data for legacy API responses, but validate it's not null/undefined
+      if (data !== null && data !== undefined) {
+        return data;
+      }
+      
+      throw new Error('API returned null or undefined data');
     } catch (error) {
       // Convert to AppError if needed and log
       const appError = error instanceof AppError 
