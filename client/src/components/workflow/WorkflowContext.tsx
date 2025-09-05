@@ -167,6 +167,7 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         stageResults: (action.report.stageResults as Record<string, string>) || {},
         substepResults: (action.report.substepResults as Record<string, { review?: string; processing?: string }>) || {},
         conceptReportVersions: (action.report.conceptReportVersions as Record<string, string>) || {},
+        stagePrompts: state.stagePrompts || {},
       };
     
     default:

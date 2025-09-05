@@ -20,6 +20,7 @@ import { WorkflowProvider, useWorkflow } from "./WorkflowContext";
 import { WorkflowStageList } from "./WorkflowStageList";
 import { WorkflowStageExecutor } from "./WorkflowStageExecutor";
 import { WorkflowStageResults } from "./WorkflowStageResults";
+import { StepInputOutput } from "./StepInputOutput";
 import { WORKFLOW_STAGES } from "./constants";
 import { cleanStageResults } from "@/lib/stageResultsHelper";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
@@ -195,13 +196,20 @@ function WorkflowManagerContent({
       const stageResult = data.stageResult || data.stageOutput || "";
       const conceptReport = data.conceptReport;
       const updatedReport = data.report;
+      const prompt = data.prompt || "";
       
       console.log("✅ ExecuteStage Success:", { 
         stage: variables.stage, 
         stageResult: stageResult?.slice(0, 100) + "...",
         hasConceptReport: !!conceptReport,
-        hasReport: !!updatedReport
+        hasReport: !!updatedReport,
+        hasPrompt: !!prompt
       });
+      
+      // Store the prompt that was sent to AI
+      if (prompt) {
+        dispatch({ type: "SET_STAGE_PROMPT", stage: variables.stage, prompt });
+      }
       
       if (updatedReport) {
         dispatch({ type: "SET_REPORT", payload: updatedReport });
@@ -441,12 +449,47 @@ function WorkflowManagerContent({
 
   return (
     <div className="space-y-6">
+      {/* Full Input/Output Transparency View */}
+      <Card className="border-2 border-primary/30">
+        <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10">
+          <CardTitle>Complete Workflow Transparantie - Alle Prompts & Outputs</CardTitle>
+          <p className="text-sm text-muted-foreground mt-2">
+            Hieronder zie je EXACT wat naar de AI gestuurd wordt (prompts) en wat terugkomt (outputs).
+            Dit is dezelfde workflow die je handmatig zou doen in ChatGPT/Gemini, maar dan geautomatiseerd.
+          </p>
+        </CardHeader>
+        <CardContent className="p-6">
+          <div className="space-y-3">
+            {WORKFLOW_STAGES.map((stage, index) => {
+              const stageResult = state.stageResults[stage.key] || "";
+              const stagePrompt = state.stagePrompts[stage.key] || "";
+              const isActive = index === state.currentStageIndex;
+              const isProcessing = state.stageProcessing[stage.key] || false;
+              const processingTime = state.stageTimes[stage.key];
+              
+              return (
+                <StepInputOutput
+                  key={stage.key}
+                  stageName={stage.label}
+                  stageIndex={index}
+                  prompt={stagePrompt}
+                  output={stageResult}
+                  isActive={isActive}
+                  isProcessing={isProcessing}
+                  processingTime={processingTime}
+                />
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Progress Overview */}
       <Card className="border-primary/20 shadow-sm">
         <CardContent className="p-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-lg">Voortgang</h3>
+              <h3 className="font-semibold text-lg">Control Panel</h3>
               <div className="flex items-center gap-2">
                 {createReportMutation.isPending && (
                   <Badge className="animate-pulse bg-orange-500">
