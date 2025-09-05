@@ -149,10 +149,13 @@ export class DatabaseStorage implements IStorage {
     try {
       const [source] = await db.insert(sources).values(insertSource).returning();
       return source;
-    } catch (error) {
-      // If source already exists, return existing one
-      const [existing] = await db.select().from(sources).where(eq(sources.url, insertSource.url));
-      if (existing) return existing;
+    } catch (error: any) {
+      // Handle unique constraint violation (race condition scenario)
+      if (error?.code === '23505' || error?.constraint?.includes('url')) {
+        // Another process likely inserted the same URL, try to fetch it
+        const [existing] = await db.select().from(sources).where(eq(sources.url, insertSource.url));
+        if (existing) return existing;
+      }
       throw error;
     }
   }
