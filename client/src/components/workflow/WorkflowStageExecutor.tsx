@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { WORKFLOW_STAGES } from "./constants";
 import { useWorkflow } from "./WorkflowContext";
+import { ReviewFeedbackEditor } from "./ReviewFeedbackEditor";
 
 interface WorkflowStageExecutorProps {
   executeStageM: any;
@@ -71,6 +72,28 @@ export const WorkflowStageExecutor = memo(function WorkflowStageExecutor({
 
     return (
       <div className="space-y-4">
+        {/* Review Feedback Editor - shows after AI review, before processing */}
+        {hasReviewResult && (
+          <ReviewFeedbackEditor
+            stageName={currentStage.label}
+            aiReviewOutput={substepResultsForStage.review || ""}
+            onProcessFeedback={(mergedFeedback) => {
+              // Process the merged feedback
+              if (currentReport) {
+                executeSubstepM.mutate({
+                  substepKey: "5_feedback_verwerker",
+                  substepType: "processing",
+                  reportId: currentReport.id,
+                  customInput: mergedFeedback
+                });
+              }
+            }}
+            isProcessing={executeSubstepM.isPending && executeSubstepM.variables?.substepType === "processing"}
+            hasProcessingResult={hasProcessingResult}
+          />
+        )}
+
+        {/* Original substep buttons */}
         <div className="flex justify-between items-center">
           <h3 className="text-sm font-medium flex items-center gap-2">
             Reviewer Substappen
@@ -96,13 +119,25 @@ export const WorkflowStageExecutor = memo(function WorkflowStageExecutor({
                              executeSubstepM.variables?.substepType === substep.type;
             
             return (
-              <Button
-                key={`${substep.key}-${substep.type}`}
-                onClick={() => canExecute && currentReport && executeSubstepM.mutate({
-                  substepKey: isReviewSubstep ? currentStage.key : "5_feedback_verwerker",
-                  substepType: substep.type,
-                  reportId: currentReport.id
-                })}
+              <>
+                {/* Hide processing button when ReviewFeedbackEditor is shown */}
+                {(isReviewSubstep || !hasReviewResult) && (
+                  <Button
+                    key={`${substep.key}-${substep.type}`}
+                onClick={() => {
+                  if (!canExecute || !currentReport) return;
+                  
+                  // For review substep, just execute normally
+                  if (isReviewSubstep) {
+                    executeSubstepM.mutate({
+                      substepKey: currentStage.key,
+                      substepType: "review",
+                      reportId: currentReport.id
+                    });
+                  }
+                  // For processing substep, it's now handled by the ReviewFeedbackEditor
+                  // This button is hidden when ReviewFeedbackEditor is shown
+                }}
                 disabled={!canExecute || isExecuting}
                 className={`w-full ${
                   isCompleted ? "bg-green-600 hover:bg-green-700" : 
@@ -127,7 +162,9 @@ export const WorkflowStageExecutor = memo(function WorkflowStageExecutor({
                     </span>
                   </div>
                 )}
-              </Button>
+                  </Button>
+                )}
+              </>
             );
           })}
           
