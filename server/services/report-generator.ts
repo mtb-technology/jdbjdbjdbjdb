@@ -220,7 +220,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         break;
       case "final_check":
         prompt = this.buildFinalCheckPrompt(
-          conceptReportVersions["latest"] || "",
+          conceptReportVersions?.["latest"] || "",
           dossier,
           bouwplan,
           currentDate,
@@ -232,7 +232,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         if (stageName.startsWith("4")) {
           prompt = this.buildReviewerPrompt(
             stageName,
-            conceptReportVersions["3_generatie"] || "",
+            conceptReportVersions?.["3_generatie"] || "",
             dossier,
             bouwplan,
             currentDate,
@@ -268,7 +268,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       }
       // For other stages, keep the previous concept report
       else {
-        conceptReport = conceptReportVersions["latest"] || "";
+        conceptReport = conceptReportVersions?.["latest"] || "";
       }
 
       return { stageOutput, conceptReport, prompt };
@@ -430,7 +430,7 @@ ${JSON.stringify(bouwplan, null, 2)}`;
 ### Datum: ${currentDate}
 
 ### Origineel Rapport:
-${conceptReportVersions["3_generatie"] || ""}
+${conceptReportVersions?.["3_generatie"] || "Geen vorig rapport beschikbaar"}
 
 ### Reviewer Feedback:
 ${reviewerFeedback}
