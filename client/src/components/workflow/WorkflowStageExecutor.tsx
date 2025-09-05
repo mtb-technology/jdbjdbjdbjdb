@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +22,7 @@ interface WorkflowStageExecutorProps {
   onCopyPrompt: () => void;
 }
 
-export function WorkflowStageExecutor({
+export const WorkflowStageExecutor = memo(function WorkflowStageExecutor({
   executeStageM,
   executeSubstepM,
   isCreatingCase,
@@ -255,4 +256,4 @@ export function WorkflowStageExecutor({
   }
 
   return null;
-}
+});
