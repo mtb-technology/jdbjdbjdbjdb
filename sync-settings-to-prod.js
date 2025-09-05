@@ -41,19 +41,43 @@ async function syncSettingsToProd(productionUrl) {
       body: JSON.stringify(devSettings)
     });
     
-    if (response.ok) {
-      const result = await response.json();
-      console.log('✅ Settings successfully synced to production!');
-      console.log(`📝 Details: ${JSON.stringify(result, null, 2)}`);
-    } else {
-      const errorText = await response.text();
+    if (!response.ok) {
+      // Handle non-2xx HTTP responses
+      let errorText = 'Unknown error';
+      try {
+        errorText = await response.text();
+      } catch (parseError) {
+        errorText = `Failed to read error response: ${parseError.message}`;
+      }
+      
       console.error('❌ Failed to sync settings to production:');
       console.error(`Status: ${response.status} ${response.statusText}`);
       console.error(`Error: ${errorText}`);
+      return;
+    }
+    
+    // Handle successful response
+    try {
+      const result = await response.json();
+      console.log('✅ Settings successfully synced to production!');
+      console.log(`📝 Details: ${JSON.stringify(result, null, 2)}`);
+    } catch (jsonError) {
+      console.log('✅ Settings successfully synced to production!');
+      console.warn('⚠️ Warning: Could not parse response JSON, but sync appears successful');
+      console.warn(`JSON Parse Error: ${jsonError.message}`);
     }
     
   } catch (error) {
-    console.error('❌ Error during sync:', error.message);
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      console.error('❌ Network error: Could not connect to production server');
+      console.error('Please check the production URL and your internet connection');
+    } else if (error instanceof SyntaxError) {
+      console.error('❌ JSON parsing error:', error.message);
+      console.error('Please check the dev-settings-backup.json file format');
+    } else {
+      console.error('❌ Unexpected error during sync:', error.message);
+    }
+    console.error('Full error details:', error);
   }
 }
 

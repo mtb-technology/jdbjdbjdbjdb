@@ -6,6 +6,21 @@ import {
   ChevronRight
 } from "lucide-react";
 import { WORKFLOW_STAGES, WorkflowStage } from "./constants";
+import type { Report } from "@shared/schema";
+import type { UseMutationResult } from "@tanstack/react-query";
+
+// Type definitions for mutations
+interface ExecuteStageVariables {
+  reportId: string;
+  stage: string;
+  customInput?: string;
+}
+
+interface ExecuteSubstepVariables {
+  substepKey: string;
+  substepType: "review" | "processing";
+  reportId: string;
+}
 
 interface WorkflowStageListProps {
   currentStageIndex: number;
@@ -14,9 +29,9 @@ interface WorkflowStageListProps {
   stageTimes: Record<string, number>;
   stageProcessing: Record<string, boolean>;
   currentStageTimer: number;
-  executeStageM: any; // Will be typed properly later
-  executeSubstepM: any; // Will be typed properly later
-  currentReport: any | null;
+  executeStageM: UseMutationResult<any, Error, ExecuteStageVariables, unknown>;
+  executeSubstepM: UseMutationResult<any, Error, ExecuteSubstepVariables, unknown>;
+  currentReport: Report | null;
   onStageClick: (index: number) => void;
   getStageStatus: (index: number) => "completed" | "current" | "pending";
 }
@@ -99,9 +114,9 @@ export function WorkflowStageList({
                 <div className="text-sm text-muted-foreground">{stage.description}</div>
                 
                 {/* Show substeps for reviewer stages */}
-                {(stage as any).substeps && status === "current" && (
+                {'substeps' in stage && stage.substeps && status === "current" && (
                   <div className="mt-2 space-y-1">
-                    {(stage as any).substeps.map((substep: any) => {
+                    {stage.substeps.map((substep) => {
                       const substepResultsForStage = substepResults[stage.key] || {};
                       const hasReviewResult = !!substepResultsForStage.review;
                       const hasProcessingResult = !!substepResultsForStage.processing;
