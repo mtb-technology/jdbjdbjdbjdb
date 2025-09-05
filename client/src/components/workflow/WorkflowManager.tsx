@@ -17,10 +17,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Clock, Workflow, AlertCircle, FileText, CheckCircle } from "lucide-react";
 import { WorkflowProvider, useWorkflow } from "./WorkflowContext";
-import { WorkflowStageList } from "./WorkflowStageList";
-import { WorkflowStageExecutor } from "./WorkflowStageExecutor";
-import { WorkflowStageResults } from "./WorkflowStageResults";
-import { StepInputOutput } from "./StepInputOutput";
+import { SimplifiedWorkflowView } from "./SimplifiedWorkflowView";
 import { WORKFLOW_STAGES } from "./constants";
 import { cleanStageResults } from "@/lib/stageResultsHelper";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
@@ -448,194 +445,13 @@ function WorkflowManagerContent({
   const isWorkflowComplete = Object.keys(state.stageResults).length === WORKFLOW_STAGES.length;
 
   return (
-    <div className="space-y-6">
-      {/* Full Input/Output Transparency View */}
-      <Card className="border-2 border-primary/30">
-        <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10">
-          <CardTitle>Complete Workflow Transparantie - Alle Prompts & Outputs</CardTitle>
-          <p className="text-sm text-muted-foreground mt-2">
-            Hieronder zie je EXACT wat naar de AI gestuurd wordt (prompts) en wat terugkomt (outputs).
-            Dit is dezelfde workflow die je handmatig zou doen in ChatGPT/Gemini, maar dan geautomatiseerd.
-          </p>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="space-y-3">
-            {WORKFLOW_STAGES.map((stage, index) => {
-              const stageResult = state.stageResults[stage.key] || "";
-              const stagePrompt = state.stagePrompts[stage.key] || "";
-              const isActive = index === state.currentStageIndex;
-              const isProcessing = state.stageProcessing[stage.key] || false;
-              const processingTime = state.stageTimes[stage.key];
-              
-              return (
-                <StepInputOutput
-                  key={stage.key}
-                  stageName={stage.label}
-                  stageIndex={index}
-                  prompt={stagePrompt}
-                  output={stageResult}
-                  isActive={isActive}
-                  isProcessing={isProcessing}
-                  processingTime={processingTime}
-                />
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Progress Overview */}
-      <Card className="border-primary/20 shadow-sm">
-        <CardContent className="p-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-lg">Control Panel</h3>
-              <div className="flex items-center gap-2">
-                {createReportMutation.isPending && (
-                  <Badge className="animate-pulse bg-orange-500">
-                    <div className="w-2 h-2 bg-white rounded-full animate-ping mr-1"></div>
-                    Case aanmaken...
-                  </Badge>
-                )}
-                <Badge variant="outline">
-                  {Object.keys(state.stageResults).length}/{WORKFLOW_STAGES.length} Stappen
-                </Badge>
-              </div>
-            </div>
-            
-            <div className="relative">
-              <Progress value={progressPercentage} className="w-full h-3" />
-              {Object.values(state.stageProcessing).some(p => p) && (
-                <div 
-                  className="absolute top-0 h-3 w-1 bg-primary animate-pulse"
-                  style={{ left: `${progressPercentage}%`, transition: 'left 0.3s ease' }}
-                />
-              )}
-            </div>
-            
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span>Huidige stap: {currentStage.label}</span>
-              {executeStageM.isPending && (
-                <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
-                  <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="font-medium">
-                    AI bezig... {state.currentStageTimer}s
-                  </span>
-                </div>
-              )}
-              {Object.keys(state.stageTimes).length > 0 && (
-                <div className="ml-auto text-xs flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  Totaal: {Object.values(state.stageTimes).reduce((a, b) => a + b, 0)}s
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Workflow Steps */}
-      <Card className="overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Workflow className="h-5 w-5 text-primary" />
-              Workflow Stappen
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              {Object.keys(state.stageProcessing).filter(key => state.stageProcessing[key]).length > 0 && (
-                <Badge className="animate-pulse" variant="default">
-                  <div className="w-2 h-2 bg-white rounded-full animate-ping mr-1"></div>
-                  Processing...
-                </Badge>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <WorkflowStageList
-            currentStageIndex={state.currentStageIndex}
-            stageResults={state.stageResults}
-            substepResults={state.substepResults}
-            stageTimes={state.stageTimes}
-            stageProcessing={state.stageProcessing}
-            currentStageTimer={state.currentStageTimer}
-            executeStageM={executeStageM}
-            executeSubstepM={executeSubstepM}
-            currentReport={state.currentReport}
-            onStageClick={(index) => dispatch({ type: "SET_STAGE_INDEX", payload: index })}
-            getStageStatus={getStageStatus}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Current Stage Execution */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            {React.createElement(currentStage.icon, { className: "h-5 w-5" })}
-            {currentStage.label}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <WorkflowStageExecutor
-            executeStageM={executeStageM}
-            executeSubstepM={executeSubstepM}
-            isCreatingCase={createReportMutation.isPending}
-            onManualExecute={() => {
-              // Handle manual execution
-              if (state.currentReport && state.manualContent) {
-                executeStageM.mutate({
-                  reportId: state.currentReport.id,
-                  stage: currentStage.key,
-                  customInput: state.manualContent,
-                });
-              }
-            }}
-            onCopyPrompt={() => {
-              // Generate and copy prompt
-              dispatch({ type: "SET_COPIED_PROMPT", copied: true });
-              setTimeout(() => dispatch({ type: "SET_COPIED_PROMPT", copied: false }), 2000);
-            }}
-          />
-          
-          <WorkflowStageResults
-            executeStageM={executeStageM}
-            isCreatingCase={createReportMutation.isPending}
-            formatReportContent={formatReportContent}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Completion Actions */}
-      {isWorkflowComplete && state.currentReport && (
-        <Card className="bg-green-50 dark:bg-green-950/20 border-green-200">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="h-6 w-6 text-green-600" />
-                <div>
-                  <h3 className="font-semibold text-green-900 dark:text-green-100">
-                    Workflow Voltooid!
-                  </h3>
-                  <p className="text-sm text-green-700 dark:text-green-300">
-                    Alle stappen zijn succesvol afgerond.
-                  </p>
-                </div>
-              </div>
-              <Button
-                onClick={() => state.currentReport && finalizeReportMutation.mutate(state.currentReport.id)}
-                disabled={finalizeReportMutation.isPending}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                Rapport Finaliseren
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+    <SimplifiedWorkflowView
+      state={state}
+      dispatch={dispatch}
+      executeStageM={executeStageM}
+      executeSubstepM={executeSubstepM}
+      isCreatingCase={createReportMutation.isPending}
+    />
   );
 }
 
