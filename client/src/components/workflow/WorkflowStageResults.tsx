@@ -32,6 +32,14 @@ export function WorkflowStageResults({
   const currentStage = WORKFLOW_STAGES[currentStageIndex];
   const currentStageResult = stageResults[currentStage.key];
 
+  // Debug logging
+  console.log("🔍 StageResults Debug:", {
+    currentStageKey: currentStage.key,
+    hasResult: !!currentStageResult,
+    resultLength: currentStageResult?.length,
+    resultPreview: currentStageResult?.slice(0, 100)
+  });
+
   if (!currentStageResult) return null;
 
   const executeCurrentStage = () => {
@@ -172,9 +180,9 @@ export function WorkflowStageResults({
               data-testid="div-concept-report"
             />
           ) : (
-            <div className="p-4 bg-muted/50 rounded-lg max-h-[400px] overflow-y-auto">
-              <pre className="whitespace-pre-wrap text-sm" data-testid="pre-stage-result">
-                {currentStageResult}
+            <div className="p-4 bg-muted/50 rounded-lg max-h-[600px] overflow-y-auto">
+              <pre className="whitespace-pre-wrap text-sm font-mono" data-testid="pre-stage-result">
+                {currentStageResult || "Geen resultaat beschikbaar"}
               </pre>
             </div>
           )}
