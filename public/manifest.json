@@ -1,0 +1,41 @@
+{
+  "name": "De Fiscale Analist",
+  "short_name": "Fiscale Analist",
+  "description": "Dutch fiscal report generation application with AI-powered analysis",
+  "theme_color": "#1e40af",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png", 
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "finance", "productivity"],
+  "lang": "nl",
+  "shortcuts": [
+    {
+      "name": "Nieuwe Case",
+      "short_name": "Nieuwe Case",
+      "url": "/",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Cases Overzicht",
+      "short_name": "Cases",
+      "url": "/cases",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

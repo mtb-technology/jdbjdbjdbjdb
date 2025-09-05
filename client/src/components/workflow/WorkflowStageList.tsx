@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { 
   CheckCircle,
@@ -36,7 +37,7 @@ interface WorkflowStageListProps {
   getStageStatus: (index: number) => "completed" | "current" | "pending";
 }
 
-export function WorkflowStageList({
+export const WorkflowStageList = memo(function WorkflowStageList({
   currentStageIndex,
   stageResults,
   substepResults,
@@ -210,4 +211,4 @@ export function WorkflowStageList({
       </div>
     </div>
   );
-}
+});
