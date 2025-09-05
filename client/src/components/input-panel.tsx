@@ -1,4 +1,4 @@
-import { useState, useCallback, memo } from "react";
+import { useState, useCallback, memo, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,16 @@ const InputPanel = memo(function InputPanel({
   onGenerate,
   isGenerating,
 }: InputPanelProps) {
+  const timeoutsRef = useRef<Set<NodeJS.Timeout>>(new Set());
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      timeoutsRef.current.clear();
+    };
+  }, []);
+
   const handleSave = useCallback(() => {
     const saveData = {
       dossier: dossierData,
@@ -46,11 +56,13 @@ const InputPanel = memo(function InputPanel({
       const originalText = button.textContent;
       button.textContent = '✓ Opgeslagen';
       const timeout = setTimeout(() => {
-        button.textContent = originalText;
+        if (button.textContent === '✓ Opgeslagen') {
+          button.textContent = originalText;
+        }
+        timeoutsRef.current.delete(timeout);
       }, 2000);
       
-      // Store timeout reference for potential cleanup
-      (button as any).__timeout = timeout;
+      timeoutsRef.current.add(timeout);
     }
   }, [dossierData, bouwplanData]);
 
@@ -68,11 +80,13 @@ const InputPanel = memo(function InputPanel({
           const originalText = button.textContent;
           button.textContent = '✓ Geladen';
           const timeout = setTimeout(() => {
-            button.textContent = originalText;
+            if (button.textContent === '✓ Geladen') {
+              button.textContent = originalText;
+            }
+            timeoutsRef.current.delete(timeout);
           }, 2000);
           
-          // Store timeout reference for potential cleanup
-          (button as any).__timeout = timeout;
+          timeoutsRef.current.add(timeout);
         }
       } catch (error) {
         console.error('Error loading saved data:', error);

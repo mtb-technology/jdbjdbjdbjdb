@@ -12,8 +12,8 @@ import modelTestRoutes from "./routes/model-test";
 import { ServerError, asyncHandler } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 
-// Track active stage requests to prevent duplicates
-const activeStageRequests = new Set<string>();
+// Track active stage requests to prevent duplicates - using Map for better race condition handling
+const activeStageRequests = new Map<string, Promise<any>>();
 
 const generateReportSchema = z.object({
   dossier: dossierSchema,
@@ -103,21 +103,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/reports/:id/stage/:stage", async (req, res) => {
     const requestKey = `${req.params.id}-${req.params.stage}`;
     
-    // Simple in-memory deduplication to prevent concurrent requests
+    // More robust deduplication to prevent race conditions
     if (activeStageRequests.has(requestKey)) {
-      res.status(409).json({ message: "Stage wordt al uitgevoerd, wacht even..." });
-      return;
+      // Wait for the existing request to complete, then return its result
+      try {
+        await activeStageRequests.get(requestKey);
+        // Fetch the updated report to return current state
+        const report = await storage.getReport(req.params.id);
+        if (report) {
+          res.json(createApiSuccessResponse(report, "Stage reeds uitgevoerd"));
+        } else {
+          res.status(404).json({ message: "Rapport niet gevonden" });
+        }
+        return;
+      } catch (error) {
+        res.status(500).json({ message: "Fout bij het wachten op actieve stage uitvoering" });
+        return;
+      }
     }
     
-    activeStageRequests.add(requestKey);
-    try {
+    // Create a promise for this stage execution  
+    const stageExecutionPromise = (async () => {
       const { id, stage } = req.params;
       const { customInput } = req.body;
 
       const report = await storage.getReport(id);
       if (!report) {
-        res.status(404).json({ message: "Rapport niet gevonden" });
-        return;
+        throw new Error("Rapport niet gevonden");
       }
 
       // Execute the specific stage
@@ -172,19 +184,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedReport = await storage.updateReport(id, updateData);
-
-      res.json(createApiSuccessResponse({
+      
+      return {
         report: updatedReport,
         stageResult: stageExecution.stageOutput,
         conceptReport: stageExecution.conceptReport,
         prompt: stageExecution.prompt,
-      }, "Stage succesvol uitgevoerd"));
-
+      };
+    })();
+    
+    // Store the promise to prevent concurrent executions
+    activeStageRequests.set(requestKey, stageExecutionPromise.then(() => {}));
+    
+    try {
+      const result = await stageExecutionPromise;
+      res.json(createApiSuccessResponse(result, "Stage succesvol uitgevoerd"));
     } catch (error) {
       console.error(`Error executing stage ${req.params.stage}:`, error);
-      res.status(500).json({ 
-        message: `Fout bij uitvoeren van stap ${req.params.stage}` 
-      });
+      if (error instanceof Error && error.message === "Rapport niet gevonden") {
+        res.status(404).json({ message: error.message });
+      } else {
+        res.status(500).json({ 
+          message: `Fout bij uitvoeren van stap ${req.params.stage}` 
+        });
+      }
     } finally {
       // Always clean up the tracking
       activeStageRequests.delete(requestKey);
