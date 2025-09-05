@@ -264,10 +264,10 @@ function WorkflowManagerContent({
 
   // Execute substep mutation
   const executeSubstepM = useMutation({
-    mutationFn: async ({ substepKey, substepType, reportId }: { substepKey: string; substepType: "review" | "processing"; reportId: string }) => {
+    mutationFn: async ({ substepKey, substepType, reportId, customInput }: { substepKey: string; substepType: "review" | "processing"; reportId: string; customInput?: string }) => {
       const endpoint = substepType === "review" ? substepKey : "5_feedback_verwerker";
       const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${endpoint}`, {
-        customInput: state.customInput,
+        customInput: customInput || state.customInput,
       });
       const data = await response.json();
       // Handle new API response format
