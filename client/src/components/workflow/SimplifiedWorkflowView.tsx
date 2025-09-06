@@ -51,6 +51,8 @@ export function SimplifiedWorkflowView({
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({});
   const [showCustomInput, setShowCustomInput] = useState<Record<string, boolean>>({});
+  const [editingPrompts, setEditingPrompts] = useState<Record<string, string>>({});
+  const [showPromptEditor, setShowPromptEditor] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
   
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
@@ -114,6 +116,58 @@ export function SimplifiedWorkflowView({
     }));
   };
 
+  const togglePromptEditor = (stageKey: string) => {
+    setShowPromptEditor(prev => {
+      const newState = {
+        ...prev,
+        [stageKey]: !prev[stageKey]
+      };
+      
+      // Load current prompt into editor when opening
+      if (!prev[stageKey]) {
+        const currentPrompt = state.stagePrompts[stageKey] || promptPreviews[stageKey] || '';
+        if (currentPrompt) {
+          setEditingPrompts(prevPrompts => ({
+            ...prevPrompts,
+            [stageKey]: currentPrompt
+          }));
+        } else {
+          // Fetch prompt if not available
+          fetchPromptPreview(stageKey);
+        }
+      }
+      
+      return newState;
+    });
+  };
+
+  const updateEditingPrompt = (stageKey: string, value: string) => {
+    setEditingPrompts(prev => ({
+      ...prev,
+      [stageKey]: value
+    }));
+  };
+
+  const executeWithCustomPrompt = (stageKey: string) => {
+    if (!state.currentReport) return;
+    
+    const customPrompt = editingPrompts[stageKey];
+    if (!customPrompt) {
+      toast({
+        title: "Geen prompt",
+        description: "Er is geen prompt om uit te voeren",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    executeStageM.mutate({
+      reportId: state.currentReport.id,
+      stage: stageKey,
+      customInput: customPrompt,
+    });
+  };
+
   // Fetch prompt preview for a stage
   const fetchPromptPreview = async (stageKey: string) => {
     if (!state.currentReport || promptPreviews[stageKey]) return;
@@ -145,7 +199,7 @@ export function SimplifiedWorkflowView({
 
   // Auto-fetch prompt preview for current stage and completed stages in detailed view
   useEffect(() => {
-    if (viewMode === "detailed" && state.currentReport) {
+    if (state.currentReport) {
       // Fetch for current stage if not completed
       if (currentStage && !state.stageResults[currentStage.key]) {
         fetchPromptPreview(currentStage.key);
@@ -161,7 +215,22 @@ export function SimplifiedWorkflowView({
         }
       });
     }
-  }, [viewMode, state.currentStageIndex, state.currentReport, state.stageResults, state.stagePrompts]);
+  }, [state.currentStageIndex, state.currentReport, state.stageResults, state.stagePrompts]);
+
+  // Load prompt into editor when preview becomes available
+  useEffect(() => {
+    Object.entries(showPromptEditor).forEach(([stageKey, isShowing]) => {
+      if (isShowing && !editingPrompts[stageKey]) {
+        const availablePrompt = state.stagePrompts[stageKey] || promptPreviews[stageKey];
+        if (availablePrompt) {
+          setEditingPrompts(prev => ({
+            ...prev,
+            [stageKey]: availablePrompt
+          }));
+        }
+      }
+    });
+  }, [showPromptEditor, state.stagePrompts, promptPreviews, editingPrompts]);
 
   return (
     <div className="space-y-4 max-w-full overflow-hidden">
@@ -372,22 +441,94 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
 
-                        {/* Custom Input Interface */}
+                        {/* Prompt Control Interface */}
                         {(isActive || isCompleted) && (
                           <div className="space-y-3">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => toggleCustomInput(stage.key)}
+                                onClick={() => togglePromptEditor(stage.key)}
                                 className="text-xs"
                               >
                                 <Edit3 className="mr-1 h-3 w-3" />
-                                {showCustomInput[stage.key] ? 'Verberg' : 'Extra input toevoegen'}
+                                {showPromptEditor[stage.key] ? 'Verberg prompt editor' : 'Bewerk volledige prompt'}
                               </Button>
+                              
+                              {!showPromptEditor[stage.key] && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => toggleCustomInput(stage.key)}
+                                  className="text-xs"
+                                >
+                                  <Plus className="mr-1 h-3 w-3" />
+                                  {showCustomInput[stage.key] ? 'Verberg' : 'Extra input toevoegen'}
+                                </Button>
+                              )}
                             </div>
                             
-                            {showCustomInput[stage.key] && (
+                            {/* Full Prompt Editor */}
+                            {showPromptEditor[stage.key] && (
+                              <div className="space-y-3">
+                                <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                  <div className="flex items-center justify-between p-2 border-b border-blue-200 dark:border-blue-800">
+                                    <div className="flex items-center gap-2">
+                                      <Edit3 className="h-3 w-3 text-blue-600" />
+                                      <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                                        VOLLEDIGE PROMPT BEWERKEN
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="p-2">
+                                    <Textarea
+                                      value={editingPrompts[stage.key] || ''}
+                                      onChange={(e) => updateEditingPrompt(stage.key, e.target.value)}
+                                      className="text-xs font-mono min-h-60 resize-y"
+                                      placeholder="De prompt wordt hier geladen..."
+                                    />
+                                  </div>
+                                </div>
+                                
+                                <div className="flex gap-2">
+                                  <Button
+                                    onClick={() => executeWithCustomPrompt(stage.key)}
+                                    disabled={executeStageM.isPending || !editingPrompts[stage.key]}
+                                    className="flex-1"
+                                    size="sm"
+                                  >
+                                    {executeStageM.isPending ? (
+                                      <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                        AI is bezig...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Send className="mr-2 h-4 w-4" />
+                                        Uitvoeren met aangepaste prompt
+                                      </>
+                                    )}
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      const originalPrompt = state.stagePrompts[stage.key] || promptPreviews[stage.key] || '';
+                                      updateEditingPrompt(stage.key, originalPrompt);
+                                    }}
+                                  >
+                                    Reset
+                                  </Button>
+                                </div>
+                                
+                                <p className="text-xs text-muted-foreground">
+                                  Je kunt de volledige prompt bewerken en direct uitvoeren. Klik Reset om terug te gaan naar de originele prompt.
+                                </p>
+                              </div>
+                            )}
+                            
+                            {/* Quick Extra Input (when not using full editor) */}
+                            {!showPromptEditor[stage.key] && showCustomInput[stage.key] && (
                               <div className="space-y-2">
                                 <Textarea
                                   placeholder="Voeg hier extra instructies of informatie toe die aan de prompt moet worden toegevoegd..."
