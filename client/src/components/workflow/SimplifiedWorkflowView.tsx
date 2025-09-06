@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { 
   Play, 
   CheckCircle, 
@@ -20,7 +21,9 @@ import {
   FileText,
   Zap,
   RefreshCw,
-  Info
+  Info,
+  Plus,
+  Edit3
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WORKFLOW_STAGES } from "./constants";
@@ -46,6 +49,8 @@ export function SimplifiedWorkflowView({
   const [viewMode, setViewMode] = useState<"simple" | "detailed">("simple");
   const [promptPreviews, setPromptPreviews] = useState<Record<string, string>>({});
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
+  const [customInputs, setCustomInputs] = useState<Record<string, string>>({});
+  const [showCustomInput, setShowCustomInput] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
   
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
@@ -86,11 +91,27 @@ export function SimplifiedWorkflowView({
   const executeStage = (stageKey: string) => {
     if (!state.currentReport) return;
     
+    const customInput = customInputs[stageKey] || state.customInput || undefined;
+    
     executeStageM.mutate({
       reportId: state.currentReport.id,
       stage: stageKey,
-      customInput: state.customInput || undefined,
+      customInput,
     });
+  };
+
+  const toggleCustomInput = (stageKey: string) => {
+    setShowCustomInput(prev => ({
+      ...prev,
+      [stageKey]: !prev[stageKey]
+    }));
+  };
+
+  const updateCustomInput = (stageKey: string, value: string) => {
+    setCustomInputs(prev => ({
+      ...prev,
+      [stageKey]: value
+    }));
   };
 
   // Fetch prompt preview for a stage
@@ -366,8 +387,8 @@ export function SimplifiedWorkflowView({
                     {/* Detailed View: Show full prompts and outputs */}
                     {viewMode === "detailed" && (
                       <div className="mt-3 space-y-3">
-                        {/* Show Prompt Preview for non-completed stages and active stage */}
-                        {(!isCompleted || isActive) && !stagePrompt && (promptPreviews[stage.key] || loadingPreview === stage.key || isActive) && (
+                        {/* Show Prompt Preview for any stage when available */}
+                        {!stagePrompt && (promptPreviews[stage.key] || loadingPreview === stage.key) && (
                           <div className="space-y-2">
                             <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                               <div className="flex items-center justify-between p-2 border-b border-yellow-200 dark:border-yellow-800">
@@ -388,7 +409,7 @@ export function SimplifiedWorkflowView({
                                   </Button>
                                 )}
                               </div>
-                              <div className="p-2 max-h-32 overflow-y-auto">
+                              <div className="p-2 max-h-96 overflow-y-auto">
                                 {loadingPreview === stage.key ? (
                                   <div className="flex items-center gap-2 text-xs text-yellow-600">
                                     <div className="w-3 h-3 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin" />
@@ -396,7 +417,7 @@ export function SimplifiedWorkflowView({
                                   </div>
                                 ) : (
                                   <pre className="text-xs font-mono whitespace-pre-wrap text-yellow-800 dark:text-yellow-200">
-                                    {promptPreviews[stage.key]?.slice(0, 500)}{promptPreviews[stage.key]?.length > 500 ? '...' : ''}
+                                    {promptPreviews[stage.key]}
                                   </pre>
                                 )}
                               </div>
@@ -424,9 +445,9 @@ export function SimplifiedWorkflowView({
                                   <Copy className="h-3 w-3" />
                                 </Button>
                               </div>
-                              <div className="p-2 max-h-32 overflow-y-auto">
+                              <div className="p-2 max-h-96 overflow-y-auto">
                                 <pre className="text-xs font-mono whitespace-pre-wrap text-blue-800 dark:text-blue-200">
-                                  {stagePrompt.slice(0, 500)}{stagePrompt.length > 500 ? '...' : ''}
+                                  {stagePrompt}
                                 </pre>
                               </div>
                             </div>
@@ -453,9 +474,9 @@ export function SimplifiedWorkflowView({
                                   <Copy className="h-3 w-3" />
                                 </Button>
                               </div>
-                              <div className="p-2 max-h-32 overflow-y-auto">
+                              <div className="p-2 max-h-96 overflow-y-auto">
                                 <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200">
-                                  {stageResult.slice(0, 500)}{stageResult.length > 500 ? '...' : ''}
+                                  {stageResult}
                                 </pre>
                               </div>
                             </div>
