@@ -71,39 +71,39 @@ export function SimplifiedWorkflowView({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Progress Header */}
+    <div className="space-y-4 max-w-full overflow-hidden">
+      {/* Progress Header - Mobile Responsive */}
       <Card className="bg-gradient-to-r from-primary/5 to-primary/10">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between mb-4">
+        <CardContent className="p-4 md:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-3">
-              <Workflow className="h-6 w-6 text-primary" />
-              <h2 className="text-xl font-bold">Fiscale Rapport Workflow</h2>
+              <Workflow className="h-5 w-5 md:h-6 md:w-6 text-primary" />
+              <h2 className="text-lg md:text-xl font-bold">Fiscale Rapport Workflow</h2>
             </div>
-            <div className="flex items-center gap-4">
-              <Badge variant="outline" className="text-sm">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+              <Badge variant="outline" className="text-xs md:text-sm w-fit">
                 {Object.keys(state.stageResults).length}/{WORKFLOW_STAGES.length} Voltooid
               </Badge>
               {Object.keys(state.stageTimes).length > 0 && (
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
+                <div className="flex items-center gap-1 text-xs md:text-sm text-muted-foreground">
+                  <Clock className="h-3 w-3 md:h-4 md:w-4" />
                   {Object.values(state.stageTimes).reduce((a: number, b: any) => a + (Number(b) || 0), 0)}s
                 </div>
               )}
             </div>
           </div>
           
-          <Progress value={progressPercentage} className="h-3 mb-3" />
+          <Progress value={progressPercentage} className="h-2 md:h-3 my-3" />
           
-          {/* View Mode Toggle */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
+          {/* View Mode Toggle - Mobile Responsive */}
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <p className="text-xs md:text-sm text-muted-foreground">
               Stap {state.currentStageIndex + 1}: {currentStage.label}
             </p>
             <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
-              <TabsList className="h-8">
-                <TabsTrigger value="simple" className="text-xs">Simpel</TabsTrigger>
-                <TabsTrigger value="detailed" className="text-xs">Gedetailleerd</TabsTrigger>
+              <TabsList className="h-7 md:h-8 w-full md:w-auto">
+                <TabsTrigger value="simple" className="text-xs flex-1 md:flex-none">Simpel</TabsTrigger>
+                <TabsTrigger value="detailed" className="text-xs flex-1 md:flex-none">Details</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -121,7 +121,7 @@ export function SimplifiedWorkflowView({
             Hieronder zie je EXACT wat naar de AI wordt gestuurd en wat terugkomt - precies zoals je handmatig zou doen.
           </p>
         </CardHeader>
-        <CardContent className="p-4">
+        <CardContent className="p-3 md:p-4">
           {WORKFLOW_STAGES.map((stage, index) => {
             const stageResult = state.stageResults[stage.key] || "";
             const stagePrompt = state.stagePrompts[stage.key] || "";
@@ -131,24 +131,24 @@ export function SimplifiedWorkflowView({
             const processingTime = state.stageTimes[stage.key];
             
             return (
-              <div key={`transparency-${stage.key}`} className={`border rounded-lg p-4 mb-4 ${
+              <div key={`transparency-${stage.key}`} className={`border rounded-lg p-3 md:p-4 mb-3 md:mb-4 ${
                 isActive ? 'ring-2 ring-primary border-primary bg-primary/5' : 
                 isCompleted ? 'border-green-500/50 bg-green-50/30 dark:bg-green-950/20' : 
                 'border-gray-200 opacity-60'
               }`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-3">
+                  <div className="flex items-center gap-2 md:gap-3">
+                    <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                       isCompleted ? 'bg-green-500 text-white' :
                       isActive ? 'bg-primary text-white' :
                       'bg-gray-200 text-gray-400'
                     }`}>
-                      {isCompleted ? <CheckCircle className="h-5 w-5" /> : 
-                       isProcessing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> :
-                       <span className="text-sm font-medium">{index + 1}</span>}
+                      {isCompleted ? <CheckCircle className="h-4 w-4 md:h-5 md:w-5" /> : 
+                       isProcessing ? <div className="w-3 h-3 md:w-4 md:h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> :
+                       <span className="text-xs md:text-sm font-medium">{index + 1}</span>}
                     </div>
-                    <div>
-                      <h3 className="font-medium">{stage.label}</h3>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-medium text-sm md:text-base truncate">{stage.label}</h3>
                       {processingTime && (
                         <Badge variant="outline" className="text-xs mt-1">
                           {processingTime}s
@@ -159,21 +159,21 @@ export function SimplifiedWorkflowView({
                   {isProcessing && (
                     <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
                       <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="text-sm font-medium">AI bezig...</span>
+                      <span className="text-xs md:text-sm font-medium">AI bezig...</span>
                     </div>
                   )}
                 </div>
 
-                {/* Input/Output Display */}
+                {/* Input/Output Display - Mobile Responsive */}
                 {(stagePrompt || stageResult || isActive) && (
-                  <div className="space-y-4">
+                  <div className="space-y-3 md:space-y-4">
                     {/* AI Input (Prompt) */}
                     {stagePrompt && (
-                      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                        <div className="flex items-center justify-between p-3 border-b border-blue-200 dark:border-blue-800">
+                      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg overflow-hidden">
+                        <div className="flex items-center justify-between p-2 md:p-3 border-b border-blue-200 dark:border-blue-800">
                           <div className="flex items-center gap-2">
-                            <Send className="h-4 w-4 text-blue-600" />
-                            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                            <Send className="h-3 w-3 md:h-4 md:w-4 text-blue-600" />
+                            <span className="text-xs md:text-sm font-medium text-blue-700 dark:text-blue-300">
                               Prompt naar AI
                             </span>
                           </div>
@@ -181,13 +181,13 @@ export function SimplifiedWorkflowView({
                             variant="ghost"
                             size="sm"
                             onClick={() => copyToClipboard(stagePrompt, "Prompt")}
-                            className="h-6 text-blue-600 hover:text-blue-700"
+                            className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
                           >
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
-                        <div className="p-3 max-h-60 overflow-y-auto">
-                          <pre className="text-xs font-mono whitespace-pre-wrap text-blue-800 dark:text-blue-200">
+                        <div className="p-2 md:p-3 max-h-40 md:max-h-60 overflow-y-auto">
+                          <pre className="text-xs font-mono whitespace-pre-wrap text-blue-800 dark:text-blue-200 break-words">
                             {stagePrompt}
                           </pre>
                         </div>
@@ -197,17 +197,17 @@ export function SimplifiedWorkflowView({
                     {/* Arrow between input and output */}
                     {stagePrompt && stageResult && (
                       <div className="flex justify-center">
-                        <ArrowRight className="h-5 w-5 text-gray-400" />
+                        <ArrowRight className="h-4 w-4 md:h-5 md:w-5 text-gray-400" />
                       </div>
                     )}
 
                     {/* AI Output (Response) */}
                     {stageResult && (
-                      <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
-                        <div className="flex items-center justify-between p-3 border-b border-green-200 dark:border-green-800">
+                      <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg overflow-hidden">
+                        <div className="flex items-center justify-between p-2 md:p-3 border-b border-green-200 dark:border-green-800">
                           <div className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            <span className="text-sm font-medium text-green-700 dark:text-green-300">
+                            <CheckCircle className="h-3 w-3 md:h-4 md:w-4 text-green-600" />
+                            <span className="text-xs md:text-sm font-medium text-green-700 dark:text-green-300">
                               AI Response
                             </span>
                           </div>
@@ -215,13 +215,13 @@ export function SimplifiedWorkflowView({
                             variant="ghost"
                             size="sm"
                             onClick={() => copyToClipboard(stageResult, "Response")}
-                            className="h-6 text-green-600 hover:text-green-700"
+                            className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
                           >
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
-                        <div className="p-3 max-h-60 overflow-y-auto">
-                          <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200">
+                        <div className="p-2 md:p-3 max-h-40 md:max-h-60 overflow-y-auto">
+                          <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200 break-words">
                             {stageResult.slice(0, 1000)}{stageResult.length > 1000 ? '...' : ''}
                           </pre>
                         </div>
