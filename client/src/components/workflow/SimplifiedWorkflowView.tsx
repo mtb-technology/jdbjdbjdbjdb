@@ -143,12 +143,25 @@ export function SimplifiedWorkflowView({
 
   const totalProcessingTime = Object.values(state.stageTimes).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
 
-  // Auto-fetch prompt preview for current stage in detailed view
+  // Auto-fetch prompt preview for current stage and completed stages in detailed view
   useEffect(() => {
-    if (viewMode === "detailed" && currentStage && !state.stageResults[currentStage.key]) {
-      fetchPromptPreview(currentStage.key);
+    if (viewMode === "detailed" && state.currentReport) {
+      // Fetch for current stage if not completed
+      if (currentStage && !state.stageResults[currentStage.key]) {
+        fetchPromptPreview(currentStage.key);
+      }
+      
+      // Fetch prompts for completed stages that don't have stored prompts
+      WORKFLOW_STAGES.forEach(stage => {
+        const hasResult = !!state.stageResults[stage.key];
+        const hasStoredPrompt = !!state.stagePrompts[stage.key];
+        
+        if (hasResult && !hasStoredPrompt && !promptPreviews[stage.key]) {
+          fetchPromptPreview(stage.key);
+        }
+      });
     }
-  }, [viewMode, state.currentStageIndex, state.currentReport]);
+  }, [viewMode, state.currentStageIndex, state.currentReport, state.stageResults, state.stagePrompts]);
 
   return (
     <div className="space-y-4 max-w-full overflow-hidden">
@@ -388,7 +401,7 @@ export function SimplifiedWorkflowView({
                     {viewMode === "detailed" && (
                       <div className="mt-3 space-y-3">
                         {/* Show Prompt Preview for any stage when available */}
-                        {!stagePrompt && (promptPreviews[stage.key] || loadingPreview === stage.key) && (
+                        {(!stagePrompt || !isCompleted) && (promptPreviews[stage.key] || loadingPreview === stage.key) && (
                           <div className="space-y-2">
                             <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                               <div className="flex items-center justify-between p-2 border-b border-yellow-200 dark:border-yellow-800">
@@ -425,8 +438,8 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
                         
-                        {/* Show Input/Prompt after execution */}
-                        {stagePrompt && (
+                        {/* Show Input/Prompt after execution or for completed stages */}
+                        {(stagePrompt || (isCompleted && promptPreviews[stage.key])) && (
                           <div className="space-y-2">
                             <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                               <div className="flex items-center justify-between p-2 border-b border-blue-200 dark:border-blue-800">
@@ -439,7 +452,7 @@ export function SimplifiedWorkflowView({
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => copyToClipboard(stagePrompt, "Prompt")}
+                                  onClick={() => copyToClipboard(stagePrompt || promptPreviews[stage.key], "Prompt")}
                                   className="h-6 w-6 p-0"
                                 >
                                   <Copy className="h-3 w-3" />
@@ -447,7 +460,7 @@ export function SimplifiedWorkflowView({
                               </div>
                               <div className="p-2 max-h-96 overflow-y-auto">
                                 <pre className="text-xs font-mono whitespace-pre-wrap text-blue-800 dark:text-blue-200">
-                                  {stagePrompt}
+                                  {stagePrompt || promptPreviews[stage.key]}
                                 </pre>
                               </div>
                             </div>
@@ -483,11 +496,42 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
 
+                        {/* Custom Input Interface */}
+                        {(isActive || isCompleted) && (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleCustomInput(stage.key)}
+                                className="text-xs"
+                              >
+                                <Edit3 className="mr-1 h-3 w-3" />
+                                {showCustomInput[stage.key] ? 'Verberg' : 'Extra input toevoegen'}
+                              </Button>
+                            </div>
+                            
+                            {showCustomInput[stage.key] && (
+                              <div className="space-y-2">
+                                <Textarea
+                                  placeholder="Voeg hier extra instructies of informatie toe die aan de prompt moet worden toegevoegd..."
+                                  value={customInputs[stage.key] || ''}
+                                  onChange={(e) => updateCustomInput(stage.key, e.target.value)}
+                                  className="text-xs min-h-20"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  Deze tekst wordt toegevoegd aan de standaard prompt voor deze stap
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {/* Action buttons for active stage */}
                         {isActive && !isCompleted && (
                           <>
                             {isReviewer ? (
-                              <div className="space-y-3">
+                              <div className="space-y-3 mt-3">
                                 {!hasReview && (
                                   <Button 
                                     onClick={() => state.currentReport && executeSubstepM.mutate({
@@ -524,24 +568,26 @@ export function SimplifiedWorkflowView({
                                 )}
                               </div>
                             ) : (
-                              <Button 
-                                onClick={executeCurrentStage}
-                                disabled={isProcessing || !canStart}
-                                className="w-full"
-                                size="sm"
-                              >
-                                {isProcessing ? (
-                                  <>
-                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                    AI is bezig...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Play className="mr-2 h-4 w-4" />
-                                    Start deze stap
-                                  </>
-                                )}
-                              </Button>
+                              <div className="mt-3">
+                                <Button 
+                                  onClick={executeCurrentStage}
+                                  disabled={isProcessing || !canStart}
+                                  className="w-full"
+                                  size="sm"
+                                >
+                                  {isProcessing ? (
+                                    <>
+                                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                      AI is bezig...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Play className="mr-2 h-4 w-4" />
+                                      Start deze stap
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
                             )}
                           </>
                         )}
