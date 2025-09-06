@@ -24,7 +24,8 @@ import {
   RefreshCw,
   Info,
   Plus,
-  Edit3
+  Edit3,
+  Activity
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WORKFLOW_STAGES } from "./constants";
@@ -54,6 +55,8 @@ export function SimplifiedWorkflowView({
   const [showCustomInput, setShowCustomInput] = useState<Record<string, boolean>>({});
   const [editingPrompts, setEditingPrompts] = useState<Record<string, string>>({});
   const [showPromptEditor, setShowPromptEditor] = useState<Record<string, boolean>>({});
+  const [stageProgress, setStageProgress] = useState<Record<string, { progress: number; status: string; startTime?: number; estimatedTime?: number }>>({});
+  const [heartbeat, setHeartbeat] = useState<Record<string, number>>({});
   const { toast } = useToast();
   
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
@@ -235,6 +238,31 @@ export function SimplifiedWorkflowView({
     processing: '#f97316'
   };
 
+  // Calculate estimated time remaining for active processes
+  const calculateEstimatedTime = (stageKey: string) => {
+    const progress = stageProgress[stageKey];
+    if (!progress || !progress.startTime) return null;
+    
+    const elapsed = Date.now() - progress.startTime;
+    const historicalTime = completedStages.find(s => s.stage === stageKey)?.time || avgProcessingTime;
+    
+    if (progress.progress > 0) {
+      const estimatedTotal = elapsed / (progress.progress / 100);
+      return Math.max(0, estimatedTotal - elapsed);
+    }
+    
+    return Math.max(0, (historicalTime * 1000) - elapsed);
+  };
+
+  const formatTimeRemaining = (ms: number | null) => {
+    if (!ms) return 'Onbekend';
+    const seconds = Math.ceil(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+  };
+
   // Timeline data for line chart
   const timelineData = performanceData.map((stage, index) => ({
     step: index + 1,
@@ -277,6 +305,60 @@ export function SimplifiedWorkflowView({
       }
     });
   }, [showPromptEditor, state.stagePrompts, promptPreviews, editingPrompts]);
+
+  // Heartbeat and progress tracking for active processes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHeartbeat(prev => {
+        const newHeartbeat = { ...prev };
+        Object.keys(state.stageProcessing || {}).forEach(stageKey => {
+          if (state.stageProcessing[stageKey]) {
+            newHeartbeat[stageKey] = (newHeartbeat[stageKey] || 0) + 1;
+          }
+        });
+        return newHeartbeat;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [state.stageProcessing]);
+
+  // Track when stages start and stop processing
+  useEffect(() => {
+    const newProcessing = state.stageProcessing || {};
+    const currentProcessingKeys = Object.keys(newProcessing).filter(key => newProcessing[key]);
+    
+    currentProcessingKeys.forEach(stageKey => {
+      if (!stageProgress[stageKey]) {
+        // Stage just started processing
+        setStageProgress(prev => ({
+          ...prev,
+          [stageKey]: {
+            progress: 0,
+            status: 'AI specialist start met analyse...',
+            startTime: Date.now(),
+            estimatedTime: completedStages.find(s => s.stage === stageKey)?.time || avgProcessingTime
+          }
+        }));
+      }
+    });
+
+    // Clean up completed stages
+    Object.keys(stageProgress).forEach(stageKey => {
+      if (!newProcessing[stageKey]) {
+        setStageProgress(prev => {
+          const newPrev = { ...prev };
+          delete newPrev[stageKey];
+          return newPrev;
+        });
+        setHeartbeat(prev => {
+          const newPrev = { ...prev };
+          delete newPrev[stageKey];
+          return newPrev;
+        });
+      }
+    });
+  }, [state.stageProcessing, completedStages, avgProcessingTime, stageProgress]);
 
   return (
     <div className="space-y-4 max-w-full overflow-hidden">
@@ -650,6 +732,92 @@ export function SimplifiedWorkflowView({
                                     </>
                                   )}
                                 </Button>
+                                
+                                {/* Enhanced Processing indicator */}
+                                {isProcessing && (
+                                  <div className="mt-3 p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                    <div className="space-y-3">
+                                      {/* Main status */}
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                          <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                                            {stageProgress[stage.key]?.status || 'AI specialist aan het werk...'}
+                                          </span>
+                                        </div>
+                                        <div className="text-xs text-blue-600 dark:text-blue-400">
+                                          {heartbeat[stage.key] ? `${heartbeat[stage.key]}s` : ''}
+                                        </div>
+                                      </div>
+                                      
+                                      {/* Progress bar with estimated time */}
+                                      <div className="space-y-2">
+                                        <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
+                                          <div 
+                                            className="bg-blue-600 h-2 rounded-full transition-all duration-1000" 
+                                            style={{ 
+                                              width: `${Math.min(95, Math.max(5, (heartbeat[stage.key] || 0) * 2))}%`,
+                                              animationDuration: heartbeat[stage.key] > 30 ? '2s' : '1s'
+                                            }} 
+                                          />
+                                        </div>
+                                        
+                                        {/* Time information */}
+                                        <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
+                                          <span>
+                                            Verstreken: {heartbeat[stage.key] || 0}s
+                                          </span>
+                                          {(() => {
+                                            const estimated = calculateEstimatedTime(stage.key);
+                                            const historicalTime = completedStages.find(s => s.stage === stage.key)?.time || avgProcessingTime;
+                                            return (
+                                              <span>
+                                                {estimated !== null ? (
+                                                  `Nog ~${formatTimeRemaining(estimated)}`
+                                                ) : (
+                                                  `Gemiddeld: ${Math.round(historicalTime)}s`
+                                                )}
+                                              </span>
+                                            );
+                                          })()} 
+                                        </div>
+                                      </div>
+                                      
+                                      {/* Activity status */}
+                                      <div className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
+                                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                                        <span>Actief - AI genereert inhoud</span>
+                                        {heartbeat[stage.key] > 60 && (
+                                          <span className="ml-2 text-orange-600">
+                                            (Complexe analyse - kan langer duren)
+                                          </span>
+                                        )}
+                                      </div>
+                                      
+                                      {/* Cancel option for long running processes */}
+                                      {heartbeat[stage.key] > 90 && (
+                                        <div className="pt-2 border-t border-blue-300 dark:border-blue-700">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-xs text-orange-700 dark:text-orange-300">
+                                              ⚠️ Proces duurt langer dan verwacht
+                                            </span>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => {
+                                                // TODO: Implement cancel functionality
+                                                console.log('Cancel requested for', stage.key);
+                                              }}
+                                              className="text-xs h-6 px-2"
+                                            >
+                                              Annuleren
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </>
@@ -870,6 +1038,75 @@ export function SimplifiedWorkflowView({
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+      
+      {/* Live Process Monitor */}
+      {Object.keys(state.stageProcessing || {}).some(key => state.stageProcessing[key]) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-green-500 animate-pulse" />
+              Live Proces Monitor
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {Object.entries(state.stageProcessing || {}).map(([stageKey, isProcessing]) => {
+                if (!isProcessing) return null;
+                const stage = WORKFLOW_STAGES.find(s => s.key === stageKey);
+                if (!stage) return null;
+                
+                const elapsed = heartbeat[stageKey] || 0;
+                const estimated = calculateEstimatedTime(stageKey);
+                const historicalTime = completedStages.find(s => s.stage === stageKey)?.time || avgProcessingTime;
+                
+                return (
+                  <div key={stageKey} className="bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-950/20 dark:to-green-950/20 border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <h4 className="font-medium text-sm">{stage.label}</h4>
+                        <p className="text-xs text-muted-foreground">{stage.description}</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-blue-600">{elapsed}s</div>
+                        <div className="text-xs text-muted-foreground">
+                          {estimated !== null ? formatTimeRemaining(estimated) : `~${Math.round(historicalTime)}s`} resterend
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div 
+                          className="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full transition-all duration-1000"
+                          style={{ 
+                            width: `${Math.min(95, Math.max(5, (elapsed / Math.max(historicalTime, 30)) * 100))}%`
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="flex items-center gap-1 text-green-600">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                          AI aan het werk
+                        </span>
+                        <span className="text-muted-foreground">
+                          {elapsed > historicalTime ? (
+                            <span className="text-orange-600">
+                              Complexe analyse (+{elapsed - historicalTime}s)
+                            </span>
+                          ) : (
+                            `${Math.round(((elapsed / historicalTime) * 100))}% van verwachte tijd`
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
       )}
