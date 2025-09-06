@@ -5,7 +5,6 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
 import toast from 'react-hot-toast';
@@ -210,50 +209,13 @@ export function SimplifiedWorkflowView({
 
   const totalProcessingTime = Object.values(state.stageTimes).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
 
-  // Performance data for visualizations
-  const performanceData = WORKFLOW_STAGES.map((stage, index) => {
-    const time = state.stageTimes[stage.key] || 0;
-    const isCompleted = !!state.stageResults[stage.key];
-    const isActive = index === state.currentStageIndex;
-    const isProcessing = state.stageProcessing[stage.key] || false;
-    
-    return {
-      name: stage.label.replace(/\d+\w*\s*-?\s*/, ''), // Remove numbers and dashes
-      shortName: stage.label.split(' ')[0], // Just first word for compact view
-      time: Number(time),
-      status: isCompleted ? 'completed' : isActive ? 'active' : 'pending',
-      isProcessing,
-      stage: stage.key,
-      order: index + 1
-    };
-  });
-
-  const completedStages = performanceData.filter(d => d.status === 'completed');
-  const avgProcessingTime = completedStages.length > 0 
-    ? completedStages.reduce((sum, stage) => sum + stage.time, 0) / completedStages.length 
-    : 0;
-
-  const slowestStage = completedStages.reduce((slowest, current) => 
-    current.time > slowest.time ? current : slowest, { time: 0, name: 'Geen' });
-    
-  const fastestStage = completedStages.reduce((fastest, current) => 
-    current.time < fastest.time ? current : fastest, { time: Infinity, name: 'Geen' });
-
-  // Colors for different statuses
-  const statusColors = {
-    completed: '#22c55e',
-    active: '#3b82f6',
-    pending: '#94a3b8',
-    processing: '#f97316'
-  };
-
   // Calculate estimated time remaining for active processes
   const calculateEstimatedTime = (stageKey: string) => {
     const progress = stageProgress[stageKey];
     if (!progress || !progress.startTime) return null;
     
     const elapsed = Date.now() - progress.startTime;
-    const historicalTime = completedStages.find(s => s.stage === stageKey)?.time || avgProcessingTime;
+    const historicalTime = state.stageTimes[stageKey] || 60; // Default to 60 seconds
     
     if (progress.progress > 0) {
       const estimatedTotal = elapsed / (progress.progress / 100);
@@ -271,14 +233,6 @@ export function SimplifiedWorkflowView({
     const remainingSeconds = seconds % 60;
     return `${minutes}m ${remainingSeconds}s`;
   };
-
-  // Timeline data for line chart
-  const timelineData = performanceData.map((stage, index) => ({
-    step: index + 1,
-    cumulativeTime: performanceData.slice(0, index + 1)
-      .reduce((sum, s) => sum + (s.status === 'completed' ? s.time : 0), 0),
-    stageName: stage.shortName
-  }));
 
   // Auto-fetch prompt preview for current stage and completed stages in detailed view
   useEffect(() => {
@@ -346,7 +300,7 @@ export function SimplifiedWorkflowView({
             progress: 0,
             status: 'AI specialist start met analyse...',
             startTime: Date.now(),
-            estimatedTime: completedStages.find(s => s.stage === stageKey)?.time || avgProcessingTime
+            estimatedTime: state.stageTimes[stageKey] || 60
           }
         }));
       }
@@ -367,13 +321,13 @@ export function SimplifiedWorkflowView({
         });
       }
     });
-  }, [state.stageProcessing, completedStages, avgProcessingTime, stageProgress]);
+  }, [state.stageProcessing, stageProgress]);
 
   return (
     <>
       {/* Celebration Confetti */}
       <AnimatePresence>
-        {completedStages.length >= WORKFLOW_STAGES.length && (
+        {Object.keys(state.stageResults).length >= WORKFLOW_STAGES.length && (
           <Confetti
             width={typeof window !== 'undefined' ? window.innerWidth : 1200}
             height={typeof window !== 'undefined' ? window.innerHeight : 800}
@@ -858,7 +812,7 @@ export function SimplifiedWorkflowView({
                                           </span>
                                           {(() => {
                                             const estimated = calculateEstimatedTime(stage.key);
-                                            const historicalTime = completedStages.find(s => s.stage === stage.key)?.time || avgProcessingTime;
+                                            const historicalTime = state.stageTimes[stage.key] || 60;
                                             return (
                                               <span>
                                                 {estimated !== null ? (
@@ -942,205 +896,6 @@ export function SimplifiedWorkflowView({
           </Card>
         </motion.div>
 
-        {/* Performance Dashboard */}
-        {Object.keys(state.stageResults).length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-          >
-            <Card className="bg-gradient-to-br from-slate-50 to-gray-100 dark:from-gray-800/50 dark:to-gray-900/50 backdrop-blur border border-gray-200/50 dark:border-gray-700/30 shadow-xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg">
-                    <Clock className="h-5 w-5 text-white" />
-                  </div>
-                  <span className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
-                    Performance Dashboard
-                  </span>
-                </CardTitle>
-              </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Key Metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">Voltooid</p>
-                <p className="text-lg font-bold text-green-600">
-                  {Object.keys(state.stageResults).length}
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">Totale Tijd</p>
-                <p className="text-lg font-bold text-blue-600">
-                  {totalProcessingTime}s
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">Gemiddeld</p>
-                <p className="text-lg font-bold text-purple-600">
-                  {avgProcessingTime > 0 ? Math.round(avgProcessingTime) : 0}s
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">Snelste</p>
-                <p className="text-sm font-bold text-green-600">
-                  {fastestStage.time < Infinity ? `${fastestStage.time}s` : '-'}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {fastestStage.name !== 'Geen' ? fastestStage.name : '-'}
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">Traagste</p>
-                <p className="text-sm font-bold text-red-600">
-                  {slowestStage.time > 0 ? `${slowestStage.time}s` : '-'}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {slowestStage.name !== 'Geen' ? slowestStage.name : '-'}
-                </p>
-              </div>
-            </div>
-
-            {/* Performance Visualizations */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Processing Time Bar Chart */}
-              <div>
-                <h4 className="text-sm font-medium mb-3">Verwerkingstijd per Stap</h4>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={performanceData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="shortName" 
-                        fontSize={10}
-                        angle={-45}
-                        textAnchor="end"
-                        height={60}
-                      />
-                      <YAxis fontSize={10} />
-                      <Tooltip 
-                        formatter={(value: any, name: string) => [`${value}s`, 'Tijd']}
-                        labelFormatter={(label) => {
-                          const stage = performanceData.find(d => d.shortName === label);
-                          return stage ? stage.name : label;
-                        }}
-                      />
-                      <Bar dataKey="time">
-                        {performanceData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={statusColors[entry.status as keyof typeof statusColors]} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Cumulative Time Timeline */}
-              <div>
-                <h4 className="text-sm font-medium mb-3">Cumulatieve Tijdlijn</h4>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={timelineData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="step" 
-                        fontSize={10}
-                        label={{ value: 'Stap', position: 'insideBottom', offset: -5, fontSize: 10 }}
-                      />
-                      <YAxis 
-                        fontSize={10}
-                        label={{ value: 'Tijd (s)', angle: -90, position: 'insideLeft', fontSize: 10 }}
-                      />
-                      <Tooltip 
-                        formatter={(value: any) => [`${value}s`, 'Totale Tijd']}
-                        labelFormatter={(label) => `Stap ${label}`}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="cumulativeTime" 
-                        stroke="#3b82f6" 
-                        strokeWidth={2}
-                        dot={{ fill: '#3b82f6', strokeWidth: 2 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-
-            {/* Status Distribution */}
-            {completedStages.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-3">Status Verdeling</h4>
-                <div className="flex items-center justify-center">
-                  <div className="h-32 w-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Voltooid', value: completedStages.length, color: statusColors.completed },
-                            { name: 'Actief', value: state.stageProcessing && Object.values(state.stageProcessing).some(Boolean) ? 1 : 0, color: statusColors.active },
-                            { name: 'Nog te doen', value: WORKFLOW_STAGES.length - completedStages.length - (state.stageProcessing && Object.values(state.stageProcessing).some(Boolean) ? 1 : 0), color: statusColors.pending }
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={50}
-                          dataKey="value"
-                        >
-                          {[
-                            { name: 'Voltooid', value: completedStages.length, color: statusColors.completed },
-                            { name: 'Actief', value: state.stageProcessing && Object.values(state.stageProcessing).some(Boolean) ? 1 : 0, color: statusColors.active },
-                            { name: 'Nog te doen', value: WORKFLOW_STAGES.length - completedStages.length - (state.stageProcessing && Object.values(state.stageProcessing).some(Boolean) ? 1 : 0), color: statusColors.pending }
-                          ].map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(value: any, name: string) => [value, name]} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="ml-4 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-green-500 rounded" />
-                      <span className="text-xs">Voltooid ({completedStages.length})</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-blue-500 rounded" />
-                      <span className="text-xs">Actief ({state.stageProcessing && Object.values(state.stageProcessing).some(Boolean) ? 1 : 0})</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-gray-400 rounded" />
-                      <span className="text-xs">Nog te doen ({WORKFLOW_STAGES.length - completedStages.length - (state.stageProcessing && Object.values(state.stageProcessing).some(Boolean) ? 1 : 0)})</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Performance Insights */}
-            {completedStages.length > 2 && (
-              <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                <h4 className="text-sm font-medium mb-2 text-blue-800 dark:text-blue-200">Performance Inzichten</h4>
-                <div className="space-y-1 text-xs text-blue-700 dark:text-blue-300">
-                  {slowestStage.time > avgProcessingTime * 2 && (
-                    <p>⚠️ "{slowestStage.name}" neemt {Math.round((slowestStage.time / avgProcessingTime) * 100)}% meer tijd dan gemiddeld</p>
-                  )}
-                  {fastestStage.time < avgProcessingTime * 0.5 && fastestStage.time > 0 && (
-                    <p>⚡ "{fastestStage.name}" is bijzonder efficiënt - {Math.round(((avgProcessingTime - fastestStage.time) / avgProcessingTime) * 100)}% sneller dan gemiddeld</p>
-                  )}
-                  {totalProcessingTime > 300 && (
-                    <p>🕐 Totale verwerkingstijd is {Math.round(totalProcessingTime / 60)} minuten - overweeg parallelle verwerking</p>
-                  )}
-                  {completedStages.length >= WORKFLOW_STAGES.length && (
-                    <p>🎉 Workflow voltooid in {totalProcessingTime}s - gemiddeld {Math.round(avgProcessingTime)}s per stap</p>
-                  )}
-                </div>
-              </div>
-            )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
       
       {/* Live Process Monitor */}
       {Object.keys(state.stageProcessing || {}).some(key => state.stageProcessing[key]) && (
@@ -1169,7 +924,7 @@ export function SimplifiedWorkflowView({
                 
                 const elapsed = heartbeat[stageKey] || 0;
                 const estimated = calculateEstimatedTime(stageKey);
-                const historicalTime = completedStages.find(s => s.stage === stageKey)?.time || avgProcessingTime;
+                const historicalTime = state.stageTimes[stageKey] || 60;
                 
                 return (
                   <div key={stageKey} className="bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-950/20 dark:to-green-950/20 border rounded-lg p-4">
