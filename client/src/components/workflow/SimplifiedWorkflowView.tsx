@@ -10,12 +10,15 @@ import {
   Eye, 
   EyeOff, 
   ChevronRight,
+  ChevronDown,
   Copy,
   MessageSquare,
   Clock,
   Workflow,
   ArrowRight,
-  Send
+  Send,
+  FileText,
+  Zap
 } from "lucide-react";
 import { useState } from "react";
 import { WORKFLOW_STAGES } from "./constants";
@@ -37,7 +40,7 @@ export function SimplifiedWorkflowView({
   executeSubstepM,
   isCreatingCase
 }: SimplifiedWorkflowViewProps) {
-  const [expandedStage, setExpandedStage] = useState<string | null>(null);
+  const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"simple" | "detailed">("simple");
   const { toast } = useToast();
   
@@ -50,6 +53,16 @@ export function SimplifiedWorkflowView({
       title: `${type} gekopieerd`,
       duration: 2000,
     });
+  };
+
+  const toggleStageExpansion = (stageKey: string) => {
+    const newExpanded = new Set(expandedStages);
+    if (newExpanded.has(stageKey)) {
+      newExpanded.delete(stageKey);
+    } else {
+      newExpanded.add(stageKey);
+    }
+    setExpandedStages(newExpanded);
   };
 
   const executeCurrentStage = () => {
@@ -66,13 +79,14 @@ export function SimplifiedWorkflowView({
     // Navigate to stage if already completed
     if (state.stageResults[stageKey]) {
       dispatch({ type: "SET_STAGE_INDEX", payload: index });
-      setExpandedStage(stageKey);
     }
   };
 
+  const totalProcessingTime = Object.values(state.stageTimes).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+
   return (
     <div className="space-y-4 max-w-full overflow-hidden">
-      {/* Progress Header - Mobile Responsive */}
+      {/* Progress Header */}
       <Card className="bg-gradient-to-r from-primary/5 to-primary/10">
         <CardContent className="p-4 md:p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -82,12 +96,12 @@ export function SimplifiedWorkflowView({
             </div>
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
               <Badge variant="outline" className="text-xs md:text-sm w-fit">
-                {Object.keys(state.stageResults).length}/{WORKFLOW_STAGES.length} Voltooid
+                {Object.keys(state.stageResults).length}/{WORKFLOW_STAGES.length} Stappen
               </Badge>
-              {Object.keys(state.stageTimes).length > 0 && (
+              {totalProcessingTime > 0 && (
                 <div className="flex items-center gap-1 text-xs md:text-sm text-muted-foreground">
                   <Clock className="h-3 w-3 md:h-4 md:w-4" />
-                  {Object.values(state.stageTimes).reduce((a: number, b: any) => a + (Number(b) || 0), 0)}s
+                  {totalProcessingTime}s totaal
                 </div>
               )}
             </div>
@@ -95,30 +109,47 @@ export function SimplifiedWorkflowView({
           
           <Progress value={progressPercentage} className="h-2 md:h-3 my-3" />
           
-          {/* View Mode Toggle - Mobile Responsive */}
+          {/* View Mode Toggle */}
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <p className="text-xs md:text-sm text-muted-foreground">
-              Stap {state.currentStageIndex + 1}: {currentStage.label}
+              Huidige stap: {currentStage.label}
             </p>
             <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
               <TabsList className="h-7 md:h-8 w-full md:w-auto">
-                <TabsTrigger value="simple" className="text-xs flex-1 md:flex-none">Simpel</TabsTrigger>
-                <TabsTrigger value="detailed" className="text-xs flex-1 md:flex-none">Details</TabsTrigger>
+                <TabsTrigger value="simple" className="text-xs flex-1 md:flex-none">
+                  <Zap className="h-3 w-3 mr-1" />
+                  Simpel
+                </TabsTrigger>
+                <TabsTrigger value="detailed" className="text-xs flex-1 md:flex-none">
+                  <FileText className="h-3 w-3 mr-1" />
+                  Gedetailleerd
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
         </CardContent>
       </Card>
 
-      {/* Complete Input/Output Transparency */}
-      <Card className="border-2 border-primary/30">
-        <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10">
+      {/* Unified Workflow Interface */}
+      <Card>
+        <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Eye className="h-5 w-5" />
-            Complete Transparantie - Alle AI Prompts & Outputs
+            {viewMode === "simple" ? (
+              <>
+                <Zap className="h-5 w-5" />
+                Workflow Overzicht
+              </>
+            ) : (
+              <>
+                <Eye className="h-5 w-5" />
+                Gedetailleerde Workflow met AI Interacties
+              </>
+            )}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Hieronder zie je EXACT wat naar de AI wordt gestuurd en wat terugkomt - precies zoals je handmatig zou doen.
+            {viewMode === "simple" 
+              ? "Klik op een stap om deze uit te voeren"
+              : "Bekijk exact wat naar de AI wordt gestuurd en wat terugkomt"}
           </p>
         </CardHeader>
         <CardContent className="p-3 md:p-4">
@@ -129,14 +160,28 @@ export function SimplifiedWorkflowView({
             const isCompleted = !!stageResult;
             const isProcessing = state.stageProcessing[stage.key] || false;
             const processingTime = state.stageTimes[stage.key];
+            const canStart = index === 0 || !!state.stageResults[WORKFLOW_STAGES[index - 1].key];
+            const isExpanded = expandedStages.has(stage.key) || isActive;
+            
+            // For reviewer stages
+            const isReviewer = stage.type === "reviewer";
+            const substepResults = state.substepResults[stage.key] || {};
+            const hasReview = !!substepResults.review;
+            const hasProcessing = !!substepResults.processing;
             
             return (
-              <div key={`transparency-${stage.key}`} className={`border rounded-lg p-3 md:p-4 mb-3 md:mb-4 ${
+              <div key={stage.key} className={`border rounded-lg mb-3 transition-all ${
                 isActive ? 'ring-2 ring-primary border-primary bg-primary/5' : 
                 isCompleted ? 'border-green-500/50 bg-green-50/30 dark:bg-green-950/20' : 
                 'border-gray-200 opacity-60'
               }`}>
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-3">
+                {/* Stage Header */}
+                <div 
+                  className={`p-3 md:p-4 flex items-center justify-between ${
+                    (isCompleted || isActive) ? 'cursor-pointer hover:bg-gray-50/50 dark:hover:bg-gray-800/50' : ''
+                  }`}
+                  onClick={() => (isCompleted || isActive) && toggleStageExpansion(stage.key)}
+                >
                   <div className="flex items-center gap-2 md:gap-3">
                     <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                       isCompleted ? 'bg-green-500 text-white' :
@@ -148,260 +193,249 @@ export function SimplifiedWorkflowView({
                        <span className="text-xs md:text-sm font-medium">{index + 1}</span>}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-medium text-sm md:text-base truncate">{stage.label}</h3>
-                      {processingTime && (
-                        <Badge variant="outline" className="text-xs mt-1">
-                          {processingTime}s
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  {isProcessing && (
-                    <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
-                      <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="text-xs md:text-sm font-medium">AI bezig...</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Input/Output Display - Mobile Responsive */}
-                {(stagePrompt || stageResult || isActive) && (
-                  <div className="space-y-3 md:space-y-4">
-                    {/* AI Input (Prompt) */}
-                    {stagePrompt && (
-                      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg overflow-hidden">
-                        <div className="flex items-center justify-between p-2 md:p-3 border-b border-blue-200 dark:border-blue-800">
-                          <div className="flex items-center gap-2">
-                            <Send className="h-3 w-3 md:h-4 md:w-4 text-blue-600" />
-                            <span className="text-xs md:text-sm font-medium text-blue-700 dark:text-blue-300">
-                              Prompt naar AI
-                            </span>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(stagePrompt, "Prompt")}
-                            className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <div className="p-2 md:p-3 max-h-40 md:max-h-60 overflow-y-auto">
-                          <pre className="text-xs font-mono whitespace-pre-wrap text-blue-800 dark:text-blue-200 break-words">
-                            {stagePrompt}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Arrow between input and output */}
-                    {stagePrompt && stageResult && (
-                      <div className="flex justify-center">
-                        <ArrowRight className="h-4 w-4 md:h-5 md:w-5 text-gray-400" />
-                      </div>
-                    )}
-
-                    {/* AI Output (Response) */}
-                    {stageResult && (
-                      <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg overflow-hidden">
-                        <div className="flex items-center justify-between p-2 md:p-3 border-b border-green-200 dark:border-green-800">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle className="h-3 w-3 md:h-4 md:w-4 text-green-600" />
-                            <span className="text-xs md:text-sm font-medium text-green-700 dark:text-green-300">
-                              AI Response
-                            </span>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(stageResult, "Response")}
-                            className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <div className="p-2 md:p-3 max-h-40 md:max-h-60 overflow-y-auto">
-                          <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200 break-words">
-                            {stageResult.slice(0, 1000)}{stageResult.length > 1000 ? '...' : ''}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      {/* Interactive Workflow Controls */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Workflow Controle</CardTitle>
-        </CardHeader>
-        <CardContent className="p-4">
-          {WORKFLOW_STAGES.map((stage, index) => {
-            const isActive = index === state.currentStageIndex;
-            const isCompleted = !!state.stageResults[stage.key];
-            const isProcessing = state.stageProcessing[stage.key];
-            const canStart = index === 0 || !!state.stageResults[WORKFLOW_STAGES[index - 1].key];
-            const isExpanded = expandedStage === stage.key || isActive;
-            
-            // For reviewer stages, check substep results
-            const isReviewer = stage.type === "reviewer";
-            const substepResults = state.substepResults[stage.key] || {};
-            const hasReview = !!substepResults.review;
-            const hasProcessing = !!substepResults.processing;
-            
-            return (
-              <div 
-                key={stage.key}
-                className={`border rounded-lg mb-3 transition-all ${
-                  isActive ? 'ring-2 ring-primary border-primary' : 
-                  isCompleted ? 'border-green-500/50 bg-green-50/30 dark:bg-green-950/20' : 
-                  'border-gray-200'
-                }`}
-              >
-                {/* Stage Header */}
-                <div 
-                  className={`p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50/50 dark:hover:bg-gray-800/50 ${
-                    isCompleted && !isActive ? 'cursor-pointer' : ''
-                  }`}
-                  onClick={() => handleStageClick(stage.key, index)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      isCompleted ? 'bg-green-500 text-white' :
-                      isActive ? 'bg-primary text-white' :
-                      'bg-gray-200 text-gray-400'
-                    }`}>
-                      {isCompleted ? <CheckCircle className="h-5 w-5" /> : 
-                       isProcessing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> :
-                       <span className="text-sm font-medium">{index + 1}</span>}
-                    </div>
-                    <div>
-                      <h3 className="font-medium">{stage.label}</h3>
+                      <h3 className="font-medium text-sm md:text-base">{stage.label}</h3>
                       {viewMode === "detailed" && (
-                        <p className="text-sm text-muted-foreground">{stage.description}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{stage.description}</p>
                       )}
                     </div>
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    {state.stageTimes[stage.key] && (
+                    {processingTime && (
                       <Badge variant="outline" className="text-xs">
-                        {state.stageTimes[stage.key]}s
+                        {processingTime}s
                       </Badge>
                     )}
-                    {isActive && !isProcessing && !isCompleted && (
-                      <ChevronRight className="h-5 w-5 text-primary animate-pulse" />
+                    {isProcessing && (
+                      <Badge className="bg-orange-500 text-xs">
+                        AI bezig...
+                      </Badge>
+                    )}
+                    {(isCompleted || isActive) && (
+                      isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
                     )}
                   </div>
                 </div>
 
-                {/* Stage Content - Only show for active or completed stages when expanded */}
-                {(isActive || (isExpanded && isCompleted)) && (
-                  <div className="px-4 pb-4 border-t">
-                    {/* For reviewer stages with special handling */}
-                    {isReviewer && isActive && (
-                      <div className="mt-4 space-y-4">
-                        {/* Review button */}
-                        {!hasReview && (
-                          <Button 
-                            onClick={() => state.currentReport && executeSubstepM.mutate({
-                              substepKey: stage.key,
-                              substepType: "review",
-                              reportId: state.currentReport.id
-                            })}
-                            disabled={executeSubstepM.isPending}
-                            className="w-full"
-                          >
-                            <MessageSquare className="mr-2 h-4 w-4" />
-                            Start AI Review
-                          </Button>
+                {/* Stage Content - Expandable */}
+                {isExpanded && (
+                  <div className="px-3 md:px-4 pb-3 md:pb-4 border-t">
+                    {/* Simple View: Just show action buttons */}
+                    {viewMode === "simple" && (
+                      <>
+                        {/* For reviewer stages */}
+                        {isReviewer && isActive && (
+                          <div className="mt-3 space-y-3">
+                            {!hasReview && (
+                              <Button 
+                                onClick={() => state.currentReport && executeSubstepM.mutate({
+                                  substepKey: stage.key,
+                                  substepType: "review",
+                                  reportId: state.currentReport.id
+                                })}
+                                disabled={executeSubstepM.isPending}
+                                className="w-full"
+                                size="sm"
+                              >
+                                <MessageSquare className="mr-2 h-4 w-4" />
+                                Start AI Review
+                              </Button>
+                            )}
+                            
+                            {hasReview && !hasProcessing && (
+                              <ReviewFeedbackEditor
+                                stageName={stage.label}
+                                aiReviewOutput={substepResults.review || ""}
+                                onProcessFeedback={(mergedFeedback) => {
+                                  if (state.currentReport) {
+                                    executeSubstepM.mutate({
+                                      substepKey: "5_feedback_verwerker",
+                                      substepType: "processing",
+                                      reportId: state.currentReport.id,
+                                      customInput: mergedFeedback
+                                    });
+                                  }
+                                }}
+                                isProcessing={executeSubstepM.isPending && executeSubstepM.variables?.substepType === "processing"}
+                                hasProcessingResult={hasProcessing}
+                              />
+                            )}
+                            
+                            {hasReview && hasProcessing && (
+                              <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
+                                <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                                  <CheckCircle className="h-4 w-4" />
+                                  <span className="text-sm font-medium">Review voltooid!</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         )}
                         
-                        {/* Feedback Editor */}
-                        {hasReview && !hasProcessing && (
-                          <ReviewFeedbackEditor
-                            stageName={stage.label}
-                            aiReviewOutput={substepResults.review || ""}
-                            onProcessFeedback={(mergedFeedback) => {
-                              if (state.currentReport) {
-                                executeSubstepM.mutate({
-                                  substepKey: "5_feedback_verwerker",
-                                  substepType: "processing",
-                                  reportId: state.currentReport.id,
-                                  customInput: mergedFeedback
-                                });
-                              }
-                            }}
-                            isProcessing={executeSubstepM.isPending && executeSubstepM.variables?.substepType === "processing"}
-                            hasProcessingResult={hasProcessing}
-                          />
-                        )}
-                        
-                        {/* Completion status */}
-                        {hasReview && hasProcessing && (
-                          <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
-                            <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
-                              <CheckCircle className="h-5 w-5" />
-                              <span className="font-medium">Review voltooid en verwerkt!</span>
-                            </div>
+                        {/* For regular stages */}
+                        {!isReviewer && isActive && !isCompleted && (
+                          <div className="mt-3">
                             <Button 
-                              className="mt-3 w-full"
-                              onClick={() => {
-                                const nextIndex = Math.min(state.currentStageIndex + 1, WORKFLOW_STAGES.length - 1);
-                                dispatch({ type: "SET_STAGE_INDEX", payload: nextIndex });
-                              }}
+                              onClick={executeCurrentStage}
+                              disabled={isProcessing || !canStart}
+                              className="w-full"
+                              size="sm"
                             >
-                              Ga naar volgende stap →
+                              {isProcessing ? (
+                                <>
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                  AI is bezig...
+                                </>
+                              ) : (
+                                <>
+                                  <Play className="mr-2 h-4 w-4" />
+                                  Start deze stap
+                                </>
+                              )}
                             </Button>
                           </div>
                         )}
-                      </div>
+                        
+                        {/* Completed indicator */}
+                        {isCompleted && (
+                          <div className="mt-3 flex items-center gap-2 text-green-600 dark:text-green-400">
+                            <CheckCircle className="h-4 w-4" />
+                            <span className="text-sm">Voltooid</span>
+                          </div>
+                        )}
+                      </>
                     )}
-                    
-                    {/* For regular stages */}
-                    {!isReviewer && isActive && !isCompleted && (
-                      <div className="mt-4">
-                        <Button 
-                          onClick={executeCurrentStage}
-                          disabled={isProcessing || !canStart}
-                          className="w-full"
-                        >
-                          {isProcessing ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                              AI is bezig...
-                            </>
-                          ) : (
-                            <>
-                              <Play className="mr-2 h-4 w-4" />
-                              Start deze stap
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    )}
-                    
-                    {/* Show results in detailed mode */}
-                    {viewMode === "detailed" && state.stageResults[stage.key] && (
-                      <div className="mt-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-medium">Output</h4>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(state.stageResults[stage.key], "Output")}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-xs font-mono max-h-40 overflow-y-auto">
-                          <pre className="whitespace-pre-wrap">{state.stageResults[stage.key].slice(0, 500)}...</pre>
-                        </div>
+
+                    {/* Detailed View: Show full prompts and outputs */}
+                    {viewMode === "detailed" && (
+                      <div className="mt-3 space-y-3">
+                        {/* Show Input/Prompt */}
+                        {stagePrompt && (
+                          <div className="space-y-2">
+                            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                              <div className="flex items-center justify-between p-2 border-b border-blue-200 dark:border-blue-800">
+                                <div className="flex items-center gap-2">
+                                  <Send className="h-3 w-3 text-blue-600" />
+                                  <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                                    INPUT → AI
+                                  </span>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => copyToClipboard(stagePrompt, "Prompt")}
+                                  className="h-6 w-6 p-0"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <div className="p-2 max-h-32 overflow-y-auto">
+                                <pre className="text-xs font-mono whitespace-pre-wrap text-blue-800 dark:text-blue-200">
+                                  {stagePrompt.slice(0, 500)}{stagePrompt.length > 500 ? '...' : ''}
+                                </pre>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Show Output/Response */}
+                        {stageResult && (
+                          <div className="space-y-2">
+                            <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+                              <div className="flex items-center justify-between p-2 border-b border-green-200 dark:border-green-800">
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle className="h-3 w-3 text-green-600" />
+                                  <span className="text-xs font-medium text-green-700 dark:text-green-300">
+                                    OUTPUT ← AI
+                                  </span>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => copyToClipboard(stageResult, "Response")}
+                                  className="h-6 w-6 p-0"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <div className="p-2 max-h-32 overflow-y-auto">
+                                <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200">
+                                  {stageResult.slice(0, 500)}{stageResult.length > 500 ? '...' : ''}
+                                </pre>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action buttons for active stage */}
+                        {isActive && !isCompleted && (
+                          <>
+                            {isReviewer ? (
+                              <div className="space-y-3">
+                                {!hasReview && (
+                                  <Button 
+                                    onClick={() => state.currentReport && executeSubstepM.mutate({
+                                      substepKey: stage.key,
+                                      substepType: "review",
+                                      reportId: state.currentReport.id
+                                    })}
+                                    disabled={executeSubstepM.isPending}
+                                    className="w-full"
+                                    size="sm"
+                                  >
+                                    <MessageSquare className="mr-2 h-4 w-4" />
+                                    Start AI Review
+                                  </Button>
+                                )}
+                                
+                                {hasReview && !hasProcessing && (
+                                  <ReviewFeedbackEditor
+                                    stageName={stage.label}
+                                    aiReviewOutput={substepResults.review || ""}
+                                    onProcessFeedback={(mergedFeedback) => {
+                                      if (state.currentReport) {
+                                        executeSubstepM.mutate({
+                                          substepKey: "5_feedback_verwerker",
+                                          substepType: "processing",
+                                          reportId: state.currentReport.id,
+                                          customInput: mergedFeedback
+                                        });
+                                      }
+                                    }}
+                                    isProcessing={executeSubstepM.isPending && executeSubstepM.variables?.substepType === "processing"}
+                                    hasProcessingResult={hasProcessing}
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <Button 
+                                onClick={executeCurrentStage}
+                                disabled={isProcessing || !canStart}
+                                className="w-full"
+                                size="sm"
+                              >
+                                {isProcessing ? (
+                                  <>
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                    AI is bezig...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play className="mr-2 h-4 w-4" />
+                                    Start deze stap
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                          </>
+                        )}
+
+                        {/* No prompt/output yet message */}
+                        {!stagePrompt && !stageResult && !isActive && (
+                          <p className="text-xs text-muted-foreground text-center py-2">
+                            Deze stap is nog niet uitgevoerd
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -411,6 +445,40 @@ export function SimplifiedWorkflowView({
           })}
         </CardContent>
       </Card>
+
+      {/* Quick Stats Summary */}
+      {Object.keys(state.stageResults).length > 0 && (
+        <Card className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20">
+          <CardContent className="p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">Voltooid</p>
+                <p className="text-lg font-bold text-green-600">
+                  {Object.keys(state.stageResults).length}
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">Resterend</p>
+                <p className="text-lg font-bold text-orange-600">
+                  {WORKFLOW_STAGES.length - Object.keys(state.stageResults).length}
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">Tijd</p>
+                <p className="text-lg font-bold text-blue-600">
+                  {totalProcessingTime}s
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">Voortgang</p>
+                <p className="text-lg font-bold text-primary">
+                  {progressPercentage}%
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
