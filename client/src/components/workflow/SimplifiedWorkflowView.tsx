@@ -46,7 +46,7 @@ export function SimplifiedWorkflowView({
   isCreatingCase
 }: SimplifiedWorkflowViewProps) {
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<"simple" | "detailed">("simple");
+  const [viewMode] = useState<"detailed">("detailed");
   const [promptPreviews, setPromptPreviews] = useState<Record<string, string>>({});
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({});
@@ -188,23 +188,10 @@ export function SimplifiedWorkflowView({
           
           <Progress value={progressPercentage} className="h-2 md:h-3 my-3" />
           
-          {/* View Mode Toggle */}
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-2">
             <p className="text-xs md:text-sm text-muted-foreground">
               Huidige stap: {currentStage.label}
             </p>
-            <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
-              <TabsList className="h-7 md:h-8 w-full md:w-auto">
-                <TabsTrigger value="simple" className="text-xs flex-1 md:flex-none">
-                  <Zap className="h-3 w-3 mr-1" />
-                  Simpel
-                </TabsTrigger>
-                <TabsTrigger value="detailed" className="text-xs flex-1 md:flex-none">
-                  <FileText className="h-3 w-3 mr-1" />
-                  Gedetailleerd
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
           </div>
         </CardContent>
       </Card>
@@ -213,22 +200,11 @@ export function SimplifiedWorkflowView({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            {viewMode === "simple" ? (
-              <>
-                <Zap className="h-5 w-5" />
-                Workflow Overzicht
-              </>
-            ) : (
-              <>
-                <Eye className="h-5 w-5" />
-                Gedetailleerde Workflow met AI Interacties
-              </>
-            )}
+            <Eye className="h-5 w-5" />
+            AI Workflow - Volledige Transparantie
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            {viewMode === "simple" 
-              ? "Klik op een stap om deze uit te voeren"
-              : "Bekijk exact wat naar de AI wordt gestuurd en wat terugkomt"}
+            Bekijk en bewerk exact wat naar de AI wordt gestuurd en wat terugkomt
           </p>
         </CardHeader>
         <CardContent className="p-3 md:p-4">
@@ -299,107 +275,7 @@ export function SimplifiedWorkflowView({
                 {/* Stage Content - Expandable */}
                 {isExpanded && (
                   <div className="px-3 md:px-4 pb-3 md:pb-4 border-t">
-                    {/* Simple View: Just show action buttons */}
-                    {viewMode === "simple" && (
-                      <>
-                        {/* For reviewer stages */}
-                        {isReviewer && isActive && (
-                          <div className="mt-3 space-y-3">
-                            {!hasReview && (
-                              <Button 
-                                onClick={() => state.currentReport && executeSubstepM.mutate({
-                                  substepKey: stage.key,
-                                  substepType: "review",
-                                  reportId: state.currentReport.id
-                                })}
-                                disabled={executeSubstepM.isPending}
-                                className="w-full"
-                                size="sm"
-                              >
-                                <MessageSquare className="mr-2 h-4 w-4" />
-                                Start AI Review
-                              </Button>
-                            )}
-                            
-                            {hasReview && !hasProcessing && (
-                              <ReviewFeedbackEditor
-                                stageName={stage.label}
-                                aiReviewOutput={substepResults.review || ""}
-                                onProcessFeedback={(mergedFeedback) => {
-                                  if (state.currentReport) {
-                                    executeSubstepM.mutate({
-                                      substepKey: "5_feedback_verwerker",
-                                      substepType: "processing",
-                                      reportId: state.currentReport.id,
-                                      customInput: mergedFeedback
-                                    });
-                                  }
-                                }}
-                                isProcessing={executeSubstepM.isPending && executeSubstepM.variables?.substepType === "processing"}
-                                hasProcessingResult={hasProcessing}
-                              />
-                            )}
-                            
-                            {hasReview && hasProcessing && (
-                              <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
-                                <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
-                                  <CheckCircle className="h-4 w-4" />
-                                  <span className="text-sm font-medium">Review voltooid!</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        {/* For regular stages */}
-                        {!isReviewer && isActive && !isCompleted && (
-                          <div className="mt-3">
-                            <Button 
-                              onClick={executeCurrentStage}
-                              disabled={isProcessing || !canStart}
-                              className="w-full"
-                              size="sm"
-                            >
-                              {isProcessing ? (
-                                <>
-                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                  AI is bezig...
-                                </>
-                              ) : (
-                                <>
-                                  <Play className="mr-2 h-4 w-4" />
-                                  Start deze stap
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                        )}
-                        
-                        {/* Completed indicator with re-run button */}
-                        {isCompleted && (
-                          <div className="mt-3 space-y-2">
-                            <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                              <CheckCircle className="h-4 w-4" />
-                              <span className="text-sm">Voltooid</span>
-                            </div>
-                            <Button
-                              onClick={() => executeStage(stage.key)}
-                              disabled={executeStageM.isPending}
-                              variant="outline"
-                              size="sm"
-                              className="w-full"
-                            >
-                              <RefreshCw className="mr-2 h-4 w-4" />
-                              Opnieuw uitvoeren
-                            </Button>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    {/* Detailed View: Show full prompts and outputs */}
-                    {viewMode === "detailed" && (
-                      <div className="mt-3 space-y-3">
+                    <div className="mt-3 space-y-3">
                         {/* Show Prompt Preview for any stage when available */}
                         {(!stagePrompt || !isCompleted) && (promptPreviews[stage.key] || loadingPreview === stage.key) && (
                           <div className="space-y-2">
@@ -613,7 +489,6 @@ export function SimplifiedWorkflowView({
                           </p>
                         )}
                       </div>
-                    )}
                   </div>
                 )}
               </div>
