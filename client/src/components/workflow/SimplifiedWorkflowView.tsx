@@ -6,6 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
+import { motion, AnimatePresence } from 'framer-motion';
+import Confetti from 'react-confetti';
+import toast from 'react-hot-toast';
 import { 
   Play, 
   CheckCircle, 
@@ -64,9 +67,15 @@ export function SimplifiedWorkflowView({
   
   const copyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
-    toast({
-      title: `${type} gekopieerd`,
+    toast.success(`${type} gekopieerd naar klembord`, {
       duration: 2000,
+      style: {
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        color: 'white',
+        borderRadius: '12px',
+        fontWeight: '500',
+        boxShadow: '0 10px 25px rgba(102, 126, 234, 0.3)',
+      },
     });
   };
 
@@ -361,50 +370,130 @@ export function SimplifiedWorkflowView({
   }, [state.stageProcessing, completedStages, avgProcessingTime, stageProgress]);
 
   return (
-    <div className="space-y-4 max-w-full overflow-hidden">
-      {/* Progress Header */}
-      <Card className="bg-gradient-to-r from-primary/5 to-primary/10">
-        <CardContent className="p-4 md:p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <Workflow className="h-5 w-5 md:h-6 md:w-6 text-primary" />
-              <h2 className="text-lg md:text-xl font-bold">Fiscale Rapport Workflow</h2>
-            </div>
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
-              <Badge variant="outline" className="text-xs md:text-sm w-fit">
-                {Object.keys(state.stageResults).length}/{WORKFLOW_STAGES.length} Stappen
-              </Badge>
-              {totalProcessingTime > 0 && (
-                <div className="flex items-center gap-1 text-xs md:text-sm text-muted-foreground">
-                  <Clock className="h-3 w-3 md:h-4 md:w-4" />
-                  {totalProcessingTime}s totaal
-                </div>
-              )}
-            </div>
-          </div>
-          
-          <Progress value={progressPercentage} className="h-2 md:h-3 my-3" />
-          
-          <div className="flex flex-col gap-2">
-            <p className="text-xs md:text-sm text-muted-foreground">
-              Huidige stap: {currentStage.label}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+    <>
+      {/* Celebration Confetti */}
+      <AnimatePresence>
+        {completedStages.length >= WORKFLOW_STAGES.length && (
+          <Confetti
+            width={typeof window !== 'undefined' ? window.innerWidth : 1200}
+            height={typeof window !== 'undefined' ? window.innerHeight : 800}
+            recycle={false}
+            numberOfPieces={200}
+            gravity={0.3}
+          />
+        )}
+      </AnimatePresence>
 
-      {/* Unified Workflow Interface */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Eye className="h-5 w-5" />
-            AI Workflow - Volledige Transparantie
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Bekijk en bewerk exact wat naar de AI wordt gestuurd en wat terugkomt
-          </p>
-        </CardHeader>
-        <CardContent className="p-3 md:p-4">
+      <div className="space-y-6 max-w-full overflow-hidden">
+        {/* Modern Progress Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <Card className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-blue-900/20 dark:to-purple-900/20 border-0 shadow-xl">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10" />
+            <div className="absolute inset-0 backdrop-blur-3xl bg-white/40 dark:bg-gray-900/40" />
+            <CardContent className="relative p-6 md:p-8">
+              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+                <motion.div 
+                  className="flex items-center gap-4"
+                  whileHover={{ scale: 1.02 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                >
+                  <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
+                    <Workflow className="h-6 w-6 md:h-7 md:w-7 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
+                      Fiscale Rapport Workflow
+                    </h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                      AI-gedreven fiscale analyse systeem
+                    </p>
+                  </div>
+                </motion.div>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-6">
+                  <motion.div
+                    whileHover={{ scale: 1.05 }}
+                    className="inline-flex"
+                  >
+                    <Badge 
+                      variant="outline" 
+                      className="text-sm font-semibold px-4 py-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-gray-200/50 dark:border-gray-700/50 shadow-sm"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                      {Object.keys(state.stageResults).length}/{WORKFLOW_STAGES.length} Stappen
+                    </Badge>
+                  </motion.div>
+                  {totalProcessingTime > 0 && (
+                    <motion.div 
+                      className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 font-medium"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.3 }}
+                    >
+                      <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                        <Clock className="h-4 w-4 text-blue-600" />
+                      </div>
+                      {totalProcessingTime}s totale tijd
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+              
+              <motion.div 
+                className="mt-6 space-y-3"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Voortgang: {progressPercentage}%
+                  </span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {currentStage.label}
+                  </span>
+                </div>
+                <div className="relative">
+                  <Progress 
+                    value={progressPercentage} 
+                    className="h-3 bg-gray-200/50 dark:bg-gray-700/50 rounded-full overflow-hidden" 
+                  />
+                  <div 
+                    className="absolute top-0 left-0 h-3 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000 ease-out shadow-lg"
+                    style={{ width: `${progressPercentage}%` }}
+                  />
+                </div>
+              </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Modern Workflow Interface */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <Card className="bg-white/60 dark:bg-gray-900/60 backdrop-blur-xl border border-white/20 dark:border-gray-700/30 shadow-2xl">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                  <Eye className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <span className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
+                    AI Workflow - Volledige Transparantie
+                  </span>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 font-normal mt-1">
+                    Bekijk en bewerk exact wat naar de AI wordt gestuurd en wat terugkomt
+                  </p>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 md:p-6 space-y-4">
           {WORKFLOW_STAGES.map((stage, index) => {
             const stageResult = state.stageResults[stage.key] || "";
             const stagePrompt = state.stagePrompts[stage.key] || "";
