@@ -938,18 +938,28 @@ export function SimplifiedWorkflowView({
               </div>
             );
           })}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-      {/* Performance Dashboard */}
-      {Object.keys(state.stageResults).length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Performance Dashboard
-            </CardTitle>
-          </CardHeader>
+        {/* Performance Dashboard */}
+        {Object.keys(state.stageResults).length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <Card className="bg-gradient-to-br from-slate-50 to-gray-100 dark:from-gray-800/50 dark:to-gray-900/50 backdrop-blur border border-gray-200/50 dark:border-gray-700/30 shadow-xl">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg">
+                    <Clock className="h-5 w-5 text-white" />
+                  </div>
+                  <span className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
+                    Performance Dashboard
+                  </span>
+                </CardTitle>
+              </CardHeader>
           <CardContent className="space-y-6">
             {/* Key Metrics */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -1127,19 +1137,29 @@ export function SimplifiedWorkflowView({
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </motion.div>
       )}
       
       {/* Live Process Monitor */}
       {Object.keys(state.stageProcessing || {}).some(key => state.stageProcessing[key]) && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-green-500 animate-pulse" />
-              Live Proces Monitor
-            </CardTitle>
-          </CardHeader>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+        >
+          <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 backdrop-blur border border-green-200/50 dark:border-green-700/30 shadow-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg">
+                  <Activity className="h-5 w-5 text-white animate-pulse" />
+                </div>
+                <span className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
+                  Live Proces Monitor
+                </span>
+              </CardTitle>
+            </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {Object.entries(state.stageProcessing || {}).map(([stageKey, isProcessing]) => {
@@ -1198,7 +1218,9 @@ export function SimplifiedWorkflowView({
             </div>
           </CardContent>
         </Card>
+        </motion.div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
