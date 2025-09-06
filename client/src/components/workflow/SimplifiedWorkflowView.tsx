@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 import { 
   Play, 
   CheckCircle, 
@@ -12,7 +13,9 @@ import {
   Copy,
   MessageSquare,
   Clock,
-  Workflow
+  Workflow,
+  ArrowRight,
+  Send
 } from "lucide-react";
 import { useState } from "react";
 import { WORKFLOW_STAGES } from "./constants";
@@ -107,8 +110,136 @@ export function SimplifiedWorkflowView({
         </CardContent>
       </Card>
 
-      {/* Main Workflow View */}
+      {/* Complete Input/Output Transparency */}
+      <Card className="border-2 border-primary/30">
+        <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10">
+          <CardTitle className="flex items-center gap-2">
+            <Eye className="h-5 w-5" />
+            Complete Transparantie - Alle AI Prompts & Outputs
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Hieronder zie je EXACT wat naar de AI wordt gestuurd en wat terugkomt - precies zoals je handmatig zou doen.
+          </p>
+        </CardHeader>
+        <CardContent className="p-4">
+          {WORKFLOW_STAGES.map((stage, index) => {
+            const stageResult = state.stageResults[stage.key] || "";
+            const stagePrompt = state.stagePrompts[stage.key] || "";
+            const isActive = index === state.currentStageIndex;
+            const isCompleted = !!stageResult;
+            const isProcessing = state.stageProcessing[stage.key] || false;
+            const processingTime = state.stageTimes[stage.key];
+            
+            return (
+              <div key={`transparency-${stage.key}`} className={`border rounded-lg p-4 mb-4 ${
+                isActive ? 'ring-2 ring-primary border-primary bg-primary/5' : 
+                isCompleted ? 'border-green-500/50 bg-green-50/30 dark:bg-green-950/20' : 
+                'border-gray-200 opacity-60'
+              }`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                      isCompleted ? 'bg-green-500 text-white' :
+                      isActive ? 'bg-primary text-white' :
+                      'bg-gray-200 text-gray-400'
+                    }`}>
+                      {isCompleted ? <CheckCircle className="h-5 w-5" /> : 
+                       isProcessing ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> :
+                       <span className="text-sm font-medium">{index + 1}</span>}
+                    </div>
+                    <div>
+                      <h3 className="font-medium">{stage.label}</h3>
+                      {processingTime && (
+                        <Badge variant="outline" className="text-xs mt-1">
+                          {processingTime}s
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  {isProcessing && (
+                    <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
+                      <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-sm font-medium">AI bezig...</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Input/Output Display */}
+                {(stagePrompt || stageResult || isActive) && (
+                  <div className="space-y-4">
+                    {/* AI Input (Prompt) */}
+                    {stagePrompt && (
+                      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <div className="flex items-center justify-between p-3 border-b border-blue-200 dark:border-blue-800">
+                          <div className="flex items-center gap-2">
+                            <Send className="h-4 w-4 text-blue-600" />
+                            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                              Prompt naar AI
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyToClipboard(stagePrompt, "Prompt")}
+                            className="h-6 text-blue-600 hover:text-blue-700"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="p-3 max-h-60 overflow-y-auto">
+                          <pre className="text-xs font-mono whitespace-pre-wrap text-blue-800 dark:text-blue-200">
+                            {stagePrompt}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Arrow between input and output */}
+                    {stagePrompt && stageResult && (
+                      <div className="flex justify-center">
+                        <ArrowRight className="h-5 w-5 text-gray-400" />
+                      </div>
+                    )}
+
+                    {/* AI Output (Response) */}
+                    {stageResult && (
+                      <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+                        <div className="flex items-center justify-between p-3 border-b border-green-200 dark:border-green-800">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span className="text-sm font-medium text-green-700 dark:text-green-300">
+                              AI Response
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyToClipboard(stageResult, "Response")}
+                            className="h-6 text-green-600 hover:text-green-700"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="p-3 max-h-60 overflow-y-auto">
+                          <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200">
+                            {stageResult.slice(0, 1000)}{stageResult.length > 1000 ? '...' : ''}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      {/* Interactive Workflow Controls */}
       <Card>
+        <CardHeader>
+          <CardTitle>Workflow Controle</CardTitle>
+        </CardHeader>
         <CardContent className="p-4">
           {WORKFLOW_STAGES.map((stage, index) => {
             const isActive = index === state.currentStageIndex;
