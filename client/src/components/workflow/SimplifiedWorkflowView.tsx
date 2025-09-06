@@ -18,7 +18,9 @@ import {
   ArrowRight,
   Send,
   FileText,
-  Zap
+  Zap,
+  RefreshCw,
+  Info
 } from "lucide-react";
 import { useState } from "react";
 import { WORKFLOW_STAGES } from "./constants";
@@ -42,6 +44,8 @@ export function SimplifiedWorkflowView({
 }: SimplifiedWorkflowViewProps) {
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"simple" | "detailed">("simple");
+  const [promptPreviews, setPromptPreviews] = useState<Record<string, string>>({});
+  const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
   const { toast } = useToast();
   
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
@@ -61,6 +65,8 @@ export function SimplifiedWorkflowView({
       newExpanded.delete(stageKey);
     } else {
       newExpanded.add(stageKey);
+      // Fetch prompt preview when expanding a stage
+      fetchPromptPreview(stageKey);
     }
     setExpandedStages(newExpanded);
   };
@@ -73,6 +79,36 @@ export function SimplifiedWorkflowView({
       stage: currentStage.key,
       customInput: state.customInput || undefined,
     });
+  };
+
+  const executeStage = (stageKey: string) => {
+    if (!state.currentReport) return;
+    
+    executeStageM.mutate({
+      reportId: state.currentReport.id,
+      stage: stageKey,
+      customInput: state.customInput || undefined,
+    });
+  };
+
+  // Fetch prompt preview for a stage
+  const fetchPromptPreview = async (stageKey: string) => {
+    if (!state.currentReport || promptPreviews[stageKey]) return;
+    
+    setLoadingPreview(stageKey);
+    try {
+      const response = await fetch(`/api/reports/${state.currentReport.id}/stage/${stageKey}/preview`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data?.prompt) {
+          setPromptPreviews(prev => ({ ...prev, [stageKey]: data.data.prompt }));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch prompt preview:', error);
+    } finally {
+      setLoadingPreview(null);
+    }
   };
 
   const handleStageClick = (stageKey: string, index: number) => {
@@ -296,11 +332,23 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
                         
-                        {/* Completed indicator */}
+                        {/* Completed indicator with re-run button */}
                         {isCompleted && (
-                          <div className="mt-3 flex items-center gap-2 text-green-600 dark:text-green-400">
-                            <CheckCircle className="h-4 w-4" />
-                            <span className="text-sm">Voltooid</span>
+                          <div className="mt-3 space-y-2">
+                            <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                              <CheckCircle className="h-4 w-4" />
+                              <span className="text-sm">Voltooid</span>
+                            </div>
+                            <Button
+                              onClick={() => executeStage(stage.key)}
+                              disabled={executeStageM.isPending}
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                            >
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Opnieuw uitvoeren
+                            </Button>
                           </div>
                         )}
                       </>
@@ -309,7 +357,45 @@ export function SimplifiedWorkflowView({
                     {/* Detailed View: Show full prompts and outputs */}
                     {viewMode === "detailed" && (
                       <div className="mt-3 space-y-3">
-                        {/* Show Input/Prompt */}
+                        {/* Show Prompt Preview for non-completed stages */}
+                        {!isCompleted && !stagePrompt && (promptPreviews[stage.key] || loadingPreview === stage.key) && (
+                          <div className="space-y-2">
+                            <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                              <div className="flex items-center justify-between p-2 border-b border-yellow-200 dark:border-yellow-800">
+                                <div className="flex items-center gap-2">
+                                  <Info className="h-3 w-3 text-yellow-600" />
+                                  <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
+                                    PROMPT PREVIEW (wordt verstuurd bij uitvoering)
+                                  </span>
+                                </div>
+                                {promptPreviews[stage.key] && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => copyToClipboard(promptPreviews[stage.key], "Prompt Preview")}
+                                    className="h-6 w-6 p-0"
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                              <div className="p-2 max-h-32 overflow-y-auto">
+                                {loadingPreview === stage.key ? (
+                                  <div className="flex items-center gap-2 text-xs text-yellow-600">
+                                    <div className="w-3 h-3 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin" />
+                                    Prompt preview ophalen...
+                                  </div>
+                                ) : (
+                                  <pre className="text-xs font-mono whitespace-pre-wrap text-yellow-800 dark:text-yellow-200">
+                                    {promptPreviews[stage.key]?.slice(0, 500)}{promptPreviews[stage.key]?.length > 500 ? '...' : ''}
+                                  </pre>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Show Input/Prompt after execution */}
                         {stagePrompt && (
                           <div className="space-y-2">
                             <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -430,8 +516,22 @@ export function SimplifiedWorkflowView({
                           </>
                         )}
 
+                        {/* Re-run button for completed stages */}
+                        {isCompleted && (
+                          <Button
+                            onClick={() => executeStage(stage.key)}
+                            disabled={executeStageM.isPending}
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Opnieuw uitvoeren
+                          </Button>
+                        )}
+                        
                         {/* No prompt/output yet message */}
-                        {!stagePrompt && !stageResult && !isActive && (
+                        {!stagePrompt && !stageResult && !isActive && !promptPreviews[stage.key] && (
                           <p className="text-xs text-muted-foreground text-center py-2">
                             Deze stap is nog niet uitgevoerd
                           </p>
