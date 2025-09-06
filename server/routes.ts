@@ -99,6 +99,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get prompt preview for a stage without executing it
+  app.get("/api/reports/:id/stage/:stage/preview", async (req, res) => {
+    try {
+      const { id, stage } = req.params;
+      const report = await storage.getReport(id);
+      
+      if (!report) {
+        return res.status(404).json({ message: "Rapport niet gevonden" });
+      }
+
+      // Generate the prompt without executing the stage
+      const prompt = await reportGenerator.generatePromptForStage(
+        stage,
+        report.dossierData as DossierData,
+        report.bouwplanData as BouwplanData,
+        report.stageResults as Record<string, string> || {},
+        report.conceptReportVersions as Record<string, string> || {},
+        undefined // No custom input for preview
+      );
+
+      res.json(createApiSuccessResponse({ prompt }, "Prompt preview succesvol opgehaald"));
+    } catch (error: any) {
+      console.error("Error generating prompt preview:", error);
+      res.status(500).json({ 
+        message: "Fout bij het genereren van prompt preview",
+        error: error.message 
+      });
+    }
+  });
+
   // Execute specific stage of report generation
   app.post("/api/reports/:id/stage/:stage", async (req, res) => {
     const requestKey = `${req.params.id}-${req.params.stage}`;

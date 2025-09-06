@@ -136,15 +136,14 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     }
   }
 
-  async executeStage(
+  async generatePromptForStage(
     stageName: string,
     dossier: DossierData,
     bouwplan: BouwplanData,
     previousStageResults: Record<string, string>,
     conceptReportVersions: Record<string, string>,
-    customInput?: string,
-    jobId?: string
-  ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
+    customInput?: string
+  ): Promise<string> {
     const currentDate = new Date().toLocaleDateString('nl-NL', {
       year: 'numeric',
       month: 'long', 
@@ -154,46 +153,6 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     // Get active prompt configuration from database
     const promptConfig = await storage.getActivePromptConfig();
     const stageConfig: any = promptConfig?.config?.[stageName as keyof typeof promptConfig.config] || {};
-    const globalConfig: any = promptConfig?.config || {};
-
-    // Determine which AI configuration to use (stage-specific or global)
-    const stageAiConfig = stageConfig?.aiConfig;
-    const globalAiConfig = globalConfig?.aiConfig;
-
-    // Build merged AI config with fallbacks
-    const aiConfig: AiConfig = {
-      provider: stageAiConfig?.provider || globalAiConfig?.provider || "google",
-      model: stageAiConfig?.model || globalAiConfig?.model || "gemini-2.5-pro",
-      temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.1,
-      topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
-      topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 20,
-      maxOutputTokens: stageAiConfig?.maxOutputTokens ?? globalAiConfig?.maxOutputTokens ?? 8192,
-      reasoning: stageAiConfig?.reasoning || globalAiConfig?.reasoning,
-      verbosity: stageAiConfig?.verbosity || globalAiConfig?.verbosity
-    };
-
-    // Increase max tokens for reviewer stages that need detailed feedback  
-    if (stageName.startsWith("4")) {
-      // Deep Research models need much more tokens (reasoning + conclusion)
-      if (aiConfig.model?.includes('deep-research')) {
-        aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 16384);
-        console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for Deep Research reviewer stage ${stageName}`);
-      } else if (aiConfig.maxOutputTokens < 4096) {
-        aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 4096);
-        console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for reviewer stage ${stageName}`);
-      }
-    }
-
-    // Get stage-specific settings
-    const useGrounding = stageConfig?.useGrounding ?? globalConfig?.useGrounding ?? false;
-    const useWebSearch = stageConfig?.useWebSearch ?? globalConfig?.useWebSearch ?? false;
-
-    console.log(`🎯 [${jobId}] Starting stage ${stageName}:`, {
-      provider: aiConfig.provider,
-      model: aiConfig.model,
-      grounding: useGrounding,
-      webSearch: useWebSearch
-    });
 
     // Build the prompt based on stage
     let prompt: string;
@@ -247,6 +206,72 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     if (customInput) {
       prompt = `${prompt}\n\n### Aanvullende Input:\n${customInput}`;
     }
+
+    return prompt;
+  }
+
+  async executeStage(
+    stageName: string,
+    dossier: DossierData,
+    bouwplan: BouwplanData,
+    previousStageResults: Record<string, string>,
+    conceptReportVersions: Record<string, string>,
+    customInput?: string,
+    jobId?: string
+  ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
+    // Generate the prompt using the new method
+    const prompt = await this.generatePromptForStage(
+      stageName,
+      dossier,
+      bouwplan,
+      previousStageResults,
+      conceptReportVersions,
+      customInput
+    );
+
+    // Get active prompt configuration from database for AI config
+    const promptConfig = await storage.getActivePromptConfig();
+    const stageConfig: any = promptConfig?.config?.[stageName as keyof typeof promptConfig.config] || {};
+    const globalConfig: any = promptConfig?.config || {};
+
+    // Determine which AI configuration to use (stage-specific or global)
+    const stageAiConfig = stageConfig?.aiConfig;
+    const globalAiConfig = globalConfig?.aiConfig;
+
+    // Build merged AI config with fallbacks
+    const aiConfig: AiConfig = {
+      provider: stageAiConfig?.provider || globalAiConfig?.provider || "google",
+      model: stageAiConfig?.model || globalAiConfig?.model || "gemini-2.5-pro",
+      temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.1,
+      topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
+      topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 20,
+      maxOutputTokens: stageAiConfig?.maxOutputTokens ?? globalAiConfig?.maxOutputTokens ?? 8192,
+      reasoning: stageAiConfig?.reasoning || globalAiConfig?.reasoning,
+      verbosity: stageAiConfig?.verbosity || globalAiConfig?.verbosity
+    };
+
+    // Increase max tokens for reviewer stages that need detailed feedback  
+    if (stageName.startsWith("4")) {
+      // Deep Research models need much more tokens (reasoning + conclusion)
+      if (aiConfig.model?.includes('deep-research')) {
+        aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 16384);
+        console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for Deep Research reviewer stage ${stageName}`);
+      } else if (aiConfig.maxOutputTokens < 4096) {
+        aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 4096);
+        console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for reviewer stage ${stageName}`);
+      }
+    }
+
+    // Get stage-specific settings
+    const useGrounding = stageConfig?.useGrounding ?? globalConfig?.useGrounding ?? false;
+    const useWebSearch = stageConfig?.useWebSearch ?? globalConfig?.useWebSearch ?? false;
+
+    console.log(`🎯 [${jobId}] Starting stage ${stageName}:`, {
+      provider: aiConfig.provider,
+      model: aiConfig.model,
+      grounding: useGrounding,
+      webSearch: useWebSearch
+    });
 
     // Call the AI model using the factory
     const options: AIModelParameters & { jobId?: string } = {

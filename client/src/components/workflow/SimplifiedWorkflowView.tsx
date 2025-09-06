@@ -22,7 +22,7 @@ import {
   RefreshCw,
   Info
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { WORKFLOW_STAGES } from "./constants";
 import { ReviewFeedbackEditor } from "./ReviewFeedbackEditor";
 import { useToast } from "@/hooks/use-toast";
@@ -65,8 +65,10 @@ export function SimplifiedWorkflowView({
       newExpanded.delete(stageKey);
     } else {
       newExpanded.add(stageKey);
-      // Fetch prompt preview when expanding a stage
-      fetchPromptPreview(stageKey);
+      // Fetch prompt preview when expanding a stage in detailed view
+      if (viewMode === "detailed") {
+        fetchPromptPreview(stageKey);
+      }
     }
     setExpandedStages(newExpanded);
   };
@@ -119,6 +121,13 @@ export function SimplifiedWorkflowView({
   };
 
   const totalProcessingTime = Object.values(state.stageTimes).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+
+  // Auto-fetch prompt preview for current stage in detailed view
+  useEffect(() => {
+    if (viewMode === "detailed" && currentStage && !state.stageResults[currentStage.key]) {
+      fetchPromptPreview(currentStage.key);
+    }
+  }, [viewMode, state.currentStageIndex, state.currentReport]);
 
   return (
     <div className="space-y-4 max-w-full overflow-hidden">
@@ -357,8 +366,8 @@ export function SimplifiedWorkflowView({
                     {/* Detailed View: Show full prompts and outputs */}
                     {viewMode === "detailed" && (
                       <div className="mt-3 space-y-3">
-                        {/* Show Prompt Preview for non-completed stages */}
-                        {!isCompleted && !stagePrompt && (promptPreviews[stage.key] || loadingPreview === stage.key) && (
+                        {/* Show Prompt Preview for non-completed stages and active stage */}
+                        {(!isCompleted || isActive) && !stagePrompt && (promptPreviews[stage.key] || loadingPreview === stage.key || isActive) && (
                           <div className="space-y-2">
                             <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                               <div className="flex items-center justify-between p-2 border-b border-yellow-200 dark:border-yellow-800">
