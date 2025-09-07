@@ -79,21 +79,58 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
       if (result?.output_text && typeof result.output_text === 'string') {
         content = result.output_text;
       } else if (result?.output && Array.isArray(result.output) && result.output.length > 0) {
-        // Look for the message type in output array
-        const messageOutput = result.output.find((item: any) => item?.type === 'message') || 
-                            result.output[result.output.length - 1];
-        
-        if (Array.isArray(messageOutput?.content) && messageOutput.content.length > 0) {
-          const firstContent = messageOutput.content[0];
-          if (firstContent?.text) {
-            content = firstContent.text;
-          } else if (typeof firstContent === 'string') {
-            content = firstContent;
+        // Check each output item for content
+        for (const outputItem of result.output) {
+          // Skip reasoning and web_search_call types, look for message/text content
+          if (outputItem?.type === 'reasoning' || outputItem?.type === 'web_search_call') {
+            continue;
           }
-        } else if (typeof messageOutput?.content === 'string') {
-          content = messageOutput.content;
-        } else if (messageOutput?.text) {
-          content = messageOutput.text;
+          
+          // Look for message type
+          if (outputItem?.type === 'message') {
+            if (Array.isArray(outputItem?.content) && outputItem.content.length > 0) {
+              const firstContent = outputItem.content[0];
+              if (firstContent?.text) {
+                content = firstContent.text;
+                break;
+              } else if (typeof firstContent === 'string') {
+                content = firstContent;
+                break;
+              }
+            } else if (typeof outputItem?.content === 'string') {
+              content = outputItem.content;
+              break;
+            }
+          }
+          
+          // Look for direct text content
+          if (outputItem?.text && typeof outputItem.text === 'string') {
+            content = outputItem.text;
+            break;
+          }
+          
+          // Look for content field
+          if (outputItem?.content && typeof outputItem.content === 'string') {
+            content = outputItem.content;
+            break;
+          }
+        }
+        
+        // If still no content, try the last item regardless of type
+        if (!content && result.output.length > 0) {
+          const lastOutput = result.output[result.output.length - 1];
+          if (Array.isArray(lastOutput?.content) && lastOutput.content.length > 0) {
+            const firstContent = lastOutput.content[0];
+            if (firstContent?.text) {
+              content = firstContent.text;
+            } else if (typeof firstContent === 'string') {
+              content = firstContent;
+            }
+          } else if (typeof lastOutput?.content === 'string') {
+            content = lastOutput.content;
+          } else if (lastOutput?.text) {
+            content = lastOutput.text;
+          }
         }
       }
 
