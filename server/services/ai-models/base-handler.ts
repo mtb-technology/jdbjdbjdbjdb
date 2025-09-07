@@ -67,4 +67,85 @@ export abstract class BaseAIHandler {
     
     return `${prompt}\n\nIMPORTANT: Voor deze analyse heb je toegang tot actuele online informatie. Zoek actief naar relevante fiscale regelgeving, jurisprudentie en Belastingdienst publicaties om je antwoord te onderbouwen. Gebruik alleen officiële Nederlandse bronnen zoals belastingdienst.nl, wetten.overheid.nl, en rijksoverheid.nl.`;
   }
+
+  // Helper method to normalize response content across different model formats
+  protected normalizeResponseContent(
+    rawResponse: any, 
+    modelType: string, 
+    jobId?: string
+  ): string {
+    let content = "";
+    
+    // Try different response formats based on model type
+    if (modelType === "deep-research") {
+      // Deep Research format: output array with message/reasoning items
+      if (rawResponse?.output && Array.isArray(rawResponse.output)) {
+        for (const item of rawResponse.output.reverse()) {
+          if (item?.type === 'message' && item?.content) {
+            if (Array.isArray(item.content)) {
+              const textContent = item.content.find((c: any) => c?.text);
+              if (textContent?.text) {
+                content = textContent.text;
+                break;
+              }
+            } else if (typeof item.content === 'string') {
+              content = item.content;
+              break;
+            }
+          }
+        }
+      }
+      // Fallback to output_text for Deep Research
+      if (!content && rawResponse?.output_text) {
+        content = rawResponse.output_text;
+      }
+    } else if (modelType === "gpt5") {
+      // GPT-5 format: direct output_text field
+      content = rawResponse?.output_text || "";
+      
+      // Alternative GPT-5 format with output array
+      if (!content && rawResponse?.output && Array.isArray(rawResponse.output)) {
+        const lastItem = rawResponse.output[rawResponse.output.length - 1];
+        if (lastItem?.text) content = lastItem.text;
+      }
+    } else if (modelType === "openai-standard" || modelType === "openai-reasoning") {
+      // Standard OpenAI format: choices array
+      content = rawResponse?.choices?.[0]?.message?.content || "";
+    } else if (modelType === "google") {
+      // Google Gemini format: candidates array
+      content = rawResponse?.candidates?.[0]?.content?.parts?.[0]?.text || 
+                rawResponse?.text || "";
+    }
+    
+    // Generic fallbacks for any model type
+    if (!content) {
+      // Try direct content field
+      content = rawResponse?.content || "";
+      
+      // Try result field (some models use this)
+      if (!content) content = rawResponse?.result || "";
+      
+      // Try text field
+      if (!content) content = rawResponse?.text || "";
+    }
+    
+    // Log normalization result
+    if (jobId) {
+      if (content) {
+        console.log(`✅ [${jobId}] Normalized ${modelType} response: ${content.length} chars`);
+      } else {
+        console.warn(`⚠️ [${jobId}] Failed to normalize ${modelType} response`);
+      }
+    }
+    
+    return content;
+  }
+
+  // Helper to detect if response is incomplete
+  protected isIncompleteResponse(rawResponse: any): boolean {
+    return rawResponse?.status === 'incomplete' ||
+           rawResponse?.finish_reason === 'length' ||
+           rawResponse?.finish_reason === 'max_tokens' ||
+           rawResponse?.incomplete_details?.reason === 'max_output_tokens';
+  }
 }
