@@ -550,7 +550,7 @@ export function SimplifiedWorkflowView({
                                     <div className="flex items-center gap-2">
                                       <ArrowRight className="h-3 w-3 text-blue-600" />
                                       <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
-                                        INPUT UIT STAP {prevIndex + 1}: {prevStage.title}
+                                        INPUT UIT STAP {prevIndex + 1}: {prevStage.name}
                                       </span>
                                     </div>
                                     <Button
@@ -564,14 +564,7 @@ export function SimplifiedWorkflowView({
                                   </div>
                                   <div className="p-2 max-h-48 overflow-y-auto">
                                     <div className="text-xs text-blue-800 dark:text-blue-200 whitespace-pre-wrap bg-white/50 dark:bg-gray-900/50 p-2 rounded border">
-                                      {prevResult.length > 500 ? (
-                                        <>
-                                          {prevResult.substring(0, 500)}
-                                          <span className="text-blue-600 font-medium">... ({prevResult.length - 500} tekens meer)</span>
-                                        </>
-                                      ) : (
-                                        prevResult
-                                      )}
+                                      {prevResult}
                                     </div>
                                   </div>
                                 </div>
