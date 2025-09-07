@@ -180,14 +180,14 @@ export const AI_MODELS = {
     handlerType: 'openai-deep-research' as const,
     supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
     defaultConfig: {
-      maxOutputTokens: 8192  // Reduced to prevent memory issues
+      maxOutputTokens: 8192  // Default, will be increased for complex stages
     },
     limits: {
       maxTokensPerRequest: 200000,
       maxRequestsPerMinute: 100
     },
     requiresResponsesAPI: true,
-    timeout: 300000 // Reduced to 5 minutes to prevent crashes
+    timeout: 900000 // 15 minutes for Deep Research with web search
   }
 } as const;
 
