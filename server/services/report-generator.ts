@@ -6,6 +6,24 @@ import { ServerError } from "../middleware/errorHandler";
 import { ERROR_CODES } from "@shared/errors";
 
 export class ReportGenerator {
+  private getStageDisplayName(stageName: string): string {
+    const stageNames: Record<string, string> = {
+      '1_informatiecheck': 'Informatie Check',
+      '2_complexiteitscheck': 'Complexiteits Check',
+      '3_generatie': 'Rapport Generatie',
+      '4a_BronnenSpecialist': 'Bronnen Specialist Review',
+      '4b_FiscaalTechnischSpecialist': 'Fiscaal Technisch Review',
+      '4c_ScenarioGatenAnalist': 'Scenario Analyse',
+      '4d_DeVertaler': 'Vertaling Review',
+      '4e_DeAdvocaat': 'Juridisch Review',
+      '4f_DeKlantpsycholoog': 'Klant Psychologie Review',
+      '4g_ChefEindredactie': 'Eindredactie',
+      '5_feedback_verwerker': 'Feedback Verwerking',
+      'final_check': 'Finale Check'
+    };
+    return stageNames[stageName] || stageName;
+  }
+
   private sourceValidator: SourceValidator;
   private modelFactory: AIModelFactory;
 
@@ -306,51 +324,29 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       return { stageOutput, conceptReport, prompt };
 
     } catch (error: any) {
-      console.error(`🚨 [${jobId}] Primary model failed (${aiConfig.model}):`, error.message);
+      console.error(`🚨 [${jobId}] Model failed (${aiConfig.model}):`, error.message);
       
-      // ROBUST FALLBACK: Try multiple models in sequence
-      const fallbackModels = [
-        { provider: 'openai' as const, model: 'gpt-5', maxOutputTokens: 16384 },
-        { provider: 'google' as const, model: 'gemini-2.5-flash', maxOutputTokens: 16384 },
-        { provider: 'openai' as const, model: 'o1-2025-01-09', maxOutputTokens: 16384 }
-      ];
+      // NO FALLBACK MODELS - Direct placeholder response
+      const stageDisplayName = this.getStageDisplayName(stageName);
       
-      for (const fallback of fallbackModels) {
-        // Skip if it's the same as primary
-        if (fallback.provider === aiConfig.provider && fallback.model === aiConfig.model) continue;
-        
-        console.log(`🔄 [${jobId}] Attempting fallback to ${fallback.model}...`);
-        try {
-          const fallbackConfig = {
-            ...aiConfig,
-            ...fallback
-          };
-          
-          const fallbackResponse = await this.modelFactory.callModel(fallbackConfig, prompt, options);
-          
-          console.log(`✅ [${jobId}] Fallback successful using ${fallback.model}`);
-          
-          let stageOutput = fallbackResponse.content;
-          let conceptReport = "";
-          
-          if (["3_generatie", "5_feedback_verwerker", "final_check"].includes(stageName)) {
-            conceptReport = stageOutput;
-          } else {
-            conceptReport = conceptReportVersions?.["latest"] || "";
-          }
-          
-          return { stageOutput, conceptReport, prompt };
-          
-        } catch (fallbackError: any) {
-          console.error(`🚨 [${jobId}] Fallback ${fallback.model} failed:`, fallbackError.message);
-          // Continue to next fallback
-        }
-      }
+      const placeholderResponse = `## ${stageDisplayName}
+
+De AI-analyse kon niet worden uitgevoerd vanwege technische problemen.
+
+### Technische Details:
+- Model: ${aiConfig.model}
+- Prompt lengte: ${prompt.length} karakters
+- Foutmelding: ${error.message}
+
+### Advies:
+1. Probeer de stap opnieuw uit te voeren
+2. Controleer of uw API keys correct zijn geconfigureerd
+3. Neem contact op met support als het probleem aanhoudt
+
+### Status:
+⚠️ Deze stap is niet voltooid en moet opnieuw worden uitgevoerd.`;
       
-      // All fallbacks failed - return a minimal working response
-      console.error(`⚠️ [${jobId}] All AI models failed - returning placeholder response`);
-      
-      const placeholderResponse = `## Analyse ${stageName}\n\nDe AI-analyse kon niet worden uitgevoerd vanwege technische problemen. \n\n### Prompt lengte: ${prompt.length} karakters\n\n### Foutmelding:\n${error.message}\n\n### Advies:\nProbeer de stap opnieuw uit te voeren of neem contact op met support.`;
+      console.log(`⚠️ [${jobId}] Returning placeholder response for failed stage ${stageName}`);
       
       return {
         stageOutput: placeholderResponse,
