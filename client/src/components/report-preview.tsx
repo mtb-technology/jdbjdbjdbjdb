@@ -15,6 +15,51 @@ import {
 } from "lucide-react";
 import type { Report } from "@shared/schema";
 
+// Format plain text/markdown to professional fiscal report HTML - ONLY styling, no structure changes
+function formatReportContent(content: string): string {
+  if (!content) return "";
+  
+  // Just apply styling to whatever content comes from AI - no structural changes
+  return content
+    // Headers - professional styling without changing structure
+    .replace(/^#{3}\s+(.+)$/gm, '<h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mt-8 mb-3 border-b border-gray-300 dark:border-gray-600 pb-2">$1</h3>')
+    .replace(/^#{2}\s+(.+)$/gm, '<h2 class="text-xl font-bold text-gray-900 dark:text-gray-100 mt-10 mb-4 border-b-2 border-blue-600 pb-3">$1</h2>')
+    .replace(/^#{1}\s+(.+)$/gm, '<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-10 mb-6">$1</h1>')
+    
+    // Special title patterns from PDF
+    .replace(/^(Fiscale Analyse.*?)$/m, '<h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-4 text-center">$1</h1>')
+    .replace(/^(Uw vraag beantwoord)$/gm, '<h2 class="text-xl font-bold text-gray-900 dark:text-gray-100 mt-10 mb-4 text-blue-700 dark:text-blue-400">$1</h2>')
+    
+    // Bold and italic
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-gray-900 dark:text-gray-100">$1</strong>')
+    .replace(/\*([^\*]+?)\*/g, '<em class="italic text-gray-700 dark:text-gray-300">$1</em>')
+    
+    // Bullet lists - professional indentation
+    .replace(/^[\*\-•]\s+(.+)$/gm, '<li class="ml-8 mb-2 text-gray-700 dark:text-gray-300 leading-relaxed">$1</li>')
+    .replace(/(<li class="ml-8.*?<\/li>\s*)+/g, '<ul class="mb-6 list-disc list-outside pl-2">$&</ul>')
+    
+    // Numbered lists  
+    .replace(/^\d+\.\s+(.+)$/gm, '<li class="ml-8 mb-2 text-gray-700 dark:text-gray-300 leading-relaxed">$1</li>')
+    .replace(/(<li class="ml-8 mb-2 text-gray-700.*?<\/li>\s*)+/g, '<ol class="mb-6 list-decimal list-outside pl-2">$&</ol>')
+    
+    // Quotes and special sections
+    .replace(/^>\s+(.+)$/gm, '<blockquote class="border-l-4 border-blue-500 pl-4 py-2 my-4 bg-blue-50 dark:bg-blue-950/20 italic text-gray-700 dark:text-gray-300">$1</blockquote>')
+    
+    // Professional line breaks and paragraphs
+    .replace(/\n\n+/g, '</p><p class="mb-4 text-gray-700 dark:text-gray-300 leading-relaxed">')
+    .replace(/^(.+)$/gm, (match) => {
+      // Don't wrap lines that already contain HTML tags
+      if (!match.includes('<') && match.trim()) {
+        return `<p class="mb-4 text-gray-700 dark:text-gray-300 leading-relaxed">${match}</p>`;
+      }
+      return match;
+    })
+    // Clean up any empty paragraphs
+    .replace(/<p[^>]*>\s*<\/p>/g, '')
+    // Ensure content starts with a paragraph if it doesn't start with a tag
+    .replace(/^([^<])/m, '<p class="mb-4 text-gray-700 dark:text-gray-300 leading-relaxed">$1');
+}
+
 interface ReportPreviewProps {
   report: Report | null;
   isGenerating: boolean;
@@ -173,7 +218,7 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
           {/* Report Sections */}
           {report.generatedContent ? (
             <div className="prose prose-sm max-w-none" data-testid="report-content">
-              <div dangerouslySetInnerHTML={{ __html: report.generatedContent }} />
+              <div dangerouslySetInnerHTML={{ __html: formatReportContent(report.generatedContent) }} />
             </div>
           ) : (
             <div className="text-center text-muted-foreground py-8">
