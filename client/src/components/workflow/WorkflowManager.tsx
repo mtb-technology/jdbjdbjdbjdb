@@ -234,7 +234,9 @@ function WorkflowManagerContent({
       // Only auto-advance if we're still on the same stage that was executed
       if (variables.stage === currentStage.key) {
         const nextIndex = getNextStageIndex();
+        console.log(`🎯 Auto-advance check: current=${state.currentStageIndex}, next=${nextIndex}, stage=${variables.stage}`);
         if (nextIndex !== state.currentStageIndex) {
+          console.log(`✅ Auto-advancing from stage ${state.currentStageIndex} to ${nextIndex}`);
           dispatch({ type: "SET_STAGE_INDEX", payload: nextIndex });
         }
       }
