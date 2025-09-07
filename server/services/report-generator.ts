@@ -180,10 +180,10 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         prompt = this.buildInformatieCheckPrompt(dossier, bouwplan, currentDate, stageConfig);
         break;
       case "2_complexiteitscheck":
-        prompt = this.buildComplexiteitsCheckPrompt(dossier, bouwplan, currentDate, stageConfig);
+        prompt = this.buildComplexiteitsCheckPrompt(dossier, bouwplan, currentDate, stageConfig, previousStageResults);
         break;
       case "3_generatie":
-        prompt = this.buildGeneratiePrompt(dossier, bouwplan, currentDate, stageConfig);
+        prompt = this.buildGeneratiePrompt(dossier, bouwplan, currentDate, stageConfig, previousStageResults);
         break;
       case "5_feedback_verwerker":
         prompt = this.buildFeedbackVerwerkerPrompt(
@@ -428,38 +428,48 @@ ${JSON.stringify(bouwplan, null, 2)}`;
     dossier: DossierData,
     bouwplan: BouwplanData,
     currentDate: string,
-    stageConfig?: any
+    stageConfig?: any,
+    previousStageResults?: Record<string, string>
   ): string {
     const prompt = stageConfig?.prompt || "";
 
-    return `${prompt}
-
-### Datum: ${currentDate}
-
-### Dossier:
-${JSON.stringify(dossier, null, 2)}
-
-### Bouwplan:
-${JSON.stringify(bouwplan, null, 2)}`;
+    let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
+    
+    // Add previous stage results if available
+    if (previousStageResults && Object.keys(previousStageResults).length > 0) {
+      fullPrompt += `\n\n### Resultaten uit vorige stappen:`;
+      Object.entries(previousStageResults).forEach(([stage, result]) => {
+        fullPrompt += `\n\n#### ${stage}:\n${result}`;
+      });
+    }
+    
+    fullPrompt += `\n\n### Dossier:\n${JSON.stringify(dossier, null, 2)}\n\n### Bouwplan:\n${JSON.stringify(bouwplan, null, 2)}`;
+    
+    return fullPrompt;
   }
 
   private buildGeneratiePrompt(
     dossier: DossierData,
     bouwplan: BouwplanData,
     currentDate: string,
-    stageConfig?: any
+    stageConfig?: any,
+    previousStageResults?: Record<string, string>
   ): string {
     const prompt = stageConfig?.prompt || "";
 
-    return `${prompt}
-
-### Datum: ${currentDate}
-
-### Dossier:
-${JSON.stringify(dossier, null, 2)}
-
-### Bouwplan:
-${JSON.stringify(bouwplan, null, 2)}`;
+    let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
+    
+    // Add previous stage results if available  
+    if (previousStageResults && Object.keys(previousStageResults).length > 0) {
+      fullPrompt += `\n\n### Resultaten uit vorige stappen:`;
+      Object.entries(previousStageResults).forEach(([stage, result]) => {
+        fullPrompt += `\n\n#### ${stage}:\n${result}`;
+      });
+    }
+    
+    fullPrompt += `\n\n### Dossier:\n${JSON.stringify(dossier, null, 2)}\n\n### Bouwplan:\n${JSON.stringify(bouwplan, null, 2)}`;
+    
+    return fullPrompt;
   }
 
   private buildReviewerPrompt(

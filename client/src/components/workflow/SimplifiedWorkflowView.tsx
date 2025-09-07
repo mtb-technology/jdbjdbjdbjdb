@@ -536,6 +536,43 @@ export function SimplifiedWorkflowView({
                 {isExpanded && (
                   <div className="px-3 md:px-4 pb-3 md:pb-4 border-t">
                     <div className="mt-3 space-y-3">
+                        {/* Show Input from Previous Steps */}
+                        {index > 0 && (
+                          <div className="space-y-2">
+                            {/* Get previous stage results to show as input */}
+                            {WORKFLOW_STAGES.slice(0, index).map((prevStage, prevIndex) => {
+                              const prevResult = state.stageResults[prevStage.key];
+                              if (!prevResult) return null;
+                              
+                              return (
+                                <div key={prevStage.key} className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                  <div className="flex items-center justify-between p-2 border-b border-blue-200 dark:border-blue-800">
+                                    <div className="flex items-center gap-2">
+                                      <ArrowRight className="h-3 w-3 text-blue-600" />
+                                      <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                                        INPUT UIT STAP {prevIndex + 1}: {prevStage.label}
+                                      </span>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => copyToClipboard(prevResult, `Output Stap ${prevIndex + 1}`)}
+                                      className="h-6 w-6 p-0"
+                                    >
+                                      <Copy className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                  <div className="p-2 max-h-48 overflow-y-auto">
+                                    <div className="text-xs text-blue-800 dark:text-blue-200 whitespace-pre-wrap bg-white/50 dark:bg-gray-900/50 p-2 rounded border">
+                                      {prevResult}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        
                         {/* Show Prompt Preview for any stage when available */}
                         {(!stagePrompt || !isCompleted) && (promptPreviews[stage.key] || loadingPreview === stage.key) && (
                           <div className="space-y-2">
