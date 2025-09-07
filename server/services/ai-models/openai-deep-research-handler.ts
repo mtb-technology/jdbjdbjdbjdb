@@ -18,6 +18,11 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
     
     const finalPrompt = this.formatPromptWithSearch(prompt, options?.useWebSearch || false);
     
+    // Calculate timeout before try block so it's available in catch
+    const baseTimeout = 900000; // 15 minutes base
+    const extraTime = Math.floor((config.maxOutputTokens || 8192) / 8192) * 300000; // +5 min per 8k tokens
+    const timeoutMs = Math.min(baseTimeout + extraTime, 1800000); // Max 30 minutes
+    
     this.logStart(jobId, {
       model: config.model,
       promptLength: finalPrompt.length,
@@ -25,6 +30,8 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       reasoning: config.reasoning,
       verbosity: config.verbosity,
       useWebSearch: options?.useWebSearch,
+      timeoutMs: timeoutMs,
+      timeoutMinutes: Math.round(timeoutMs/60000),
       note: "Deep Research models use Responses API"
     });
 
@@ -66,7 +73,7 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
 
       // Make direct API call to /v1/responses endpoint  
       const controller = new AbortController();
-      const timeoutMs = (config.maxOutputTokens && config.maxOutputTokens > 8192) ? 600000 : 300000; // 5-10 min based on token count
+      console.log(`⏱️ [${jobId}] Using timeout of ${timeoutMs}ms (${Math.round(timeoutMs/60000)} minutes) for ${config.maxOutputTokens} tokens`);
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch('https://api.openai.com/v1/responses', {
@@ -244,7 +251,13 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       this.logError(jobId, error);
       
       if (error.name === 'AbortError') {
-        throw new Error(`Deep Research model timed out after 10 minutes`);
+        const timeoutMinutes = Math.round(timeoutMs / 60000);
+        throw new Error(`Deep Research model timed out after ${timeoutMinutes} minutes. Consider using a faster model like GPT-4o or Gemini 2.5 Pro for this stage.`);
+      }
+      
+      // Better error for fetch failures
+      if (error.message === 'fetch failed') {
+        throw new Error(`Network error calling Deep Research API. The request may have timed out or the API is temporarily unavailable. Try again or use an alternative model.`);
       }
       
       throw new Error(`Deep Research API fout: ${error.message}`);
