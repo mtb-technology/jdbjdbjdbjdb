@@ -56,7 +56,7 @@ export const AI_MODELS = {
     handlerType: 'google' as const,
     supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding'],
     requiresResponsesAPI: false,
-    timeout: 120000,
+    timeout: 300000, // 5 minutes
     defaultConfig: {
       temperature: 0.1,
       topP: 0.95,
@@ -73,7 +73,7 @@ export const AI_MODELS = {
     handlerType: 'google' as const,
     supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding'],
     requiresResponsesAPI: false,
-    timeout: 120000,
+    timeout: 300000, // 5 minutes
     defaultConfig: {
       temperature: 0.1,
       topP: 0.95,
@@ -92,7 +92,7 @@ export const AI_MODELS = {
     handlerType: 'openai-standard' as const,
     supportedParameters: ['temperature', 'topP', 'maxOutputTokens', 'reasoning', 'verbosity'],
     requiresResponsesAPI: false,
-    timeout: 120000,
+    timeout: 300000, // 5 minutes
     defaultConfig: {
       temperature: 0.1,
       topP: 0.95,
@@ -108,7 +108,7 @@ export const AI_MODELS = {
     handlerType: 'openai-standard' as const,
     supportedParameters: ['temperature', 'topP', 'maxOutputTokens', 'reasoning', 'verbosity'],
     requiresResponsesAPI: false,
-    timeout: 120000,
+    timeout: 300000, // 5 minutes
     defaultConfig: {
       temperature: 0.1,
       topP: 0.95,
@@ -131,7 +131,7 @@ export const AI_MODELS = {
       maxRequestsPerMinute: 50
     },
     requiresResponsesAPI: true,
-    timeout: 300000 // 5 minutes
+    timeout: 600000 // 10 minutes
   },
   'o3-mini': {
     provider: 'openai' as const,
@@ -159,7 +159,7 @@ export const AI_MODELS = {
       maxRequestsPerMinute: 50
     },
     requiresResponsesAPI: false,
-    timeout: 300000 // 5 minutes
+    timeout: 600000 // 10 minutes
   },
   'o3-deep-research-2025-06-26': {
     provider: 'openai' as const,
