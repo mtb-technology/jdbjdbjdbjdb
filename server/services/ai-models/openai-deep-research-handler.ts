@@ -194,15 +194,36 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
           console.log(`🎯 [${jobId}] Extracted JSON from content (${content.length} chars)`);
         }
       }
+      
+      // Check if response is truncated and add warning
+      if (result?.status === 'incomplete' && content && !content.includes('[WAARSCHUWING:')) {
+        const reason = result?.incomplete_details?.reason || 'token limit';
+        console.warn(`⚠️ [${jobId}] Response truncated due to ${reason}`);
+        content = content + `\n\n[Response afgekapt: ${reason}]`;
+      }
 
+      // Enhanced handling for incomplete responses
       if (!content) {
-        
         if (result?.status === 'incomplete') {
           const reason = result?.incomplete_details?.reason || 'unknown';
-          throw new Error(`Incomplete Deep Research response: ${reason}. Try increasing max_output_tokens.`);
+          
+          // If we have ANY partial content, use it with a warning
+          if (reasoningContent && reasoningContent.length > 100) {
+            console.warn(`⚠️ [${jobId}] Deep Research incomplete (${reason}), using partial reasoning as fallback`);
+            content = `[WAARSCHUWING: Incomplete response - alleen reasoning beschikbaar]\n\n${reasoningContent}\n\n[Model bereikte token limiet - verhoog maxOutputTokens voor volledige response]`;
+          } else if (outputText && outputText.length > 100) {
+            console.warn(`⚠️ [${jobId}] Deep Research incomplete (${reason}), using partial output_text as fallback`);
+            content = `[WAARSCHUWING: Incomplete response]\n\n${outputText}\n\n[Model bereikte token limiet - verhoog maxOutputTokens voor volledige response]`;
+          } else {
+            // For stage 4a (BronnenSpecialist), provide a more helpful error message
+            if (jobId && jobId.includes('4a_BronnenSpecialist')) {
+              throw new Error(`Deep Research model needs more tokens for source validation. Current limit: ${config.maxOutputTokens}. Please increase maxOutputTokens to at least 32768 for this stage.`);
+            }
+            throw new Error(`Incomplete Deep Research response: ${reason}. Current maxOutputTokens: ${config.maxOutputTokens}. Try increasing to at least ${Math.min(config.maxOutputTokens * 2, 65536)}.`);
+          }
+        } else {
+          throw new Error(`Empty response from Deep Research model - no usable content found`);
         }
-        
-        throw new Error(`Empty response from Deep Research model - no usable content found`);
       }
 
       const apiResponse: AIModelResponse = {
