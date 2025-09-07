@@ -475,7 +475,10 @@ export function SimplifiedWorkflowView({
             // Check if stage is completed - either has result OR has concept report for generation stage
             const hasConceptReport = !!state.conceptReportVersions[stage.key];
             const isCompleted = !!stageResult || (stage.key === "3_generatie" && hasConceptReport);
-            const isProcessing = state.stageProcessing[stage.key] || false;
+            // Check if this stage or its substeps are processing
+            const isReviewProcessing = executeSubstepM.isPending && executeSubstepM.variables?.substepType === "review" && executeSubstepM.variables?.substepKey === stage.key;
+            const isSubstepProcessing = executeSubstepM.isPending && executeSubstepM.variables?.substepType === "processing";
+            const isProcessing = state.stageProcessing[stage.key] || isReviewProcessing || isSubstepProcessing;
             const processingTime = state.stageTimes[stage.key];
             const canStart = index === 0 || !!state.stageResults[WORKFLOW_STAGES[index - 1].key];
             
@@ -810,47 +813,28 @@ export function SimplifiedWorkflowView({
                             {isReviewer ? (
                               <div className="space-y-3 mt-3">
                                 {!hasReview && (
-                                  <div className="space-y-3">
-                                    <Button 
-                                      onClick={() => state.currentReport && executeSubstepM.mutate({
-                                        substepKey: stage.key,
-                                        substepType: "review",
-                                        reportId: state.currentReport.id
-                                      })}
-                                      disabled={executeSubstepM.isPending}
-                                      className="w-full"
-                                      size="sm"
-                                    >
-                                      {executeSubstepM.isPending && executeSubstepM.variables?.substepType === "review" ? (
-                                        <>
-                                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                          AI Review bezig...
-                                        </>
-                                      ) : (
-                                        <>
-                                          <MessageSquare className="mr-2 h-4 w-4" />
-                                          Start AI Review
-                                        </>
-                                      )}
-                                    </Button>
-                                    
-                                    {/* Review Processing Indicator */}
-                                    {executeSubstepM.isPending && executeSubstepM.variables?.substepType === "review" && (
-                                      <div className="p-4 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
-                                        <div className="flex items-center gap-3">
-                                          <div className="w-5 h-5 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
-                                          <div>
-                                            <div className="text-sm font-medium text-orange-700 dark:text-orange-300">
-                                              🤖 Deep Research AI aan het werk...
-                                            </div>
-                                            <div className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                                              Dit kan 1-3 minuten duren voor grondige analyse
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
+                                  <Button 
+                                    onClick={() => state.currentReport && executeSubstepM.mutate({
+                                      substepKey: stage.key,
+                                      substepType: "review",
+                                      reportId: state.currentReport.id
+                                    })}
+                                    disabled={executeSubstepM.isPending}
+                                    className="w-full"
+                                    size="sm"
+                                  >
+                                    {executeSubstepM.isPending && executeSubstepM.variables?.substepType === "review" ? (
+                                      <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                        AI Review bezig...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <MessageSquare className="mr-2 h-4 w-4" />
+                                        Start AI Review
+                                      </>
                                     )}
-                                  </div>
+                                  </Button>
                                 )}
                                 
                                 {hasReview && !hasProcessing && (
