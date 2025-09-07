@@ -276,12 +276,23 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     // Log actual config for debugging
     console.log(`📊 [${jobId}] AI Config loaded - maxOutputTokens: ${aiConfig.maxOutputTokens}`);
 
-    // Increase max tokens for reviewer stages that need detailed feedback  
+    // Dynamic token adjustment based on model type and stage requirements
     if (stageName.startsWith("4")) {
       // Deep Research models need much more tokens (reasoning + conclusion)
       if (aiConfig.model?.includes('deep-research')) {
+        // Stage 4a (BronnenSpecialist) needs the most tokens for source validation
+        if (stageName === "4a_BronnenSpecialist") {
+          aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 32768);
+          console.log(`📦 [${jobId}] Set maxOutputTokens to ${aiConfig.maxOutputTokens} for Deep Research BronnenSpecialist`);
+        } else {
+          // Other reviewer stages still need more tokens than default
+          aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 24576);
+          console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for Deep Research reviewer stage ${stageName}`);
+        }
+      } else if (aiConfig.model?.includes('gpt-5')) {
+        // GPT-5 also benefits from more tokens for complex analysis
         aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 16384);
-        console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for Deep Research reviewer stage ${stageName}`);
+        console.log(`🎯 [${jobId}] Set maxOutputTokens to ${aiConfig.maxOutputTokens} for GPT-5 reviewer stage ${stageName}`);
       } else if (aiConfig.maxOutputTokens < 4096) {
         aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 4096);
         console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for reviewer stage ${stageName}`);
@@ -327,7 +338,49 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     } catch (error: any) {
       console.error(`🚨 [${jobId}] Model failed (${aiConfig.model}):`, error.message);
       
-      // NO FALLBACK MODELS - Direct placeholder response
+      // Check if error is due to token limit for Deep Research models
+      const isTokenLimitError = error.message.includes('maxOutputTokens') || 
+                                error.message.includes('token limit') ||
+                                error.message.includes('incomplete');
+      
+      if (isTokenLimitError && aiConfig.model?.includes('deep-research')) {
+        // Provide specific guidance for token limit errors
+        const suggestedTokens = Math.min(aiConfig.maxOutputTokens * 2, 65536);
+        console.error(`📈 [${jobId}] Deep Research model needs more tokens. Current: ${aiConfig.maxOutputTokens}, Suggested: ${suggestedTokens}`);
+        
+        const stageDisplayName = this.getStageDisplayName(stageName);
+        const placeholderResponse = `## ${stageDisplayName}
+
+⚠️ **Deep Research Model Token Limiet Bereikt**
+
+### Probleem:
+Het ${aiConfig.model} model heeft meer tokens nodig om deze analyse volledig uit te voeren.
+
+### Huidige Configuratie:
+- Model: ${aiConfig.model}
+- Huidige token limiet: ${aiConfig.maxOutputTokens}
+- Aanbevolen limiet: ${suggestedTokens}
+
+### Oplossing:
+1. Ga naar **Instellingen → AI Configuratie**
+2. Selecteer stage "${stageName}"
+3. Verhoog "Max Output Tokens" naar minimaal ${suggestedTokens}
+4. Of schakel over naar een ander model (bijv. GPT-4o of Gemini 2.5 Pro)
+5. Voer deze stap opnieuw uit
+
+### Alternatief:
+Gebruik een standaard model zoals **gpt-4o** of **gemini-2.5-pro** die efficiënter omgaan met tokens.
+
+🔄 **Status:** Deze stap moet opnieuw worden uitgevoerd na aanpassing.`;
+        
+        return {
+          stageOutput: placeholderResponse,
+          conceptReport: conceptReportVersions?.["latest"] || placeholderResponse,
+          prompt
+        };
+      }
+      
+      // Default error handling for other errors
       const stageDisplayName = this.getStageDisplayName(stageName);
       
       const placeholderResponse = `## ${stageDisplayName}
@@ -342,7 +395,8 @@ De AI-analyse kon niet worden uitgevoerd vanwege technische problemen.
 ### Advies:
 1. Probeer de stap opnieuw uit te voeren
 2. Controleer of uw API keys correct zijn geconfigureerd
-3. Neem contact op met support als het probleem aanhoudt
+3. Overweeg een ander AI model te gebruiken
+4. Neem contact op met support als het probleem aanhoudt
 
 ### Status:
 ⚠️ Deze stap is niet voltooid en moet opnieuw worden uitgevoerd.`;
