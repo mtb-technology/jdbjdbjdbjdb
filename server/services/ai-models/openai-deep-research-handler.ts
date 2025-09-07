@@ -89,7 +89,7 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       let result;
       try {
         result = await response.json();
-      } catch (jsonError) {
+      } catch (jsonError: any) {
         throw new Error(`Failed to parse Deep Research response as JSON: ${jsonError.message}`);
       }
       const duration = Date.now() - startTime;
@@ -98,7 +98,7 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       console.log(`🔍 [${jobId}] Deep Research response structure:`, {
         hasOutput: !!result?.output,
         outputLength: Array.isArray(result?.output) ? result.output.length : 0,
-        outputTypes: Array.isArray(result?.output) ? result.output.map(item => item?.type) : [],
+        outputTypes: Array.isArray(result?.output) ? result.output.map((item: any) => item?.type) : [],
         hasOutputText: !!result?.output_text,
         status: result?.status
       });
@@ -111,14 +111,14 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       // First, scan for actual message content (the AI's real response)
       if (result?.output && Array.isArray(result.output) && result.output.length > 0) {
         for (let i = result.output.length - 1; i >= 0; i--) {
-          const item = result.output[i];
+          const item: any = result.output[i];
           
           // Prioritize message type with content (this is the actual AI response)
           if (item?.type === 'message' && item?.content) {
             console.log(`📝 [${jobId}] Found message item:`, {
               hasContent: !!item.content,
               contentType: Array.isArray(item.content) ? 'array' : typeof item.content,
-              contentLength: Array.isArray(item.content) ? item.content.length : (item.content?.length || 0)
+              contentLength: Array.isArray(item.content) ? item.content.length : (typeof item.content === 'string' ? item.content.length : 0)
             });
             
             if (Array.isArray(item.content)) {
@@ -151,6 +151,27 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       // Check if we have direct output_text
       const outputText = result?.output_text && typeof result.output_text === 'string' ? result.output_text : "";
       
+      // Try alternative parsing if no message content found
+      if (!messageContent && result?.choices && Array.isArray(result.choices) && result.choices.length > 0) {
+        const choice = result.choices[0];
+        if (choice?.message?.content) {
+          messageContent = choice.message.content;
+          console.log(`🔄 [${jobId}] Found content in choices format (${messageContent.length} chars)`);
+        }
+      }
+      
+      // Try yet another format - direct content field
+      if (!messageContent && result?.content && typeof result.content === 'string') {
+        messageContent = result.content;
+        console.log(`🔄 [${jobId}] Found content in direct format (${messageContent.length} chars)`);
+      }
+      
+      // For Deep Research, try to get the final result instead of reasoning
+      if (!messageContent && result?.result && typeof result.result === 'string') {
+        messageContent = result.result;
+        console.log(`🔄 [${jobId}] Found content in result format (${messageContent.length} chars)`);
+      }
+      
       // Prioritize message content over reasoning and output_text
       if (messageContent) {
         content = messageContent;
@@ -161,6 +182,7 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       } else if (reasoningContent) {
         content = reasoningContent;
         console.log(`⚠️ [${jobId}] Falling back to reasoning content (${reasoningContent.length} chars)`);
+        console.log(`🚨 [${jobId}] This might be wrong - reasoning instead of final output!`);
       }
       
       // Additional JSON detection for reviewer stages
