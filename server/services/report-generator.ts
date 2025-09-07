@@ -4,6 +4,7 @@ import { AIModelFactory, AIModelParameters } from "./ai-models/ai-model-factory"
 import { storage } from "../storage";
 import { ServerError } from "../middleware/errorHandler";
 import { ERROR_CODES } from "@shared/errors";
+import { REPORT_CONFIG } from "../config/index";
 
 export class ReportGenerator {
   private getStageDisplayName(stageName: string): string {
@@ -256,10 +257,13 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const stageAiConfig = stageConfig?.aiConfig;
     const globalAiConfig = globalConfig?.aiConfig;
 
-    // Build merged AI config with FORCE 8192 tokens minimum
+    // Determine if this is a reviewer stage
+    const isReviewerStage = stageName.startsWith('4') && stageName.match(/^4[a-z]_/);
+    
+    // Build merged AI config with FORCE 8192 tokens minimum  
     const aiConfig: AiConfig = {
-      provider: stageAiConfig?.provider || globalAiConfig?.provider || "google",
-      model: stageAiConfig?.model || globalAiConfig?.model || "gemini-2.5-pro",
+      provider: stageAiConfig?.provider || globalAiConfig?.provider || (isReviewerStage ? "openai" : "google"),
+      model: stageAiConfig?.model || globalAiConfig?.model || (isReviewerStage ? REPORT_CONFIG.reviewerModel : REPORT_CONFIG.defaultModel),
       temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.1,
       topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
       topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 20,
