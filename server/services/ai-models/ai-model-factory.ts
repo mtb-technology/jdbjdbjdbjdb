@@ -29,6 +29,7 @@ export class AIModelFactory {
   private static instance: AIModelFactory;
   private handlers: Map<string, BaseAIHandler> = new Map();
   private modelRegistry: Map<string, ModelInfo> = new Map();
+  private circuitBreaker: Map<string, { failures: number; lastFailure: number; isOpen: boolean }> = new Map();
 
   private constructor() {
     this.initializeModelRegistry();
@@ -161,8 +162,48 @@ export class AIModelFactory {
       timeout: modelInfo.timeout
     });
 
-    // Call the handler
-    return handler.call(prompt, filteredConfig, options);
+    // Check circuit breaker
+    const breaker = this.circuitBreaker.get(config.model) || { failures: 0, lastFailure: 0, isOpen: false };
+    
+    // Reset circuit after 60 seconds
+    if (breaker.isOpen && Date.now() - breaker.lastFailure > 60000) {
+      breaker.isOpen = false;
+      breaker.failures = 0;
+      console.log(`🔄 Circuit breaker reset for ${config.model}`);
+    }
+    
+    if (breaker.isOpen) {
+      throw new Error(`Circuit breaker OPEN for ${config.model} - too many failures`);
+    }
+    
+    try {
+      // Call the handler with timeout
+      const timeoutMs = modelInfo.timeout || 120000;
+      const result = await Promise.race([
+        handler.call(prompt, filteredConfig, options),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs)
+        )
+      ]);
+      
+      // Reset failures on success
+      breaker.failures = 0;
+      this.circuitBreaker.set(config.model, breaker);
+      
+      return result;
+    } catch (error: any) {
+      // Update circuit breaker
+      breaker.failures++;
+      breaker.lastFailure = Date.now();
+      
+      if (breaker.failures >= 3) {
+        breaker.isOpen = true;
+        console.error(`🚫 Circuit breaker OPENED for ${config.model} after ${breaker.failures} failures`);
+      }
+      
+      this.circuitBreaker.set(config.model, breaker);
+      throw error;
+    }
   }
 
   private filterConfigForModel(config: AiConfig, modelInfo: ModelInfo): AiConfig {
