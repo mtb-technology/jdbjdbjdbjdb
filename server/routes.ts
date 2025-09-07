@@ -310,6 +310,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/prompt-templates/:stageKey", async (req, res) => {
     try {
       const { stageKey } = req.params;
+      const { rawText, clientName } = req.query;
       
       // Get active prompt configuration
       const promptConfig = await storage.getActivePromptConfig();
@@ -321,16 +322,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stageConfig = promptConfig.config[stageKey as keyof typeof promptConfig.config] as any;
       const prompt = stageConfig?.prompt || "";
       
-      // Create a template prompt with placeholder data
+      // Create the current date
+      const currentDate = new Date().toLocaleDateString('nl-NL', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long', 
+        day: 'numeric'
+      });
+      
+      // Use real data if provided, otherwise placeholder text
+      const dossierContent = rawText 
+        ? `Ruwe klantinformatie:\n${rawText}\n\nKlantnaam: ${clientName || 'Client'}`
+        : '[Uw klantgegevens en fiscale situatie zullen hier worden ingevuld]';
+      
+      const bouwplanContent = '[De rapport structuur en gewenste onderwerpen zullen hier worden ingevuld]';
+      
+      // Create a template prompt with real or placeholder data
       const templatePrompt = `${prompt}
 
-### Datum: [Huidige datum]
+### Datum: ${currentDate}
 
 ### Dossier:
-[Uw klantgegevens en fiscale situatie zullen hier worden ingevuld]
+${dossierContent}
 
 ### Bouwplan:
-[De rapport structuur en gewenste onderwerpen zullen hier worden ingevuld]`;
+${bouwplanContent}`;
 
       res.json(createApiSuccessResponse({ prompt: templatePrompt }));
     } catch (error) {

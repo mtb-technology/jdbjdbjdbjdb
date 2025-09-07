@@ -441,6 +441,8 @@ function WorkflowManagerContent({
       executeStageM={executeStageM}
       executeSubstepM={executeSubstepM}
       isCreatingCase={createReportMutation.isPending}
+      rawText={rawText}
+      clientName={clientName}
     />
   );
 }

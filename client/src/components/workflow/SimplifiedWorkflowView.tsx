@@ -40,6 +40,8 @@ interface SimplifiedWorkflowViewProps {
   executeStageM: any;
   executeSubstepM: any;
   isCreatingCase: boolean;
+  rawText?: string;
+  clientName?: string;
 }
 
 export function SimplifiedWorkflowView({
@@ -47,7 +49,9 @@ export function SimplifiedWorkflowView({
   dispatch,
   executeStageM,
   executeSubstepM,
-  isCreatingCase
+  isCreatingCase,
+  rawText,
+  clientName
 }: SimplifiedWorkflowViewProps) {
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
   const [viewMode] = useState<"detailed">("detailed");
@@ -190,8 +194,13 @@ export function SimplifiedWorkflowView({
           }
         }
       } else {
-        // For new cases without a report, fetch the default template prompt
-        const response = await fetch(`/api/prompt-templates/${stageKey}`);
+        // For new cases without a report, fetch the default template prompt with user data
+        const queryParams = new URLSearchParams();
+        if (rawText) queryParams.append('rawText', rawText);
+        if (clientName) queryParams.append('clientName', clientName);
+        
+        const url = `/api/prompt-templates/${stageKey}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+        const response = await fetch(url);
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.data?.prompt) {
