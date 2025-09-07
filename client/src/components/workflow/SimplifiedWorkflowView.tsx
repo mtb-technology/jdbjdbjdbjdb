@@ -66,15 +66,9 @@ export function SimplifiedWorkflowView({
   
   const copyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
-    toast.success(`${type} gekopieerd naar klembord`, {
-      duration: 2000,
-      style: {
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        color: 'white',
-        borderRadius: '12px',
-        fontWeight: '500',
-        boxShadow: '0 10px 25px rgba(102, 126, 234, 0.3)',
-      },
+    toast({
+      title: "Succesvol gekopieerd",
+      description: `${type} gekopieerd naar klembord`
     });
   };
 
@@ -182,15 +176,27 @@ export function SimplifiedWorkflowView({
 
   // Fetch prompt preview for a stage
   const fetchPromptPreview = async (stageKey: string) => {
-    if (!state.currentReport || promptPreviews[stageKey]) return;
+    if (promptPreviews[stageKey]) return;
     
     setLoadingPreview(stageKey);
     try {
-      const response = await fetch(`/api/reports/${state.currentReport.id}/stage/${stageKey}/preview`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.data?.prompt) {
-          setPromptPreviews(prev => ({ ...prev, [stageKey]: data.data.prompt }));
+      if (state.currentReport) {
+        // For existing reports, use the specific report preview
+        const response = await fetch(`/api/reports/${state.currentReport.id}/stage/${stageKey}/preview`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.data?.prompt) {
+            setPromptPreviews(prev => ({ ...prev, [stageKey]: data.data.prompt }));
+          }
+        }
+      } else {
+        // For new cases without a report, fetch the default template prompt
+        const response = await fetch(`/api/prompt-templates/${stageKey}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.data?.prompt) {
+            setPromptPreviews(prev => ({ ...prev, [stageKey]: data.data.prompt }));
+          }
         }
       }
     } catch (error) {
@@ -251,6 +257,11 @@ export function SimplifiedWorkflowView({
           fetchPromptPreview(stage.key);
         }
       });
+    } else {
+      // For new cases without a report, fetch template for current stage
+      if (currentStage && !promptPreviews[currentStage.key]) {
+        fetchPromptPreview(currentStage.key);
+      }
     }
   }, [state.currentStageIndex, state.currentReport, state.stageResults, state.stagePrompts]);
 
