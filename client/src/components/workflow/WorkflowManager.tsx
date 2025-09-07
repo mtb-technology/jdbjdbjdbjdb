@@ -108,17 +108,12 @@ function WorkflowManagerContent({
   // Create report mutation
   const createReportMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/reports/create", {
+      const data = await apiRequest("POST", "/api/reports/create", {
         dossier,
         bouwplan,
         clientName,
         rawText,
-      });
-      const data = await response.json();
-      // Handle new API response format
-      if (data && typeof data === 'object' && 'success' in data && data.success === true) {
-        return data.data;
-      }
+      }) as unknown as Report;
       return data;
     },
     onMutate: () => {
@@ -173,14 +168,9 @@ function WorkflowManagerContent({
   // Execute stage mutation
   const executeStageM = useMutation({
     mutationFn: async ({ reportId, stage, customInput }: { reportId: string; stage: string; customInput?: string }) => {
-      const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
+      const data = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
         customInput,
       });
-      const data = await response.json();
-      // Handle new API response format
-      if (data && typeof data === 'object' && 'success' in data && data.success === true) {
-        return data.data;
-      }
       return data;
     },
     onMutate: ({ stage }) => {
