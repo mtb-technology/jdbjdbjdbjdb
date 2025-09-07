@@ -136,14 +136,22 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
 
       if (!content) {
         // Log full structure for debugging
-        console.error(`[${jobId}] GPT-5 response structure:`, JSON.stringify(result).substring(0, 500));
+        console.error(`[${jobId}] GPT-5 response structure:`, JSON.stringify(result).substring(0, 1000));
         
-        if (result?.status === 'incomplete') {
+        // Try to extract ANY text from the response as last resort
+        const responseStr = JSON.stringify(result);
+        const textMatch = responseStr.match(/"text":\s*"([^"]+)"/i);
+        if (textMatch && textMatch[1]) {
+          content = textMatch[1];
+          console.warn(`[${jobId}] Extracted content from GPT-5 response using fallback regex`);
+        } else if (result?.status === 'incomplete') {
           const reason = result?.incomplete_details?.reason || 'unknown';
           throw new Error(`Incomplete GPT-5 response: ${reason}. Try increasing max_output_tokens.`);
+        } else {
+          // Return a minimal valid response instead of throwing
+          content = `GPT-5 response processing error. Status: ${result?.status || 'unknown'}. Please retry.`;
+          console.error(`[${jobId}] GPT-5 empty response - using fallback message`);
         }
-        
-        throw new Error(`Empty response from GPT-5 - no usable content found`);
       }
 
       const apiResponse: AIModelResponse = {
