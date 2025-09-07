@@ -52,7 +52,7 @@
         "temperature": 0.1,
         "topP": 0.95,
         "topK": 20,
-        "maxOutputTokens": 2048
+        "maxOutputTokens": 8192
       }
     },
     "id": "60c5d892-22af-4c42-af8e-e4fb34ad1a26",

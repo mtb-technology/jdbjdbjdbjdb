@@ -87,8 +87,8 @@ export class GoogleAIHandler extends BaseAIHandler {
     if (config.topK !== undefined && (config.topK < 1 || config.topK > 40)) {
       throw new Error(`TopK moet tussen 1 en 40 zijn voor Google AI`);
     }
-    if (config.maxOutputTokens !== undefined && (config.maxOutputTokens < 100 || config.maxOutputTokens > 8192)) {
-      throw new Error(`MaxOutputTokens moet tussen 100 en 8192 zijn voor Google AI`);
+    if (config.maxOutputTokens !== undefined && (config.maxOutputTokens < 100 || config.maxOutputTokens > 32768)) {
+      throw new Error(`MaxOutputTokens moet tussen 100 en 32768 zijn voor Google AI`);
     }
   }
 
