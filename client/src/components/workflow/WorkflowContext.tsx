@@ -44,6 +44,10 @@ type WorkflowAction =
   | { type: "RESET_WORKFLOW" }
   | { type: "LOAD_EXISTING_REPORT"; report: Report };
 
+// Memory-optimized configuration
+const MAX_STAGE_RESULTS = 30; // Maximum stage results to keep in memory
+const MAX_CONCEPT_VERSIONS = 15; // Maximum concept versions to store
+
 const initialState: WorkflowState = {
   currentReport: null,
   currentStageIndex: 0,
@@ -74,9 +78,20 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
       return { ...state, currentStageIndex: action.payload };
     
     case "SET_STAGE_RESULT":
+      // Memory-optimized stage result storage
+      const newStageResults = { ...state.stageResults, [action.stage]: action.result };
+      
+      // Prune oldest results if exceeding limit
+      const stageKeys = Object.keys(newStageResults);
+      if (stageKeys.length > MAX_STAGE_RESULTS) {
+        const keysToDelete = stageKeys.slice(0, stageKeys.length - MAX_STAGE_RESULTS);
+        keysToDelete.forEach(key => delete newStageResults[key]);
+        console.log(`Pruned ${keysToDelete.length} old stage results for memory optimization`);
+      }
+      
       return {
         ...state,
-        stageResults: { ...state.stageResults, [action.stage]: action.result }
+        stageResults: newStageResults
       };
     
     case "SET_SUBSTEP_RESULT":
@@ -92,12 +107,23 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
       };
     
     case "SET_CONCEPT_VERSION":
+      // Memory-optimized concept version storage
+      const newConceptVersions = {
+        ...state.conceptReportVersions,
+        [action.stage]: action.content
+      };
+      
+      // Prune oldest versions if exceeding limit
+      const versionKeys = Object.keys(newConceptVersions);
+      if (versionKeys.length > MAX_CONCEPT_VERSIONS) {
+        const keysToDelete = versionKeys.slice(0, versionKeys.length - MAX_CONCEPT_VERSIONS);
+        keysToDelete.forEach(key => delete newConceptVersions[key]);
+        console.log(`Pruned ${keysToDelete.length} old concept versions for memory optimization`);
+      }
+      
       return {
         ...state,
-        conceptReportVersions: {
-          ...state.conceptReportVersions,
-          [action.stage]: action.content
-        }
+        conceptReportVersions: newConceptVersions
       };
     
     case "SET_STAGE_TIME":
