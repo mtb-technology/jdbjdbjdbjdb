@@ -162,16 +162,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw new Error("Rapport niet gevonden");
       }
 
-      // Execute the specific stage
-      const stageExecution = await reportGenerator.executeStage(
-        stage,
-        report.dossierData as DossierData,
-        report.bouwplanData as BouwplanData,
-        report.stageResults as Record<string, string> || {},
-        report.conceptReportVersions as Record<string, string> || {},
-        customInput,
-        id // Pass reportId as jobId for logging
-      );
+      // Execute the specific stage with error recovery
+      let stageExecution;
+      try {
+        stageExecution = await reportGenerator.executeStage(
+          stage,
+          report.dossierData as DossierData,
+          report.bouwplanData as BouwplanData,
+          report.stageResults as Record<string, string> || {},
+          report.conceptReportVersions as Record<string, string> || {},
+          customInput,
+          id // Pass reportId as jobId for logging
+        );
+      } catch (stageError: any) {
+        console.error(`🚨 Stage execution failed but recovering gracefully:`, stageError.message);
+        // Return a recoverable error response instead of crashing
+        res.status(200).json(createApiSuccessResponse({
+          ...report,
+          error: `Stage ${stage} kon niet volledig worden uitgevoerd: ${stageError.message}`,
+          partialResult: true
+        }));
+        return;
+      }
 
       // Update report with stage output, concept report version, and prompt
       // Ensure we always overwrite with the latest result
