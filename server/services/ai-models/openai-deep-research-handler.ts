@@ -94,6 +94,15 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       }
       const duration = Date.now() - startTime;
 
+      // Debug: log the full response structure
+      console.log(`🔍 [${jobId}] Deep Research response structure:`, {
+        hasOutput: !!result?.output,
+        outputLength: Array.isArray(result?.output) ? result.output.length : 0,
+        outputTypes: Array.isArray(result?.output) ? result.output.map(item => item?.type) : [],
+        hasOutputText: !!result?.output_text,
+        status: result?.status
+      });
+      
       // Extract content from Deep Research Responses API format
       let content = "";
       let messageContent = "";
@@ -106,15 +115,23 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
           
           // Prioritize message type with content (this is the actual AI response)
           if (item?.type === 'message' && item?.content) {
+            console.log(`📝 [${jobId}] Found message item:`, {
+              hasContent: !!item.content,
+              contentType: Array.isArray(item.content) ? 'array' : typeof item.content,
+              contentLength: Array.isArray(item.content) ? item.content.length : (item.content?.length || 0)
+            });
+            
             if (Array.isArray(item.content)) {
               for (const contentItem of item.content) {
                 if (contentItem?.text && typeof contentItem.text === 'string') {
                   messageContent = contentItem.text;
+                  console.log(`✅ [${jobId}] Extracted message text (${messageContent.length} chars)`);
                   break;
                 }
               }
             } else if (typeof item.content === 'string') {
               messageContent = item.content;
+              console.log(`✅ [${jobId}] Used direct string content (${messageContent.length} chars)`);
             }
             if (messageContent) break;
           }
