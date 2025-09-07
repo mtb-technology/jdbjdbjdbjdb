@@ -476,6 +476,18 @@ export function SimplifiedWorkflowView({
             const isProcessing = state.stageProcessing[stage.key] || false;
             const processingTime = state.stageTimes[stage.key];
             const canStart = index === 0 || !!state.stageResults[WORKFLOW_STAGES[index - 1].key];
+            
+            // Debug info for stage 3
+            if (stage.key === "3_generatie") {
+              console.log(`🔍 Stage 3 debug:`, {
+                index,
+                currentStageIndex: state.currentStageIndex,
+                isActive,
+                canStart,
+                prevStageResult: !!state.stageResults[WORKFLOW_STAGES[index - 1].key],
+                prevStageKey: WORKFLOW_STAGES[index - 1].key
+              });
+            }
             const isExpanded = expandedStages.has(stage.key) || isActive;
             
             // For reviewer stages
