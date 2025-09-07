@@ -173,7 +173,7 @@ export class AIModelFactory {
       temperature: config.temperature ?? 0.1,
       topP: config.topP ?? 0.95,
       topK: config.topK ?? 20,
-      maxOutputTokens: config.maxOutputTokens ?? 2048
+      maxOutputTokens: config.maxOutputTokens ?? 8192
     };
 
     const supportedParams = modelInfo.supportedParameters;

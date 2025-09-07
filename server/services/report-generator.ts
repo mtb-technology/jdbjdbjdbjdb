@@ -299,7 +299,39 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       return { stageOutput, conceptReport, prompt };
 
     } catch (error: any) {
-      console.error(`Stage ${stageName} execution error:`, error);
+      console.error(`🚨 [${jobId}] Primary model failed (${aiConfig.model}):`, error.message);
+      
+      // ROBUST FALLBACK: Try OpenAI GPT-5 if Google AI fails
+      if (aiConfig.provider === 'google') {
+        console.log(`🔄 [${jobId}] Attempting fallback to OpenAI GPT-5...`);
+        try {
+          const fallbackConfig = {
+            ...aiConfig,
+            provider: 'openai' as const,
+            model: 'gpt-5'
+          };
+          
+          const fallbackResponse = await this.modelFactory.callModel(fallbackConfig, prompt, options);
+          
+          console.log(`✅ [${jobId}] Fallback successful using GPT-5`);
+          
+          let stageOutput = fallbackResponse.content;
+          let conceptReport = "";
+          
+          if (["3_generatie", "5_feedback_verwerker", "final_check"].includes(stageName)) {
+            conceptReport = stageOutput;
+          } else {
+            conceptReport = conceptReportVersions?.["latest"] || "";
+          }
+          
+          return { stageOutput, conceptReport, prompt };
+          
+        } catch (fallbackError: any) {
+          console.error(`🚨 [${jobId}] Fallback also failed:`, fallbackError.message);
+          throw new Error(`Both primary (${aiConfig.model}) and fallback (GPT-5) failed: ${error.message}`);
+        }
+      }
+      
       throw new Error(`Stage ${stageName} failed: ${error.message}`);
     }
   }
