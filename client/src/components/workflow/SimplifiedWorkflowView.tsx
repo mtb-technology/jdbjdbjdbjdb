@@ -472,22 +472,13 @@ export function SimplifiedWorkflowView({
             const stageResult = state.stageResults[stage.key] || "";
             const stagePrompt = state.stagePrompts[stage.key] || "";
             const isActive = index === state.currentStageIndex;
-            const isCompleted = !!stageResult;
+            // Check if stage is completed - either has result OR has concept report for generation stage
+            const hasConceptReport = !!state.conceptReportVersions[stage.key];
+            const isCompleted = !!stageResult || (stage.key === "3_generatie" && hasConceptReport);
             const isProcessing = state.stageProcessing[stage.key] || false;
             const processingTime = state.stageTimes[stage.key];
             const canStart = index === 0 || !!state.stageResults[WORKFLOW_STAGES[index - 1].key];
             
-            // Debug info for stage 3
-            if (stage.key === "3_generatie") {
-              console.log(`🔍 Stage 3 debug:`, {
-                index,
-                currentStageIndex: state.currentStageIndex,
-                isActive,
-                canStart,
-                prevStageResult: !!state.stageResults[WORKFLOW_STAGES[index - 1].key],
-                prevStageKey: WORKFLOW_STAGES[index - 1].key
-              });
-            }
             const isExpanded = expandedStages.has(stage.key) || isActive;
             
             // For reviewer stages
@@ -652,6 +643,35 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
 
+                        {/* Show Concept Report for Generation Stage */}
+                        {stage.key === "3_generatie" && hasConceptReport && (
+                          <div className="space-y-2">
+                            <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                              <div className="flex items-center justify-between p-2 border-b border-purple-200 dark:border-purple-800">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-3 w-3 text-purple-600" />
+                                  <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+                                    📄 CONCEPT RAPPORT (Eerste versie)
+                                  </span>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => copyToClipboard(state.conceptReportVersions[stage.key], "Concept Rapport")}
+                                  className="h-6 w-6 p-0"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <div className="p-2 max-h-96 overflow-y-auto">
+                                <div className="text-xs text-purple-800 dark:text-purple-200 whitespace-pre-wrap bg-white/50 dark:bg-gray-900/50 p-2 rounded border">
+                                  {state.conceptReportVersions[stage.key]}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
                         {/* Show Output/Response */}
                         {stageResult && (
                           <div className="space-y-2">
