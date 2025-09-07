@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Play, Zap, FolderOpen, Menu } from "lucide-react";
+import { Play, Zap, FolderOpen, Menu, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import WorkflowInterface from "@/components/workflow-interface";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
+import { apiRequest } from "@/lib/apiWrapper";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
 
 const Pipeline = memo(function Pipeline() {
@@ -16,6 +17,8 @@ const Pipeline = memo(function Pipeline() {
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [finalReport, setFinalReport] = useState<string>("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [createdReport, setCreatedReport] = useState<Report | null>(null);
+  const [isCreatingCase, setIsCreatingCase] = useState(false);
   const isMobile = useIsMobile();
   const { toast } = useToast();
 
@@ -34,11 +37,38 @@ const Pipeline = memo(function Pipeline() {
     setFinalReport(report.generatedContent || "");
   }, []);
 
-  const startWorkflow = useCallback(() => {
-    if (rawText.trim()) {
+  const startWorkflow = useCallback(async () => {
+    if (!rawText.trim()) return;
+    
+    setIsCreatingCase(true);
+    try {
+      // Create the case immediately when "Start Case" is clicked
+      const report = await apiRequest("POST", "/api/reports/create", {
+        dossier: dossierData,
+        bouwplan: bouwplanData,
+        clientName: "Client",
+        rawText: rawText.trim(),
+      }) as Report;
+      
+      setCreatedReport(report);
       setShowWorkflow(true);
+      
+      toast({
+        title: "Case aangemaakt",
+        description: `Nieuwe case "${report.title}" is succesvol opgeslagen`,
+      });
+      
+    } catch (error: any) {
+      console.error('Failed to create case:', error);
+      toast({
+        title: "Fout bij aanmaken",
+        description: error.message || "Er ging iets mis bij het aanmaken van de case",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingCase(false);
     }
-  }, [rawText]);
+  }, [rawText, dossierData, bouwplanData, toast]);
 
 
   return (
@@ -119,11 +149,15 @@ const Pipeline = memo(function Pipeline() {
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button 
                   onClick={startWorkflow}
-                  disabled={!rawText.trim()}
+                  disabled={!rawText.trim() || isCreatingCase}
                   data-testid="button-start-workflow"
                   className="flex-1"
                 >
-                  <Play className="mr-2 h-4 w-4" /> Start Case
+                  {isCreatingCase ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Case aanmaken...</>
+                  ) : (
+                    <><Play className="mr-2 h-4 w-4" /> Start Case</>
+                  )}
                 </Button>
                 <Link href="/cases">
                   <Button variant="outline" data-testid="button-view-cases" className="sm:w-auto w-full">
@@ -141,6 +175,7 @@ const Pipeline = memo(function Pipeline() {
             clientName="Client"
             rawText={rawText}
             onComplete={handleWorkflowComplete}
+            existingReport={createdReport}
           />
         )}
 
