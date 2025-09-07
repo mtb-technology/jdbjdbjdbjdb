@@ -306,6 +306,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get prompt template for a stage (for new cases without existing report)
+  app.get("/api/prompt-templates/:stageKey", async (req, res) => {
+    try {
+      const { stageKey } = req.params;
+      
+      // Get active prompt configuration
+      const promptConfig = await storage.getActivePromptConfig();
+      if (!promptConfig?.config?.[stageKey as keyof typeof promptConfig.config]) {
+        res.status(404).json({ message: "Prompt template niet gevonden voor deze stap" });
+        return;
+      }
+      
+      const stageConfig = promptConfig.config[stageKey as keyof typeof promptConfig.config] as any;
+      const prompt = stageConfig?.prompt || "";
+      
+      // Create a template prompt with placeholder data
+      const templatePrompt = `${prompt}
+
+### Datum: [Huidige datum]
+
+### Dossier:
+[Uw klantgegevens en fiscale situatie zullen hier worden ingevuld]
+
+### Bouwplan:
+[De rapport structuur en gewenste onderwerpen zullen hier worden ingevuld]`;
+
+      res.json(createApiSuccessResponse({ prompt: templatePrompt }));
+    } catch (error) {
+      console.error("Error fetching prompt template:", error);
+      res.status(500).json({ message: "Fout bij ophalen prompt template" });
+    }
+  });
+
   // Validate sources endpoint
   app.post("/api/sources/validate", async (req, res) => {
     try {
