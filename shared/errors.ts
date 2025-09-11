@@ -218,4 +218,14 @@ export class AIError extends Error {
       details
     );
   }
+
+  static circuitBreakerOpen(provider: string, reason: string): AIError {
+    return new AIError(
+      `Circuit breaker is open for ${provider}: ${reason}`,
+      ERROR_CODES.AI_UNAVAILABLE,
+      true,
+      30000, // Retry after 30 seconds
+      { provider, reason }
+    );
+  }
 }

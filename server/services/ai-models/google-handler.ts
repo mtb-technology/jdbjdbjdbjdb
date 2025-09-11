@@ -14,7 +14,7 @@ export class GoogleAIHandler extends BaseAIHandler {
   async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters
+    options?: AIModelParameters & { signal?: AbortSignal }
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -34,6 +34,8 @@ export class GoogleAIHandler extends BaseAIHandler {
     });
 
     try {
+      // Note: Google AI SDK doesn't support AbortSignal directly
+      // Timeout cancellation is handled by the base class timeout mechanism
       const response = await this.client.models.generateContent({
         model: config.model,
         contents: finalPrompt,

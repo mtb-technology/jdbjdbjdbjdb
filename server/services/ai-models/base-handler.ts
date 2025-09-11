@@ -20,6 +20,14 @@ export interface AIModelParameters {
   useWebSearch?: boolean;
   useGrounding?: boolean;
   jobId?: string;
+  timeout?: number; // Timeout in milliseconds
+}
+
+export interface CircuitBreakerState {
+  failures: number;
+  lastFailureTime?: number;
+  state: 'closed' | 'open' | 'half-open';
+  successCount?: number;
 }
 
 export abstract class BaseAIHandler {
@@ -27,6 +35,16 @@ export abstract class BaseAIHandler {
   protected apiKey: string | undefined;
   protected maxRetries: number = 3;
   protected baseRetryDelay: number = 1000; // 1 second
+  protected defaultTimeout: number = 120000; // 2 minutes default timeout
+  
+  // Circuit breaker properties
+  private circuitBreaker: CircuitBreakerState = {
+    failures: 0,
+    state: 'closed'
+  };
+  private readonly failureThreshold: number = 5;
+  private readonly recoveryTimeout: number = 60000; // 1 minute
+  private readonly halfOpenMaxRequests: number = 3;
 
   constructor(modelName: string, apiKey?: string) {
     this.modelName = modelName;
@@ -34,7 +52,7 @@ export abstract class BaseAIHandler {
   }
 
   // Abstract methods that each handler must implement
-  abstract callInternal(prompt: string, config: AiConfig, options?: AIModelParameters): Promise<AIModelResponse>;
+  abstract callInternal(prompt: string, config: AiConfig, options?: AIModelParameters & { signal?: AbortSignal }): Promise<AIModelResponse>;
   abstract validateParameters(config: AiConfig): void;
   abstract getSupportedParameters(): string[];
 
@@ -43,20 +61,28 @@ export abstract class BaseAIHandler {
     const jobId = options?.jobId;
     this.validateInput(prompt, config, options);
     
+    // Check circuit breaker state
+    this.checkCircuitBreaker();
+    
     let lastError: Error | undefined;
+    let callFailed = false;
     
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        const response = await this.callInternal(prompt, config, options);
+        const response = await this.callWithTimeout(prompt, config, options);
         this.validateResponse(response);
+        
+        // Success - reset circuit breaker
+        this.onSuccess();
         return response;
       } catch (error: any) {
         lastError = error;
         
         // If this is the last attempt, don't retry
         if (attempt === this.maxRetries) {
+          callFailed = true;
           this.logError(jobId, error);
-          throw this.enhanceError(error);
+          break;
         }
         
         // Check if error is retryable
@@ -76,13 +102,43 @@ export abstract class BaseAIHandler {
         }
         
         // Non-retryable error, throw immediately
+        callFailed = true;
         this.logError(jobId, error);
-        throw this.enhanceError(error);
+        break;
       }
     }
     
-    // This should never be reached, but just in case
-    throw lastError || new Error('Unknown error occurred during API call');
+    // Record failure for circuit breaker only once per overall failed call
+    if (callFailed) {
+      this.onFailure();
+    }
+    
+    throw this.enhanceError(lastError || new Error('Unknown error occurred during API call'));
+  }
+
+  // Call with unified timeout handling
+  private async callWithTimeout(prompt: string, config: AiConfig, options?: AIModelParameters): Promise<AIModelResponse> {
+    const timeout = options?.timeout || this.defaultTimeout;
+    const controller = new AbortController();
+    
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, timeout);
+    
+    try {
+      const response = await this.callInternal(prompt, config, { ...options, signal: controller.signal });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      
+      if (controller.signal.aborted) {
+        throw AIError.timeout(this.modelName, timeout);
+      }
+      
+      throw error;
+    }
   }
 
   // Common utility methods
@@ -375,6 +431,63 @@ export abstract class BaseAIHandler {
       hash = hash & hash; // Convert to 32-bit integer
     }
     return Math.abs(hash).toString(16);
+  }
+
+  // Circuit breaker methods
+  private checkCircuitBreaker(): void {
+    if (this.circuitBreaker.state === 'open') {
+      const timeSinceLastFailure = Date.now() - (this.circuitBreaker.lastFailureTime || 0);
+      
+      if (timeSinceLastFailure >= this.recoveryTimeout) {
+        // Transition to half-open state
+        this.circuitBreaker.state = 'half-open';
+        this.circuitBreaker.successCount = 0;
+        console.log(`🔄 Circuit breaker for ${this.modelName} transitioning to half-open state`);
+      } else {
+        throw AIError.circuitBreakerOpen(this.modelName, 'Circuit breaker is open');
+      }
+    }
+    
+    if (this.circuitBreaker.state === 'half-open' && 
+        (this.circuitBreaker.successCount || 0) >= this.halfOpenMaxRequests) {
+      throw AIError.circuitBreakerOpen(this.modelName, 'Circuit breaker half-open request limit exceeded');
+    }
+  }
+
+  private onSuccess(): void {
+    if (this.circuitBreaker.state === 'half-open') {
+      this.circuitBreaker.successCount = (this.circuitBreaker.successCount || 0) + 1;
+      
+      if (this.circuitBreaker.successCount >= this.halfOpenMaxRequests) {
+        // Transition back to closed state
+        this.circuitBreaker.state = 'closed';
+        this.circuitBreaker.failures = 0;
+        this.circuitBreaker.lastFailureTime = undefined;
+        console.log(`✅ Circuit breaker for ${this.modelName} closed - service recovered`);
+      }
+    } else if (this.circuitBreaker.state === 'closed') {
+      // Reset failure count on success
+      this.circuitBreaker.failures = 0;
+    }
+  }
+
+  private onFailure(): void {
+    this.circuitBreaker.failures++;
+    this.circuitBreaker.lastFailureTime = Date.now();
+    
+    if (this.circuitBreaker.failures >= this.failureThreshold && this.circuitBreaker.state === 'closed') {
+      this.circuitBreaker.state = 'open';
+      console.error(`🚨 Circuit breaker for ${this.modelName} opened after ${this.circuitBreaker.failures} failures`);
+    }
+  }
+
+  // Get circuit breaker status (for monitoring)
+  public getCircuitBreakerStatus(): { state: string; failures: number; lastFailureTime?: number } {
+    return {
+      state: this.circuitBreaker.state,
+      failures: this.circuitBreaker.failures,
+      lastFailureTime: this.circuitBreaker.lastFailureTime
+    };
   }
 
   // Validate configuration object
