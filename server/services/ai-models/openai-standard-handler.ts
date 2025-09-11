@@ -91,13 +91,13 @@ export class OpenAIStandardHandler extends BaseAIHandler {
   validateParameters(config: AiConfig): void {
     // Standard OpenAI models support all standard parameters
     if (config.temperature !== undefined && (config.temperature < 0 || config.temperature > 2)) {
-      throw new Error(`Temperature moet tussen 0 en 2 zijn voor OpenAI`);
+      throw AIError.validationFailed(`Temperature must be between 0 and 2 for OpenAI, got ${config.temperature}`);
     }
     if (config.topP !== undefined && (config.topP < 0 || config.topP > 1)) {
-      throw new Error(`TopP moet tussen 0 en 1 zijn voor OpenAI`);
+      throw AIError.validationFailed(`TopP must be between 0 and 1 for OpenAI, got ${config.topP}`);
     }
     if (config.maxOutputTokens !== undefined && config.maxOutputTokens < 1) {
-      throw new Error(`MaxOutputTokens moet groter dan 0 zijn voor OpenAI`);
+      throw AIError.validationFailed(`MaxOutputTokens must be greater than 0 for OpenAI, got ${config.maxOutputTokens}`);
     }
   }
 

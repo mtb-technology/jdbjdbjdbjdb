@@ -190,16 +190,16 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
   validateParameters(config: AiConfig): void {
     // GPT-5 doesn't support temperature or topP
     if (config.temperature !== undefined && config.temperature !== 1) {
-      console.warn(`⚠️ Temperature wordt genegeerd voor GPT-5`);
+      console.warn(`⚠️ Temperature is ignored for GPT-5`);
     }
     if (config.topP !== undefined && config.topP !== 1) {
-      console.warn(`⚠️ TopP wordt genegeerd voor GPT-5`);
+      console.warn(`⚠️ TopP is ignored for GPT-5`);
     }
     if (config.topK !== undefined) {
-      console.warn(`⚠️ TopK wordt genegeerd voor GPT-5 (alleen voor Google AI)`);
+      console.warn(`⚠️ TopK is ignored for GPT-5 (only supported by Google AI)`);
     }
     if (config.maxOutputTokens !== undefined && config.maxOutputTokens < 100) {
-      throw new Error(`MaxOutputTokens moet minstens 100 zijn voor GPT-5`);
+      throw AIError.validationFailed(`MaxOutputTokens must be at least 100 for GPT-5, got ${config.maxOutputTokens}`);
     }
   }
 

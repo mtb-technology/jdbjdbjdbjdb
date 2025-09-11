@@ -198,4 +198,24 @@ export class AIError extends Error {
       { provider, originalError: originalError.message }
     );
   }
+
+  static validationFailed(message: string, details?: Record<string, any>): AIError {
+    return new AIError(
+      message,
+      ERROR_CODES.VALIDATION_FAILED,
+      false,
+      undefined,
+      details
+    );
+  }
+
+  static invalidInput(message: string, details?: Record<string, any>): AIError {
+    return new AIError(
+      message,
+      ERROR_CODES.INVALID_INPUT,
+      false,
+      undefined,
+      details
+    );
+  }
 }

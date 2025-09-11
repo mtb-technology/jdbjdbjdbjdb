@@ -41,7 +41,7 @@ export abstract class BaseAIHandler {
   // Main call method with retry logic
   async call(prompt: string, config: AiConfig, options?: AIModelParameters): Promise<AIModelResponse> {
     const jobId = options?.jobId;
-    this.validateInput(prompt, config);
+    this.validateInput(prompt, config, options);
     
     let lastError: Error | undefined;
     
@@ -224,17 +224,218 @@ export abstract class BaseAIHandler {
            rawResponse?.incomplete_details?.reason === 'max_output_tokens';
   }
 
-  // Input validation
-  protected validateInput(prompt: string, config: AiConfig): void {
-    if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
-      throw AIError.invalidResponse(this.modelName, 'Prompt cannot be empty');
+  // Input validation with proper config merging
+  protected validateInput(prompt: string, config: AiConfig, options?: AIModelParameters): void {
+    this.validatePrompt(prompt);
+    this.validateOptions(options);
+    
+    // Create effective config by merging options overrides
+    const effectiveConfig = this.mergeConfigWithOptions(config, options);
+    this.validateConfig(effectiveConfig);
+    this.validateParameters(effectiveConfig);
+  }
+
+  // Merge config with options, giving precedence to options
+  protected mergeConfigWithOptions(config: AiConfig, options?: AIModelParameters): AiConfig {
+    if (!options) return config;
+    
+    return {
+      ...config,
+      ...(options.temperature !== undefined && { temperature: options.temperature }),
+      ...(options.topP !== undefined && { topP: options.topP }),
+      ...(options.topK !== undefined && { topK: options.topK }),
+      ...(options.maxOutputTokens !== undefined && { maxOutputTokens: options.maxOutputTokens }),
+      ...(options.reasoning !== undefined && { reasoning: options.reasoning }),
+      ...(options.verbosity !== undefined && { verbosity: options.verbosity }),
+    };
+  }
+
+  // Validate options parameter
+  protected validateOptions(options?: AIModelParameters): void {
+    if (!options) return;
+
+    if (typeof options !== 'object') {
+      throw new AIError('Options must be an object', 'INVALID_INPUT' as any, false);
+    }
+
+    // Validate boolean parameters
+    if (options.useWebSearch !== undefined && typeof options.useWebSearch !== 'boolean') {
+      throw AIError.invalidInput('useWebSearch must be a boolean');
+    }
+
+    if (options.useGrounding !== undefined && typeof options.useGrounding !== 'boolean') {
+      throw AIError.invalidInput('useGrounding must be a boolean');
+    }
+
+    // Validate jobId if present
+    if (options.jobId !== undefined) {
+      if (typeof options.jobId !== 'string' || options.jobId.trim() === '') {
+        throw AIError.invalidInput('jobId must be a non-empty string');
+      }
+      if (options.jobId.length > 100) {
+        throw AIError.invalidInput('jobId must be less than 100 characters');
+      }
+    }
+
+    // Validate model-specific parameters (these will override config values)
+    this.validateNumericParameter('temperature', options.temperature, 0, 2);
+    this.validateNumericParameter('topP', options.topP, 0, 1);
+    this.validateNumericParameter('topK', options.topK, 1, 100);
+    this.validateNumericParameter('maxOutputTokens', options.maxOutputTokens, 1, 100000);
+
+    // Validate reasoning parameter in options
+    if (options.reasoning !== undefined) {
+      if (typeof options.reasoning !== 'object' || options.reasoning === null) {
+        throw AIError.invalidInput('Reasoning parameter must be an object');
+      }
+      if (options.reasoning.effort !== undefined) {
+        const validEfforts = ['minimal', 'low', 'medium', 'high'];
+        if (!validEfforts.includes(options.reasoning.effort)) {
+          throw AIError.invalidInput(`Invalid reasoning effort: ${options.reasoning.effort}. Valid values: ${validEfforts.join(', ')}`);
+        }
+      }
+    }
+
+    // Validate verbosity parameter in options
+    if (options.verbosity !== undefined) {
+      const validVerbosity = ['low', 'medium', 'high'];
+      if (!validVerbosity.includes(options.verbosity)) {
+        throw AIError.invalidInput(`Invalid verbosity: ${options.verbosity}. Valid values: ${validVerbosity.join(', ')}`);
+      }
+    }
+  }
+
+  // Comprehensive prompt validation and sanitization
+  protected validatePrompt(prompt: string): void {
+    if (!prompt || typeof prompt !== 'string') {
+      throw AIError.invalidInput('Prompt must be a non-empty string');
+    }
+
+    if (prompt.trim() === '') {
+      throw AIError.invalidInput('Prompt cannot be empty or only whitespace');
     }
 
     if (prompt.length > 1000000) { // 1MB limit
-      throw AIError.invalidResponse(this.modelName, 'Prompt exceeds maximum length (1MB)');
+      throw AIError.invalidInput('Prompt exceeds maximum length (1MB)');
     }
 
-    this.validateParameters(config);
+    // Normalize prompt for security checks
+    const normalizedPrompt = this.normalizeForSecurityCheck(prompt);
+
+    // Enhanced security patterns with word boundaries and case insensitive matching
+    const securityPatterns = [
+      { pattern: /\bjavascript\s*:/gi, description: 'JavaScript protocol' },
+      { pattern: /\bvbscript\s*:/gi, description: 'VBScript protocol' },
+      { pattern: /\bdata\s*:\s*text\/html/gi, description: 'Data URL with HTML' },
+      { pattern: /<\s*script\b[^>]*>/gi, description: 'Script tags' },
+      { pattern: /<\s*iframe\b[^>]*>/gi, description: 'Iframe tags' },
+      { pattern: /<\s*object\b[^>]*>/gi, description: 'Object tags' },
+      { pattern: /<\s*embed\b[^>]*>/gi, description: 'Embed tags' },
+      { pattern: /\bon\w+\s*=/gi, description: 'Event handlers' },
+      { pattern: /expression\s*\(/gi, description: 'CSS expressions' },
+    ];
+
+    for (const { pattern, description } of securityPatterns) {
+      if (pattern.test(normalizedPrompt)) {
+        const promptHash = this.hashString(prompt);
+        console.warn(`🚨 Rejected prompt with ${description}. Hash: ${promptHash}, Length: ${prompt.length}`);
+        throw AIError.invalidInput(`Prompt contains potentially malicious content (${description})`);
+      }
+    }
+
+    // Warn about very long single lines (potential issues)
+    const lines = prompt.split('\n');
+    const maxLineLength = 10000;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].length > maxLineLength) {
+        console.warn(`⚠️ Prompt line ${i + 1} is very long (${lines[i].length} chars). This may cause processing issues.`);
+        break;
+      }
+    }
+  }
+
+  // Normalize prompt for security checking
+  private normalizeForSecurityCheck(prompt: string): string {
+    return prompt
+      .normalize('NFKC') // Unicode normalization
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+      .replace(/%([0-9a-f]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  }
+
+  // Simple hash for logging without exposing content
+  private hashString(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(16);
+  }
+
+  // Validate configuration object
+  protected validateConfig(config: AiConfig): void {
+    if (!config || typeof config !== 'object') {
+      throw AIError.invalidInput('Configuration must be a valid object');
+    }
+
+    if (!config.model || typeof config.model !== 'string') {
+      throw AIError.invalidInput('Model name is required and must be a string');
+    }
+
+    if (!config.provider || typeof config.provider !== 'string') {
+      throw AIError.invalidInput('Provider is required and must be a string');
+    }
+
+    // Validate provider is one of the supported values
+    const supportedProviders = ['google', 'openai'];
+    if (!supportedProviders.includes(config.provider)) {
+      throw AIError.invalidInput(`Unsupported provider: ${config.provider}. Supported providers: ${supportedProviders.join(', ')}`);
+    }
+
+    // Validate numeric parameters if present
+    this.validateNumericParameter('temperature', config.temperature, 0, 2);
+    this.validateNumericParameter('topP', config.topP, 0, 1);
+    this.validateNumericParameter('topK', config.topK, 1, 100);
+    this.validateNumericParameter('maxOutputTokens', config.maxOutputTokens, 1, 100000);
+
+    // Validate reasoning parameter
+    if (config.reasoning !== undefined) {
+      if (typeof config.reasoning !== 'object' || config.reasoning === null) {
+        throw AIError.invalidInput('Reasoning parameter must be an object');
+      }
+      if (config.reasoning.effort !== undefined) {
+        const validEfforts = ['minimal', 'low', 'medium', 'high'];
+        if (!validEfforts.includes(config.reasoning.effort)) {
+          throw AIError.invalidInput(`Invalid reasoning effort: ${config.reasoning.effort}. Valid values: ${validEfforts.join(', ')}`);
+        }
+      }
+    }
+
+    // Validate verbosity parameter
+    if (config.verbosity !== undefined) {
+      const validVerbosity = ['low', 'medium', 'high'];
+      if (!validVerbosity.includes(config.verbosity)) {
+        throw AIError.invalidInput(`Invalid verbosity: ${config.verbosity}. Valid values: ${validVerbosity.join(', ')}`);
+      }
+    }
+  }
+
+  // Helper to validate numeric parameters
+  private validateNumericParameter(name: string, value: number | undefined, min: number, max: number): void {
+    if (value === undefined) return;
+    
+    if (typeof value !== 'number' || isNaN(value)) {
+      throw AIError.invalidInput(`${name} must be a valid number`);
+    }
+
+    if (value < min || value > max) {
+      throw AIError.invalidInput(`${name} must be between ${min} and ${max}, got ${value}`);
+    }
   }
 
   // Response validation

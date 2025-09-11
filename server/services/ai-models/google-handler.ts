@@ -93,16 +93,16 @@ export class GoogleAIHandler extends BaseAIHandler {
   validateParameters(config: AiConfig): void {
     // Google AI supports all standard parameters
     if (config.temperature !== undefined && (config.temperature < 0 || config.temperature > 2)) {
-      throw new Error(`Temperature moet tussen 0 en 2 zijn voor Google AI`);
+      throw AIError.validationFailed(`Temperature must be between 0 and 2 for Google AI, got ${config.temperature}`);
     }
     if (config.topP !== undefined && (config.topP < 0 || config.topP > 1)) {
-      throw new Error(`TopP moet tussen 0 en 1 zijn voor Google AI`);
+      throw AIError.validationFailed(`TopP must be between 0 and 1 for Google AI, got ${config.topP}`);
     }
     if (config.topK !== undefined && (config.topK < 1 || config.topK > 40)) {
-      throw new Error(`TopK moet tussen 1 en 40 zijn voor Google AI`);
+      throw AIError.validationFailed(`TopK must be between 1 and 40 for Google AI, got ${config.topK}`);
     }
     if (config.maxOutputTokens !== undefined && (config.maxOutputTokens < 100 || config.maxOutputTokens > 32768)) {
-      throw new Error(`MaxOutputTokens moet tussen 100 en 32768 zijn voor Google AI`);
+      throw AIError.validationFailed(`MaxOutputTokens must be between 100 and 32768 for Google AI, got ${config.maxOutputTokens}`);
     }
   }
 

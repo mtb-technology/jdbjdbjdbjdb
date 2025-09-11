@@ -269,16 +269,16 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
   validateParameters(config: AiConfig): void {
     // Deep Research models don't support temperature, topP, or topK
     if (config.temperature !== undefined && config.temperature !== 1) {
-      console.warn(`⚠️ Temperature wordt genegeerd voor Deep Research model ${config.model}`);
+      console.warn(`⚠️ Temperature is ignored for Deep Research model ${config.model}`);
     }
     if (config.topP !== undefined && config.topP !== 1) {
-      console.warn(`⚠️ TopP wordt genegeerd voor Deep Research model ${config.model}`);
+      console.warn(`⚠️ TopP is ignored for Deep Research model ${config.model}`);
     }
     if (config.topK !== undefined) {
-      console.warn(`⚠️ TopK wordt genegeerd voor Deep Research model ${config.model} (alleen voor Google AI)`);
+      console.warn(`⚠️ TopK is ignored for Deep Research model ${config.model} (only supported by Google AI)`);
     }
     if (config.maxOutputTokens !== undefined && config.maxOutputTokens < 100) {
-      throw new Error(`MaxOutputTokens moet minstens 100 zijn voor Deep Research models`);
+      throw AIError.validationFailed(`MaxOutputTokens must be at least 100 for Deep Research models, got ${config.maxOutputTokens}`);
     }
   }
 
