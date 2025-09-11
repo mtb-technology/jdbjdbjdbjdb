@@ -10,7 +10,7 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
   async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters
+    options?: AIModelParameters & { signal?: AbortSignal }
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -50,9 +50,7 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
       }
 
       // Make direct API call to /v1/responses endpoint
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
-
+      // Use the base class AbortSignal for unified timeout handling
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
@@ -60,10 +58,8 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestConfig),
-        signal: controller.signal,
+        signal: options?.signal,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Could not read error response');
@@ -174,10 +170,7 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
         throw error;
       }
       
-      if (error.name === 'AbortError') {
-        throw AIError.timeout('GPT-5', 300000);
-      }
-      
+      // AbortError is now handled by base class timeout mechanism
       // Convert network errors
       if (error.code && ['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET'].includes(error.code)) {
         throw AIError.networkError('GPT-5', error);

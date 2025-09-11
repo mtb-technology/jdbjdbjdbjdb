@@ -14,7 +14,7 @@ export class OpenAIReasoningHandler extends BaseAIHandler {
   async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters
+    options?: AIModelParameters & { signal?: AbortSignal }
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -47,7 +47,9 @@ export class OpenAIReasoningHandler extends BaseAIHandler {
         chatConfig.verbosity = config.verbosity;
       }
 
-      const response = await this.client.chat.completions.create(chatConfig);
+      const response = await this.client.chat.completions.create(chatConfig, {
+        signal: options?.signal
+      });
       const duration = Date.now() - startTime;
       const content = response.choices[0]?.message?.content || "";
 

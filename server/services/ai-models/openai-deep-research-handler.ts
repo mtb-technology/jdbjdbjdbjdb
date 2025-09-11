@@ -10,7 +10,7 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
   async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters
+    options?: AIModelParameters & { signal?: AbortSignal }
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -19,11 +19,6 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
     
     const finalPrompt = this.formatPromptWithSearch(prompt, options?.useWebSearch || false);
     
-    // Calculate timeout before try block so it's available in catch
-    const baseTimeout = 900000; // 15 minutes base
-    const extraTime = Math.floor((config.maxOutputTokens || 8192) / 8192) * 300000; // +5 min per 8k tokens
-    const timeoutMs = Math.min(baseTimeout + extraTime, 1800000); // Max 30 minutes
-    
     this.logStart(jobId, {
       model: config.model,
       promptLength: finalPrompt.length,
@@ -31,9 +26,7 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       reasoning: config.reasoning,
       verbosity: config.verbosity,
       useWebSearch: options?.useWebSearch,
-      timeoutMs: timeoutMs,
-      timeoutMinutes: Math.round(timeoutMs/60000),
-      note: "Deep Research models use Responses API"
+      note: "Deep Research models use Responses API with base class timeout"
     });
 
     try {
@@ -72,11 +65,8 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
         requestConfig.tools = [{ type: "web_search" }];
       }
 
-      // Make direct API call to /v1/responses endpoint  
-      const controller = new AbortController();
-      console.log(`⏱️ [${jobId}] Using timeout of ${timeoutMs}ms (${Math.round(timeoutMs/60000)} minutes) for ${config.maxOutputTokens} tokens`);
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
+      // Make direct API call to /v1/responses endpoint
+      // Use the base class AbortSignal for unified timeout handling
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
@@ -84,10 +74,8 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestConfig),
-        signal: controller.signal,
+        signal: options?.signal,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Could not read error response');
@@ -253,9 +241,7 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
         throw error;
       }
       
-      if (error.name === 'AbortError') {
-        throw AIError.timeout('Deep Research', timeoutMs);
-      }
+      // AbortError is now handled by base class timeout mechanism
       
       // Better error for fetch failures
       if (error.message === 'fetch failed' || error.code && ['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET'].includes(error.code)) {
