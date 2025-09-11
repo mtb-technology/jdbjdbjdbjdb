@@ -1,4 +1,5 @@
 import { BaseAIHandler, AIModelResponse, AIModelParameters } from "./base-handler";
+import { AIError } from "@shared/errors";
 import type { AiConfig } from "@shared/schema";
 
 export class OpenAIGPT5Handler extends BaseAIHandler {
@@ -6,10 +7,10 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
     super("OpenAI GPT-5", apiKey);
   }
 
-  async call(
+  async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters & { jobId?: string }
+    options?: AIModelParameters
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -66,7 +67,7 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Could not read error response');
-        throw new Error(`GPT-5 API error: ${response.status} ${response.statusText} - ${errorText}`);
+        throw AIError.fromHttpError(response.status, errorText, 'GPT-5');
       }
 
       const result = await response.json();
@@ -146,7 +147,7 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
           console.warn(`[${jobId}] Extracted content from GPT-5 response using fallback regex`);
         } else if (result?.status === 'incomplete') {
           const reason = result?.incomplete_details?.reason || 'unknown';
-          throw new Error(`Incomplete GPT-5 response: ${reason}. Try increasing max_output_tokens.`);
+          throw AIError.invalidResponse('GPT-5', `Incomplete response: ${reason}. Try increasing max_output_tokens.`);
         } else {
           // Return a minimal valid response instead of throwing
           content = `GPT-5 response processing error. Status: ${result?.status || 'unknown'}. Please retry.`;
@@ -169,13 +170,20 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
       return apiResponse;
 
     } catch (error: any) {
-      this.logError(jobId, error);
-      
-      if (error.name === 'AbortError') {
-        throw new Error(`GPT-5 timed out after 5 minutes`);
+      if (error instanceof AIError) {
+        throw error;
       }
       
-      throw new Error(`GPT-5 API fout: ${error.message}`);
+      if (error.name === 'AbortError') {
+        throw AIError.timeout('GPT-5', 300000);
+      }
+      
+      // Convert network errors
+      if (error.code && ['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET'].includes(error.code)) {
+        throw AIError.networkError('GPT-5', error);
+      }
+      
+      throw new AIError(error.message || 'Unknown GPT-5 error', 'EXTERNAL_API_ERROR' as any);
     }
   }
 
