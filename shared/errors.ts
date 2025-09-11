@@ -228,4 +228,14 @@ export class AIError extends Error {
       { provider, reason }
     );
   }
+
+  static rateLimited(provider: string, retryAfter?: number): AIError {
+    return new AIError(
+      `Rate limit exceeded for ${provider}`,
+      ERROR_CODES.AI_RATE_LIMITED,
+      true,
+      retryAfter || 60000, // Default 60 seconds
+      { provider }
+    );
+  }
 }
