@@ -222,7 +222,7 @@ export class AIError extends Error {
   static circuitBreakerOpen(provider: string, reason: string): AIError {
     return new AIError(
       `Circuit breaker is open for ${provider}: ${reason}`,
-      ERROR_CODES.AI_UNAVAILABLE,
+      ERROR_CODES.AI_SERVICE_UNAVAILABLE,
       true,
       30000, // Retry after 30 seconds
       { provider, reason }
