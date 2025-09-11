@@ -1,5 +1,6 @@
 import type { AiConfig } from "@shared/schema";
 import { AIError } from "@shared/errors";
+import { AIMonitoringService, RequestMetrics } from "./monitoring";
 
 export interface AIModelResponse {
   content: string;
@@ -51,6 +52,11 @@ export abstract class BaseAIHandler {
     this.apiKey = apiKey;
   }
 
+  // Get monitoring service instance
+  protected get monitoring(): AIMonitoringService {
+    return AIMonitoringService.getInstance();
+  }
+
   // Abstract methods that each handler must implement
   abstract callInternal(prompt: string, config: AiConfig, options?: AIModelParameters & { signal?: AbortSignal }): Promise<AIModelResponse>;
   abstract validateParameters(config: AiConfig): void;
@@ -59,10 +65,13 @@ export abstract class BaseAIHandler {
   // Main call method with retry logic
   async call(prompt: string, config: AiConfig, options?: AIModelParameters): Promise<AIModelResponse> {
     const jobId = options?.jobId;
+    const startTime = Date.now();
+    const modelKey = `${config.provider}-${config.model}`;
+    
     this.validateInput(prompt, config, options);
     
     // Check circuit breaker state
-    this.checkCircuitBreaker();
+    this.checkCircuitBreaker(modelKey);
     
     let lastError: Error | undefined;
     let callFailed = false;
@@ -72,8 +81,9 @@ export abstract class BaseAIHandler {
         const response = await this.callWithTimeout(prompt, config, options);
         this.validateResponse(response);
         
-        // Success - reset circuit breaker
-        this.onSuccess();
+        // Success - reset circuit breaker and record metrics
+        this.onSuccess(modelKey);
+        this.recordRequestMetrics(prompt, config, response, startTime, true, jobId);
         return response;
       } catch (error: any) {
         lastError = error;
@@ -82,6 +92,7 @@ export abstract class BaseAIHandler {
         if (attempt === this.maxRetries) {
           callFailed = true;
           this.logError(jobId, error);
+          this.recordRequestMetrics(prompt, config, undefined, startTime, false, jobId, error);
           break;
         }
         
@@ -101,16 +112,17 @@ export abstract class BaseAIHandler {
           continue;
         }
         
-        // Non-retryable error, throw immediately
+        // Non-retryable error, record metrics and throw immediately
         callFailed = true;
         this.logError(jobId, error);
+        this.recordRequestMetrics(prompt, config, undefined, startTime, false, jobId, error);
         break;
       }
     }
     
     // Record failure for circuit breaker only once per overall failed call
     if (callFailed) {
-      this.onFailure();
+      this.onFailure(modelKey);
     }
     
     throw this.enhanceError(lastError || new Error('Unknown error occurred during API call'));
@@ -434,7 +446,7 @@ export abstract class BaseAIHandler {
   }
 
   // Circuit breaker methods
-  private checkCircuitBreaker(): void {
+  private checkCircuitBreaker(modelKey: string): void {
     if (this.circuitBreaker.state === 'open') {
       const timeSinceLastFailure = Date.now() - (this.circuitBreaker.lastFailureTime || 0);
       
@@ -443,6 +455,7 @@ export abstract class BaseAIHandler {
         this.circuitBreaker.state = 'half-open';
         this.circuitBreaker.successCount = 0;
         console.log(`🔄 Circuit breaker for ${this.modelName} transitioning to half-open state`);
+        this.monitoring.updateCircuitBreakerState(modelKey, 'half-open');
       } else {
         throw AIError.circuitBreakerOpen(this.modelName, 'Circuit breaker is open');
       }
@@ -454,7 +467,7 @@ export abstract class BaseAIHandler {
     }
   }
 
-  private onSuccess(): void {
+  private onSuccess(modelKey: string): void {
     if (this.circuitBreaker.state === 'half-open') {
       this.circuitBreaker.successCount = (this.circuitBreaker.successCount || 0) + 1;
       
@@ -464,6 +477,7 @@ export abstract class BaseAIHandler {
         this.circuitBreaker.failures = 0;
         this.circuitBreaker.lastFailureTime = undefined;
         console.log(`✅ Circuit breaker for ${this.modelName} closed - service recovered`);
+        this.monitoring.updateCircuitBreakerState(modelKey, 'closed');
       }
     } else if (this.circuitBreaker.state === 'closed') {
       // Reset failure count on success
@@ -471,13 +485,22 @@ export abstract class BaseAIHandler {
     }
   }
 
-  private onFailure(): void {
+  private onFailure(modelKey: string): void {
     this.circuitBreaker.failures++;
     this.circuitBreaker.lastFailureTime = Date.now();
     
-    if (this.circuitBreaker.failures >= this.failureThreshold && this.circuitBreaker.state === 'closed') {
+    // Handle half-open state failure - immediately transition back to open
+    if (this.circuitBreaker.state === 'half-open') {
+      this.circuitBreaker.state = 'open';
+      this.circuitBreaker.successCount = 0;
+      console.error(`🚨 Circuit breaker for ${this.modelName} failed during half-open - reopening`);
+      this.monitoring.updateCircuitBreakerState(modelKey, 'open');
+    }
+    // Handle closed state failure - open after threshold
+    else if (this.circuitBreaker.failures >= this.failureThreshold && this.circuitBreaker.state === 'closed') {
       this.circuitBreaker.state = 'open';
       console.error(`🚨 Circuit breaker for ${this.modelName} opened after ${this.circuitBreaker.failures} failures`);
+      this.monitoring.updateCircuitBreakerState(modelKey, 'open');
     }
   }
 
@@ -489,6 +512,33 @@ export abstract class BaseAIHandler {
       lastFailureTime: this.circuitBreaker.lastFailureTime
     };
   }
+
+  // Record request metrics
+  protected recordRequestMetrics(
+    prompt: string,
+    config: AiConfig,
+    response: AIModelResponse | undefined,
+    startTime: number,
+    success: boolean,
+    jobId?: string,
+    error?: Error
+  ): void {
+    const metrics: RequestMetrics = {
+      model: config.model,
+      provider: config.provider,
+      duration: response?.duration || (Date.now() - startTime),
+      success,
+      errorType: error instanceof AIError ? error.errorCode : error?.name,
+      promptLength: prompt.length,
+      responseLength: response?.content?.length || 0,
+      tokensUsed: response?.usage?.tokens || response?.usage?.total_tokens,
+      timestamp: Date.now(),
+      jobId
+    };
+
+    this.monitoring.recordRequest(metrics);
+  }
+
 
   // Validate configuration object
   protected validateConfig(config: AiConfig): void {
