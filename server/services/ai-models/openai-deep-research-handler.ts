@@ -1,4 +1,5 @@
 import { BaseAIHandler, AIModelResponse, AIModelParameters } from "./base-handler";
+import { AIError } from "@shared/errors";
 import type { AiConfig } from "@shared/schema";
 
 export class OpenAIDeepResearchHandler extends BaseAIHandler {
@@ -6,10 +7,10 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
     super(`OpenAI Deep Research (${modelName})`, apiKey);
   }
 
-  async call(
+  async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters & { jobId?: string }
+    options?: AIModelParameters
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -90,7 +91,7 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Could not read error response');
-        throw new Error(`Deep Research API error: ${response.status} ${response.statusText} - ${errorText}`);
+        throw AIError.fromHttpError(response.status, errorText, 'Deep Research');
       }
 
       let result;
@@ -224,12 +225,12 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
           } else {
             // For stage 4a (BronnenSpecialist), provide a more helpful error message
             if (jobId && jobId.includes('4a_BronnenSpecialist')) {
-              throw new Error(`Deep Research model needs more tokens for source validation. Current limit: ${config.maxOutputTokens}. Please increase maxOutputTokens to at least 32768 for this stage.`);
+              throw AIError.invalidResponse('Deep Research', `Model needs more tokens for source validation. Current limit: ${config.maxOutputTokens}. Please increase maxOutputTokens to at least 32768.`);
             }
-            throw new Error(`Incomplete Deep Research response: ${reason}. Current maxOutputTokens: ${config.maxOutputTokens}. Try increasing to at least ${Math.min(config.maxOutputTokens * 2, 65536)}.`);
+            throw AIError.invalidResponse('Deep Research', `Incomplete response: ${reason}. Current maxOutputTokens: ${config.maxOutputTokens}. Try increasing to at least ${Math.min(config.maxOutputTokens * 2, 65536)}.`);
           }
         } else {
-          throw new Error(`Empty response from Deep Research model - no usable content found`);
+          throw AIError.invalidResponse('Deep Research', 'Empty response - no usable content found');
         }
       }
 
@@ -248,19 +249,20 @@ export class OpenAIDeepResearchHandler extends BaseAIHandler {
       return apiResponse;
 
     } catch (error: any) {
-      this.logError(jobId, error);
+      if (error instanceof AIError) {
+        throw error;
+      }
       
       if (error.name === 'AbortError') {
-        const timeoutMinutes = Math.round(timeoutMs / 60000);
-        throw new Error(`Deep Research model timed out after ${timeoutMinutes} minutes. Consider using a faster model like GPT-4o or Gemini 2.5 Pro for this stage.`);
+        throw AIError.timeout('Deep Research', timeoutMs);
       }
       
       // Better error for fetch failures
-      if (error.message === 'fetch failed') {
-        throw new Error(`Network error calling Deep Research API. The request may have timed out or the API is temporarily unavailable. Try again or use an alternative model.`);
+      if (error.message === 'fetch failed' || error.code && ['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET'].includes(error.code)) {
+        throw AIError.networkError('Deep Research', error);
       }
       
-      throw new Error(`Deep Research API fout: ${error.message}`);
+      throw new AIError(error.message || 'Unknown Deep Research error', 'EXTERNAL_API_ERROR' as any);
     }
   }
 

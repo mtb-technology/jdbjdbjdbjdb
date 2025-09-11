@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { BaseAIHandler, AIModelResponse, AIModelParameters } from "./base-handler";
+import { AIError } from "@shared/errors";
 import type { AiConfig } from "@shared/schema";
 
 export class OpenAIStandardHandler extends BaseAIHandler {
@@ -10,10 +11,10 @@ export class OpenAIStandardHandler extends BaseAIHandler {
     this.client = new OpenAI({ apiKey });
   }
 
-  async call(
+  async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters & { jobId?: string }
+    options?: AIModelParameters
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -52,7 +53,7 @@ export class OpenAIStandardHandler extends BaseAIHandler {
       const content = response.choices[0]?.message?.content || "";
 
       if (!content) {
-        throw new Error(`Lege response van ${config.model}`);
+        throw AIError.invalidResponse('OpenAI Standard', `Empty response from ${config.model}`);
       }
 
       const result: AIModelResponse = {
@@ -69,8 +70,21 @@ export class OpenAIStandardHandler extends BaseAIHandler {
       return result;
 
     } catch (error: any) {
-      this.logError(jobId, error);
-      throw new Error(`OpenAI Standard API fout: ${error.message}`);
+      if (error instanceof AIError) {
+        throw error;
+      }
+      
+      // Convert HTTP errors
+      if (error.status) {
+        throw AIError.fromHttpError(error.status, error.message, 'OpenAI Standard');
+      }
+      
+      // Convert network errors
+      if (error.code && ['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET'].includes(error.code)) {
+        throw AIError.networkError('OpenAI Standard', error);
+      }
+      
+      throw new AIError(error.message || 'Unknown OpenAI Standard error', 'EXTERNAL_API_ERROR' as any);
     }
   }
 

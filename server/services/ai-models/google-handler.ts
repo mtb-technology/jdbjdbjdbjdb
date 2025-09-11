@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { BaseAIHandler, AIModelResponse, AIModelParameters } from "./base-handler";
+import { AIError } from "@shared/errors";
 import type { AiConfig } from "@shared/schema";
 
 export class GoogleAIHandler extends BaseAIHandler {
@@ -10,10 +11,10 @@ export class GoogleAIHandler extends BaseAIHandler {
     this.client = new GoogleGenAI({ apiKey });
   }
 
-  async call(
+  async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters & { jobId?: string }
+    options?: AIModelParameters
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -54,7 +55,7 @@ export class GoogleAIHandler extends BaseAIHandler {
       if (finishReason === 'MAX_TOKENS' && content && content.trim().length > 10) {
         console.warn(`[${jobId}] Google AI hit token limit, but returning partial content`);
       } else if (!content || content.trim() === '') {
-        throw new Error(`Lege response van Google AI (${finishReason || 'unknown reason'})`);
+        throw AIError.invalidResponse('Google AI', `Empty response (${finishReason || 'unknown reason'})`);
       }
 
       const result: AIModelResponse = {
@@ -71,8 +72,21 @@ export class GoogleAIHandler extends BaseAIHandler {
       return result;
 
     } catch (error: any) {
-      this.logError(jobId, error);
-      throw new Error(`Google AI API fout: ${error.message}`);
+      if (error instanceof AIError) {
+        throw error;
+      }
+      
+      // Convert HTTP errors
+      if (error.status) {
+        throw AIError.fromHttpError(error.status, error.message, 'Google AI');
+      }
+      
+      // Convert network errors
+      if (error.code && ['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET'].includes(error.code)) {
+        throw AIError.networkError('Google AI', error);
+      }
+      
+      throw new AIError(error.message || 'Unknown Google AI error', 'EXTERNAL_API_ERROR' as any);
     }
   }
 
