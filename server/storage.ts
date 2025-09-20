@@ -187,6 +187,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async initializeDefaultPrompts(): Promise<void> {
+    // Check for production sync mode - if enabled, always sync from JSON regardless of existing configs
+    const syncMode = process.env.PROMPTS_SYNC_MODE;
+    if (process.env.NODE_ENV === 'production' && syncMode === 'upsert') {
+      console.log('Production mode: Force syncing prompts from storage/prompts.json...');
+      const result = await this.forceIngestPromptsFromJson();
+      if (result.success) {
+        console.log(`✅ Production sync completed: ${result.message}`);
+        return;
+      } else {
+        console.error(`❌ Production sync failed: ${result.message}, falling back to default initialization`);
+      }
+    }
+
     // Check if any configs exist
     const existing = await this.getAllPromptConfigs();
     if (existing.length > 0) {

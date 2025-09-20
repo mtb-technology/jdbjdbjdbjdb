@@ -728,6 +728,17 @@ ${bouwplanContent}`;
 
   // Export current development prompts to storage/prompts.json for production sync
   app.post("/api/prompts/sync-to-production", asyncHandler(async (req: Request, res: Response) => {
+    // Restrict to development environment only
+    if (process.env.NODE_ENV === 'production') {
+      res.status(403).json(createApiErrorResponse(
+        'ENVIRONMENT_ERROR',
+        ERROR_CODES.AI_AUTHENTICATION_FAILED,
+        'Sync endpoint is disabled in production for security',
+        'Deze functie is niet beschikbaar in productie omgeving'
+      ));
+      return;
+    }
+
     try {
       // Get all current prompt configurations from development database
       const configs = await storage.getAllPromptConfigs();
