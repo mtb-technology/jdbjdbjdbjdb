@@ -216,9 +216,29 @@ export function SimplifiedWorkflowView({
   };
 
   const handleStageClick = (stageKey: string, index: number) => {
-    // Navigate to stage if already completed
-    if (state.stageResults[stageKey]) {
+    // Calculate proper stage status to determine if navigation is allowed
+    const currentStageIndex = state.currentStageIndex;
+    const isCompleted = !!state.stageResults[stageKey];
+    const isCurrent = index === currentStageIndex;
+    const isNext = index === currentStageIndex + 1;
+    
+    console.log(`🎯 Stage click: ${stageKey} (index: ${index})`, {
+      currentStageIndex,
+      isCompleted,
+      isCurrent,
+      isNext,
+      hasResult: !!state.stageResults[stageKey]
+    });
+    
+    // Allow navigation to:
+    // 1. Completed stages (to view results)
+    // 2. Current stage (to execute or re-execute)
+    // 3. Next stage if current is completed (natural progression)
+    if (isCompleted || isCurrent || (isNext && state.stageResults[WORKFLOW_STAGES[currentStageIndex]?.key])) {
+      console.log(`✅ Navigating to stage ${index}: ${stageKey}`);
       dispatch({ type: "SET_STAGE_INDEX", payload: index });
+    } else {
+      console.log(`⚠️ Navigation blocked to stage ${index}: ${stageKey}`);
     }
   };
 
@@ -545,9 +565,21 @@ export function SimplifiedWorkflowView({
                         {/* Show Input from Previous Steps */}
                         {index > 0 && (
                           <div className="space-y-2">
+                            {/* Debug logging for INPUT UIT STAP */}
+                            {(() => { 
+                              console.log(`🔍 INPUT UIT STAP Debug for stage ${stage.key} (index ${index}):`, {
+                                allStageResults: Object.keys(state.stageResults),
+                                stageResultValues: state.stageResults,
+                                previousStages: WORKFLOW_STAGES.slice(0, index).map(s => s.key),
+                                isExpanded,
+                                currentStageIndex: state.currentStageIndex
+                              }); 
+                              return null; 
+                            })()}
                             {/* Get previous stage results to show as input */}
                             {WORKFLOW_STAGES.slice(0, index).map((prevStage, prevIndex) => {
                               const prevResult = state.stageResults[prevStage.key];
+                              console.log(`🔍 Previous stage ${prevStage.key}:`, { prevResult, hasPrevResult: !!prevResult, resultLength: prevResult?.length });
                               if (!prevResult) return null;
                               
                               return (
@@ -858,11 +890,22 @@ export function SimplifiedWorkflowView({
                               </div>
                             ) : (
                               <div className="mt-3">
+                                {/* Debug logging for button state */}
+                                {console.log(`🐛 Button Debug for ${stage.key}:`, {
+                                  isProcessing,
+                                  canStart,
+                                  isDisabled: isProcessing || !canStart,
+                                  currentStageIndex: state.currentStageIndex,
+                                  stageIndex: index,
+                                  hasCurrentReport: !!state.currentReport,
+                                  previousStageResult: index > 0 ? !!state.stageResults[WORKFLOW_STAGES[index - 1].key] : 'N/A (first stage)'
+                                })}
                                 <Button 
                                   onClick={executeCurrentStage}
                                   disabled={isProcessing || !canStart}
                                   className="w-full"
                                   size="sm"
+                                  data-testid={`button-start-stage-${stage.key}`}
                                 >
                                   {isProcessing ? (
                                     <>

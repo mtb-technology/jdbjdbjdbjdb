@@ -199,8 +199,14 @@ function WorkflowManagerContent({
       }
       
       if (updatedReport) {
+        console.log(`🔄 Updating report after stage completion:`, {
+          stage: variables.stage,
+          hasUpdatedStageResults: !!(updatedReport.stageResults),
+          updatedStageResultKeys: Object.keys((updatedReport.stageResults as Record<string, string>) || {})
+        });
+        
+        // Update report and merge state (LOAD_EXISTING_REPORT now merges instead of overwriting)
         dispatch({ type: "SET_REPORT", payload: updatedReport });
-        // Refresh stage results from the updated report
         dispatch({ type: "LOAD_EXISTING_REPORT", report: updatedReport });
       }
       
@@ -232,13 +238,36 @@ function WorkflowManagerContent({
       });
       
       // Only auto-advance if we're still on the same stage that was executed
+      console.log(`🎯 Auto-advance evaluation: executedStage="${variables.stage}", currentStageKey="${currentStage.key}", currentIndex=${state.currentStageIndex}`);
       if (variables.stage === currentStage.key) {
-        const nextIndex = getNextStageIndex();
+        // Compute next index based on updated state that includes the new result
+        const updatedStageResults = {
+          ...state.stageResults,
+          [variables.stage]: stageResult,
+          ...((updatedReport?.stageResults as Record<string, string>) || {})
+        };
+        
+        // Calculate next index using a temporary state with updated results
+        const tempCurrentIndex = state.currentStageIndex;
+        const tempCurrentStage = WORKFLOW_STAGES[tempCurrentIndex];
+        
+        let nextIndex = tempCurrentIndex;
+        if (tempCurrentStage.key === "1_informatiecheck") nextIndex = tempCurrentIndex + 1;
+        else if (tempCurrentStage.key === "2_complexiteitscheck") nextIndex = tempCurrentIndex + 1;
+        else if (tempCurrentStage.key === "3_generatie") {
+          nextIndex = WORKFLOW_STAGES.findIndex(s => s.key === "4a_BronnenSpecialist");
+        }
+        
         console.log(`🎯 Auto-advance check: current=${state.currentStageIndex}, next=${nextIndex}, stage=${variables.stage}`);
+        console.log(`🎯 Stage results after completion:`, Object.keys(updatedStageResults));
         if (nextIndex !== state.currentStageIndex) {
           console.log(`✅ Auto-advancing from stage ${state.currentStageIndex} to ${nextIndex}`);
           dispatch({ type: "SET_STAGE_INDEX", payload: nextIndex });
+        } else {
+          console.log(`⏸️ No auto-advance: already at target index ${nextIndex}`);
         }
+      } else {
+        console.log(`⚠️ No auto-advance: executed stage "${variables.stage}" != current stage "${currentStage.key}"`);
       }
     },
     onError: (error: Error, variables) => {
@@ -431,6 +460,12 @@ function WorkflowManagerContent({
         stageResults: cleanedStageResults
       };
       
+      console.log(`🔄 Loading existing report:`, { 
+        reportId: existingReport.id, 
+        hasStageResults: !!existingReport.stageResults,
+        stageResultKeys: Object.keys(existingReport.stageResults as Record<string, string> || {})
+      });
+      
       dispatch({ type: "LOAD_EXISTING_REPORT", report: reportWithCleanedResults });
       
       // Set current stage index based on completed stages
@@ -438,7 +473,16 @@ function WorkflowManagerContent({
       const lastCompletedIndex = completedStages.length > 0 
         ? Math.max(...completedStages.map(stage => WORKFLOW_STAGES.findIndex(s => s.key === stage)))
         : -1;
-      dispatch({ type: "SET_STAGE_INDEX", payload: Math.min(lastCompletedIndex + 1, WORKFLOW_STAGES.length - 1) });
+      const newStageIndex = Math.min(lastCompletedIndex + 1, WORKFLOW_STAGES.length - 1);
+      
+      console.log(`🔄 Stage index calculation:`, {
+        completedStages,
+        lastCompletedIndex,
+        newStageIndex,
+        workflowStages: WORKFLOW_STAGES.map(s => s.key)
+      });
+      
+      dispatch({ type: "SET_STAGE_INDEX", payload: newStageIndex });
       
       sessionStorage.setItem('current-workflow-report-id', existingReport.id);
     } else if (!existingReport && !state.currentReport && !createReportMutation.isPending) {

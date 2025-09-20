@@ -187,13 +187,71 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
       return initialState;
     
     case "LOAD_EXISTING_REPORT":
+      const stageResults = (action.report.stageResults as Record<string, string>) || {};
+      const completedStages = Object.keys(stageResults);
+      
+      console.log(`🔄 WorkflowReducer: LOAD_EXISTING_REPORT`, {
+        reportId: action.report.id,
+        stageResultKeys: completedStages,
+        hasSubstepResults: !!(action.report.substepResults),
+        currentStageIndexBefore: state.currentStageIndex,
+        existingStagePrompts: Object.keys(state.stagePrompts || {}),
+        reportStagePrompts: Object.keys((action.report.stagePrompts as Record<string, string>) || {})
+      });
+      
+      // Calculate proper stage index based on completed stages (same logic as initialization)
+      const WORKFLOW_STAGES = [
+        { key: "1_informatiecheck" },
+        { key: "2_complexiteitscheck" }, 
+        { key: "3_generatie" },
+        { key: "4a_BronnenSpecialist" },
+        { key: "4b_FiscaalTechnischSpecialist" },
+        { key: "4c_ScenarioGatenAnalist" },
+        { key: "4d_DeVertaler" },
+        { key: "4e_DeAdvocaat" },
+        { key: "4f_DeKlantpsycholoog" },
+        { key: "4g_ChefEindredactie" },
+        { key: "5_feedback_verwerker" },
+        { key: "6_change_summary" },
+        { key: "final_check" }
+      ];
+      
+      let newStageIndex = 0;
+      if (completedStages.length > 0) {
+        // Find the highest completed stage index (not just the last key)
+        const completedIndices = completedStages
+          .map(stageKey => WORKFLOW_STAGES.findIndex(s => s.key === stageKey))
+          .filter(index => index >= 0);
+        
+        if (completedIndices.length > 0) {
+          const highestCompletedIndex = Math.max(...completedIndices);
+          newStageIndex = Math.min(highestCompletedIndex + 1, WORKFLOW_STAGES.length - 1);
+        }
+      }
+      
+      console.log(`🔄 Stage index recalculation:`, {
+        completedStages,
+        completedIndices: completedStages.map(stageKey => ({ stageKey, index: WORKFLOW_STAGES.findIndex(s => s.key === stageKey) })),
+        highestCompletedIndex: completedStages.length > 0 ? Math.max(...completedStages.map(stageKey => WORKFLOW_STAGES.findIndex(s => s.key === stageKey)).filter(i => i >= 0)) : -1,
+        newStageIndex,
+        previousStageIndex: state.currentStageIndex,
+        newStageName: WORKFLOW_STAGES[newStageIndex]?.key
+      });
+      
+      // Merge existing stage prompts with report stage prompts, preserving existing ones
+      const mergedStagePrompts = {
+        ...state.stagePrompts,
+        ...((action.report.stagePrompts as Record<string, string>) || {})
+      };
+      
       return {
         ...state,
         currentReport: action.report,
-        stageResults: (action.report.stageResults as Record<string, string>) || {},
-        substepResults: (action.report.substepResults as Record<string, { review?: string; processing?: string }>) || {},
+        currentStageIndex: newStageIndex,
+        stageResults: { ...state.stageResults, ...stageResults },
+        substepResults: { ...state.substepResults, ...((action.report.substepResults as Record<string, { review?: string; processing?: string }>) || {}) },
         conceptReportVersions: (action.report.conceptReportVersions as Record<string, string>) || {},
-        stagePrompts: state.stagePrompts || {},
+        stagePrompts: mergedStagePrompts,
       };
     
     default:
