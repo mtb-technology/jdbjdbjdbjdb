@@ -4,7 +4,7 @@ import { AIModelFactory, AIModelParameters } from "./ai-models/ai-model-factory"
 import { storage } from "../storage";
 import { ServerError } from "../middleware/errorHandler";
 import { ERROR_CODES } from "@shared/errors";
-import { REPORT_CONFIG } from "../config/index";
+import { REPORT_CONFIG, getStageConfig } from "../config/index";
 
 export class ReportGenerator {
   private getStageDisplayName(stageName: string): string {
@@ -257,10 +257,50 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const stageAiConfig = stageConfig?.aiConfig;
     const globalAiConfig = globalConfig?.aiConfig;
 
+    // Intelligent model selection for hybrid workflow
+    const getOptimalModel = (stageName: string): string => {
+      // If explicitly configured in database, use that
+      if (stageAiConfig?.model || globalAiConfig?.model) {
+        return stageAiConfig?.model || globalAiConfig?.model;
+      }
+      
+      // Hybrid workflow logic based on stage complexity
+      switch (stageName) {
+        case '1_informatiecheck':
+        case '2_complexiteitscheck':
+          return REPORT_CONFIG.simpleTaskModel; // Fast automated checks
+        
+        case '3_generatie':
+          return REPORT_CONFIG.complexTaskModel; // Powerful for large reports
+        
+        case '4a_BronnenSpecialist':
+        case '4b_FiscaalTechnischSpecialist':
+          return REPORT_CONFIG.reviewerModel; // Balanced for critical reviews
+        
+        case '4c_ScenarioGatenAnalist':
+        case '4d_DeVertaler':
+        case '4e_DeAdvocaat':
+        case '4f_DeKlantpsycholoog':
+        case '4g_ChefEindredactie':
+          return REPORT_CONFIG.simpleTaskModel; // Fast for routine reviews
+        
+        case '5_feedback_verwerker':
+          return REPORT_CONFIG.reviewerModel; // Good for consolidation
+        
+        case 'final_check':
+          return REPORT_CONFIG.reviewerModel; // Balanced for final review
+        
+        default:
+          return REPORT_CONFIG.defaultModel;
+      }
+    };
+    
+    const selectedModel = getOptimalModel(stageName);
+    
     // Build merged AI config with proper fallbacks - fully configurable via database
     const aiConfig: AiConfig = {
-      provider: stageAiConfig?.provider || globalAiConfig?.provider || "google",
-      model: stageAiConfig?.model || globalAiConfig?.model || REPORT_CONFIG.defaultModel,
+      provider: stageAiConfig?.provider || globalAiConfig?.provider || (selectedModel.startsWith('gpt') ? 'openai' : 'google'),
+      model: selectedModel,
       temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.1,
       topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
       topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 20,
@@ -274,7 +314,13 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     };
     
     // Log actual config for debugging
-    console.log(`📊 [${jobId}] AI Config loaded - maxOutputTokens: ${aiConfig.maxOutputTokens}`);
+    console.log(`📊 [${jobId}] Hybrid model selection:`, {
+      stage: stageName,
+      selectedModel: selectedModel,
+      provider: aiConfig.provider,
+      maxOutputTokens: aiConfig.maxOutputTokens,
+      isHybridSelection: !stageAiConfig?.model && !globalAiConfig?.model
+    });
 
     // Dynamic token adjustment based on model type and stage requirements
     if (stageName.startsWith("4")) {
@@ -310,11 +356,23 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       webSearch: useWebSearch
     });
 
-    // Call the AI model using the factory
+    // Get stage-specific timeout and maxTokens from REPORT_CONFIG
+    const stageConfigFromReport = getStageConfig(stageName as keyof typeof REPORT_CONFIG.stages);
+    const stageTimeout = stageConfigFromReport?.timeout;
+    const stageMaxTokens = stageConfigFromReport?.maxTokens;
+    
+    // Override AI config with stage-specific limits if defined
+    if (stageMaxTokens && stageMaxTokens > aiConfig.maxOutputTokens) {
+      aiConfig.maxOutputTokens = stageMaxTokens;
+      console.log(`📏 [${jobId}] Applied stage maxTokens: ${stageMaxTokens} for ${stageName}`);
+    }
+    
+    // Call the AI model using the factory with stage-specific timeout
     const options: AIModelParameters & { jobId?: string } = {
       jobId,
       useWebSearch,
-      useGrounding
+      useGrounding,
+      timeout: stageTimeout // Pass stage-specific timeout
     };
 
     try {
