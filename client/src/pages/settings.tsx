@@ -311,7 +311,19 @@ const Settings = memo(function Settings() {
     
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
+      let data;
+      
+      // First, try to parse JSON with specific error handling
+      try {
+        data = JSON.parse(text);
+      } catch (parseError) {
+        toast({
+          title: "Ongeldig JSON bestand",
+          description: "Het bestand bevat geen geldige JSON data. Upload een geldig export bestand.",
+          variant: "destructive",
+        });
+        return;
+      }
       
       // Basic client-side validation
       const isValidFormat = (data: any) => {

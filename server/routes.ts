@@ -636,17 +636,24 @@ ${bouwplanContent}`;
       let created = 0;
       
       for (const config of prompt_configs) {
+        // Strip timestamp fields to avoid date conversion issues - let DB handle these automatically
+        const { createdAt, updatedAt, ...cleanConfig } = config;
+        
         if (config.id) {
           // Probeer eerst te updaten
           const existing = await storage.getPromptConfig(config.id);
           if (existing) {
-            await storage.updatePromptConfig(config.id, config);
+            await storage.updatePromptConfig(config.id, cleanConfig);
             restored++;
           } else {
             // Als het niet bestaat, maak het aan
-            await storage.createPromptConfig(config);
+            await storage.createPromptConfig(cleanConfig);
             created++;
           }
+        } else {
+          // Zonder ID, altijd nieuwe aanmaken
+          await storage.createPromptConfig(cleanConfig);
+          created++;
         }
       }
       
