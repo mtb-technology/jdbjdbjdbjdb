@@ -20,6 +20,7 @@ export class ReportGenerator {
       '4f_DeKlantpsycholoog': 'Klant Psychologie Review',
       '4g_ChefEindredactie': 'Eindredactie',
       '5_feedback_verwerker': 'Feedback Verwerking',
+      '6_change_summary': 'Change Summary',
       'final_check': 'Finale Check'
     };
     return stageNames[stageName] || stageName;
@@ -196,6 +197,16 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           stageConfig
         );
         break;
+      case "6_change_summary":
+        prompt = this.buildChangeSummaryPrompt(
+          conceptReportVersions,
+          dossier,
+          bouwplan,
+          currentDate,
+          stageConfig,
+          previousStageResults
+        );
+        break;
       case "final_check":
         prompt = this.buildFinalCheckPrompt(
           conceptReportVersions?.["latest"] || "",
@@ -286,6 +297,9 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         
         case '5_feedback_verwerker':
           return REPORT_CONFIG.reviewerModel; // Good for consolidation
+        
+        case '6_change_summary':
+          return REPORT_CONFIG.simpleTaskModel; // Fast for analysis
         
         case 'final_check':
           return REPORT_CONFIG.reviewerModel; // Balanced for final review
@@ -637,6 +651,82 @@ ${reviewerFeedback}
 
 ### Dossier:
 ${JSON.stringify(dossier, null, 2)}`;
+  }
+
+  private buildChangeSummaryPrompt(
+    conceptReportVersions: Record<string, string>,
+    dossier: DossierData,
+    bouwplan: BouwplanData,
+    currentDate: string,
+    stageConfig?: any,
+    previousStageResults?: Record<string, string>
+  ): string {
+    const prompt = stageConfig?.prompt || `
+Je bent een Change Summary Analist voor fiscale rapporten van Jan de Belastingman.
+
+**TAAK:** Genereer een duidelijk overzicht van alle wijzigingen die zijn doorgevoerd in het rapport tijdens de verschillende reviewer stages.
+
+**OUTPUT FORMAT:**
+# 📊 Change Summary - Rapport Evolutie
+
+## 🎯 Overzicht Wijzigingen
+[Korte samenvatting van de belangrijkste veranderingen]
+
+## 📝 Stage-by-Stage Analyse
+
+### Initial Generation (3_generatie)
+- **Oorspronkelijke inhoud:** [Korte beschrijving van de basis]
+- **Lengte:** [aantal woorden/karakters]
+
+### Reviewer Changes
+[Voor elke reviewer stage 4a-4g die een verandering heeft gemaakt:]
+#### [4x_NaamSpecialist]
+- **Toegevoegd:** [Wat is er toegevoegd]
+- **Gewijzigd:** [Wat is er aangepast]  
+- **Verbeterd:** [Welke verbeteringen zijn gemaakt]
+- **Impact:** [Hoe dit het rapport heeft verbeterd]
+
+### Final Integration (5_feedback_verwerker)
+- **Geïntegreerde wijzigingen:** [Welke feedback is verwerkt]
+- **Finale verfijningen:** [Laatste aanpassingen]
+
+## 🎯 Belangrijkste Verbeteringen
+1. [Meest significante verbetering]
+2. [Tweede belangrijkste verbetering]
+3. [Derde belangrijkste verbetering]
+
+## 📈 Rapport Kwaliteit Progressie
+- **Voor reviewers:** [Beoordeling startpunt]
+- **Na reviewers:** [Beoordeling eindpunt]
+- **Kwaliteitswinst:** [Percentage of kwalitatieve verbetering]
+
+## ⚡ Samenvatting voor Jan de Belastingman
+[Praktische samenvatting van hoe het rapport is verbeterd voor gebruik door het fiscale kantoor]
+`;
+
+    let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
+    
+    // Add all concept report versions for comparison
+    fullPrompt += `\n\n### Concept Report Versies:`;
+    Object.entries(conceptReportVersions).forEach(([stage, content]) => {
+      if (content && content.trim()) {
+        fullPrompt += `\n\n#### ${stage}:\n${content}`;
+      }
+    });
+    
+    // Add reviewer stage results for context
+    if (previousStageResults && Object.keys(previousStageResults).length > 0) {
+      fullPrompt += `\n\n### Reviewer Feedback:`;
+      Object.entries(previousStageResults)
+        .filter(([key]) => key.startsWith("4"))
+        .forEach(([stage, result]) => {
+          fullPrompt += `\n\n#### ${stage}:\n${result}`;
+        });
+    }
+    
+    fullPrompt += `\n\n### Dossier Context:\n${JSON.stringify(dossier, null, 2)}`;
+    
+    return fullPrompt;
   }
 
   private buildFinalCheckPrompt(

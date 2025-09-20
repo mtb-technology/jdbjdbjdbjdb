@@ -9,7 +9,9 @@ import {
   UserCheck,
   PenTool,
   Shield,
-  CheckCircle
+  CheckCircle,
+  FileText,
+  GitCompare
 } from "lucide-react";
 
 export interface WorkflowStage {
@@ -125,8 +127,22 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     ]
   },
   {
+    key: "5_feedback_verwerker",
+    label: "5. Feedback Verwerking",
+    description: "Integratie van alle reviewer feedback",
+    icon: FileText,
+    type: "processor",
+  },
+  {
+    key: "6_change_summary",
+    label: "6. Change Summary",
+    description: "Overzicht wijzigingen per stage",
+    icon: GitCompare,
+    type: "processor",
+  },
+  {
     key: "final_check",
-    label: "Final Check",
+    label: "7. Finale Controle",
     description: "Laatste controle voor Mathijs",
     icon: CheckCircle,
     type: "generator",
