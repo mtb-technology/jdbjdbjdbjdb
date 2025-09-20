@@ -263,7 +263,7 @@ const Settings = memo(function Settings() {
     if (!activeConfig || !activePromptConfig?.id) return;
     
     // Don't add global aiConfig - per-stage configs are already in activeConfig
-    updatePromptMutation.mutate({
+    await updatePromptMutation.mutateAsync({
       id: activePromptConfig.id,
       config: activeConfig,
     });
@@ -284,7 +284,7 @@ const Settings = memo(function Settings() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `prompt-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `prompts-export-${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -292,14 +292,14 @@ const Settings = memo(function Settings() {
       
       
       toast({
-        title: "Backup gemaakt",
-        description: "Prompts zijn veilig opgeslagen (lokaal + server backup)",
+        title: "JSON geëxporteerd",
+        description: "Prompt configuraties zijn geëxporteerd als JSON bestand. Upload dit bestand in productie om de configuraties te synchroniseren.",
       });
     } catch (error) {
       console.error('Backup failed:', error);
       toast({
-        title: "Backup mislukt",
-        description: "Kon geen backup maken van de prompts",
+        title: "Export mislukt",
+        description: "Kon JSON bestand niet exporteren",
         variant: "destructive",
       });
     }
@@ -313,14 +313,31 @@ const Settings = memo(function Settings() {
       const text = await file.text();
       const data = JSON.parse(text);
       
+      // Basic client-side validation
+      const isValidFormat = (data: any) => {
+        // Check if it's an array or has prompt_configs array (both supported formats)
+        if (Array.isArray(data)) return data.length > 0;
+        if (data && Array.isArray(data.prompt_configs)) return data.prompt_configs.length > 0;
+        return false;
+      };
+      
+      if (!isValidFormat(data)) {
+        toast({
+          title: "Ongeldig JSON bestand",
+          description: "Het bestand bevat geen geldige prompt configuraties. Upload een geldig export bestand.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
       const response = await apiRequest('POST', '/api/prompts/restore', data);
       const responseData = await response.json();
       // Handle new API response format
       const result = responseData && typeof responseData === 'object' && 'success' in responseData && responseData.success === true ? responseData.data : responseData;
       
       toast({
-        title: "Restore geslaagd",
-        description: result.message || "Prompts zijn hersteld uit backup",
+        title: "Import geslaagd",
+        description: result.message || "Prompt configuraties zijn geïmporteerd uit JSON bestand",
       });
       
       // Refresh de data
@@ -329,8 +346,8 @@ const Settings = memo(function Settings() {
     } catch (error: any) {
       console.error('Restore failed:', error);
       toast({
-        title: "Restore mislukt",
-        description: "Kon backup niet herstellen. Check of het bestand geldig is.",
+        title: "Import mislukt",
+        description: "Kon JSON bestand niet importeren. Controleer of het bestand geldig is.",
         variant: "destructive",
       });
     }
@@ -419,7 +436,8 @@ const Settings = memo(function Settings() {
                 Prompt Configuratie
               </h1>
               <p className="text-muted-foreground mt-2">
-                Configureer de 11-stappen prompting workflow voor fiscale rapportgeneratie
+                Configureer de 11-stappen prompting workflow voor fiscale rapportgeneratie.
+                <span className="block text-xs mt-1">Gebruik Export JSON in ontwikkeling → Import JSON in productie voor deployment.</span>
               </p>
             </div>
             
@@ -436,10 +454,10 @@ const Settings = memo(function Settings() {
                   onClick={handleBackup}
                   variant="outline"
                   size="sm"
-                  data-testid="button-backup"
+                  data-testid="button-export-json"
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Backup
+                  Export JSON
                 </Button>
                 <input
                   ref={fileInputRef}
@@ -447,16 +465,16 @@ const Settings = memo(function Settings() {
                   accept=".json"
                   onChange={handleRestore}
                   className="hidden"
-                  data-testid="input-restore-file"
+                  data-testid="input-import-file"
                 />
                 <Button 
                   onClick={() => fileInputRef.current?.click()}
                   variant="outline"
                   size="sm"
-                  data-testid="button-restore"
+                  data-testid="button-import-json"
                 >
                   <Upload className="h-4 w-4 mr-2" />
-                  Restore
+                  Import JSON
                 </Button>
                 <Button 
                   onClick={handleSave}
