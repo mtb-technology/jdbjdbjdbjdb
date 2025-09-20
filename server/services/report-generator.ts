@@ -538,7 +538,11 @@ Maak een professioneel rapport met:
     currentDate: string,
     stageConfig?: any
   ): string {
-    const prompt = stageConfig?.prompt || "";
+    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
+      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 1_informatiecheck — configureer dit in Instellingen.");
+    }
+    
+    const prompt = stageConfig.prompt;
 
     return `${prompt}
 
@@ -558,7 +562,11 @@ ${JSON.stringify(bouwplan, null, 2)}`;
     stageConfig?: any,
     previousStageResults?: Record<string, string>
   ): string {
-    const prompt = stageConfig?.prompt || "";
+    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
+      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 2_complexiteitscheck — configureer dit in Instellingen.");
+    }
+    
+    const prompt = stageConfig.prompt;
 
     let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
     
@@ -582,7 +590,11 @@ ${JSON.stringify(bouwplan, null, 2)}`;
     stageConfig?: any,
     previousStageResults?: Record<string, string>
   ): string {
-    const prompt = stageConfig?.prompt || "";
+    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
+      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 3_generatie — configureer dit in Instellingen.");
+    }
+    
+    const prompt = stageConfig.prompt;
 
     let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
     
@@ -607,7 +619,11 @@ ${JSON.stringify(bouwplan, null, 2)}`;
     currentDate: string,
     stageConfig?: any
   ): string {
-    const prompt = stageConfig?.prompt || "";
+    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
+      throw new Error(`NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap ${stageName} — configureer dit in Instellingen.`);
+    }
+    
+    const prompt = stageConfig.prompt;
 
     return `${prompt}
 
@@ -631,7 +647,11 @@ ${JSON.stringify(bouwplan, null, 2)}`;
     currentDate: string,
     stageConfig?: any
   ): string {
-    const prompt = stageConfig?.prompt || "";
+    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
+      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 5_feedback_verwerker — configureer dit in Instellingen.");
+    }
+    
+    const prompt = stageConfig.prompt;
 
     // Collect all reviewer feedback
     const reviewerFeedback = Object.entries(previousStageResults)
@@ -661,48 +681,11 @@ ${JSON.stringify(dossier, null, 2)}`;
     stageConfig?: any,
     previousStageResults?: Record<string, string>
   ): string {
-    const prompt = stageConfig?.prompt || `
-Je bent een Change Summary Analist voor fiscale rapporten van Jan de Belastingman.
-
-**TAAK:** Genereer een duidelijk overzicht van alle wijzigingen die zijn doorgevoerd in het rapport tijdens de verschillende reviewer stages.
-
-**OUTPUT FORMAT:**
-# 📊 Change Summary - Rapport Evolutie
-
-## 🎯 Overzicht Wijzigingen
-[Korte samenvatting van de belangrijkste veranderingen]
-
-## 📝 Stage-by-Stage Analyse
-
-### Initial Generation (3_generatie)
-- **Oorspronkelijke inhoud:** [Korte beschrijving van de basis]
-- **Lengte:** [aantal woorden/karakters]
-
-### Reviewer Changes
-[Voor elke reviewer stage 4a-4g die een verandering heeft gemaakt:]
-#### [4x_NaamSpecialist]
-- **Toegevoegd:** [Wat is er toegevoegd]
-- **Gewijzigd:** [Wat is er aangepast]  
-- **Verbeterd:** [Welke verbeteringen zijn gemaakt]
-- **Impact:** [Hoe dit het rapport heeft verbeterd]
-
-### Final Integration (5_feedback_verwerker)
-- **Geïntegreerde wijzigingen:** [Welke feedback is verwerkt]
-- **Finale verfijningen:** [Laatste aanpassingen]
-
-## 🎯 Belangrijkste Verbeteringen
-1. [Meest significante verbetering]
-2. [Tweede belangrijkste verbetering]
-3. [Derde belangrijkste verbetering]
-
-## 📈 Rapport Kwaliteit Progressie
-- **Voor reviewers:** [Beoordeling startpunt]
-- **Na reviewers:** [Beoordeling eindpunt]
-- **Kwaliteitswinst:** [Percentage of kwalitatieve verbetering]
-
-## ⚡ Samenvatting voor Jan de Belastingman
-[Praktische samenvatting van hoe het rapport is verbeterd voor gebruik door het fiscale kantoor]
-`;
+    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
+      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 6_change_summary — configureer dit in Instellingen.");
+    }
+    
+    const prompt = stageConfig.prompt;
 
     let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
     
@@ -736,7 +719,11 @@ Je bent een Change Summary Analist voor fiscale rapporten van Jan de Belastingma
     currentDate: string,
     stageConfig?: any
   ): string {
-    const prompt = stageConfig?.prompt || "";
+    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
+      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap final_check — configureer dit in Instellingen.");
+    }
+    
+    const prompt = stageConfig.prompt;
 
     return `${prompt}
 
