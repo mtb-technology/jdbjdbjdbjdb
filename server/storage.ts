@@ -257,6 +257,60 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return updated || undefined;
   }
+
+  async forceIngestPromptsFromJson(): Promise<{ success: boolean; message: string; configsLoaded: number }> {
+    try {
+      // Try to load prompts from storage/prompts.json file
+      const promptsFilePath = path.join(process.cwd(), 'storage', 'prompts.json');
+      
+      if (!fs.existsSync(promptsFilePath)) {
+        return { success: false, message: 'storage/prompts.json file not found', configsLoaded: 0 };
+      }
+
+      console.log('Force loading prompts from storage/prompts.json...');
+      const promptsFileContent = fs.readFileSync(promptsFilePath, 'utf8');
+      const promptsData = JSON.parse(promptsFileContent);
+      
+      // Load all prompt configurations from the JSON file
+      if (Array.isArray(promptsData)) {
+        // Deactivate existing configs first
+        await db.update(promptConfigs).set({ isActive: false });
+        
+        let loadedCount = 0;
+        for (const promptConfig of promptsData) {
+          // Remove id, createdAt, updatedAt from JSON if they exist to avoid conflicts
+          const { id, createdAt, updatedAt, ...configToInsert } = promptConfig;
+          
+          // Create new config with timestamp suffix to avoid name conflicts
+          const configName = `${configToInsert.name} (Ingested ${new Date().toISOString().slice(0, 16).replace('T', ' ')})`;
+          const configToCreate = {
+            ...configToInsert,
+            name: configName,
+            isActive: loadedCount === 0 // Make first one active
+          };
+          
+          await this.createPromptConfig(configToCreate);
+          console.log(`Force loaded prompt config: ${configName}`);
+          loadedCount++;
+        }
+        
+        return { 
+          success: true, 
+          message: `Successfully force-loaded ${loadedCount} prompt configurations from JSON file`, 
+          configsLoaded: loadedCount 
+        };
+      } else {
+        return { success: false, message: 'JSON file does not contain valid prompt array', configsLoaded: 0 };
+      }
+    } catch (error) {
+      console.error('Failed to force-load prompts from JSON file:', error);
+      return { 
+        success: false, 
+        message: `Failed to load prompts: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+        configsLoaded: 0 
+      };
+    }
+  }
 }
 
 export const storage = new DatabaseStorage();
