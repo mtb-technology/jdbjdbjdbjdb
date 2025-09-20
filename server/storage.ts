@@ -2,6 +2,8 @@ import { type User, type InsertUser, type Report, type InsertReport, type Source
 import { users, reports, sources, promptConfigs } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql } from "drizzle-orm";
+import * as fs from "fs";
+import * as path from "path";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -191,7 +193,33 @@ export class DatabaseStorage implements IStorage {
       return;
     }
     
-    // Create default config
+    try {
+      // Try to load prompts from storage/prompts.json file
+      const promptsFilePath = path.join(process.cwd(), 'storage', 'prompts.json');
+      
+      if (fs.existsSync(promptsFilePath)) {
+        console.log('Loading prompts from storage/prompts.json...');
+        const promptsFileContent = fs.readFileSync(promptsFilePath, 'utf8');
+        const promptsData = JSON.parse(promptsFileContent);
+        
+        // Load all prompt configurations from the JSON file
+        if (Array.isArray(promptsData)) {
+          for (const promptConfig of promptsData) {
+            // Remove id, createdAt, updatedAt from JSON if they exist to avoid conflicts
+            const { id, createdAt, updatedAt, ...configToInsert } = promptConfig;
+            await this.createPromptConfig(configToInsert);
+            console.log(`Loaded prompt config: ${configToInsert.name}`);
+          }
+          console.log(`Successfully loaded ${promptsData.length} prompt configurations from JSON file`);
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load prompts from JSON file, falling back to defaults:', error);
+    }
+    
+    // Fallback: Create empty default config if JSON loading failed
+    console.log('Creating fallback default prompt configuration...');
     const defaultConfig = {
       name: "Default Fiscal Analysis",
       isActive: true,
