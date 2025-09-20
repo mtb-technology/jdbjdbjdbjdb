@@ -358,6 +358,32 @@ const Settings = memo(function Settings() {
     }
   };
 
+  const handleSyncToProduction = async () => {
+    try {
+      // Sla eerst huidige wijzigingen op
+      await handleSave();
+      
+      const response = await apiRequest('POST', '/api/prompts/sync-to-production', {});
+      const responseData = await response.json();
+      
+      // Handle new API response format
+      const result = responseData && typeof responseData === 'object' && 'success' in responseData && responseData.success === true ? responseData.data : responseData;
+      
+      toast({
+        title: "Sync naar productie voltooid",
+        description: `${result.syncedConfigs} prompt configuraties zijn gesynchroniseerd naar productie`,
+      });
+      
+    } catch (error: any) {
+      console.error('Sync to production failed:', error);
+      toast({
+        title: "Sync naar productie mislukt",
+        description: "Kon prompt configuraties niet synchroniseren naar productie",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleAiConfigChange = useCallback((key: keyof AiConfig, value: any) => {
     setAiConfig(prev => ({
       ...prev,
@@ -473,6 +499,16 @@ const Settings = memo(function Settings() {
                 >
                   <Upload className="h-4 w-4 mr-2" />
                   Restore
+                </Button>
+                <Button 
+                  onClick={handleSyncToProduction}
+                  variant="outline"
+                  size="sm"
+                  className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-950/40"
+                  data-testid="button-sync-to-production"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Sync naar Productie
                 </Button>
                 <Button 
                   onClick={handleSave}
