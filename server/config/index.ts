@@ -281,6 +281,11 @@ export const REPORT_CONFIG = {
       name: 'Finale Controle',
       timeout: 120000,
       maxTokens: 16384
+    },
+    '6_change_summary': {
+      name: 'Change Summary',
+      timeout: 60000,
+      maxTokens: 8192
     }
   },
   // Hybrid workflow model selection
