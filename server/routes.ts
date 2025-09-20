@@ -661,35 +661,6 @@ ${bouwplanContent}`;
     }
   });
 
-  // Get laatste backup info
-  app.get("/api/prompts/backup-status", async (req, res) => {
-    try {
-      const backupDir = path.join(process.cwd(), 'backups');
-      
-      try {
-        const files = await fs.readdir(backupDir);
-        const backupFiles = files.filter((f: string) => f.startsWith('prompts-backup-')).sort();
-        
-        if (backupFiles.length > 0) {
-          const lastBackup = backupFiles[backupFiles.length - 1];
-          const stats = await fs.stat(path.join(backupDir, lastBackup));
-          res.json(createApiSuccessResponse({
-            hasBackup: true,
-            lastBackupDate: stats.mtime,
-            backupCount: backupFiles.length,
-            fileName: lastBackup
-          }));
-        } else {
-          res.json(createApiSuccessResponse({ hasBackup: false }));
-        }
-      } catch {
-        res.json(createApiSuccessResponse({ hasBackup: false }));
-      }
-    } catch (error) {
-      console.error("Error checking backup status:", error);
-      res.status(500).json({ message: "Could not check backup status" });
-    }
-  });
 
   // Admin endpoint to force-ingest prompts from storage/prompts.json
   app.post("/api/prompts/ingest-from-json", asyncHandler(async (req: Request, res: Response) => {
@@ -726,64 +697,6 @@ ${bouwplanContent}`;
     }
   }));
 
-  // Export current development prompts to storage/prompts.json for production sync
-  app.post("/api/prompts/sync-to-production", asyncHandler(async (req: Request, res: Response) => {
-    // Restrict to development environment only
-    if (process.env.NODE_ENV === 'production') {
-      res.status(403).json(createApiErrorResponse(
-        'ENVIRONMENT_ERROR',
-        ERROR_CODES.AI_AUTHENTICATION_FAILED,
-        'Sync endpoint is disabled in production for security',
-        'Deze functie is niet beschikbaar in productie omgeving'
-      ));
-      return;
-    }
-
-    try {
-      // Get all current prompt configurations from development database
-      const configs = await storage.getAllPromptConfigs();
-      
-      if (configs.length === 0) {
-        res.status(400).json(createApiErrorResponse(
-          'NO_CONFIGS_ERROR',
-          ERROR_CODES.DATABASE_ERROR,
-          'No prompt configurations found in development database',
-          'Geen prompt configuraties gevonden om te synchroniseren'
-        ));
-        return;
-      }
-      
-      // Prepare data for export (remove database-specific fields)
-      const exportData = configs.map(config => {
-        const { id, createdAt, updatedAt, ...exportConfig } = config;
-        return exportConfig;
-      });
-      
-      // Write to storage/prompts.json file
-      const storageDir = path.join(process.cwd(), 'storage');
-      await fs.mkdir(storageDir, { recursive: true });
-      const promptsFilePath = path.join(storageDir, 'prompts.json');
-      
-      await fs.writeFile(promptsFilePath, JSON.stringify(exportData, null, 2));
-      
-      console.log(`Successfully synced ${exportData.length} prompt configurations to production`);
-      
-      res.json(createApiSuccessResponse({
-        syncedConfigs: exportData.length,
-        filePath: 'storage/prompts.json',
-        timestamp: new Date().toISOString()
-      }, `Successfully synced ${exportData.length} prompt configurations to production file`));
-      
-    } catch (error: any) {
-      console.error("Error syncing prompts to production:", error);
-      res.status(500).json(createApiErrorResponse(
-        'SYNC_ERROR',
-        ERROR_CODES.DATABASE_ERROR,
-        error.message,
-        'Failed to sync prompts to production file'
-      ));
-    }
-  }));
 
   // === CASE MANAGEMENT ENDPOINTS ===
 

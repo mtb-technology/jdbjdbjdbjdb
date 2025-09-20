@@ -71,7 +71,6 @@ const Settings = memo(function Settings() {
     topK: 20,
     maxOutputTokens: 2048,
   });
-  const [backupStatus, setBackupStatus] = useState<{hasBackup: boolean, lastBackupDate?: string, backupCount?: number} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -121,22 +120,8 @@ const Settings = memo(function Settings() {
         setAiConfig(config.aiConfig);
       }
     }
-    checkBackupStatus();
   }, [activePromptConfig]);
 
-  const checkBackupStatus = async () => {
-    try {
-      const response = await fetch('/api/prompts/backup-status');
-      if (response.ok) {
-        const statusData = await response.json();
-        // Handle new API response format
-        const status = statusData && typeof statusData === 'object' && 'success' in statusData && statusData.success === true ? statusData.data : statusData;
-        setBackupStatus(status);
-      }
-    } catch (error) {
-      console.error('Failed to check backup status:', error);
-    }
-  };
 
   const handlePromptChange = useCallback((stageKey: string, value: string) => {
     if (!activeConfig) return;
@@ -305,8 +290,6 @@ const Settings = memo(function Settings() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      // Update backup status
-      await checkBackupStatus();
       
       toast({
         title: "Backup gemaakt",
@@ -358,31 +341,6 @@ const Settings = memo(function Settings() {
     }
   };
 
-  const handleSyncToProduction = async () => {
-    try {
-      // Sla eerst huidige wijzigingen op
-      await handleSave();
-      
-      const response = await apiRequest('POST', '/api/prompts/sync-to-production', {});
-      const responseData = await response.json();
-      
-      // Handle new API response format
-      const result = responseData && typeof responseData === 'object' && 'success' in responseData && responseData.success === true ? responseData.data : responseData;
-      
-      toast({
-        title: "Sync naar productie voltooid",
-        description: `${result.syncedConfigs} prompt configuraties zijn gesynchroniseerd naar productie`,
-      });
-      
-    } catch (error: any) {
-      console.error('Sync to production failed:', error);
-      toast({
-        title: "Sync naar productie mislukt",
-        description: "Kon prompt configuraties niet synchroniseren naar productie",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleAiConfigChange = useCallback((key: keyof AiConfig, value: any) => {
     setAiConfig(prev => ({
@@ -501,16 +459,6 @@ const Settings = memo(function Settings() {
                   Restore
                 </Button>
                 <Button 
-                  onClick={handleSyncToProduction}
-                  variant="outline"
-                  size="sm"
-                  className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-950/40"
-                  data-testid="button-sync-to-production"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Sync naar Productie
-                </Button>
-                <Button 
                   onClick={handleSave}
                   disabled={updatePromptMutation.isPending}
                   data-testid="button-save-config"
@@ -522,32 +470,6 @@ const Settings = memo(function Settings() {
             </div>
           </div>
           
-          {/* Backup Status Indicator */}
-          {backupStatus && (
-            <div className="mt-4 p-3 rounded-lg border">
-              {backupStatus.hasBackup ? (
-                <div className="flex items-center gap-2 text-sm">
-                  <Shield className="h-4 w-4 text-green-500" />
-                  <span className="font-medium">Backup aanwezig</span>
-                  <span className="text-muted-foreground">•</span>
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    Laatste backup: {new Date(backupStatus.lastBackupDate!).toLocaleString('nl-NL')}
-                  </span>
-                  <span className="text-muted-foreground">•</span>
-                  <span className="text-xs text-muted-foreground">
-                    {backupStatus.backupCount} automatische backups op server
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-orange-500">
-                  <AlertCircle className="h-4 w-4" />
-                  <span className="font-medium">Geen backups gevonden</span>
-                  <span className="text-muted-foreground">- Maak een backup om je prompts veilig te stellen</span>
-                </div>
-              )}
-            </div>
-          )}
           
           {/* Progress indicator */}
           <div className="mt-4">
