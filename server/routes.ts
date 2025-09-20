@@ -726,6 +726,54 @@ ${bouwplanContent}`;
     }
   }));
 
+  // Export current development prompts to storage/prompts.json for production sync
+  app.post("/api/prompts/sync-to-production", asyncHandler(async (req: Request, res: Response) => {
+    try {
+      // Get all current prompt configurations from development database
+      const configs = await storage.getAllPromptConfigs();
+      
+      if (configs.length === 0) {
+        res.status(400).json(createApiErrorResponse(
+          'NO_CONFIGS_ERROR',
+          ERROR_CODES.DATABASE_ERROR,
+          'No prompt configurations found in development database',
+          'Geen prompt configuraties gevonden om te synchroniseren'
+        ));
+        return;
+      }
+      
+      // Prepare data for export (remove database-specific fields)
+      const exportData = configs.map(config => {
+        const { id, createdAt, updatedAt, ...exportConfig } = config;
+        return exportConfig;
+      });
+      
+      // Write to storage/prompts.json file
+      const storageDir = path.join(process.cwd(), 'storage');
+      await fs.mkdir(storageDir, { recursive: true });
+      const promptsFilePath = path.join(storageDir, 'prompts.json');
+      
+      await fs.writeFile(promptsFilePath, JSON.stringify(exportData, null, 2));
+      
+      console.log(`Successfully synced ${exportData.length} prompt configurations to production`);
+      
+      res.json(createApiSuccessResponse({
+        syncedConfigs: exportData.length,
+        filePath: 'storage/prompts.json',
+        timestamp: new Date().toISOString()
+      }, `Successfully synced ${exportData.length} prompt configurations to production file`));
+      
+    } catch (error: any) {
+      console.error("Error syncing prompts to production:", error);
+      res.status(500).json(createApiErrorResponse(
+        'SYNC_ERROR',
+        ERROR_CODES.DATABASE_ERROR,
+        error.message,
+        'Failed to sync prompts to production file'
+      ));
+    }
+  }));
+
   // === CASE MANAGEMENT ENDPOINTS ===
 
   // Get all cases/reports with pagination and filtering
