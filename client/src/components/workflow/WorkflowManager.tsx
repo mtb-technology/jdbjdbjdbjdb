@@ -243,11 +243,22 @@ function WorkflowManagerContent({
     },
     onError: (error: Error, variables) => {
       dispatch({ type: "SET_STAGE_PROCESSING", stage: variables.stage, isProcessing: false });
-      toast({
-        title: "Fout bij uitvoeren stap",
-        description: error.message,
-        variant: "destructive",
-      });
+      
+      // Check for NO_PROMPT_CONFIGURED error
+      if (error.message.includes("NO_PROMPT_CONFIGURED")) {
+        const [, userMessage] = error.message.split("|");
+        toast({
+          title: "Prompt Configuratie Vereist",
+          description: `${userMessage || error.message} Ga naar Instellingen om prompts te configureren.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Fout bij uitvoeren stap",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     },
   });
 
@@ -315,11 +326,22 @@ function WorkflowManagerContent({
     onError: (error: Error, variables) => {
       const trackingKey = `${variables.substepType === "review" ? variables.substepKey : "5_feedback_verwerker"}_${variables.substepType}`;
       dispatch({ type: "SET_STAGE_PROCESSING", stage: trackingKey, isProcessing: false });
-      toast({
-        title: "Fout bij uitvoeren substap",
-        description: error.message,
-        variant: "destructive",
-      });
+      
+      // Check for NO_PROMPT_CONFIGURED error
+      if (error.message.includes("NO_PROMPT_CONFIGURED")) {
+        const [, userMessage] = error.message.split("|");
+        toast({
+          title: "Prompt Configuratie Vereist", 
+          description: `${userMessage || error.message} Ga naar Instellingen om prompts te configureren.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Fout bij uitvoeren substap",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     },
   });
 
