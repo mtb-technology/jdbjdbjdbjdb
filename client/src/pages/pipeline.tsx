@@ -175,7 +175,7 @@ const Pipeline = memo(function Pipeline() {
             clientName="Client"
             rawText={rawText}
             onComplete={handleWorkflowComplete}
-            existingReport={createdReport}
+            existingReport={createdReport || undefined}
           />
         )}
 
