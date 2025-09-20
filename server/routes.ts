@@ -691,6 +691,41 @@ ${bouwplanContent}`;
     }
   });
 
+  // Admin endpoint to force-ingest prompts from storage/prompts.json
+  app.post("/api/prompts/ingest-from-json", asyncHandler(async (req: Request, res: Response) => {
+    // Strict admin authentication - require exact API key match
+    const adminKey = req.headers['x-admin-key'] as string;
+    const authHeader = req.headers['authorization'] as string;
+    
+    const isValidKey = adminKey === process.env.ADMIN_API_KEY;
+    const isValidBearer = authHeader?.startsWith('Bearer ') && 
+                         authHeader.substring(7) === process.env.ADMIN_API_KEY;
+    
+    if (!isValidKey && !isValidBearer) {
+      res.status(401).json(createApiErrorResponse(
+        'AUTHENTICATION_ERROR', 
+        ERROR_CODES.AI_AUTHENTICATION_FAILED,
+        'Valid admin authentication required for prompt ingestion',
+        'Access denied - invalid admin credentials'
+      ));
+      return;
+    }
+    
+    // Force-ingest prompts from JSON file
+    const result = await (storage as any).forceIngestPromptsFromJson();
+    
+    if (result.success) {
+      res.json(createApiSuccessResponse(result, `Successfully ingested ${result.configsLoaded} prompt configurations`));
+    } else {
+      res.status(500).json(createApiErrorResponse(
+        'INGESTION_ERROR',
+        ERROR_CODES.DATABASE_ERROR, 
+        result.message,
+        'Failed to ingest prompts from JSON file'
+      ));
+    }
+  }));
+
   // === CASE MANAGEMENT ENDPOINTS ===
 
   // Get all cases/reports with pagination and filtering
