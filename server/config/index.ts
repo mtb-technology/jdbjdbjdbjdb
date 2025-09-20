@@ -31,7 +31,7 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
   
   // AI Service limits
-  AI_REQUEST_TIMEOUT_MS: z.coerce.number().default(120000), // 2 minutes
+  AI_REQUEST_TIMEOUT_MS: z.coerce.number().default(600000), // 10 minutes for complex reports
   AI_MAX_RETRIES: z.coerce.number().default(2),
 });
 
@@ -234,18 +234,18 @@ export const REPORT_CONFIG = {
     },
     '3_generatie': {
       name: 'Rapport Generatie',
-      timeout: 120000,
-      maxTokens: 16384
+      timeout: 600000, // 10 minutes for large reports
+      maxTokens: 32768 // Double token capacity
     },
     '4a_BronnenSpecialist': {
       name: 'Bronnen Specialist Review',
-      timeout: 90000,
-      maxTokens: 8192
+      timeout: 120000, // Extended for thorough review
+      maxTokens: 12288 // More space for detailed feedback
     },
     '4b_FiscaalTechnischSpecialist': {
       name: 'Fiscaal Technisch Specialist Review',
-      timeout: 90000,
-      maxTokens: 8192
+      timeout: 120000, // Extended for complex analysis
+      maxTokens: 12288 // More space for technical details
     },
     '4c_ScenarioGatenAnalist': {
       name: 'Scenario Gaten Analist Review',
@@ -274,8 +274,8 @@ export const REPORT_CONFIG = {
     },
     '5_feedback_verwerker': {
       name: 'Feedback Verwerker',
-      timeout: 180000,
-      maxTokens: 16384
+      timeout: 300000, // 5 minutes for feedback integration
+      maxTokens: 24576 // More space for consolidated feedback
     },
     'final_check': {
       name: 'Finale Controle',
@@ -283,9 +283,12 @@ export const REPORT_CONFIG = {
       maxTokens: 16384
     }
   },
-  defaultModel: 'gemini-2.5-pro' as AIModelName,
-  reviewerModel: 'gpt-4o' as AIModelName,
-  generationModel: 'gemini-2.5-pro' as AIModelName
+  // Hybrid workflow model selection
+  defaultModel: 'gpt-4o-mini' as AIModelName, // Fast for automated checks
+  reviewerModel: 'gpt-4o' as AIModelName, // Balanced for reviews
+  generationModel: 'gpt-5' as AIModelName, // Powerful for large reports
+  simpleTaskModel: 'gpt-4o-mini' as AIModelName, // Quick tasks (1-2 mins)
+  complexTaskModel: 'gpt-5' as AIModelName // Complex reports (5-10 mins)
 } as const;
 
 // Session configuratie
