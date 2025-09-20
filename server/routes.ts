@@ -12,7 +12,6 @@ import { checkDatabaseConnection } from "./db";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
 import type { DossierData, BouwplanData } from "@shared/schema";
 import { z } from "zod";
-import modelTestRoutes from "./routes/model-test";
 import { ServerError, asyncHandler } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 
@@ -798,8 +797,6 @@ ${bouwplanContent}`;
   });
 
 
-  // Register model test routes
-  app.use(modelTestRoutes);
 
   const httpServer = createServer(app);
   return httpServer;
