@@ -4,13 +4,17 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, FileText, Calendar, User } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, User, Download, FileDown } from "lucide-react";
 import WorkflowInterface from "@/components/workflow-interface";
 import type { Report } from "@shared/schema";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function CaseDetail() {
   const params = useParams();
   const reportId = params.id;
+  const [isExporting, setIsExporting] = useState(false);
+  const { toast } = useToast();
 
   const { data: report, isLoading, error } = useQuery<Report>({
     queryKey: [`/api/reports`, reportId],
@@ -70,13 +74,13 @@ export default function CaseDetail() {
         // Calculate progress based on completed stages
         if (report?.stageResults) {
           const completedStages = Object.keys(report.stageResults).length;
-          const totalStages = 11; // 11 workflow stages
+          const totalStages = 13; // 13 workflow stages: 1-3 (3) + 4a-4g (7) + 5,6,final = 13
           const percentage = Math.round((completedStages / totalStages) * 100);
           
           if (completedStages >= 3) {
-            return `Stap ${completedStages}/11 (${percentage}%)`;
+            return `Stap ${completedStages}/13 (${percentage}%)`;
           } else {
-            return `Wordt gegenereerd... ${completedStages}/11`;
+            return `Wordt gegenereerd... ${completedStages}/13`;
           }
         }
         return "Gegenereerd";
@@ -84,6 +88,44 @@ export default function CaseDetail() {
       case "exported": return "Geëxporteerd";
       case "archived": return "Gearchiveerd";
       default: return status;
+    }
+  };
+
+  const handlePDFExport = async () => {
+    if (!reportId) return;
+    
+    setIsExporting(true);
+    try {
+      const response = await fetch(`/api/cases/${reportId}/export/pdf`);
+      
+      if (!response.ok) {
+        throw new Error('PDF export mislukt');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `rapport-${report?.clientName?.replace(/[^a-zA-Z0-9]/g, '-')}-${reportId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "PDF Geëxporteerd",
+        description: "Het rapport is succesvol geëxporteerd als PDF",
+      });
+    } catch (error: any) {
+      console.error('PDF export error:', error);
+      toast({
+        title: "Export Mislukt",
+        description: error.message || "Er ging iets mis bij het exporteren van het PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -134,7 +176,28 @@ export default function CaseDetail() {
       {report.generatedContent && (
         <Card className="mb-8">
           <CardHeader>
-            <CardTitle>📄 Gegenereerd Rapport</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>📄 Gegenereerd Rapport</CardTitle>
+              <Button
+                onClick={handlePDFExport}
+                disabled={isExporting}
+                variant="outline"
+                size="sm"
+                data-testid="button-export-pdf"
+              >
+                {isExporting ? (
+                  <>
+                    <Download className="mr-2 h-4 w-4 animate-spin" />
+                    Exporteren...
+                  </>
+                ) : (
+                  <>
+                    <FileDown className="mr-2 h-4 w-4" />
+                    Export PDF
+                  </>
+                )}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div 

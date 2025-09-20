@@ -5,6 +5,7 @@ import * as path from "path";
 import { storage } from "./storage";
 import { ReportGenerator } from "./services/report-generator";
 import { SourceValidator } from "./services/source-validator";
+import { PDFGenerator } from "./services/pdf-generator";
 import { AIHealthService } from "./services/ai-models/health-service";
 import { AIMonitoringService } from "./services/ai-models/monitoring";
 import { checkDatabaseConnection } from "./db";
@@ -33,6 +34,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   const reportGenerator = new ReportGenerator();
   const sourceValidator = new SourceValidator();
+  const pdfGenerator = new PDFGenerator();
   const healthService = new AIHealthService(AIMonitoringService.getInstance());
   
   // Start periodic health checks and run immediate warm-up
@@ -781,6 +783,11 @@ ${bouwplanContent}`;
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename="case-${id}.json"`);
         res.json(createApiSuccessResponse(report));
+      } else if (format === "pdf") {
+        const pdfBuffer = await pdfGenerator.generatePDF(report);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="rapport-${report.clientName.replace(/[^a-zA-Z0-9]/g, '-')}-${id.slice(0, 8)}.pdf"`);
+        res.send(pdfBuffer);
       } else {
         res.status(400).json({ message: "Ongeldige export format" });
       }
