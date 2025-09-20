@@ -40,30 +40,33 @@ const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, 
   deleteCaseMutation: any;
 }) {
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className="group hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 border-l-4 border-l-transparent hover:border-l-primary/50 bg-gradient-to-r from-card to-card/50">
       <CardContent className="p-6">
         <div className="flex items-center justify-between">
           <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <h3 className="text-lg font-semibold">{case_.title}</h3>
-              <Badge variant={getStatusColor(case_.status)}>
+            <div className="flex items-center gap-3 mb-3">
+              <h3 className="text-lg font-semibold group-hover:text-primary transition-colors">{case_.title}</h3>
+              <Badge 
+                variant={getStatusColor(case_.status)}
+                className="shadow-sm font-medium px-3 py-1 text-xs"
+              >
                 {getStatusText(case_.status, case_)}
               </Badge>
             </div>
-            <div className="flex items-center gap-6 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <User className="h-4 w-4" />
-                {case_.clientName}
+            <div className="flex items-center gap-6 text-sm text-muted-foreground/80">
+              <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 rounded-full">
+                <User className="h-4 w-4 text-primary" />
+                <span className="font-medium">{case_.clientName}</span>
               </div>
-              <div className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                {new Date(case_.createdAt).toLocaleDateString('nl-NL')}
+              <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 rounded-full">
+                <Calendar className="h-4 w-4 text-primary" />
+                <span>{new Date(case_.createdAt).toLocaleDateString('nl-NL')}</span>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Link href={`/cases/${case_.id}`}>
-              <Button variant="outline" size="sm" data-testid={`button-view-case-${case_.id}`}>
+              <Button variant="default" size="sm" className="bg-primary hover:bg-primary/90 shadow-md" data-testid={`button-view-case-${case_.id}`}>
                 <Eye className="h-4 w-4 mr-2" />
                 Bekijken
               </Button>
@@ -246,8 +249,8 @@ function Cases() {
     switch (status) {
       case "draft": return "secondary";
       case "processing": return "default";
-      case "generated": return "outline"; // Blauwe outline voor "groeiend" rapport
-      case "exported": return "default"; // Groen voor echt voltooid
+      case "generated": return "outline";
+      case "exported": return "default";
       case "archived": return "secondary";
       default: return "secondary";
     }
@@ -386,9 +389,29 @@ function Cases() {
 
         {/* Cases List */}
         {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <RefreshCw className="h-6 w-6 animate-spin" />
-            <span className="ml-2">Cases laden...</span>
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <Card key={i} className="animate-pulse">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="h-6 bg-muted rounded w-48"></div>
+                        <div className="h-6 bg-muted rounded w-20"></div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div className="h-4 bg-muted rounded-full w-32"></div>
+                        <div className="h-4 bg-muted rounded-full w-24"></div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 bg-muted rounded w-20"></div>
+                      <div className="h-8 bg-muted rounded w-16"></div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         ) : cases.length === 0 ? (
           <Card>
