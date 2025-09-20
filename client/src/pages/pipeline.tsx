@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Play, Zap, FolderOpen, Menu, Loader2 } from "lucide-react";
+import { Play, Zap, FolderOpen, Menu, Loader2, CheckCircle, Target } from "lucide-react";
 import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import WorkflowInterface from "@/components/workflow-interface";
@@ -126,46 +126,109 @@ const Pipeline = memo(function Pipeline() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      {/* Hero Section */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-primary/10 to-secondary/5 py-16 sm:py-24">
+        <div className="absolute inset-0 bg-grid-pattern opacity-10"></div>
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
+              De Fiscale <span className="text-primary">Analist</span>
+            </h1>
+            <p className="mt-6 text-lg leading-8 text-muted-foreground max-w-2xl mx-auto">
+              AI-gedreven fiscale analyse voor professionele rapportage. 
+              Van ruwe input naar compleet duidingsrapport in minuten.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
+
+        {/* Features */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+          <Card className="text-center border-primary/20 hover:shadow-lg transition-all duration-300">
+            <CardContent className="pt-6">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                <Zap className="h-6 w-6 text-primary" />
+              </div>
+              <h3 className="font-semibold text-lg mb-2">AI-Gedreven Analyse</h3>
+              <p className="text-sm text-muted-foreground">13-stappen workflow met gespecialiseerde AI experts voor elke fase</p>
+            </CardContent>
+          </Card>
+          <Card className="text-center border-primary/20 hover:shadow-lg transition-all duration-300">
+            <CardContent className="pt-6">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                <FolderOpen className="h-6 w-6 text-primary" />
+              </div>
+              <h3 className="font-semibold text-lg mb-2">Case Management</h3>
+              <p className="text-sm text-muted-foreground">Automatische opslag en tracking van alle fiscale analyses</p>
+            </CardContent>
+          </Card>
+          <Card className="text-center border-primary/20 hover:shadow-lg transition-all duration-300">
+            <CardContent className="pt-6">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                <Play className="h-6 w-6 text-primary" />
+              </div>
+              <h3 className="font-semibold text-lg mb-2">Snelle Resultaten</h3>
+              <p className="text-sm text-muted-foreground">Van input tot professioneel rapport binnen 15 minuten</p>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Input + Start */}
         {!showWorkflow ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Fiscale Pipeline</CardTitle>
-              <CardDescription>
-                Voer je tekst in om een fiscaal rapport te genereren. Elke workflow wordt automatisch een case die je later kunt terugvinden.
+          <Card className="border-2 border-primary/20 shadow-xl bg-gradient-to-br from-card to-card/80">
+            <CardHeader className="bg-gradient-to-r from-primary/5 to-secondary/5 border-b">
+              <CardTitle className="text-2xl flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <Zap className="h-5 w-5 text-primary" />
+                </div>
+                Start Nieuwe Fiscale Analyse
+              </CardTitle>
+              <CardDescription className="text-base">
+                Voer je fiscale vraagstuk in om direct een gestructureerde analyse te starten. 
+                Alle workflows worden automatisch opgeslagen als cases.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <Textarea
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                placeholder="Plak hier je ruwe tekst: emails, documenten, klantvragen..."
-                className="min-h-32"
-                data-testid="textarea-raw-input"
-              />
+            <CardContent className="space-y-6 p-8">
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-foreground">Fiscale Input</label>
+                <Textarea
+                  value={rawText}
+                  onChange={(e) => setRawText(e.target.value)}
+                  placeholder="Voer hier uw fiscale vraagstuk in:\n\n• Klantsituatie en concrete vraag\n• Relevante feiten en bedragen\n• Specifieke fiscale overwegingen\n\nVoorbeeld: 'Mijn klant (DGA) wil zijn BV omzetten naar een holding...'"
+                  className="min-h-40 resize-none border-primary/20 focus:border-primary/40 bg-background/50"
+                  data-testid="textarea-raw-input"
+                />
+              </div>
               
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex flex-col sm:flex-row gap-4">
                 <Button 
                   onClick={startWorkflow}
                   disabled={!rawText.trim() || isCreatingCase}
                   data-testid="button-start-workflow"
-                  className="flex-1"
+                  className="flex-1 h-12 text-base font-semibold bg-primary hover:bg-primary/90 shadow-lg"
+                  size="lg"
                 >
                   {isCreatingCase ? (
-                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Case aanmaken...</>
+                    <><Loader2 className="mr-3 h-5 w-5 animate-spin" /> Case aanmaken...</>
                   ) : (
-                    <><Play className="mr-2 h-4 w-4" /> Start Case</>
+                    <><Play className="mr-3 h-5 w-5" /> Start Fiscale Analyse</>
                   )}
                 </Button>
-                <Link href="/cases">
-                  <Button variant="outline" data-testid="button-view-cases" className="sm:w-auto w-full">
+                <Link href="/cases" className="sm:w-auto w-full">
+                  <Button variant="outline" data-testid="button-view-cases" className="h-12 w-full border-primary/20 hover:border-primary/40">
                     <FolderOpen className="mr-2 h-4 w-4" />
-                    Bekijk Cases
+                    Bekijk Bestaande Cases
                   </Button>
                 </Link>
               </div>
+              
+              {!rawText.trim() && (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground">💡 Start met het invoeren van uw fiscale vraagstuk hierboven</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : (
