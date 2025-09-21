@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
 import { 
@@ -39,6 +40,7 @@ import { WORKFLOW_STAGES } from "./constants";
 import { ReviewFeedbackEditor } from "./ReviewFeedbackEditor";
 import { StreamingWorkflow } from "../streaming/StreamingWorkflow";
 import { OverrideConceptDialog } from "./OverrideConceptDialog";
+import { SimpleFeedbackProcessor } from "./SimpleFeedbackProcessor";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -967,38 +969,6 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
 
-                        {/* Streaming Toggle for All Stages */}
-                        {(isActive || isCompleted) && (
-                          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <Zap className="h-4 w-4 text-blue-600" />
-                                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                                  {isCompleted ? 'Re-run met Streaming' : 'Streaming Mode Beschikbaar'}
-                                </span>
-                              </div>
-                              <Button
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => setStreamingMode(prev => ({ 
-                                  ...prev, 
-                                  [stage.key]: !prev[stage.key] 
-                                }))}
-                                className="text-xs"
-                                data-testid={`button-toggle-streaming-${stage.key}`}
-                              >
-                                <Settings className="mr-1 h-3 w-3" />
-                                {streamingMode[stage.key] ? 'Regulier' : 'Streaming'}
-                              </Button>
-                            </div>
-                            <p className="text-xs text-blue-600 dark:text-blue-400">
-                              {streamingMode[stage.key] 
-                                ? `Streaming modus: Real-time progress updates ${isCompleted ? '(heruitvoeren)' : ''}` 
-                                : `Klik op Streaming voor real-time voortgang ${isCompleted ? '- je kunt deze stap opnieuw uitvoeren' : ''}`
-                              }
-                            </p>
-                          </div>
-                        )}
 
                         {/* Streaming Workflow Component for All Stages */}
                         {(isActive || isCompleted) && streamingMode[stage.key] && (
@@ -1153,34 +1123,64 @@ export function SimplifiedWorkflowView({
                                   hasCurrentReport: !!state.currentReport,
                                   previousStageResult: index > 0 ? !!state.stageResults[WORKFLOW_STAGES[index - 1].key] : 'N/A (first stage)'
                                 })}
-                                <Button 
-                                  onClick={executeCurrentStage}
-                                  disabled={isProcessing || !canStart || manualStageM.isPending || (stage.key === "3_generatie" && manualMode[stage.key] === "manual" && !manualContent[stage.key])}
-                                  className="w-full"
-                                  size="sm"
-                                  data-testid={`button-start-stage-${stage.key}`}
-                                >
-                                  {(isProcessing || manualStageM.isPending) ? (
-                                    <>
-                                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                      {manualStageM.isPending ? "Verwerken..." : "AI is bezig..."}
-                                    </>
-                                  ) : (
-                                    <>
-                                      {stage.key === "3_generatie" && manualMode[stage.key] === "manual" ? (
-                                        <>
-                                          <PenTool className="mr-2 h-4 w-4" />
-                                          Verwerk Handmatige Content
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Play className="mr-2 h-4 w-4" />
-                                          Start deze stap
-                                        </>
-                                      )}
-                                    </>
-                                  )}
-                                </Button>
+                                {/* Unified execution with streaming toggle */}
+                                <div className="space-y-2">
+                                  {/* Streaming toggle */}
+                                  <div className="flex items-center justify-between p-2 border rounded-lg bg-muted/30">
+                                    <span className="text-sm font-medium">Uitvoering</span>
+                                    <div className="flex items-center gap-2">
+                                      <Label className="text-xs text-muted-foreground">
+                                        {streamingMode[stage.key] ? 'Streaming' : 'Regulier'}
+                                      </Label>
+                                      <Switch
+                                        checked={streamingMode[stage.key] || false}
+                                        onCheckedChange={(checked: boolean) => setStreamingMode(prev => ({ 
+                                          ...prev, 
+                                          [stage.key]: checked 
+                                        }))}
+                                      />
+                                      <Zap className={`h-4 w-4 ${streamingMode[stage.key] ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                                    </div>
+                                  </div>
+                                  
+                                  <Button 
+                                    onClick={executeCurrentStage}
+                                    disabled={isProcessing || !canStart || manualStageM.isPending || (stage.key === "3_generatie" && manualMode[stage.key] === "manual" && !manualContent[stage.key])}
+                                    className="w-full"
+                                    size="sm"
+                                    data-testid={`button-start-stage-${stage.key}`}
+                                  >
+                                    {(isProcessing || manualStageM.isPending) ? (
+                                      <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                        {manualStageM.isPending ? "Verwerken..." : "AI is bezig..."}
+                                      </>
+                                    ) : (
+                                      <>
+                                        {stage.key === "3_generatie" && manualMode[stage.key] === "manual" ? (
+                                          <>
+                                            <PenTool className="mr-2 h-4 w-4" />
+                                            Verwerk Handmatige Content
+                                          </>
+                                        ) : (
+                                          <>
+                                            {streamingMode[stage.key] ? (
+                                              <>
+                                                <Zap className="mr-2 h-4 w-4" />
+                                                Uitvoeren (Streaming)
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Play className="mr-2 h-4 w-4" />
+                                                Uitvoeren (Regulier)
+                                              </>
+                                            )}
+                                          </>
+                                        )}
+                                      </>
+                                    )}
+                                  </Button>
+                                </div>
                                 
                                 {/* Enhanced Processing indicator */}
                                 {isProcessing && (
@@ -1331,6 +1331,51 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
                         
+                        {/* Feedback Processor for completed review stages (outside streaming mode) */}
+                        {isCompleted && !streamingMode[stage.key] && stage.key.startsWith('4') && stage.key !== '4g_ChefEindredactie' && (
+                          (() => {
+                            const substepResults = state.substepResults?.[stage.key];
+                            const hasRawFeedback = substepResults?.review;
+                            const hasProcessing = substepResults?.processing;
+                            
+                            // Debug logging for feedback processor state
+                            console.log(`🔍 Feedback Processor Debug for ${stage.key}:`, {
+                              isCompleted,
+                              streamingMode: streamingMode[stage.key],
+                              substepResults,
+                              hasRawFeedback: !!hasRawFeedback,
+                              hasProcessing: !!hasProcessing,
+                              shouldShowProcessor: !!hasRawFeedback && !hasProcessing
+                            });
+                            
+                            return hasRawFeedback && !hasProcessing ? (
+                              <div className="mt-4">
+                                <SimpleFeedbackProcessor
+                                  reportId={state.currentReport?.id || ''}
+                                  stageId={stage.key}
+                                  stageName={stage.label}
+                                  rawFeedback={hasRawFeedback}
+                                  onProcessingComplete={(response) => {
+                                    console.log(`✅ Feedback processing completed for ${stage.key}:`, response);
+                                    
+                                    // Update substep results to reflect processing completion
+                                    dispatch({ 
+                                      type: "SET_SUBSTEP_RESULT", 
+                                      stage: stage.key, 
+                                      substep: "processing",
+                                      result: `Feedback verwerkt - versie ${response.newVersion}` 
+                                    });
+                                    
+                                    // Invalidate queries to refresh data
+                                    queryClient.invalidateQueries({ queryKey: ['/api/reports', state.currentReport?.id] });
+                                    queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
+                                  }}
+                                />
+                              </div>
+                            ) : null;
+                          })()
+                        )}
+
                         {/* No prompt/output yet message */}
                         {!stagePrompt && !stageResult && !isActive && !promptPreviews[stage.key] && (
                           <p className="text-xs text-muted-foreground text-center py-2">
