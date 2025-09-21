@@ -50,13 +50,14 @@ export function registerStreamingRoutes(
     }
 
     try {
-      // Execute decomposed stage asynchronously
-      if (stageId === '4a_BronnenSpecialist') {
+      // Execute decomposed stage asynchronously (supports all stages)
+      if (['4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', '4c_SeniorSpecialist', '4d_KwaliteitsReviewer', '1_informatiecheck', '2_bouwplananalyse', '3_generatie', '5_eindredactie'].includes(stageId)) {
         // Start execution in background
         setTimeout(async () => {
           try {
-            const result = await decomposedStages.execute4aBronnenSpecialist(
+            const result = await decomposedStages.executeStreamingStage(
               reportId,
+              stageId,
               report.dossierData as DossierData,
               report.bouwplanData as BouwplanData,
               report.stageResults as Record<string, string> || {},

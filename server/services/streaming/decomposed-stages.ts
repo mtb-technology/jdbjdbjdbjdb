@@ -18,31 +18,27 @@ export class DecomposedStages {
     this.sourceValidator = new SourceValidator();
   }
 
-  // Execute 4a_BronnenSpecialist with streaming substeps
-  async execute4aBronnenSpecialist(
+  // Execute any stage with streaming substeps
+  async executeStreamingStage(
     reportId: string,
+    stageId: string,
     dossierData: DossierData,
     bouwplanData: BouwplanData,
     stageResults: Record<string, string>,
     conceptReportVersions: Record<string, string>,
     customInput?: string
   ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
-    const stageId = '4a_BronnenSpecialist';
-    console.log(`🏗️ [${reportId}] Starting decomposed 4a_BronnenSpecialist execution`);
+    console.log(`🏗️ [${reportId}] Starting decomposed ${stageId} execution`);
 
+    // Get substeps based on stage type
+    const substeps = this.getSubstepsForStage(stageId);
+    
     // Create streaming session
-    const session = this.sessionManager.createSession(reportId, stageId, BRONNEN_SPECIALIST_SUBSTEPS);
+    const session = this.sessionManager.createSession(reportId, stageId, substeps);
 
     try {
       // Get AI config for this stage
-      const aiConfig: AiConfig = {
-        provider: "google",
-        model: "gemini-2.5-pro",
-        temperature: 0.1,
-        topP: 0.95,
-        topK: 20,
-        maxOutputTokens: 16384
-      };
+      const aiConfig: AiConfig = this.getAIConfigForStage(stageId);
       
       let accumulatedResults = '';
       let sourcesList: string[] = [];
@@ -276,5 +272,125 @@ Schrijf in professionele consultancy stijl.`;
         substep.percentage = 0;
       }
     }
+  }
+
+  // Get substeps configuration for each stage
+  private getSubstepsForStage(stageId: string): SubstepConfig[] {
+    const substepConfigs: Record<string, SubstepConfig[]> = {
+      '4a_BronnenSpecialist': BRONNEN_SPECIALIST_SUBSTEPS,
+      '4b_FiscaalTechnischSpecialist': [
+        { id: '1_technical_analysis', label: 'Technische Analyse', estimatedDuration: 45000, progress: 0 },
+        { id: '2_regulation_review', label: 'Regelgeving Review', estimatedDuration: 60000, progress: 0 },
+        { id: '3_calculation_check', label: 'Berekeningen Controleren', estimatedDuration: 30000, progress: 0 },
+        { id: '4_compliance_verification', label: 'Compliance Verificatie', estimatedDuration: 40000, progress: 0 },
+        { id: '5_technical_synthesis', label: 'Technische Synthese', estimatedDuration: 35000, progress: 0 }
+      ],
+      '4c_SeniorSpecialist': [
+        { id: '1_strategic_review', label: 'Strategische Review', estimatedDuration: 50000, progress: 0 },
+        { id: '2_risk_assessment', label: 'Risico Analyse', estimatedDuration: 45000, progress: 0 },
+        { id: '3_precedent_analysis', label: 'Jurisprudentie Analyse', estimatedDuration: 55000, progress: 0 },
+        { id: '4_senior_recommendations', label: 'Senior Aanbevelingen', estimatedDuration: 40000, progress: 0 },
+        { id: '5_final_validation', label: 'Finale Validatie', estimatedDuration: 30000, progress: 0 }
+      ],
+      '4d_KwaliteitsReviewer': [
+        { id: '1_quality_check', label: 'Kwaliteitscontrole', estimatedDuration: 35000, progress: 0 },
+        { id: '2_consistency_review', label: 'Consistentie Review', estimatedDuration: 40000, progress: 0 },
+        { id: '3_accuracy_verification', label: 'Nauwkeurigheid Verificatie', estimatedDuration: 45000, progress: 0 },
+        { id: '4_final_polish', label: 'Finale Afwerking', estimatedDuration: 25000, progress: 0 },
+        { id: '5_quality_approval', label: 'Kwaliteits Goedkeuring', estimatedDuration: 20000, progress: 0 }
+      ],
+      '1_informatiecheck': [
+        { id: '1_data_extraction', label: 'Data Extractie', estimatedDuration: 30000, progress: 0 },
+        { id: '2_validation_check', label: 'Validatie Controle', estimatedDuration: 25000, progress: 0 },
+        { id: '3_completeness_review', label: 'Volledigheids Review', estimatedDuration: 35000, progress: 0 },
+        { id: '4_information_synthesis', label: 'Informatie Synthese', estimatedDuration: 40000, progress: 0 }
+      ],
+      '2_bouwplananalyse': [
+        { id: '1_structure_analysis', label: 'Structuur Analyse', estimatedDuration: 40000, progress: 0 },
+        { id: '2_requirement_mapping', label: 'Vereisten Mapping', estimatedDuration: 35000, progress: 0 },
+        { id: '3_template_selection', label: 'Template Selectie', estimatedDuration: 25000, progress: 0 },
+        { id: '4_blueprint_creation', label: 'Bouwplan Creatie', estimatedDuration: 45000, progress: 0 }
+      ],
+      '3_generatie': [
+        { id: '1_content_planning', label: 'Content Planning', estimatedDuration: 35000, progress: 0 },
+        { id: '2_draft_generation', label: 'Concept Generatie', estimatedDuration: 90000, progress: 0 },
+        { id: '3_structure_formatting', label: 'Structuur Formattering', estimatedDuration: 30000, progress: 0 },
+        { id: '4_initial_review', label: 'Initiële Review', estimatedDuration: 25000, progress: 0 }
+      ],
+      '5_eindredactie': [
+        { id: '1_final_edit', label: 'Finale Redactie', estimatedDuration: 40000, progress: 0 },
+        { id: '2_style_consistency', label: 'Stijl Consistentie', estimatedDuration: 30000, progress: 0 },
+        { id: '3_formatting_polish', label: 'Formattering Polish', estimatedDuration: 25000, progress: 0 },
+        { id: '4_publication_prep', label: 'Publicatie Voorbereiding', estimatedDuration: 35000, progress: 0 }
+      ]
+    };
+
+    return substepConfigs[stageId] || BRONNEN_SPECIALIST_SUBSTEPS;
+  }
+
+  // Get AI configuration for each stage
+  private getAIConfigForStage(stageId: string): AiConfig {
+    const aiConfigs: Record<string, AiConfig> = {
+      '4a_BronnenSpecialist': {
+        provider: "google",
+        model: "gemini-2.5-pro",
+        temperature: 0.1,
+        topP: 0.95,
+        topK: 20,
+        maxOutputTokens: 16384
+      },
+      '4b_FiscaalTechnischSpecialist': {
+        provider: "openai",
+        model: "gpt-4o",
+        temperature: 0.2,
+        topP: 0.9,
+        maxOutputTokens: 8192
+      },
+      '4c_SeniorSpecialist': {
+        provider: "openai",
+        model: "gpt-5",
+        temperature: 0.1,
+        topP: 0.85,
+        maxOutputTokens: 12288
+      },
+      '4d_KwaliteitsReviewer': {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        temperature: 0.3,
+        topP: 0.9,
+        maxOutputTokens: 6144
+      },
+      '1_informatiecheck': {
+        provider: "google",
+        model: "gemini-2.5-flash",
+        temperature: 0.2,
+        topP: 0.9,
+        topK: 30,
+        maxOutputTokens: 4096
+      },
+      '2_bouwplananalyse': {
+        provider: "openai",
+        model: "gpt-4o",
+        temperature: 0.1,
+        topP: 0.8,
+        maxOutputTokens: 8192
+      },
+      '3_generatie': {
+        provider: "openai",
+        model: "gpt-4o",
+        temperature: 0.3,
+        topP: 0.9,
+        maxOutputTokens: 16384
+      },
+      '5_eindredactie': {
+        provider: "openai", 
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        topP: 0.95,
+        maxOutputTokens: 8192
+      }
+    };
+
+    return aiConfigs[stageId] || aiConfigs['4a_BronnenSpecialist'];
   }
 }
