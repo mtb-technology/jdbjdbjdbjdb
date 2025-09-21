@@ -1,14 +1,22 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { 
   CheckCircle,
   ArrowRight,
   Clock,
-  ChevronRight
+  ChevronRight,
+  ArrowUp,
+  Edit3
 } from "lucide-react";
 import { WORKFLOW_STAGES, WorkflowStage } from "./constants";
 import type { Report } from "@shared/schema";
 import type { UseMutationResult } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
+import { useToast } from "@/hooks/use-toast";
+import { OverrideConceptDialog } from "./OverrideConceptDialog";
+import type { OverrideConceptRequest, PromoteSnapshotRequest, StepBackResponse } from '@shared/types/api';
 
 // Type definitions for mutations
 interface ExecuteStageVariables {
@@ -50,6 +58,53 @@ export const WorkflowStageList = memo(function WorkflowStageList({
   onStageClick,
   getStageStatus
 }: WorkflowStageListProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [overrideDialog, setOverrideDialog] = useState<{
+    isOpen: boolean;
+    stageId: string;
+    stageName: string;
+    currentContent: string;
+  }>({
+    isOpen: false,
+    stageId: "",
+    stageName: "",
+    currentContent: ""
+  });
+
+  // Mutation for promoting a stage to latest
+  const promoteStageM = useMutation({
+    mutationFn: async ({ stageId, reason }: { stageId: string; reason?: string }): Promise<any> => {
+      if (!currentReport) throw new Error("No current report");
+      return await apiRequest({
+        method: 'POST',
+        url: `/api/reports/${currentReport.id}/snapshots/promote`,
+        data: { stageId, reason }
+      });
+    },
+    onSuccess: (response: any) => {
+      toast({
+        title: "Stage gepromoveerd",
+        description: response.message,
+        duration: 3000,
+      });
+      
+      // Invalidate queries to refresh data
+      if (currentReport) {
+        queryClient.invalidateQueries({ queryKey: ['/api/reports', currentReport.id] });
+        queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
+      }
+    },
+    onError: (error: any) => {
+      console.error("❌ Failed to promote stage:", error);
+      toast({
+        title: "Promote mislukt",
+        description: error.message || "Er ging iets mis bij het promoten van de stage",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  });
   return (
     <div className="relative">
       {/* Progress line */}
@@ -194,7 +249,7 @@ export const WorkflowStageList = memo(function WorkflowStageList({
                 )}
               </div>
               
-              {/* Status indicator on the right */}
+              {/* Status indicator and step-back buttons */}
               <div className="ml-auto flex items-center gap-2">
                 {status === "current" && !executeStageM.isPending && (
                   <Badge variant="default" className="animate-pulse">
@@ -202,13 +257,74 @@ export const WorkflowStageList = memo(function WorkflowStageList({
                   </Badge>
                 )}
                 {status === "completed" && (
-                  <CheckCircle className="h-4 w-4 text-green-500" />
+                  <>
+                    {/* Step-back buttons for completed stages */}
+                    <div className="flex items-center gap-1">
+                      {/* Promote button - make this stage the latest */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs hover:bg-blue-50 hover:border-blue-300"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          promoteStageM.mutate({
+                            stageId: stage.key,
+                            reason: `Handmatig teruggevallen naar ${stage.label}`
+                          });
+                        }}
+                        disabled={promoteStageM.isPending}
+                        data-testid={`button-promote-${stage.key}`}
+                        title={`Gebruik ${stage.label} als basis voor verdere stappen`}
+                      >
+                        <ArrowUp className="h-3 w-3 mr-1" />
+                        Gebruik als basis
+                      </Button>
+
+                      {/* Override button - only for 3_generatie */}
+                      {stage.key === "3_generatie" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs hover:bg-orange-50 hover:border-orange-300"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Open override dialog with current stage content
+                            const currentContent = stageResults[stage.key] || 'Geen huidige inhoud gevonden.';
+                            setOverrideDialog({
+                              isOpen: true,
+                              stageId: stage.key,
+                              stageName: stage.label,
+                              currentContent
+                            });
+                          }}
+                          data-testid={`button-override-${stage.key}`}
+                          title="Overschrijf concept rapport met handmatige tekst"
+                        >
+                          <Edit3 className="h-3 w-3 mr-1" />
+                          Overschrijf concept
+                        </Button>
+                      )}
+                    </div>
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  </>
                 )}
               </div>
             </div>
           );
         })}
       </div>
+      
+      {/* Override Concept Dialog */}
+      {currentReport && (
+        <OverrideConceptDialog
+          isOpen={overrideDialog.isOpen}
+          onClose={() => setOverrideDialog({ ...overrideDialog, isOpen: false })}
+          reportId={currentReport.id}
+          stageId={overrideDialog.stageId}
+          stageName={overrideDialog.stageName}
+          currentContent={overrideDialog.currentContent}
+        />
+      )}
     </div>
   );
 });

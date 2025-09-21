@@ -163,6 +163,30 @@ export type RegisterUserRequest = z.infer<typeof registerUserRequestSchema>;
 export type LoginUserRequest = z.infer<typeof loginUserRequestSchema>;
 export type SavePromptConfigRequest = z.infer<typeof savePromptConfigRequestSchema>;
 
+// ===== STEP-BACK CAPABILITY SCHEMAS =====
+
+export const overrideConceptRequestSchema = z.object({
+  content: z.string().min(1, "Content is vereist"),
+  fromStage: z.string().optional(),
+  reason: z.string().optional()
+});
+
+export const promoteSnapshotRequestSchema = z.object({
+  stageId: z.string().min(1, "Stage ID is vereist"), 
+  reason: z.string().optional()
+});
+
+export const stepBackResponseSchema = z.object({
+  success: z.boolean(),
+  newLatestStage: z.string(),
+  newLatestVersion: z.number(),
+  message: z.string()
+});
+
+export type OverrideConceptRequest = z.infer<typeof overrideConceptRequestSchema>;
+export type PromoteSnapshotRequest = z.infer<typeof promoteSnapshotRequestSchema>;
+export type StepBackResponse = z.infer<typeof stepBackResponseSchema>;
+
 export type ReportListResponse = z.infer<typeof reportListResponseSchema>;
 export type ReportDetailResponse = z.infer<typeof reportDetailResponseSchema>;
 export type StageExecutionResponse = z.infer<typeof stageExecutionResponseSchema>;
@@ -199,6 +223,14 @@ export interface ReportEndpoints {
   'POST /api/reports/:id/stage/:stageId/process-feedback': {
     request: { id: string; stageId: string } & ProcessFeedbackRequest;
     response: ProcessFeedbackResponse;
+  };
+  'POST /api/reports/:id/stage/:stageId/override-concept': {
+    request: { id: string; stageId: string } & OverrideConceptRequest;
+    response: StepBackResponse;
+  };
+  'POST /api/reports/:id/snapshots/promote': {
+    request: { id: string } & PromoteSnapshotRequest;
+    response: StepBackResponse;
   };
 }
 

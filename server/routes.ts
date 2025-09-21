@@ -10,8 +10,8 @@ import { AIHealthService } from "./services/ai-models/health-service";
 import { AIMonitoringService } from "./services/ai-models/monitoring";
 import { checkDatabaseConnection } from "./db";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
-import type { DossierData, BouwplanData, StageId } from "@shared/schema";
-import { processFeedbackRequestSchema } from "@shared/types/api";
+import type { DossierData, BouwplanData, StageId, ConceptReportVersions } from "@shared/schema";
+import { processFeedbackRequestSchema, overrideConceptRequestSchema, promoteSnapshotRequestSchema } from "@shared/types/api";
 import { ReportProcessor } from "./services/report-processor";
 import { SSEHandler } from "./services/streaming/sse-handler";
 import { StreamingSessionManager } from "./services/streaming/streaming-session-manager";
@@ -905,6 +905,113 @@ ${bouwplanContent}`;
         'Failed to ingest prompts from JSON file'
       ));
     }
+  }));
+
+
+  // ===== STEP-BACK CAPABILITY ENDPOINTS =====
+
+  // Override concept content for a specific stage
+  app.post("/api/reports/:id/stage/:stageId/override-concept", asyncHandler(async (req: Request, res: Response) => {
+    const { id, stageId } = req.params;
+    const payload = overrideConceptRequestSchema.parse(req.body);
+    
+    console.log(`🔄 [${id}] Overriding concept for stage ${stageId}:`, { 
+      contentLength: payload.content.length,
+      fromStage: payload.fromStage,
+      reason: payload.reason 
+    });
+
+    // Get current report to access existing versions
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Create new snapshot for the stage
+    const snapshot = await reportProcessor.createSnapshot(
+      id,
+      stageId as StageId,
+      payload.content
+    );
+
+    // Update the concept versions with the new snapshot
+    const updatedVersions = await reportProcessor.updateConceptVersions(
+      id,
+      stageId as StageId,
+      snapshot
+    );
+
+    // Update report's current stage and latest pointer
+    await storage.updateReport(id, {
+      currentStage: stageId as StageId,
+      conceptReportVersions: updatedVersions,
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ [${id}] Concept overridden for ${stageId} - new version ${snapshot.v}`);
+
+    res.json(createApiSuccessResponse({
+      success: true,
+      newLatestStage: stageId,
+      newLatestVersion: snapshot.v,
+      message: `Concept voor ${stageId} succesvol overschreven`
+    }, "Concept rapport overschreven"));
+  }));
+
+  // Promote a previous stage snapshot to be the latest
+  app.post("/api/reports/:id/snapshots/promote", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { stageId, reason } = promoteSnapshotRequestSchema.parse(req.body);
+    
+    console.log(`📈 [${id}] Promoting stage ${stageId} to latest:`, { reason });
+
+    // Get current report to access existing versions
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    const conceptVersions = (report.conceptReportVersions as any) || {};
+    const targetStageSnapshot = conceptVersions[stageId as StageId];
+    
+    if (!targetStageSnapshot) {
+      throw ServerError.business(ERROR_CODES.REPORT_NOT_FOUND, `Geen snapshot gevonden voor stage ${stageId}`);
+    }
+
+    // Update the latest pointer to this stage
+    const updatedVersions = {
+      ...conceptVersions,
+      latest: {
+        pointer: stageId as StageId,
+        v: targetStageSnapshot.v
+      },
+      history: [
+        ...(conceptVersions.history || []),
+        {
+          stageId: stageId as StageId,
+          v: targetStageSnapshot.v,
+          timestamp: new Date().toISOString(),
+          action: 'promote',
+          reason: reason || 'Promoted to latest'
+        }
+      ]
+    };
+
+    // Update report with new latest pointer
+    await storage.updateReport(id, {
+      currentStage: stageId as StageId,
+      conceptReportVersions: updatedVersions,
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ [${id}] Stage ${stageId} promoted to latest - version ${targetStageSnapshot.v}`);
+
+    res.json(createApiSuccessResponse({
+      success: true,
+      newLatestStage: stageId,
+      newLatestVersion: targetStageSnapshot.v,
+      message: `Stage ${stageId} is nu de actieve versie`
+    }, "Stage gepromoveerd naar latest"));
   }));
 
 
