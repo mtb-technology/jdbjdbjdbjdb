@@ -1384,19 +1384,9 @@ export function SimplifiedWorkflowView({
                             {/* Apply Feedback to Concept button for review stages */}
                             {(() => {
                               const isReviewStage = stage.key.startsWith('4') && stage.key !== '4g_ChefEindredactie';
-                              const hasReview = isReviewStage && state.substepResults?.[stage.key]?.review;
+                              const hasReview = isReviewStage && state.stageResults[stage.key];
                               const hasCurrentReport = !!state.currentReport?.id;
                               
-                              // Debug info for button visibility
-                              if (stage.key === '4a_BronnenSpecialist' || stage.key === '4b_FiscaalTechnischSpecialist') {
-                                console.log(`🔍 Apply Feedback Button Debug for ${stage.key}:`, {
-                                  isReviewStage,
-                                  hasReview,
-                                  hasCurrentReport,
-                                  substepResults: state.substepResults?.[stage.key],
-                                  shouldShow: isReviewStage && hasReview && hasCurrentReport
-                                });
-                              }
                               
                               return isReviewStage && hasReview && hasCurrentReport ? (
                                 <Button
@@ -1404,7 +1394,7 @@ export function SimplifiedWorkflowView({
                                     applyFeedbackToConceptM.mutate({
                                       reportId: state.currentReport.id,
                                       stageId: stage.key,
-                                      feedback: state.substepResults[stage.key].review
+                                      feedback: state.stageResults[stage.key]
                                     });
                                   }}
                                   disabled={applyFeedbackToConceptM.isPending}
