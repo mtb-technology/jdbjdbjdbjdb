@@ -239,7 +239,7 @@ export const REPORT_CONFIG = {
     },
     '4a_BronnenSpecialist': {
       name: 'Bronnen Specialist Review',
-      timeout: 120000, // Extended for thorough review
+      timeout: 600000, // Match GPT-5 model timeout for long analysis
       maxTokens: 12288 // More space for detailed feedback
     },
     '4b_FiscaalTechnischSpecialist': {
