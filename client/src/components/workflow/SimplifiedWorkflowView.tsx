@@ -181,6 +181,51 @@ export function SimplifiedWorkflowView({
       });
     },
   });
+
+  // Apply feedback to concept mutation
+  const applyFeedbackToConceptM = useMutation({
+    mutationFn: async ({ reportId, stageId, feedback }: { reportId: string; stageId: string; feedback: string }) => {
+      const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stageId}/process-feedback`, {
+        userInstructions: `Pas alle feedback van ${stageId} toe om het concept rapport te verbeteren. Neem alle suggesties over die de kwaliteit, accuratesse en leesbaarheid van het rapport verbeteren.`,
+        processingStrategy: 'merge',
+        feedback: feedback // Include the actual feedback content
+      });
+      const responseData = await response.json();
+      
+      if (responseData.success) {
+        return responseData.data;
+      } else {
+        throw new Error(responseData.error?.userMessage || responseData.error?.message || 'Feedback application failed');
+      }
+    },
+    onSuccess: (data, { stageId }) => {
+      toast({
+        title: "Feedback toegepast",
+        description: `Feedback van ${stageId} is succesvol verwerkt en het concept rapport is bijgewerkt.`,
+        duration: 4000,
+      });
+      
+      // Invalidate queries to refresh data
+      if (state.currentReport) {
+        queryClient.invalidateQueries({ queryKey: ['/api/reports', state.currentReport.id] });
+        queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
+        // Also invalidate concept-related queries to show updated concept immediately
+        queryClient.invalidateQueries({ queryKey: ['/api/reports', state.currentReport.id, 'stage', '3_generatie', 'preview'] });
+      }
+    },
+    onError: (error: any) => {
+      console.error("❌ Failed to apply feedback:", error);
+      const errorMessage = typeof error === 'string' ? error : 
+                          error?.message || error?.userMessage || 
+                          'Er ging iets mis bij het toepassen van de feedback';
+      toast({
+        title: "Feedback toepassing mislukt", 
+        description: errorMessage,
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  });
   
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
   const progressPercentage = Math.round((Object.keys(state.stageResults).length / WORKFLOW_STAGES.length) * 100);
@@ -1335,6 +1380,42 @@ export function SimplifiedWorkflowView({
                               <RefreshCw className="mr-2 h-4 w-4" />
                               Opnieuw uitvoeren
                             </Button>
+                            
+                            {/* Apply Feedback to Concept button for review stages */}
+                            {(() => {
+                              const isReviewStage = stage.key.startsWith('4') && stage.key !== '4g_ChefEindredactie';
+                              const hasReview = isReviewStage && state.substepResults?.[stage.key]?.review;
+                              const hasCurrentReport = !!state.currentReport?.id;
+                              
+                              return isReviewStage && hasReview && hasCurrentReport ? (
+                                <Button
+                                  onClick={() => {
+                                    applyFeedbackToConceptM.mutate({
+                                      reportId: state.currentReport.id,
+                                      stageId: stage.key,
+                                      feedback: state.substepResults[stage.key].review
+                                    });
+                                  }}
+                                  disabled={applyFeedbackToConceptM.isPending}
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full hover:bg-green-50 hover:border-green-300 bg-gradient-to-r from-green-50 to-emerald-50"
+                                  data-testid={`button-apply-feedback-${stage.key}`}
+                                >
+                                  {applyFeedbackToConceptM.isPending ? (
+                                    <>
+                                      <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin mr-2" />
+                                      Feedback toepassen...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle className="mr-2 h-4 w-4" />
+                                      Pas feedback toe op concept
+                                    </>
+                                  )}
+                                </Button>
+                              ) : null;
+                            })()}
                           </div>
                         )}
                         
