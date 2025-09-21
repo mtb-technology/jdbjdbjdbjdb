@@ -1096,6 +1096,8 @@ export function SimplifiedWorkflowView({
                                 {hasReview && !hasProcessing && (
                                   <ReviewFeedbackEditor
                                     stageName={stage.label}
+                                    stageId={stage.key}
+                                    reportId={state.currentReport?.id || ""}
                                     aiReviewOutput={substepResults.review || ""}
                                     onProcessFeedback={(mergedFeedback) => {
                                       if (state.currentReport) {
