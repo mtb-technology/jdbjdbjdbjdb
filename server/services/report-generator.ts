@@ -653,24 +653,53 @@ ${JSON.stringify(bouwplan, null, 2)}`;
     
     const prompt = stageConfig.prompt;
 
-    // Collect all reviewer feedback
+    // Collect and summarize reviewer feedback - limit to key findings
     const reviewerFeedback = Object.entries(previousStageResults)
       .filter(([key]) => key.startsWith("4"))
-      .map(([key, value]) => `### ${key}:\n${value}`)
+      .map(([key, value]) => {
+        // Parse JSON feedback and extract key points
+        try {
+          const feedback = JSON.parse(value);
+          if (Array.isArray(feedback)) {
+            const keyFindings = feedback
+              .slice(0, 3) // Limit to first 3 findings
+              .map(f => `- ${f.bevinding_categorie}: ${f.instructie}`)
+              .join('\n');
+            return `### ${key}:\n${keyFindings}`;
+          }
+        } catch (e) {
+          // If not JSON, truncate to first 200 chars
+          const truncated = value.length > 200 ? value.substring(0, 200) + '...' : value;
+          return `### ${key}:\n${truncated}`;
+        }
+        return `### ${key}:\n${value}`;
+      })
       .join("\n\n");
+
+    // Truncate original report to first 1000 characters
+    const originalReport = conceptReportVersions?.["3_generatie"] || "Geen vorig rapport beschikbaar";
+    const truncatedReport = originalReport.length > 1000 
+      ? originalReport.substring(0, 1000) + '\n\n[...rapport ingekort voor processing...]' 
+      : originalReport;
+
+    // Minimal dossier info - just key fields
+    const minimalDossier = {
+      onderwerp: dossier.samenvatting_onderwerp || 'Onbekend',
+      klantvragen: dossier.klantvraag_verbatim || []
+    };
 
     return `${prompt}
 
 ### Datum: ${currentDate}
 
-### Origineel Rapport:
-${conceptReportVersions?.["3_generatie"] || "Geen vorig rapport beschikbaar"}
+### Concept Rapport (ingekorte versie):
+${truncatedReport}
 
 ### Reviewer Feedback:
 ${reviewerFeedback}
 
-### Dossier:
-${JSON.stringify(dossier, null, 2)}`;
+### Dossier Context:
+${JSON.stringify(minimalDossier, null, 2)}`;
   }
 
   private buildChangeSummaryPrompt(
