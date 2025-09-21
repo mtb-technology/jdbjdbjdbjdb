@@ -424,6 +424,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Preview the exact prompt that would be sent for feedback processing
+  app.get("/api/reports/:id/stage/:stageId/prompt-preview", asyncHandler(async (req: Request, res: Response) => {
+    const { id: reportId, stageId } = req.params;
+    const { userInstructions = "Pas alle feedback toe om het concept rapport te verbeteren. Neem alle suggesties over die de kwaliteit, accuratesse en leesbaarheid van het rapport verbeteren." } = req.query;
+    
+    console.log(`👁️ [${reportId}-${stageId}] Prompt preview requested`);
+
+    // Check if report exists
+    const report = await storage.getReport(reportId);
+    if (!report) {
+      return res.status(404).json(createApiErrorResponse(
+        'REPORT_NOT_FOUND',
+        'VALIDATION_FAILED',
+        'Rapport niet gevonden',
+        'Het rapport kon niet worden gevonden voor prompt preview'
+      ));
+    }
+
+    // Validate stage ID for review stages only
+    const validReviewStages = [
+      '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', 
+      '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat', 
+      '4f_DeKlantpsycholoog', '4g_ChefEindredactie'
+    ];
+
+    if (!validReviewStages.includes(stageId)) {
+      return res.status(400).json(createApiErrorResponse(
+        'INVALID_STAGE',
+        'VALIDATION_FAILED',
+        'Ongeldige stap voor prompt preview',
+        `Stage ${stageId} ondersteunt geen prompt preview`
+      ));
+    }
+
+    try {
+      // Get the raw feedback from stageResults
+      const stageResults = (report.stageResults as Record<string, string>) || {};
+      const rawFeedback = stageResults[stageId];
+      
+      if (!rawFeedback) {
+        return res.status(400).json(createApiErrorResponse(
+          'NO_FEEDBACK_FOUND',
+          'VALIDATION_FAILED',
+          'Geen feedback gevonden',
+          `Geen feedback beschikbaar voor stage ${stageId}`
+        ));
+      }
+
+      // Generate the same combined prompt that would be used for processing
+      const combinedPrompt = `
+OORSPRONKELIJKE FEEDBACK VAN ${stageId.toUpperCase()}:
+${rawFeedback}
+
+GEBRUIKER INSTRUCTIES:
+${userInstructions}
+
+Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
+`;
+
+      // For now, use the combined prompt as preview
+      // TODO: Later we could integrate with actual prompt generation logic
+      const fullPrompt = combinedPrompt;
+      const promptLength = fullPrompt.length;
+
+      return res.json(createApiSuccessResponse({
+        stageId,
+        userInstructions,
+        combinedPrompt: combinedPrompt.trim(),
+        fullPrompt: fullPrompt,
+        promptLength: promptLength,
+        rawFeedback: rawFeedback
+      }, 'Prompt preview gegenereerd'));
+
+    } catch (error: any) {
+      console.error(`❌ [${reportId}-${stageId}] Prompt preview failed:`, error);
+      
+      return res.status(500).json(createApiErrorResponse(
+        'PREVIEW_FAILED',
+        'INTERNAL_SERVER_ERROR',
+        'Prompt preview gefaald',
+        error.message || 'Onbekende fout tijdens prompt preview'
+      ));
+    }
+  }));
+
   // Manual feedback processing endpoint - user-controlled feedback selection and processing
   app.post("/api/reports/:id/stage/:stageId/process-feedback", asyncHandler(async (req: Request, res: Response) => {
     const { id: reportId, stageId } = req.params;
