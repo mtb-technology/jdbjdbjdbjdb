@@ -822,7 +822,12 @@ export function SimplifiedWorkflowView({
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => copyToClipboard(state.conceptReportVersions[stage.key], "Concept Rapport")}
+                                  onClick={() => copyToClipboard(
+                                    typeof state.conceptReportVersions[stage.key] === 'string' 
+                                      ? state.conceptReportVersions[stage.key] 
+                                      : state.conceptReportVersions[stage.key]?.content || JSON.stringify(state.conceptReportVersions[stage.key]), 
+                                    "Concept Rapport"
+                                  )}
                                   className="h-6 w-6 p-0"
                                 >
                                   <Copy className="h-3 w-3" />
@@ -830,7 +835,9 @@ export function SimplifiedWorkflowView({
                               </div>
                               <div className="p-2 max-h-96 overflow-y-auto">
                                 <div className="text-xs text-purple-800 dark:text-purple-200 whitespace-pre-wrap bg-white/50 dark:bg-gray-900/50 p-2 rounded border">
-                                  {state.conceptReportVersions[stage.key]}
+                                  {typeof state.conceptReportVersions[stage.key] === 'string' 
+                                    ? state.conceptReportVersions[stage.key] 
+                                    : state.conceptReportVersions[stage.key]?.content || JSON.stringify(state.conceptReportVersions[stage.key])}
                                 </div>
                               </div>
                             </div>
