@@ -259,9 +259,9 @@ function Cases() {
   const getStatusText = useCallback((status: string, report?: any) => {
     switch (status) {
       case "draft": return "Concept";
-      case "processing": return "Bezig";
+      case "processing": 
       case "generated": {
-        // Calculate progress based on completed stages
+        // Calculate progress based on completed stages for both processing and generated
         if (report?.stageResults) {
           const completedStages = Object.keys(report.stageResults).length;
           const totalStages = 11; // 11 workflow stages
@@ -269,11 +269,12 @@ function Cases() {
           
           if (completedStages >= 3) {
             return `Stap ${completedStages}/11 (${percentage}%)`;
-          } else {
+          } else if (completedStages > 0) {
             return `Wordt gegenereerd... ${completedStages}/11`;
           }
         }
-        return "Rapport Groeit";
+        // Fallback for processing without stage results yet
+        return status === "processing" ? "Bezig" : "Rapport Groeit";
       }
       case "exported": return "Voltooid";
       case "archived": return "Gearchiveerd";
