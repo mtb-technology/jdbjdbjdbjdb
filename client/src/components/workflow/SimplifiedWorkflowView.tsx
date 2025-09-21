@@ -918,14 +918,14 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
 
-                        {/* Streaming Toggle for 4a_BronnenSpecialist */}
-                        {isActive && stage.key === "4a_BronnenSpecialist" && (
+                        {/* Streaming Toggle for All Stages */}
+                        {(isActive || isCompleted) && (
                           <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
                                 <Zap className="h-4 w-4 text-blue-600" />
                                 <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                                  Streaming Mode Beschikbaar
+                                  {isCompleted ? 'Re-run met Streaming' : 'Streaming Mode Beschikbaar'}
                                 </span>
                               </div>
                               <Button
@@ -944,15 +944,15 @@ export function SimplifiedWorkflowView({
                             </div>
                             <p className="text-xs text-blue-600 dark:text-blue-400">
                               {streamingMode[stage.key] 
-                                ? 'Streaming modus: Real-time progress updates en substep decomposition' 
-                                : 'Klik op Streaming voor real-time voortgang en substep tracking'
+                                ? `Streaming modus: Real-time progress updates ${isCompleted ? '(heruitvoeren)' : ''}` 
+                                : `Klik op Streaming voor real-time voortgang ${isCompleted ? '- je kunt deze stap opnieuw uitvoeren' : ''}`
                               }
                             </p>
                           </div>
                         )}
 
-                        {/* Streaming Workflow Component for 4a_BronnenSpecialist */}
-                        {isActive && stage.key === "4a_BronnenSpecialist" && streamingMode[stage.key] && (
+                        {/* Streaming Workflow Component for All Stages */}
+                        {(isActive || isCompleted) && streamingMode[stage.key] && (
                           <div className="mb-4">
                             <StreamingWorkflow
                               reportId={state.currentReport?.id || ''}
@@ -993,7 +993,7 @@ export function SimplifiedWorkflowView({
                         )}
 
                         {/* Action buttons for active stage */}
-                        {isActive && !isCompleted && !(stage.key === "4a_BronnenSpecialist" && streamingMode[stage.key]) && (
+                        {isActive && !isCompleted && !streamingMode[stage.key] && (
                           <>
                             {isReviewer ? (
                               <div className="space-y-3 mt-3">
