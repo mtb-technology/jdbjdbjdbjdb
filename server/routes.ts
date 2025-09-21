@@ -10,7 +10,9 @@ import { AIHealthService } from "./services/ai-models/health-service";
 import { AIMonitoringService } from "./services/ai-models/monitoring";
 import { checkDatabaseConnection } from "./db";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
-import type { DossierData, BouwplanData } from "@shared/schema";
+import type { DossierData, BouwplanData, StageId } from "@shared/schema";
+import { processFeedbackRequestSchema } from "@shared/types/api";
+import { ReportProcessor } from "./services/report-processor";
 import { SSEHandler } from "./services/streaming/sse-handler";
 import { StreamingSessionManager } from "./services/streaming/streaming-session-manager";
 import { DecomposedStages } from "./services/streaming/decomposed-stages";
@@ -42,6 +44,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const sseHandler = new SSEHandler();
   const sessionManager = StreamingSessionManager.getInstance();
   const decomposedStages = new DecomposedStages();
+  
+  // Create AI handler for ReportProcessor using same approach as ReportGenerator
+  const aiHandler = {
+    generateContent: async (params: { prompt: string; temperature: number; topP: number; maxOutputTokens: number }) => {
+      return await reportGenerator.testAI(params.prompt);
+    }
+  };
+  const reportProcessor = new ReportProcessor(aiHandler);
   
   // Start periodic health checks and run immediate warm-up
   healthService.startPeriodicHealthChecks();
@@ -312,9 +322,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.status = 'generated'; // Mark as having first version
       }
       
-      // For specialist stages (4a-4g), continuously update the living report
-      if (stage.startsWith('4') && stageExecution.conceptReport) {
-        updateData.generatedContent = stageExecution.conceptReport;
+      // *** REVIEW STAGES (4a-4g): NO AUTOMATIC CONCEPT PROCESSING ***  
+      // These stages now require user feedback selection - only store raw feedback
+      if (stage.startsWith('4')) {
+        console.log(`📋 [${id}-${stage}] Review stage completed - storing raw feedback for user review (NO auto-processing)`);
+        // Do NOT update generatedContent - let user control this through manual feedback processing
+        // The stageResults will contain the raw feedback for user selection
       }
 
       const updatedReport = await storage.updateReport(id, updateData);
@@ -409,6 +422,130 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
   });
+
+  // Manual feedback processing endpoint - user-controlled feedback selection and processing
+  app.post("/api/reports/:id/stage/:stageId/process-feedback", asyncHandler(async (req: Request, res: Response) => {
+    const { id: reportId, stageId } = req.params;
+    
+    console.log(`🔧 [${reportId}-${stageId}] Manual feedback processing requested`);
+
+    // Validate request body
+    const validatedData = processFeedbackRequestSchema.parse(req.body);
+    const { selectedItems, additionalFeedback, processingStrategy } = validatedData;
+
+    // Check if report exists
+    const report = await storage.getReport(reportId);
+    if (!report) {
+      return res.status(404).json(createApiErrorResponse(
+        'REPORT_NOT_FOUND',
+        'VALIDATION_FAILED',
+        'Rapport niet gevonden',
+        'Het rapport kon niet worden gevonden voor feedback processing'
+      ));
+    }
+
+    // Validate stage ID for review stages only
+    const validReviewStages = [
+      '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', 
+      '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat', 
+      '4f_DeKlantpsycholoog', '4g_ChefEindredactie'
+    ];
+
+    if (!validReviewStages.includes(stageId)) {
+      return res.status(400).json(createApiErrorResponse(
+        'INVALID_STAGE',
+        'VALIDATION_FAILED',
+        'Ongeldige stap voor feedback processing',
+        `Stage ${stageId} ondersteunt geen feedback processing`
+      ));
+    }
+
+    try {
+      // Filter only selected feedback items
+      const selectedFeedback = selectedItems.filter(item => item.selected);
+      
+      if (selectedFeedback.length === 0 && !additionalFeedback) {
+        return res.status(400).json(createApiErrorResponse(
+          'NO_FEEDBACK_SELECTED',
+          'VALIDATION_FAILED',
+          'Geen feedback geselecteerd',
+          'Selecteer minimaal één feedback item of voeg aanvullende feedback toe'
+        ));
+      }
+
+      // Combine selected feedback and additional feedback into one string
+      const feedbackParts: string[] = [];
+      
+      // Add selected feedback items
+      selectedFeedback.forEach((item, index) => {
+        feedbackParts.push(`${index + 1}. ${item.content}`);
+      });
+      
+      // Add additional user feedback if provided
+      if (additionalFeedback?.trim()) {
+        feedbackParts.push(`\nAanvullende feedback:\n${additionalFeedback.trim()}`);
+      }
+
+      const combinedFeedback = feedbackParts.join('\n\n');
+      
+      console.log(`📝 [${reportId}-${stageId}] Processing ${selectedFeedback.length} selected items + ${additionalFeedback ? 'additional feedback' : 'no additional feedback'}`);
+
+      // Process feedback with ReportProcessor
+      const processingResult = await reportProcessor.processStage(
+        reportId,
+        stageId as StageId,
+        combinedFeedback,
+        processingStrategy
+      );
+
+      console.log(`✅ [${reportId}-${stageId}] Manual feedback processing completed - v${processingResult.snapshot.v}`);
+
+      // Emit SSE event for real-time feedback (if client is listening)
+      sseHandler.broadcast(reportId, stageId, {
+        type: 'step_complete',
+        stageId: stageId,
+        substepId: 'manual_feedback_processing',
+        percentage: 100,
+        message: `Geselecteerde feedback verwerkt - concept rapport bijgewerkt naar versie ${processingResult.snapshot.v}`,
+        data: {
+          version: processingResult.snapshot.v,
+          conceptContent: processingResult.newConcept,
+          processedItems: selectedFeedback.length,
+          hasAdditionalFeedback: !!additionalFeedback
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      return res.json(createApiSuccessResponse({
+        success: true,
+        newVersion: processingResult.snapshot.v,
+        conceptContent: processingResult.newConcept,
+        processedItems: selectedFeedback.length,
+        message: `Feedback succesvol verwerkt - concept rapport bijgewerkt naar versie ${processingResult.snapshot.v}`
+      }, 'Feedback processing succesvol voltooid'));
+
+    } catch (error: any) {
+      console.error(`❌ [${reportId}-${stageId}] Manual feedback processing failed:`, error);
+      
+      // Emit SSE error event
+      sseHandler.broadcast(reportId, stageId, {
+        type: 'step_error',
+        stageId: stageId,
+        substepId: 'manual_feedback_processing',
+        percentage: 0,
+        message: 'Manual feedback processing gefaald',
+        data: { error: error.message },
+        timestamp: new Date().toISOString()
+      });
+
+      return res.status(500).json(createApiErrorResponse(
+        'PROCESSING_FAILED',
+        'INTERNAL_SERVER_ERROR',
+        'Feedback processing gefaald',
+        error.message || 'Onbekende fout tijdens feedback processing'
+      ));
+    }
+  }));
 
   // Generate final report from all stages
   app.post("/api/reports/:id/finalize", async (req, res) => {

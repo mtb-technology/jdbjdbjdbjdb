@@ -114,9 +114,8 @@ export function registerStreamingRoutes(
               console.log(`✅ [${reportId}-${stageId}] Initial concept report created (v1)`);
               
             } else if (stageId.startsWith('4')) { 
-              // *** REVIEW STAGES: Process feedback with ReportProcessor ***
+              // *** REVIEW STAGES: Prepare feedback for user review (NO automatic processing) ***
               
-              // Only process stages with valid StageId mappings
               const validReviewStages = [
                 '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', 
                 '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat', 
@@ -124,58 +123,61 @@ export function registerStreamingRoutes(
               ];
               
               if (validReviewStages.includes(stageId)) {
-                console.log(`🔄 [${reportId}-${stageId}] Processing feedback with ReportProcessor...`);
+                console.log(`📋 [${reportId}-${stageId}] Feedback ready for user review - NO automatic processing`);
                 
-                // Emit SSE event: Processing started
+                // Parse feedback for user selection (attempt JSON parse, fallback to plain text)
+                let feedbackItems;
+                try {
+                  const parsedFeedback = JSON.parse(result.stageOutput);
+                  // Convert to structured feedback items if it's an object/array
+                  if (Array.isArray(parsedFeedback)) {
+                    feedbackItems = parsedFeedback.map((item, index) => ({
+                      id: `item_${index}`,
+                      content: typeof item === 'string' ? item : JSON.stringify(item),
+                      selected: false // Default: not selected
+                    }));
+                  } else if (typeof parsedFeedback === 'object') {
+                    feedbackItems = Object.entries(parsedFeedback).map(([key, value]) => ({
+                      id: key,
+                      content: typeof value === 'string' ? value : JSON.stringify(value),
+                      selected: false
+                    }));
+                  } else {
+                    // Single item
+                    feedbackItems = [{
+                      id: 'feedback_main',
+                      content: result.stageOutput,
+                      selected: false
+                    }];
+                  }
+                } catch {
+                  // Fallback: treat as single text feedback
+                  feedbackItems = [{
+                    id: 'feedback_main',
+                    content: result.stageOutput,
+                    selected: false
+                  }];
+                }
+                
+                // Emit SSE event: Feedback ready for user review
                 sseHandler.broadcast(reportId, stageId, {
-                  type: 'step_start',
+                  type: 'stage_complete',
                   stageId: stageId,
-                  substepId: 'concept_processing',
-                  percentage: 0,
-                  message: 'Verwerking van feedback gestart...',
+                  substepId: 'feedback_review',
+                  percentage: 100,
+                  message: `Feedback van ${stageId} klaar voor review - selecteer wat je wilt verwerken`,
+                  data: {
+                    feedbackItems,
+                    requiresUserAction: true,
+                    actionType: 'feedback_selection'
+                  },
                   timestamp: new Date().toISOString()
                 });
                 
-                try {
-                  const processingResult = await reportProcessor.processStage(
-                    reportId,
-                    stageId as StageId,
-                    result.stageOutput,
-                    'merge' // Intelligent merging strategy
-                  );
-                  
-                  console.log(`✅ [${reportId}-${stageId}] ReportProcessor completed - v${processingResult.snapshot.v}`);
-                  
-                  // Emit SSE event: Processing completed with new concept
-                  sseHandler.broadcast(reportId, stageId, {
-                    type: 'step_complete',
-                    stageId: stageId,
-                    substepId: 'concept_processing',
-                    percentage: 100,
-                    message: `Concept rapport bijgewerkt naar versie ${processingResult.snapshot.v}`,
-                    data: {
-                      version: processingResult.snapshot.v,
-                      conceptContent: processingResult.newConcept
-                    },
-                    timestamp: new Date().toISOString()
-                  });
-                  
-                } catch (processingError: any) {
-                  console.error(`❌ [${reportId}-${stageId}] ReportProcessor failed:`, processingError);
-                  
-                  // Emit SSE event: Processing failed
-                  sseHandler.broadcast(reportId, stageId, {
-                    type: 'step_error',
-                    stageId: stageId,
-                    substepId: 'concept_processing',
-                    percentage: 0,
-                    message: 'Feedback verwerking gefaald - handmatige interventie vereist',
-                    data: { error: processingError.message },
-                    timestamp: new Date().toISOString()
-                  });
-                }
+                console.log(`✅ [${reportId}-${stageId}] Feedback prepared for user selection (${feedbackItems.length} items)`);
+                
               } else {
-                console.warn(`⚠️ [${reportId}-${stageId}] Stage not supported for concept processing - skipping`);
+                console.warn(`⚠️ [${reportId}-${stageId}] Stage not supported for feedback review - skipping`);
               }
             }
 
