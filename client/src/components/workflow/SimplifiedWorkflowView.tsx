@@ -31,6 +31,7 @@ import {
   Activity,
   Wand2,
   PenTool,
+  ArrowUp,
   Settings
 } from "lucide-react";
 import { useState, useEffect } from "react";
