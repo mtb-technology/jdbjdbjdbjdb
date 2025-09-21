@@ -430,9 +430,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     console.log(`🔧 [${reportId}-${stageId}] Manual feedback processing requested`);
 
-    // Validate request body
+    // Validate request body - SIMPLIFIED approach
     const validatedData = processFeedbackRequestSchema.parse(req.body);
-    const { selectedItems, additionalFeedback, processingStrategy } = validatedData;
+    const { userInstructions, processingStrategy } = validatedData;
 
     // Check if report exists
     const report = await storage.getReport(reportId);
@@ -462,57 +462,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // Filter only selected feedback items
-      const selectedFeedback = selectedItems.filter(item => item.selected);
+      // Get the raw feedback from stageResults
+      const stageResults = (report.stageResults as Record<string, string>) || {};
+      const rawFeedback = stageResults[stageId];
       
-      if (selectedFeedback.length === 0 && !additionalFeedback) {
+      if (!rawFeedback) {
         return res.status(400).json(createApiErrorResponse(
-          'NO_FEEDBACK_SELECTED',
+          'NO_FEEDBACK_FOUND',
           'VALIDATION_FAILED',
-          'Geen feedback geselecteerd',
-          'Selecteer minimaal één feedback item of voeg aanvullende feedback toe'
+          'Geen feedback gevonden',
+          `Geen feedback beschikbaar voor stage ${stageId}`
         ));
       }
 
-      // Combine selected feedback and additional feedback into one string
-      const feedbackParts: string[] = [];
-      
-      // Add selected feedback items
-      selectedFeedback.forEach((item, index) => {
-        feedbackParts.push(`${index + 1}. ${item.content}`);
-      });
-      
-      // Add additional user feedback if provided
-      if (additionalFeedback?.trim()) {
-        feedbackParts.push(`\nAanvullende feedback:\n${additionalFeedback.trim()}`);
-      }
+      // *** SIMPLE APPROACH: Combine raw feedback + user instructions ***
+      const combinedPrompt = `
+OORSPRONKELIJKE FEEDBACK VAN ${stageId.toUpperCase()}:
+${rawFeedback}
 
-      const combinedFeedback = feedbackParts.join('\n\n');
-      
-      console.log(`📝 [${reportId}-${stageId}] Processing ${selectedFeedback.length} selected items + ${additionalFeedback ? 'additional feedback' : 'no additional feedback'}`);
+GEBRUIKER INSTRUCTIES:
+${userInstructions}
 
-      // Process feedback with ReportProcessor
+Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
+`;
+      
+      console.log(`📝 [${reportId}-${stageId}] Processing feedback with user instructions: "${userInstructions}"`);
+
+      // Process with ReportProcessor
       const processingResult = await reportProcessor.processStage(
         reportId,
         stageId as StageId,
-        combinedFeedback,
+        combinedPrompt,
         processingStrategy
       );
 
-      console.log(`✅ [${reportId}-${stageId}] Manual feedback processing completed - v${processingResult.snapshot.v}`);
+      console.log(`✅ [${reportId}-${stageId}] Simple feedback processing completed - v${processingResult.snapshot.v}`);
 
-      // Emit SSE event for real-time feedback (if client is listening)
+      // Emit SSE event for real-time feedback
       sseHandler.broadcast(reportId, stageId, {
         type: 'step_complete',
         stageId: stageId,
         substepId: 'manual_feedback_processing',
         percentage: 100,
-        message: `Geselecteerde feedback verwerkt - concept rapport bijgewerkt naar versie ${processingResult.snapshot.v}`,
+        message: `Feedback verwerkt volgens gebruiker instructies - concept v${processingResult.snapshot.v}`,
         data: {
           version: processingResult.snapshot.v,
           conceptContent: processingResult.newConcept,
-          processedItems: selectedFeedback.length,
-          hasAdditionalFeedback: !!additionalFeedback
+          userInstructions: userInstructions
         },
         timestamp: new Date().toISOString()
       });
@@ -521,12 +517,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: true,
         newVersion: processingResult.snapshot.v,
         conceptContent: processingResult.newConcept,
-        processedItems: selectedFeedback.length,
-        message: `Feedback succesvol verwerkt - concept rapport bijgewerkt naar versie ${processingResult.snapshot.v}`
+        userInstructions: userInstructions,
+        message: `Feedback succesvol verwerkt volgens jouw instructies - concept bijgewerkt naar versie ${processingResult.snapshot.v}`
       }, 'Feedback processing succesvol voltooid'));
 
     } catch (error: any) {
-      console.error(`❌ [${reportId}-${stageId}] Manual feedback processing failed:`, error);
+      console.error(`❌ [${reportId}-${stageId}] Simple feedback processing failed:`, error);
       
       // Emit SSE error event
       sseHandler.broadcast(reportId, stageId, {
@@ -534,7 +530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stageId: stageId,
         substepId: 'manual_feedback_processing',
         percentage: 0,
-        message: 'Manual feedback processing gefaald',
+        message: 'Feedback processing gefaald',
         data: { error: error.message },
         timestamp: new Date().toISOString()
       });
