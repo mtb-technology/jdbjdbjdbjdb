@@ -230,6 +230,12 @@ function WorkflowManagerContent({
         dispatch({ type: "SET_CONCEPT_VERSION", stage: variables.stage, content: conceptReport });
       }
       
+      // Invalidate queries to refresh UI
+      queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
+      if (state.currentReport) {
+        queryClient.invalidateQueries({ queryKey: ['/api/reports', state.currentReport.id] });
+      }
+      
       // Show completion toast
       const stageInfo = WORKFLOW_STAGES.find(s => s.key === variables.stage);
       toast({
@@ -404,7 +410,15 @@ function WorkflowManagerContent({
 
   // Helper functions
   const getStageStatus = (index: number): "completed" | "current" | "pending" => {
-    if (index < state.currentStageIndex) return "completed";
+    const stage = WORKFLOW_STAGES[index];
+    if (!stage) return "pending";
+    
+    // Check if this stage has results (completed)
+    const hasStageResult = !!state.stageResults[stage.key];
+    const hasConceptReport = !!state.conceptReportVersions[stage.key];
+    const isCompleted = hasStageResult || (stage.key === "3_generatie" && hasConceptReport);
+    
+    if (isCompleted) return "completed";
     if (index === state.currentStageIndex) return "current";
     return "pending";
   };
@@ -511,6 +525,7 @@ function WorkflowManagerContent({
       isCreatingCase={createReportMutation.isPending}
       rawText={rawText}
       clientName={clientName}
+      getStageStatus={getStageStatus}
     />
   );
 }
