@@ -78,20 +78,27 @@ export function SimplifiedWorkflowView({
   // Manual stage execution mutation
   const manualStageM = useMutation({
     mutationFn: async ({ reportId, stage, content }: { reportId: string; stage: string; content: string }) => {
-      const data = await apiRequest("POST", `/api/reports/${reportId}/manual-stage`, {
+      const response = await apiRequest("POST", `/api/reports/${reportId}/manual-stage`, {
         stage,
         content,
         isManual: true
       });
-      return data;
+      const responseData = await response.json();
+      
+      // Check for success and extract data
+      if (responseData.success) {
+        return responseData.data;
+      } else {
+        throw new Error(responseData.error?.userMessage || responseData.error?.message || 'Manual stage execution failed');
+      }
     },
     onSuccess: (data, { stage }) => {
       // Update local state with manual result
-      dispatch({ type: "SET_STAGE_RESULT", payload: { stage, result: data.stageResult } });
+      dispatch({ type: "SET_STAGE_RESULT", stage, result: data.stageResult });
       
       // For generation stage, also set concept report
       if (stage === "3_generatie") {
-        dispatch({ type: "SET_CONCEPT_VERSION", payload: { stage, version: data.conceptReport } });
+        dispatch({ type: "SET_CONCEPT_VERSION", stage, content: data.conceptReport });
       }
       
       // Advance to next stage
