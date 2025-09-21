@@ -45,7 +45,7 @@ interface PromptPreviewResponse {
 export function ReviewFeedbackEditor({
   stageName,
   stageId,
-  reportId,
+  reportId, 
   aiReviewOutput,
   onProcessFeedback,
   isProcessing,
