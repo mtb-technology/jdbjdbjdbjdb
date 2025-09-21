@@ -4,10 +4,11 @@ import type { Express, Request, Response } from "express";
 import { SSEHandler } from "../services/streaming/sse-handler";
 import { StreamingSessionManager } from "../services/streaming/streaming-session-manager";
 import { DecomposedStages } from "../services/streaming/decomposed-stages";
+import { ReportProcessor } from "../services/report-processor";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse } from "@shared/errors";
 import { storage } from "../storage";
-import type { DossierData, BouwplanData } from "@shared/schema";
+import type { DossierData, BouwplanData, StageId } from "@shared/schema";
 
 export function registerStreamingRoutes(
   app: Express, 
@@ -15,6 +16,9 @@ export function registerStreamingRoutes(
   sessionManager: StreamingSessionManager,
   decomposedStages: DecomposedStages
 ): void {
+  
+  // Initialize ReportProcessor with AI handler for incremental concept report versioning  
+  const reportProcessor = new ReportProcessor(); // Uses default AI implementation (no constructor args needed)
 
   // Server-Sent Events endpoint for real-time progress updates
   app.get("/api/reports/:reportId/stage/:stageId/stream", (req: Request, res: Response) => {
@@ -51,7 +55,7 @@ export function registerStreamingRoutes(
 
     try {
       // Execute decomposed stage asynchronously (supports all stages)
-      if (['4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', '4c_SeniorSpecialist', '4d_KwaliteitsReviewer', '1_informatiecheck', '2_bouwplananalyse', '3_generatie', '5_eindredactie'].includes(stageId)) {
+      if (['4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat', '4f_DeKlantpsycholoog', '4g_ChefEindredactie', '1_informatiecheck', '2_bouwplananalyse', '3_generatie', '5_eindredactie'].includes(stageId)) {
         // Start execution in background
         setTimeout(async () => {
           try {
@@ -65,31 +69,117 @@ export function registerStreamingRoutes(
               customInput
             );
 
-            // Update report with results
+            // *** CRITICAL INTEGRATION *** Use ReportProcessor for proper versioning
+            
+            // 1. Update stage results first (raw feedback storage)  
             const currentStageResults = report.stageResults as Record<string, string> || {};
             const updatedStageResults = {
               ...currentStageResults,
               [stageId]: result.stageOutput
             };
-
-            const updatedConceptVersions = result.conceptReport 
-              ? {
-                  ...(report.conceptReportVersions as Record<string, string> || {}),
-                  [stageId]: result.conceptReport,
-                  latest: result.conceptReport
-                }
-              : report.conceptReportVersions;
-
+            
+            // 2. Store stage prompts for traceability
             await storage.updateReport(reportId, {
               stageResults: updatedStageResults,
-              conceptReportVersions: updatedConceptVersions,
               stagePrompts: {
                 ...(report.stagePrompts as Record<string, string> || {}),
                 [stageId]: result.prompt
               }
             });
 
-            console.log(`✅ [${reportId}-${stageId}] Streaming stage execution completed`);
+            // 3. Handle concept report processing based on stage type
+            if (stageId === '3_generatie') {
+              // *** SPECIAL CASE: Initial concept creation (not feedback processing) ***
+              console.log(`📝 [${reportId}-${stageId}] Creating initial concept report...`);
+              
+              const initialConceptVersions = {
+                '3_generatie': {
+                  v: 1,
+                  content: result.stageOutput,
+                  createdAt: new Date().toISOString()
+                },
+                latest: { pointer: '3_generatie' as StageId, v: 1 },
+                history: [{ 
+                  stageId: '3_generatie' as StageId, 
+                  v: 1, 
+                  timestamp: new Date().toISOString() 
+                }]
+              };
+              
+              await storage.updateReport(reportId, {
+                generatedContent: result.stageOutput,
+                conceptReportVersions: initialConceptVersions as any
+              });
+              
+              console.log(`✅ [${reportId}-${stageId}] Initial concept report created (v1)`);
+              
+            } else if (stageId.startsWith('4')) { 
+              // *** REVIEW STAGES: Process feedback with ReportProcessor ***
+              
+              // Only process stages with valid StageId mappings
+              const validReviewStages = [
+                '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', 
+                '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat', 
+                '4f_DeKlantpsycholoog', '4g_ChefEindredactie'
+              ];
+              
+              if (validReviewStages.includes(stageId)) {
+                console.log(`🔄 [${reportId}-${stageId}] Processing feedback with ReportProcessor...`);
+                
+                // Emit SSE event: Processing started
+                sseHandler.broadcast(reportId, stageId, {
+                  type: 'step_start',
+                  stageId: stageId,
+                  substepId: 'concept_processing',
+                  percentage: 0,
+                  message: 'Verwerking van feedback gestart...',
+                  timestamp: new Date().toISOString()
+                });
+                
+                try {
+                  const processingResult = await reportProcessor.processStage(
+                    reportId,
+                    stageId as StageId,
+                    result.stageOutput,
+                    'merge' // Intelligent merging strategy
+                  );
+                  
+                  console.log(`✅ [${reportId}-${stageId}] ReportProcessor completed - v${processingResult.snapshot.v}`);
+                  
+                  // Emit SSE event: Processing completed with new concept
+                  sseHandler.broadcast(reportId, stageId, {
+                    type: 'step_complete',
+                    stageId: stageId,
+                    substepId: 'concept_processing',
+                    percentage: 100,
+                    message: `Concept rapport bijgewerkt naar versie ${processingResult.snapshot.v}`,
+                    data: {
+                      version: processingResult.snapshot.v,
+                      conceptContent: processingResult.newConcept
+                    },
+                    timestamp: new Date().toISOString()
+                  });
+                  
+                } catch (processingError: any) {
+                  console.error(`❌ [${reportId}-${stageId}] ReportProcessor failed:`, processingError);
+                  
+                  // Emit SSE event: Processing failed
+                  sseHandler.broadcast(reportId, stageId, {
+                    type: 'step_error',
+                    stageId: stageId,
+                    substepId: 'concept_processing',
+                    percentage: 0,
+                    message: 'Feedback verwerking gefaald - handmatige interventie vereist',
+                    data: { error: processingError.message },
+                    timestamp: new Date().toISOString()
+                  });
+                }
+              } else {
+                console.warn(`⚠️ [${reportId}-${stageId}] Stage not supported for concept processing - skipping`);
+              }
+            }
+
+            console.log(`✅ [${reportId}-${stageId}] Complete streaming stage execution finished`);
 
           } catch (error: any) {
             console.error(`❌ [${reportId}-${stageId}] Streaming stage execution failed:`, error);
@@ -114,7 +204,7 @@ export function registerStreamingRoutes(
       console.error(`❌ [${reportId}-${stageId}] Failed to start streaming execution:`, error);
       return res.status(500).json(createApiErrorResponse(
         'EXECUTION_FAILED',
-        'INTERNAL_ERROR',
+        'INTERNAL_SERVER_ERROR',
         'Fout bij starten streaming uitvoering',
         'Er is een interne fout opgetreden bij het starten van de streaming'
       ));
@@ -172,7 +262,7 @@ export function registerStreamingRoutes(
       console.error(`❌ [${reportId}-${stageId}] Failed to cancel stage:`, error);
       res.status(500).json(createApiErrorResponse(
         'CANCEL_FAILED',
-        'INTERNAL_ERROR',
+        'INTERNAL_SERVER_ERROR',
         'Fout bij annuleren stage uitvoering',
         'Er is een fout opgetreden bij het annuleren van de streaming'
       ));
@@ -223,7 +313,7 @@ export function registerStreamingRoutes(
       console.error(`❌ [${reportId}-${stageId}] Failed to retry substep ${substepId}:`, error);
       res.status(500).json(createApiErrorResponse(
         'RETRY_FAILED',
-        'INTERNAL_ERROR',
+        'INTERNAL_SERVER_ERROR',
         'Fout bij opnieuw uitvoeren substep',
         'Er is een fout opgetreden bij het opnieuw uitvoeren van de substep'
       ));
