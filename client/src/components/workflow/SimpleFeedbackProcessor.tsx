@@ -52,11 +52,14 @@ export function SimpleFeedbackProcessor({
   // Mutation for processing feedback
   const processFeedbackMutation = useMutation({
     mutationFn: async (payload: ProcessFeedbackRequest): Promise<ProcessFeedbackResponse> => {
-      return await apiRequest({
-        method: 'POST',
-        url: `/api/reports/${reportId}/stage/${stageId}/process-feedback`,
-        data: payload
-      });
+      const response = await apiRequest('POST', `/api/reports/${reportId}/stage/${stageId}/process-feedback`, payload);
+      const responseData = await response.json();
+      
+      if (responseData.success) {
+        return responseData.data;
+      } else {
+        throw new Error(responseData.error?.userMessage || responseData.error?.message || 'Feedback processing failed');
+      }
     },
     onSuccess: (response: ProcessFeedbackResponse) => {
       console.log(`✅ Feedback processed successfully - v${response.newVersion}`);
