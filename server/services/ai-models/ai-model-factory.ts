@@ -177,14 +177,14 @@ export class AIModelFactory {
     }
     
     try {
-      // Call the handler with timeout
+      // Pass model-specific timeout to handler via options
       const timeoutMs = modelInfo.timeout || 120000;
-      const result = await Promise.race([
-        handler.call(prompt, filteredConfig, options),
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs)
-        )
-      ]);
+      const optionsWithTimeout = {
+        ...options,
+        timeout: timeoutMs
+      };
+      
+      const result = await handler.call(prompt, filteredConfig, optionsWithTimeout);
       
       // Reset failures on success
       breaker.failures = 0;
