@@ -64,6 +64,22 @@ export const executeStageRequestSchema = z.object({
   }).optional(),
 });
 
+// Manual Feedback Processing Request
+export const processFeedbackRequestSchema = z.object({
+  selectedItems: z.array(z.object({
+    id: z.string(),
+    content: z.string(),
+    selected: z.boolean()
+  })),
+  additionalFeedback: z.string().max(2000, "Aanvullende feedback mag niet langer zijn dan 2000 karakters").optional(),
+  processingStrategy: z.enum(["merge", "append", "sectional", "replace"]).default("merge")
+}).refine(
+  (data) => data.selectedItems.some(item => item.selected) || !!data.additionalFeedback?.trim(),
+  {
+    message: "Minimaal één feedback item moet geselecteerd zijn OF aanvullende feedback moet worden toegevoegd"
+  }
+);
+
 // User Registration Request
 export const registerUserRequestSchema = z.object({
   username: z.string().min(3, "Gebruikersnaam moet minimaal 3 karakters zijn").max(50, "Gebruikersnaam te lang"),
@@ -88,6 +104,15 @@ export const savePromptConfigRequestSchema = z.object({
 });
 
 // ===== RESPONSE SCHEMAS =====
+
+// Process Feedback Response
+export const processFeedbackResponseSchema = z.object({
+  success: z.boolean(),
+  newVersion: z.number(),
+  conceptContent: z.string(),
+  processedItems: z.number(),
+  message: z.string()
+});
 
 // Report List Response
 export const reportListResponseSchema = z.array(z.object({
@@ -141,6 +166,7 @@ export const userProfileResponseSchema = z.object({
 export type GenerateReportRequest = z.infer<typeof generateReportRequestSchema>;
 export type UpdateReportRequest = z.infer<typeof updateReportRequestSchema>;
 export type ExecuteStageRequest = z.infer<typeof executeStageRequestSchema>;
+export type ProcessFeedbackRequest = z.infer<typeof processFeedbackRequestSchema>;
 export type RegisterUserRequest = z.infer<typeof registerUserRequestSchema>;
 export type LoginUserRequest = z.infer<typeof loginUserRequestSchema>;
 export type SavePromptConfigRequest = z.infer<typeof savePromptConfigRequestSchema>;
@@ -148,6 +174,7 @@ export type SavePromptConfigRequest = z.infer<typeof savePromptConfigRequestSche
 export type ReportListResponse = z.infer<typeof reportListResponseSchema>;
 export type ReportDetailResponse = z.infer<typeof reportDetailResponseSchema>;
 export type StageExecutionResponse = z.infer<typeof stageExecutionResponseSchema>;
+export type ProcessFeedbackResponse = z.infer<typeof processFeedbackResponseSchema>;
 export type UserProfileResponse = z.infer<typeof userProfileResponseSchema>;
 
 // ===== API ENDPOINT TYPES =====
@@ -176,6 +203,10 @@ export interface ReportEndpoints {
   'POST /api/reports/:id/execute/:stage': {
     request: { id: string; stage: string } & ExecuteStageRequest;
     response: StageExecutionResponse;
+  };
+  'POST /api/reports/:id/stage/:stageId/process-feedback': {
+    request: { id: string; stageId: string } & ProcessFeedbackRequest;
+    response: ProcessFeedbackResponse;
   };
 }
 
