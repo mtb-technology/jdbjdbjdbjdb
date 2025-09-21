@@ -5,12 +5,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { 
   MessageSquare, 
   Play,
   CheckCircle,
   Copy,
-  Loader2
+  Loader2,
+  Eye
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -25,6 +27,15 @@ interface SimpleFeedbackProcessorProps {
   onProcessingComplete?: (result: ProcessFeedbackResponse) => void;
 }
 
+interface PromptPreviewResponse {
+  stageId: string;
+  userInstructions: string;
+  combinedPrompt: string;
+  fullPrompt: string;
+  promptLength: number;
+  rawFeedback: string;
+}
+
 export function SimpleFeedbackProcessor({
   reportId,
   stageId,
@@ -34,6 +45,7 @@ export function SimpleFeedbackProcessor({
 }: SimpleFeedbackProcessorProps) {
   const [userInstructions, setUserInstructions] = useState("");
   const [hasProcessed, setHasProcessed] = useState(false);
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -74,6 +86,39 @@ export function SimpleFeedbackProcessor({
       });
     }
   });
+
+  // Mutation for fetching prompt preview
+  const promptPreviewMutation = useMutation({
+    mutationFn: async (instructions: string): Promise<PromptPreviewResponse> => {
+      const params = new URLSearchParams();
+      if (instructions.trim()) {
+        params.append('userInstructions', instructions);
+      }
+      
+      const response = await fetch(`/api/reports/${reportId}/stage/${stageId}/prompt-preview?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch prompt preview');
+      }
+      const data = await response.json();
+      return data.data; // Assuming the API returns { success: true, data: PromptPreviewResponse }
+    },
+    onError: (error: any) => {
+      console.error(`❌ Failed to fetch prompt preview:`, error);
+      toast({
+        title: "Preview laden gefaald",
+        description: error.message || "Er ging iets mis bij het laden van de prompt preview",
+        variant: "destructive",
+        duration: 3000,
+      });
+    }
+  });
+
+  // Handle showing prompt preview
+  const handleShowPreview = () => {
+    const instructions = userInstructions.trim() || "Pas alle feedback toe om het concept rapport te verbeteren. Neem alle suggesties over die de kwaliteit, accuratesse en leesbaarheid van het rapport verbeteren.";
+    promptPreviewMutation.mutate(instructions);
+    setShowPromptPreview(true);
+  };
 
   const handleProcess = () => {
     if (!userInstructions.trim()) {
@@ -180,8 +225,28 @@ export function SimpleFeedbackProcessor({
           </div>
         </div>
 
-        {/* Process Button */}
-        <div className="flex justify-end">
+        {/* Process Buttons */}
+        <div className="flex justify-end gap-3">
+          <Button 
+            variant="outline"
+            onClick={handleShowPreview}
+            disabled={userInstructions.length > 2000 || promptPreviewMutation.isPending}
+            className="min-w-[140px]"
+            data-testid="button-preview-prompt"
+          >
+            {promptPreviewMutation.isPending ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Laden...</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Eye className="h-4 w-4" />
+                <span>Preview Prompt</span>
+              </div>
+            )}
+          </Button>
+          
           <Button 
             onClick={handleProcess}
             disabled={
@@ -220,6 +285,61 @@ export function SimpleFeedbackProcessor({
             </p>
           </div>
         )}
+
+        {/* Prompt Preview Modal */}
+        <Dialog open={showPromptPreview} onOpenChange={setShowPromptPreview}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>Prompt Preview - {stageName}</DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {promptPreviewMutation.isError && (
+                <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                  <p className="text-sm text-red-700 dark:text-red-300">
+                    ❌ Fout bij het laden van de prompt preview
+                  </p>
+                </div>
+              )}
+
+              {promptPreviewMutation.data && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-semibold">
+                      Volledige Prompt ({promptPreviewMutation.data.promptLength.toLocaleString()} karakters)
+                    </Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(promptPreviewMutation.data?.fullPrompt || '');
+                        toast({ title: "Gekopieerd!", description: "Prompt gekopieerd naar klembord" });
+                      }}
+                    >
+                      <Copy className="h-4 w-4 mr-1" />
+                      Kopieer
+                    </Button>
+                  </div>
+
+                  <ScrollArea className="h-96 w-full border rounded-md p-4 bg-gray-50 dark:bg-gray-800">
+                    <pre className="text-xs whitespace-pre-wrap font-mono">
+                      {promptPreviewMutation.data.fullPrompt}
+                    </pre>
+                  </ScrollArea>
+                </div>
+              )}
+
+              {promptPreviewMutation.isPending && (
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Laden van prompt preview...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
