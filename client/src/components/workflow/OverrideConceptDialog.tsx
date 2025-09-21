@@ -38,13 +38,9 @@ export function OverrideConceptDialog({
   // Mutation for overriding concept content
   const overrideConceptM = useMutation({
     mutationFn: async (newContent: string): Promise<any> => {
-      return await apiRequest({
-        method: 'POST',
-        url: `/api/reports/${reportId}/stage/${stageId}/override-concept`,
-        data: { 
-          content: newContent, 
-          reason: `Handmatige overschrijving van ${stageName}` 
-        }
+      return await apiRequest('POST', `/api/reports/${reportId}/stage/${stageId}/override-concept`, { 
+        content: newContent, 
+        reason: `Handmatige overschrijving van ${stageName}` 
       });
     },
     onSuccess: (response: any) => {
@@ -62,9 +58,13 @@ export function OverrideConceptDialog({
     },
     onError: (error: any) => {
       console.error("❌ Failed to override concept:", error);
+      const errorMessage = typeof error === 'string' ? error : 
+                          error?.message || error?.userMessage || 
+                          (error?.response?.data?.message) ||
+                          'Er ging iets mis bij het overschrijven';
       toast({
         title: "Override mislukt",
-        description: error.message || "Er ging iets mis bij het overschrijven",
+        description: errorMessage,
         variant: "destructive",
         duration: 5000,
       });
