@@ -341,6 +341,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Process manual stage content
+  app.post("/api/reports/:id/manual-stage", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Validate request body with zod
+      const manualStageSchema = z.object({
+        stage: z.literal("3_generatie", { 
+          errorMap: () => ({ message: "Alleen generatie stap (3_generatie) ondersteunt handmatige input" })
+        }),
+        content: z.string().min(1, "Content mag niet leeg zijn"),
+        isManual: z.boolean()
+      });
+
+      const validatedData = manualStageSchema.parse(req.body);
+      const { stage, content } = validatedData;
+
+      const report = await storage.getReport(id);
+      if (!report) {
+        return res.status(404).json({ message: "Rapport niet gevonden" });
+      }
+
+      // Update the report with manual content
+      const currentStageResults = (report.stageResults as Record<string, string>) || {};
+      const currentConceptVersions = (report.conceptReportVersions as Record<string, string>) || {};
+
+      currentStageResults[stage] = content;
+      
+      // For generation stage, set concept report with versioned key
+      const versionKey = `${stage}_${new Date().toISOString()}`;
+      currentConceptVersions[versionKey] = content;
+      // Also maintain the stage key for backward compatibility
+      currentConceptVersions[stage] = content;
+
+      const updatedReport = await storage.updateReport(id, {
+        stageResults: currentStageResults,
+        conceptReportVersions: currentConceptVersions,
+        // Don't update currentStage here, let the frontend handle progression
+      });
+
+      res.json(createApiSuccessResponse({
+        report: updatedReport,
+        stageResult: content,
+        conceptReport: content,
+        isManual: true
+      }, "Handmatige content succesvol verwerkt"));
+
+    } catch (error) {
+      console.error("Error processing manual stage:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ 
+          message: "Validatiefout in invoergegevens", 
+          errors: error.errors 
+        });
+      } else {
+        res.status(500).json({ 
+          message: "Fout bij verwerken van handmatige content" 
+        });
+      }
+    }
+  });
+
   // Generate final report from all stages
   app.post("/api/reports/:id/finalize", async (req, res) => {
     try {

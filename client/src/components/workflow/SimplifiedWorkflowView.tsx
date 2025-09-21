@@ -5,9 +5,10 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
-import toast from 'react-hot-toast';
 import { 
   Play, 
   CheckCircle, 
@@ -27,12 +28,16 @@ import {
   Info,
   Plus,
   Edit3,
-  Activity
+  Activity,
+  Wand2,
+  PenTool
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WORKFLOW_STAGES } from "./constants";
 import { ReviewFeedbackEditor } from "./ReviewFeedbackEditor";
 import { useToast } from "@/hooks/use-toast";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 interface SimplifiedWorkflowViewProps {
   state: any;
@@ -65,7 +70,56 @@ export function SimplifiedWorkflowView({
   const [showPromptEditor, setShowPromptEditor] = useState<Record<string, boolean>>({});
   const [stageProgress, setStageProgress] = useState<Record<string, { progress: number; status: string; startTime?: number; estimatedTime?: number }>>({});
   const [heartbeat, setHeartbeat] = useState<Record<string, number>>({});
+  const [manualMode, setManualMode] = useState<Record<string, "ai" | "manual">>({});
+  const [manualContent, setManualContent] = useState<Record<string, string>>({});
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // Manual stage execution mutation
+  const manualStageM = useMutation({
+    mutationFn: async ({ reportId, stage, content }: { reportId: string; stage: string; content: string }) => {
+      const data = await apiRequest("POST", `/api/reports/${reportId}/manual-stage`, {
+        stage,
+        content,
+        isManual: true
+      });
+      return data;
+    },
+    onSuccess: (data, { stage }) => {
+      // Update local state with manual result
+      dispatch({ type: "SET_STAGE_RESULT", payload: { stage, result: data.stageResult } });
+      
+      // For generation stage, also set concept report
+      if (stage === "3_generatie") {
+        dispatch({ type: "SET_CONCEPT_VERSION", payload: { stage, version: data.conceptReport } });
+      }
+      
+      // Advance to next stage
+      const currentStageIndex = WORKFLOW_STAGES.findIndex(s => s.key === stage);
+      const nextStageIndex = currentStageIndex + 1;
+      if (nextStageIndex < WORKFLOW_STAGES.length) {
+        dispatch({ type: "SET_STAGE_INDEX", payload: nextStageIndex });
+      }
+      
+      // Invalidate queries to refresh UI
+      queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+      if (state.currentReport) {
+        queryClient.invalidateQueries({ queryKey: ["/api/reports", state.currentReport.id] });
+      }
+      
+      toast({
+        title: "Handmatige input verwerkt",
+        description: "Je handmatige content is succesvol opgeslagen en de workflow gaat door naar de volgende stap."
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Fout",
+        description: "Er ging iets mis bij het verwerken van je handmatige input.",
+        variant: "destructive"
+      });
+    },
+  });
   
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
   const progressPercentage = Math.round((Object.keys(state.stageResults).length / WORKFLOW_STAGES.length) * 100);
@@ -95,12 +149,26 @@ export function SimplifiedWorkflowView({
   const executeCurrentStage = () => {
     if (!state.currentReport) return;
     
-    executeStageM.mutate({
-      reportId: state.currentReport.id,
-      stage: currentStage.key,
-      customInput: state.customInput || undefined,
-    });
+    const stageKey = currentStage.key;
+    const isManualMode = manualMode[stageKey] === "manual";
+    
+    if (isManualMode && stageKey === "3_generatie") {
+      // Execute manual mode for generation stage
+      manualStageM.mutate({
+        reportId: state.currentReport.id,
+        stage: stageKey,
+        content: manualContent[stageKey]
+      });
+    } else {
+      // Regular AI execution
+      executeStageM.mutate({
+        reportId: state.currentReport.id,
+        stage: stageKey,
+        customInput: customInputs[stageKey] || state.customInput || undefined,
+      });
+    }
   };
+
 
   const executeStage = (stageKey: string) => {
     if (!state.currentReport) return;
@@ -891,6 +959,57 @@ export function SimplifiedWorkflowView({
                               </div>
                             ) : (
                               <div className="mt-3">
+                                {/* Manual mode options for generation stage */}
+                                {stage.key === "3_generatie" && (
+                                  <div className="space-y-3 mb-4">
+                                    {/* Mode selector */}
+                                    <div className="flex items-center gap-4 p-3 border rounded-lg bg-muted/50">
+                                      <RadioGroup 
+                                        value={manualMode[stage.key] || "ai"}
+                                        onValueChange={(value) => setManualMode(prev => ({ ...prev, [stage.key]: value as "ai" | "manual" }))}
+                                        className="flex items-center gap-4"
+                                      >
+                                        <div className="flex items-center space-x-2">
+                                          <RadioGroupItem value="ai" id={`mode-ai-${stage.key}`} />
+                                          <Label htmlFor={`mode-ai-${stage.key}`} className="flex items-center gap-2 cursor-pointer">
+                                            <Wand2 className="h-4 w-4" />
+                                            AI Uitvoering
+                                          </Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <RadioGroupItem value="manual" id={`mode-manual-${stage.key}`} />
+                                          <Label htmlFor={`mode-manual-${stage.key}`} className="flex items-center gap-2 cursor-pointer">
+                                            <PenTool className="h-4 w-4" />
+                                            Handmatig
+                                          </Label>
+                                        </div>
+                                      </RadioGroup>
+                                    </div>
+
+                                    {/* Manual content input */}
+                                    {manualMode[stage.key] === "manual" && (
+                                      <div className="space-y-3 p-4 border-2 border-primary/20 rounded-lg bg-primary/5">
+                                        <div className="flex items-center justify-between">
+                                          <Label className="text-sm font-medium">
+                                            Rapportinhoud (Handmatig)
+                                          </Label>
+                                          <Badge variant="outline">Vereist</Badge>
+                                        </div>
+                                        <Textarea
+                                          placeholder="Plak hier je handmatig geschreven rapportinhoud. Dit kan uit ChatGPT komen of je eigen analyse zijn..."
+                                          value={manualContent[stage.key] || ''}
+                                          onChange={(e) => setManualContent(prev => ({ ...prev, [stage.key]: e.target.value }))}
+                                          className="min-h-[200px] font-mono text-sm"
+                                          data-testid={`textarea-manual-content-${stage.key}`}
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                          Voer de volledige rapportinhoud in die je wilt gebruiken voor stap 3. De workflow gaat automatisch door naar stap 4 na opslaan.
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
                                 {/* Debug logging for button state */}
                                 {console.log(`🐛 Button Debug for ${stage.key}:`, {
                                   isProcessing,
@@ -903,20 +1022,29 @@ export function SimplifiedWorkflowView({
                                 })}
                                 <Button 
                                   onClick={executeCurrentStage}
-                                  disabled={isProcessing || !canStart}
+                                  disabled={isProcessing || !canStart || manualStageM.isPending || (stage.key === "3_generatie" && manualMode[stage.key] === "manual" && !manualContent[stage.key])}
                                   className="w-full"
                                   size="sm"
                                   data-testid={`button-start-stage-${stage.key}`}
                                 >
-                                  {isProcessing ? (
+                                  {(isProcessing || manualStageM.isPending) ? (
                                     <>
                                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                      AI is bezig...
+                                      {manualStageM.isPending ? "Verwerken..." : "AI is bezig..."}
                                     </>
                                   ) : (
                                     <>
-                                      <Play className="mr-2 h-4 w-4" />
-                                      Start deze stap
+                                      {stage.key === "3_generatie" && manualMode[stage.key] === "manual" ? (
+                                        <>
+                                          <PenTool className="mr-2 h-4 w-4" />
+                                          Verwerk Handmatige Content
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Play className="mr-2 h-4 w-4" />
+                                          Start deze stap
+                                        </>
+                                      )}
                                     </>
                                   )}
                                 </Button>
