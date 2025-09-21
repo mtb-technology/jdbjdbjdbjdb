@@ -125,56 +125,25 @@ export function registerStreamingRoutes(
               if (validReviewStages.includes(stageId)) {
                 console.log(`📋 [${reportId}-${stageId}] Feedback ready for user review - NO automatic processing`);
                 
-                // Parse feedback for user selection (attempt JSON parse, fallback to plain text)
-                let feedbackItems;
-                try {
-                  const parsedFeedback = JSON.parse(result.stageOutput);
-                  // Convert to structured feedback items if it's an object/array
-                  if (Array.isArray(parsedFeedback)) {
-                    feedbackItems = parsedFeedback.map((item, index) => ({
-                      id: `item_${index}`,
-                      content: typeof item === 'string' ? item : JSON.stringify(item),
-                      selected: false // Default: not selected
-                    }));
-                  } else if (typeof parsedFeedback === 'object') {
-                    feedbackItems = Object.entries(parsedFeedback).map(([key, value]) => ({
-                      id: key,
-                      content: typeof value === 'string' ? value : JSON.stringify(value),
-                      selected: false
-                    }));
-                  } else {
-                    // Single item
-                    feedbackItems = [{
-                      id: 'feedback_main',
-                      content: result.stageOutput,
-                      selected: false
-                    }];
-                  }
-                } catch {
-                  // Fallback: treat as single text feedback
-                  feedbackItems = [{
-                    id: 'feedback_main',
-                    content: result.stageOutput,
-                    selected: false
-                  }];
-                }
+                // Simple: Just store raw feedback for user review (no complex parsing)
+                console.log(`✅ [${reportId}-${stageId}] Raw feedback ready for user review`);
                 
-                // Emit SSE event: Feedback ready for user review
+                // Emit SSE event: Raw feedback ready for user instructions
                 sseHandler.broadcast(reportId, stageId, {
                   type: 'stage_complete',
                   stageId: stageId,
-                  substepId: 'feedback_review',
+                  substepId: 'feedback_ready',
                   percentage: 100,
-                  message: `Feedback van ${stageId} klaar voor review - selecteer wat je wilt verwerken`,
+                  message: `Feedback van ${stageId} klaar - geef instructies wat je wilt verwerken`,
                   data: {
-                    feedbackItems,
+                    rawFeedback: result.stageOutput,
                     requiresUserAction: true,
-                    actionType: 'feedback_selection'
+                    actionType: 'feedback_instructions'
                   },
                   timestamp: new Date().toISOString()
                 });
                 
-                console.log(`✅ [${reportId}-${stageId}] Feedback prepared for user selection (${feedbackItems.length} items)`);
+                console.log(`✅ [${reportId}-${stageId}] Raw feedback prepared for user instructions`);
                 
               } else {
                 console.warn(`⚠️ [${reportId}-${stageId}] Stage not supported for feedback review - skipping`);

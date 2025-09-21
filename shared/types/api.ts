@@ -64,21 +64,13 @@ export const executeStageRequestSchema = z.object({
   }).optional(),
 });
 
-// Manual Feedback Processing Request
+// Manual Feedback Processing Request - Simplified approach
 export const processFeedbackRequestSchema = z.object({
-  selectedItems: z.array(z.object({
-    id: z.string(),
-    content: z.string(),
-    selected: z.boolean()
-  })),
-  additionalFeedback: z.string().max(2000, "Aanvullende feedback mag niet langer zijn dan 2000 karakters").optional(),
+  userInstructions: z.string()
+    .min(1, "Geef instructies over welke feedback je wilt verwerken")
+    .max(2000, "Instructies mogen niet langer zijn dan 2000 karakters"),
   processingStrategy: z.enum(["merge", "append", "sectional", "replace"]).default("merge")
-}).refine(
-  (data) => data.selectedItems.some(item => item.selected) || !!data.additionalFeedback?.trim(),
-  {
-    message: "Minimaal één feedback item moet geselecteerd zijn OF aanvullende feedback moet worden toegevoegd"
-  }
-);
+});
 
 // User Registration Request
 export const registerUserRequestSchema = z.object({
@@ -110,7 +102,7 @@ export const processFeedbackResponseSchema = z.object({
   success: z.boolean(),
   newVersion: z.number(),
   conceptContent: z.string(),
-  processedItems: z.number(),
+  userInstructions: z.string(),
   message: z.string()
 });
 
