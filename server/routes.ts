@@ -11,6 +11,10 @@ import { AIMonitoringService } from "./services/ai-models/monitoring";
 import { checkDatabaseConnection } from "./db";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
 import type { DossierData, BouwplanData } from "@shared/schema";
+import { SSEHandler } from "./services/streaming/sse-handler";
+import { StreamingSessionManager } from "./services/streaming/streaming-session-manager";
+import { DecomposedStages } from "./services/streaming/decomposed-stages";
+import { registerStreamingRoutes } from "./routes/streaming-routes";
 import { z } from "zod";
 import { ServerError, asyncHandler } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
@@ -35,6 +39,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const sourceValidator = new SourceValidator();
   const pdfGenerator = new PDFGenerator();
   const healthService = new AIHealthService(AIMonitoringService.getInstance());
+  const sseHandler = new SSEHandler();
+  const sessionManager = StreamingSessionManager.getInstance();
+  const decomposedStages = new DecomposedStages();
   
   // Start periodic health checks and run immediate warm-up
   healthService.startPeriodicHealthChecks();
@@ -873,6 +880,9 @@ ${bouwplanContent}`;
   });
 
 
+  
+  // Register streaming routes
+  registerStreamingRoutes(app, sseHandler, sessionManager, decomposedStages);
 
   const httpServer = createServer(app);
   return httpServer;
