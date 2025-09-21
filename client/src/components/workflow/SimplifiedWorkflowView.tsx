@@ -943,6 +943,30 @@ export function SimplifiedWorkflowView({
                                   {showCustomInput[stage.key] ? 'Verberg' : 'Extra input toevoegen'}
                                 </Button>
                               )}
+                              
+                              {/* Preview Prompt button for reviewer stages */}
+                              {isReviewer && isCompleted && !showPromptEditor[stage.key] && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => fetchPromptPreview(stage.key)}
+                                  disabled={loadingPreview === stage.key}
+                                  className="text-xs"
+                                  data-testid={`button-preview-prompt-${stage.key}`}
+                                >
+                                  {loadingPreview === stage.key ? (
+                                    <>
+                                      <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
+                                      Laden...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Eye className="mr-1 h-3 w-3" />
+                                      Preview Prompt
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                             </div>
                             
                             {/* Full Prompt Editor */}
