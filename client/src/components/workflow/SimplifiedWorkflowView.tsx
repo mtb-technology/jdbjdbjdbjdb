@@ -1387,6 +1387,17 @@ export function SimplifiedWorkflowView({
                               const hasReview = isReviewStage && state.substepResults?.[stage.key]?.review;
                               const hasCurrentReport = !!state.currentReport?.id;
                               
+                              // Debug info for button visibility
+                              if (stage.key === '4a_BronnenSpecialist' || stage.key === '4b_FiscaalTechnischSpecialist') {
+                                console.log(`🔍 Apply Feedback Button Debug for ${stage.key}:`, {
+                                  isReviewStage,
+                                  hasReview,
+                                  hasCurrentReport,
+                                  substepResults: state.substepResults?.[stage.key],
+                                  shouldShow: isReviewStage && hasReview && hasCurrentReport
+                                });
+                              }
+                              
                               return isReviewStage && hasReview && hasCurrentReport ? (
                                 <Button
                                   onClick={() => {
