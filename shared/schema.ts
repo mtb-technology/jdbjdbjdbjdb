@@ -310,3 +310,86 @@ export type AiConfig = z.infer<typeof aiConfigSchema>;
 export type StageConfig = z.infer<typeof stageConfigSchema>;
 export type ReportStage = z.infer<typeof reportStageSchema>;
 export type PromptConfigRecord = typeof promptConfigs.$inferSelect;
+
+// ===== STRUCTURED CONCEPT REPORT VERSIONING SYSTEM =====
+
+// Stage identifier for the workflow - matching promptConfig names
+export const stageIdSchema = z.enum([
+  "1_informatiecheck",
+  "2_bouwplananalyse", 
+  "3_generatie",
+  "4a_BronnenSpecialist",
+  "4b_FiscaalTechnischSpecialist",
+  "4c_ScenarioGatenAnalist", 
+  "4d_DeVertaler",
+  "4e_DeAdvocaat",
+  "4f_DeKlantpsycholoog",
+  "4g_ChefEindredactie",
+  "5_eindredactie"
+]);
+
+// Individual concept report snapshot for a specific stage
+export const conceptReportSnapshotSchema = z.object({
+  v: z.number().int().positive(), // Version number (incremental)
+  content: z.string(), // Full concept report content at this stage
+  from: stageIdSchema.optional(), // Which stage this was derived from
+  createdAt: z.string().datetime().optional(), // When this version was created
+  processedFeedback: z.string().optional(), // The feedback that was processed to create this version
+}).strict();
+
+// Complete concept report versions structure - with all stages
+export const conceptReportVersionsSchema = z.object({
+  "3_generatie": conceptReportSnapshotSchema.optional(),
+  "4a_BronnenSpecialist": conceptReportSnapshotSchema.optional(),
+  "4b_FiscaalTechnischSpecialist": conceptReportSnapshotSchema.optional(), 
+  "4c_ScenarioGatenAnalist": conceptReportSnapshotSchema.optional(),
+  "4d_DeVertaler": conceptReportSnapshotSchema.optional(),
+  "4e_DeAdvocaat": conceptReportSnapshotSchema.optional(),
+  "4f_DeKlantpsycholoog": conceptReportSnapshotSchema.optional(),
+  "4g_ChefEindredactie": conceptReportSnapshotSchema.optional(),
+  "5_eindredactie": conceptReportSnapshotSchema.optional(),
+  latest: z.object({
+    pointer: stageIdSchema, // Points to the most recent completed stage
+    v: z.number().int().positive() // Version number of the latest stage
+  }).optional(),
+  history: z.array(z.object({
+    stageId: stageIdSchema,
+    v: z.number().int().positive(),
+    timestamp: z.string().datetime()
+  })).optional()
+}).strict();
+
+// Stage results structure for individual feedback outputs
+export const stageResultSchema = z.object({
+  review: z.string(), // The review/feedback output from the AI specialist
+  metadata: z.object({
+    model: z.string().optional(),
+    timestamp: z.string().datetime().optional(),
+    duration: z.number().optional(),
+    tokensUsed: z.number().optional()
+  }).optional()
+}).strict();
+
+export const stageResultsSchema = z.record(stageIdSchema, stageResultSchema);
+
+// ReportProcessor interface types
+export const reportProcessorInputSchema = z.object({
+  baseConcept: z.string(), // The current concept report content
+  feedback: z.string(), // The feedback to be processed/merged
+  stageId: stageIdSchema, // Which stage is being processed
+  strategy: z.enum(["sectional", "replace", "append", "merge"]).default("merge") // How to merge
+}).strict();
+
+export const reportProcessorOutputSchema = z.object({
+  newConcept: z.string(), // The updated concept report content
+  diff: z.string().optional(), // Optional diff showing changes made
+  summary: z.string().optional() // Summary of what was changed
+}).strict();
+
+export type StageId = z.infer<typeof stageIdSchema>;
+export type ConceptReportSnapshot = z.infer<typeof conceptReportSnapshotSchema>;
+export type ConceptReportVersions = z.infer<typeof conceptReportVersionsSchema>;
+export type StageResult = z.infer<typeof stageResultSchema>;
+export type StageResults = z.infer<typeof stageResultsSchema>;
+export type ReportProcessorInput = z.infer<typeof reportProcessorInputSchema>;
+export type ReportProcessorOutput = z.infer<typeof reportProcessorOutputSchema>;
