@@ -1002,7 +1002,7 @@ ${bouwplanContent}`;
     await storage.updateReport(id, {
       currentStage: stageId as StageId,
       conceptReportVersions: updatedVersions,
-      generatedContent: targetStageSnapshot.content, // ✅ Update preview content from promoted stage
+      generatedContent: targetStageSnapshot.content || targetStageSnapshot, // ✅ Handle both object and string formats
       updatedAt: new Date()
     });
 
