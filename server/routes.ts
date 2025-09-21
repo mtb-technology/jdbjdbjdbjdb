@@ -941,10 +941,11 @@ ${bouwplanContent}`;
       snapshot
     );
 
-    // Update report's current stage and latest pointer
+    // Update report's current stage, latest pointer, AND generatedContent for immediate preview
     await storage.updateReport(id, {
       currentStage: stageId as StageId,
       conceptReportVersions: updatedVersions,
+      generatedContent: payload.content, // ✅ CRITICAL: Update the content shown in preview
       updatedAt: new Date()
     });
 
@@ -997,10 +998,11 @@ ${bouwplanContent}`;
       ]
     };
 
-    // Update report with new latest pointer
+    // Update report with new latest pointer and content from the promoted stage  
     await storage.updateReport(id, {
       currentStage: stageId as StageId,
       conceptReportVersions: updatedVersions,
+      generatedContent: targetStageSnapshot.content, // ✅ Update preview content from promoted stage
       updatedAt: new Date()
     });
 
