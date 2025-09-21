@@ -161,7 +161,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     dossier: DossierData,
     bouwplan: BouwplanData,
     previousStageResults: Record<string, string>,
-    conceptReportVersions: Record<string, string>,
+    conceptReportVersions: Record<string, any>,
     customInput?: string
   ): Promise<string> {
     const currentDate = new Date().toLocaleDateString('nl-NL', {
@@ -221,7 +221,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         if (stageName.startsWith("4")) {
           prompt = this.buildReviewerPrompt(
             stageName,
-            conceptReportVersions?.["3_generatie"] || "",
+            conceptReportVersions?.["3_generatie"]?.content || "",
             dossier,
             bouwplan,
             currentDate,
@@ -245,7 +245,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     dossier: DossierData,
     bouwplan: BouwplanData,
     previousStageResults: Record<string, string>,
-    conceptReportVersions: Record<string, string>,
+    conceptReportVersions: Record<string, any>,
     customInput?: string,
     jobId?: string
   ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
