@@ -1,0 +1,21 @@
+
+Er is iets misgegaan
+De applicatie heeft een onverwachte fout ondervonden. U kunt proberen de pagina te vernieuwen of naar de startpagina terug te gaan.
+Error Details (Development)
+Error ID: mftsgxo3bl0qe9jhkuh
+Message: Objects are not valid as a React child (found: object with keys {v, content, createdAt}). If you meant to render a collection of children, use an array instead.
+Stack:
+Error: Objects are not valid as a React child (found: object with keys {v, content, createdAt}). If you meant to render a collection of children, use an array instead.
+    at throwOnInvalidObjectType (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:9934:17)
+    at reconcileChildFibers2 (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:10564:15)
+    at reconcileChildren (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:14290:37)
+    at updateHostComponent (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:14807:11)
+    at beginWork (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:15935:22)
+    at beginWork$1 (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:19753:22)
+    at performUnitOfWork (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:19198:20)
+    at workLoopSync (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:19137:13)
+    at renderRootSync (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:19116:15)
+    at recoverFromConcurrentError (https://2ce2833a-1dd6-47df-91a7-1e6ead943021-00-1eoawpzbpbx64.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-WERSD76P.js?v=29097b11:18736:28)
+Pagina Vernieuwen
+Opnieuw Proberen
+Terug naar Start
