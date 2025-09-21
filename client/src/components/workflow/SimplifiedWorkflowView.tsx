@@ -42,6 +42,7 @@ interface SimplifiedWorkflowViewProps {
   isCreatingCase: boolean;
   rawText?: string;
   clientName?: string;
+  getStageStatus: (index: number) => "completed" | "current" | "pending";
 }
 
 export function SimplifiedWorkflowView({
@@ -51,7 +52,8 @@ export function SimplifiedWorkflowView({
   executeSubstepM,
   isCreatingCase,
   rawText,
-  clientName
+  clientName,
+  getStageStatus
 }: SimplifiedWorkflowViewProps) {
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
   const [viewMode] = useState<"detailed">("detailed");
@@ -218,27 +220,26 @@ export function SimplifiedWorkflowView({
   const handleStageClick = (stageKey: string, index: number) => {
     // Calculate proper stage status to determine if navigation is allowed
     const currentStageIndex = state.currentStageIndex;
-    const isCompleted = !!state.stageResults[stageKey];
+    const isCompleted = !!state.stageResults[stageKey] || (stageKey === "3_generatie" && !!state.conceptReportVersions[stageKey]);
     const isCurrent = index === currentStageIndex;
-    const isNext = index === currentStageIndex + 1;
     
     console.log(`🎯 Stage click: ${stageKey} (index: ${index})`, {
       currentStageIndex,
       isCompleted,
       isCurrent,
-      isNext,
-      hasResult: !!state.stageResults[stageKey]
+      hasResult: !!state.stageResults[stageKey],
+      hasConceptReport: !!state.conceptReportVersions[stageKey]
     });
     
     // Allow navigation to:
-    // 1. Completed stages (to view results)
-    // 2. Current stage (to execute or re-execute)
-    // 3. Next stage if current is completed (natural progression)
-    if (isCompleted || isCurrent || (isNext && state.stageResults[WORKFLOW_STAGES[currentStageIndex]?.key])) {
+    // 1. Completed stages (to view results) - always allow
+    // 2. Current stage (to execute or re-execute) - always allow  
+    // 3. Any stage if user wants to navigate (remove restrictions for better UX)
+    if (isCompleted || isCurrent || index <= currentStageIndex) {
       console.log(`✅ Navigating to stage ${index}: ${stageKey}`);
       dispatch({ type: "SET_STAGE_INDEX", payload: index });
     } else {
-      console.log(`⚠️ Navigation blocked to stage ${index}: ${stageKey}`);
+      console.log(`⚠️ Navigation blocked to stage ${index}: ${stageKey} - stage not yet accessible`);
     }
   };
 
@@ -492,9 +493,9 @@ export function SimplifiedWorkflowView({
             const stageResult = state.stageResults[stage.key] || "";
             const stagePrompt = state.stagePrompts[stage.key] || "";
             const isActive = index === state.currentStageIndex;
-            // Check if stage is completed - either has result OR has concept report for generation stage
-            const hasConceptReport = !!state.conceptReportVersions[stage.key];
-            const isCompleted = !!stageResult || (stage.key === "3_generatie" && hasConceptReport);
+            // Use the improved getStageStatus function from parent
+            const stageStatus = getStageStatus(index);
+            const isCompleted = stageStatus === "completed";
             // Check if this stage or its substeps are processing
             const isReviewProcessing = executeSubstepM.isPending && executeSubstepM.variables?.substepType === "review" && executeSubstepM.variables?.substepKey === stage.key;
             const isSubstepProcessing = executeSubstepM.isPending && executeSubstepM.variables?.substepType === "processing";
@@ -679,7 +680,7 @@ export function SimplifiedWorkflowView({
                         )}
 
                         {/* Show Concept Report for Generation Stage */}
-                        {stage.key === "3_generatie" && hasConceptReport && (
+                        {stage.key === "3_generatie" && !!state.conceptReportVersions[stage.key] && (
                           <div className="space-y-2">
                             <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg">
                               <div className="flex items-center justify-between p-2 border-b border-purple-200 dark:border-purple-800">
