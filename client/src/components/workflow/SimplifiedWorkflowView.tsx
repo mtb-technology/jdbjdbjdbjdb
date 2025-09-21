@@ -37,6 +37,7 @@ import { useState, useEffect } from "react";
 import { WORKFLOW_STAGES } from "./constants";
 import { ReviewFeedbackEditor } from "./ReviewFeedbackEditor";
 import { StreamingWorkflow } from "../streaming/StreamingWorkflow";
+import { OverrideConceptDialog } from "./OverrideConceptDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -77,6 +78,49 @@ export function SimplifiedWorkflowView({
   const [streamingMode, setStreamingMode] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Override dialog state  
+  const [overrideDialog, setOverrideDialog] = useState<{
+    isOpen: boolean;
+    stageId: string;
+    stageName: string;
+    currentContent: string;
+  }>({
+    isOpen: false,
+    stageId: "",
+    stageName: "",
+    currentContent: ""
+  });
+  
+  // Step-back mutations
+  const promoteStageM = useMutation({
+    mutationFn: async ({ stageId, reason }: { stageId: string; reason?: string }) => {
+      if (!state.currentReport) throw new Error("No current report");
+      return await apiRequest('POST', `/api/reports/${state.currentReport.id}/snapshots/promote`, { stageId, reason });
+    },
+    onSuccess: (response: any) => {
+      toast({
+        title: "Stage gepromoveerd",
+        description: response.message || `Stage succesvol gepromoveerd`,
+        duration: 3000,
+      });
+      
+      // Invalidate queries to refresh data
+      if (state.currentReport) {
+        queryClient.invalidateQueries({ queryKey: ['/api/reports', state.currentReport.id] });
+        queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
+      }
+    },
+    onError: (error: any) => {
+      console.error("❌ Failed to promote stage:", error);
+      toast({
+        title: "Promote mislukt",
+        description: error.message || "Er ging iets mis bij het promoten van de stage",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  });
 
   // Manual stage execution mutation
   const manualStageM = useMutation({
@@ -1223,18 +1267,63 @@ export function SimplifiedWorkflowView({
                           </>
                         )}
 
-                        {/* Re-run button for completed stages */}
+                        {/* Step-back and re-run buttons for completed stages */}
                         {isCompleted && (
-                          <Button
-                            onClick={() => executeStage(stage.key)}
-                            disabled={executeStageM.isPending}
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                          >
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            Opnieuw uitvoeren
-                          </Button>
+                          <div className="space-y-2">
+                            {/* Step-back buttons */}
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={() => {
+                                  promoteStageM.mutate({
+                                    stageId: stage.key,
+                                    reason: `Handmatig teruggevallen naar ${stage.label}`
+                                  });
+                                }}
+                                disabled={promoteStageM.isPending}
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 hover:bg-blue-50 hover:border-blue-300"
+                                data-testid={`button-promote-${stage.key}`}
+                              >
+                                <ArrowUp className="mr-2 h-4 w-4" />
+                                Gebruik als basis
+                              </Button>
+                              
+                              {/* Override button - only for 3_generatie */}
+                              {stage.key === "3_generatie" && (
+                                <Button
+                                  onClick={() => {
+                                    const currentContent = state.stageResults?.[stage.key] || 'Geen huidige inhoud gevonden.';
+                                    setOverrideDialog({
+                                      isOpen: true,
+                                      stageId: stage.key,
+                                      stageName: stage.label,
+                                      currentContent
+                                    });
+                                  }}
+                                  variant="outline"
+                                  size="sm"
+                                  className="flex-1 hover:bg-orange-50 hover:border-orange-300"
+                                  data-testid={`button-override-${stage.key}`}
+                                >
+                                  <Edit3 className="mr-2 h-4 w-4" />
+                                  Overschrijf concept
+                                </Button>
+                              )}
+                            </div>
+                            
+                            {/* Re-run button */}
+                            <Button
+                              onClick={() => executeStage(stage.key)}
+                              disabled={executeStageM.isPending}
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                            >
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Opnieuw uitvoeren
+                            </Button>
+                          </div>
                         )}
                         
                         {/* No prompt/output yet message */}
@@ -1333,6 +1422,18 @@ export function SimplifiedWorkflowView({
         </motion.div>
       )}
       </div>
+      
+      {/* Override Concept Dialog */}
+      {state.currentReport && (
+        <OverrideConceptDialog
+          isOpen={overrideDialog.isOpen}
+          onClose={() => setOverrideDialog({ ...overrideDialog, isOpen: false })}
+          reportId={state.currentReport.id}
+          stageId={overrideDialog.stageId}
+          stageName={overrideDialog.stageName}
+          currentContent={overrideDialog.currentContent}
+        />
+      )}
     </>
   );
 }
