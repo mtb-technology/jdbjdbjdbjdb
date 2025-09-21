@@ -30,9 +30,13 @@ export interface TokenStreamEvent {
 export interface StageCompleteEvent {
   type: 'stage_complete';
   stageId: string;
-  result: string;
+  substepId?: string;
+  percentage?: number;
+  result?: string;
   conceptReport?: string;
   prompt?: string;
+  message?: string;
+  data?: any; // Additional event data (rawFeedback, requiresUserAction, actionType, etc.)
   timestamp: string;
 }
 
@@ -83,10 +87,16 @@ export interface SubstepProgress {
 export interface StreamingSession {
   reportId: string;
   stageId: string;
-  status: 'active' | 'completed' | 'cancelled' | 'error';
+  status: 'active' | 'completed' | 'cancelled' | 'error' | 'awaiting_user_action';
   progress: StageProgress;
   startTime: string;
+  endTime?: string;
   checkpoint?: any;
+  userActionData?: {
+    actionType: string;
+    rawFeedback?: string;
+    message?: string;
+  };
 }
 
 // Stage decomposition definitions
