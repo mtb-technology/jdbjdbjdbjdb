@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,9 +11,15 @@ import {
   ExternalLink,
   ArrowRight,
   Book,
-  BarChart3
+  BarChart3,
+  ArrowUp,
+  Edit3
 } from "lucide-react";
 import type { Report } from "@shared/schema";
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
+import { useToast } from "@/hooks/use-toast";
+import { OverrideConceptDialog } from "./workflow/OverrideConceptDialog";
 
 // Format plain text/markdown to professional fiscal report HTML
 function formatReportContent(content: string): string {
@@ -70,6 +76,56 @@ interface ReportPreviewProps {
 }
 
 const ReportPreview = memo(function ReportPreview({ report, isGenerating }: ReportPreviewProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
+  // Override dialog state  
+  const [overrideDialog, setOverrideDialog] = useState<{
+    isOpen: boolean;
+    stageId: string;
+    stageName: string;
+    currentContent: string;
+  }>({
+    isOpen: false,
+    stageId: "",
+    stageName: "",
+    currentContent: ""
+  });
+
+  // Promote stage mutation
+  const promoteStageM = useMutation({
+    mutationFn: async ({ stageId, reason }: { stageId: string; reason?: string }) => {
+      if (!report) throw new Error("No current report");
+      return await apiRequest('POST', `/api/reports/${report.id}/snapshots/promote`, { stageId, reason });
+    },
+    onSuccess: (response: any) => {
+      toast({
+        title: "Stage gepromoveerd",
+        description: response.message || `Stage succesvol gepromoveerd`,
+        duration: 3000,
+      });
+      
+      // Invalidate queries to refresh data
+      if (report) {
+        queryClient.invalidateQueries({ queryKey: ['/api/reports', report.id] });
+        queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
+      }
+    },
+    onError: (error: any) => {
+      console.error("❌ Failed to promote stage:", error);
+      const errorMessage = typeof error === 'string' ? error : 
+                          error?.message || error?.userMessage || 
+                          (error?.response?.data?.message) ||
+                          'Er ging iets mis bij het promoten van de stage';
+      toast({
+        title: "Promote mislukt", 
+        description: errorMessage,
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  });
+
   const handlePrint = useCallback(() => {
     window.print();
   }, []);
@@ -187,6 +243,51 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
               </p>
             </div>
             <div className="flex items-center space-x-3">
+              {/* Step-back buttons */}
+              {report && (
+                <>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      promoteStageM.mutate({
+                        stageId: "3_generatie",
+                        reason: "Handmatig teruggevallen naar concept vanuit rapport header"
+                      });
+                    }}
+                    disabled={promoteStageM.isPending}
+                    className="hover:bg-blue-50 hover:border-blue-300"
+                    data-testid="button-promote-concept"
+                  >
+                    <ArrowUp className="h-4 w-4 mr-2" />
+                    Gebruik als basis
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      const currentContent = report.generatedContent || 'Geen huidige inhoud gevonden.';
+                      setOverrideDialog({
+                        isOpen: true,
+                        stageId: "3_generatie",
+                        stageName: "3. Generatie",
+                        currentContent
+                      });
+                    }}
+                    className="hover:bg-orange-50 hover:border-orange-300"
+                    data-testid="button-override-concept"
+                  >
+                    <Edit3 className="h-4 w-4 mr-2" />
+                    Overschrijf concept
+                  </Button>
+                </>
+              )}
+              
+              {/* Divider */}
+              {report && <div className="w-px h-6 bg-border" />}
+              
+              {/* Original buttons */}
               <Button variant="ghost" size="icon" onClick={handlePrint} data-testid="button-print">
                 <Printer className="h-5 w-5" />
               </Button>
@@ -239,6 +340,18 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
 
         </CardContent>
       </Card>
+      
+      {/* Override Concept Dialog */}
+      {report && (
+        <OverrideConceptDialog
+          isOpen={overrideDialog.isOpen}
+          onClose={() => setOverrideDialog({ ...overrideDialog, isOpen: false })}
+          reportId={report.id}
+          stageId={overrideDialog.stageId}
+          stageName={overrideDialog.stageName}
+          currentContent={overrideDialog.currentContent}
+        />
+      )}
     </div>
   );
 });

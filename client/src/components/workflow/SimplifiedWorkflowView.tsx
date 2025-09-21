@@ -114,9 +114,13 @@ export function SimplifiedWorkflowView({
     },
     onError: (error: any) => {
       console.error("❌ Failed to promote stage:", error);
+      const errorMessage = typeof error === 'string' ? error : 
+                          error?.message || error?.userMessage || 
+                          (error?.response?.data?.message) ||
+                          'Er ging iets mis bij het promoten van de stage';
       toast({
-        title: "Promote mislukt",
-        description: error.message || "Er ging iets mis bij het promoten van de stage",
+        title: "Promote mislukt", 
+        description: errorMessage,
         variant: "destructive",
         duration: 5000,
       });
