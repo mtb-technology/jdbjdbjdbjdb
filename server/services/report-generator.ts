@@ -684,8 +684,9 @@ ${JSON.stringify(bouwplan, null, 2)}`;
 
     // Minimal dossier info - just key fields
     const minimalDossier = {
-      onderwerp: dossier.samenvatting_onderwerp || 'Onbekend',
-      klantvragen: dossier.klantvraag_verbatim || []
+      onderwerp: 'Fiscale vraag',
+      klant: dossier.klant?.naam || 'Onbekend',
+      situatie: dossier.klant?.situatie || 'Geen situatie beschikbaar'
     };
 
     return `${prompt}
