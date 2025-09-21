@@ -30,11 +30,13 @@ import {
   Edit3,
   Activity,
   Wand2,
-  PenTool
+  PenTool,
+  Settings
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WORKFLOW_STAGES } from "./constants";
 import { ReviewFeedbackEditor } from "./ReviewFeedbackEditor";
+import { StreamingWorkflow } from "../streaming/StreamingWorkflow";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -72,6 +74,7 @@ export function SimplifiedWorkflowView({
   const [heartbeat, setHeartbeat] = useState<Record<string, number>>({});
   const [manualMode, setManualMode] = useState<Record<string, "ai" | "manual">>({});
   const [manualContent, setManualContent] = useState<Record<string, string>>({});
+  const [streamingMode, setStreamingMode] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -915,8 +918,82 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
 
+                        {/* Streaming Toggle for 4a_BronnenSpecialist */}
+                        {isActive && stage.key === "4a_BronnenSpecialist" && (
+                          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Zap className="h-4 w-4 text-blue-600" />
+                                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                                  Streaming Mode Beschikbaar
+                                </span>
+                              </div>
+                              <Button
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => setStreamingMode(prev => ({ 
+                                  ...prev, 
+                                  [stage.key]: !prev[stage.key] 
+                                }))}
+                                className="text-xs"
+                                data-testid={`button-toggle-streaming-${stage.key}`}
+                              >
+                                <Settings className="mr-1 h-3 w-3" />
+                                {streamingMode[stage.key] ? 'Regulier' : 'Streaming'}
+                              </Button>
+                            </div>
+                            <p className="text-xs text-blue-600 dark:text-blue-400">
+                              {streamingMode[stage.key] 
+                                ? 'Streaming modus: Real-time progress updates en substep decomposition' 
+                                : 'Klik op Streaming voor real-time voortgang en substep tracking'
+                              }
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Streaming Workflow Component for 4a_BronnenSpecialist */}
+                        {isActive && stage.key === "4a_BronnenSpecialist" && streamingMode[stage.key] && (
+                          <div className="mb-4">
+                            <StreamingWorkflow
+                              reportId={state.currentReport?.id || ''}
+                              stageId={stage.key}
+                              stageName={stage.label}
+                              onComplete={(result) => {
+                                console.log(`🎉 Streaming stage ${stage.key} completed:`, result);
+                                
+                                // Update the stage results in the workflow state
+                                dispatch({ 
+                                  type: "SET_STAGE_RESULT", 
+                                  stage: stage.key, 
+                                  result: result.stageResult || result.result || ''
+                                });
+                                
+                                // Show completion toast
+                                toast({
+                                  title: "Streaming Stage Voltooid",
+                                  description: `${stage.label} is succesvol uitgevoerd met streaming.`,
+                                });
+                                
+                                // Invalidate queries to refresh UI
+                                queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
+                                if (state.currentReport) {
+                                  queryClient.invalidateQueries({ queryKey: ['/api/reports', state.currentReport.id] });
+                                }
+                              }}
+                              onError={(error) => {
+                                console.error(`❌ Streaming stage ${stage.key} failed:`, error);
+                                toast({
+                                  title: "Streaming Stage Fout",
+                                  description: `${stage.label} ondervond een fout: ${error}`,
+                                  variant: "destructive"
+                                });
+                              }}
+                            />
+                          </div>
+                        )}
+
                         {/* Action buttons for active stage */}
-                        {isActive && !isCompleted && (
+                        {isActive && !isCompleted && !(stage.key === "4a_BronnenSpecialist" && streamingMode[stage.key]) && (
                           <>
                             {isReviewer ? (
                               <div className="space-y-3 mt-3">
