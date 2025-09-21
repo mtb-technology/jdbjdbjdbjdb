@@ -48,7 +48,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create AI handler for ReportProcessor using same approach as ReportGenerator
   const aiHandler = {
     generateContent: async (params: { prompt: string; temperature: number; topP: number; maxOutputTokens: number }) => {
-      return await reportGenerator.testAI(params.prompt);
+      const result = await reportGenerator.testAI(params.prompt);
+      return { content: result };
     }
   };
   const reportProcessor = new ReportProcessor(aiHandler);
