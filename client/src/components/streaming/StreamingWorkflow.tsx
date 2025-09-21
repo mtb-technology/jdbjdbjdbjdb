@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Play, Square, RotateCcw, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { SimpleFeedbackProcessor } from "@/components/workflow/SimpleFeedbackProcessor";
 import type { 
   StreamingSession, 
   StreamingEvent, 
@@ -185,11 +186,29 @@ export function StreamingWorkflow({
 
       case 'stage_complete':
         console.log(`🎉 [${reportId}-${stageId}] Stage completed`);
-        setSession(prev => prev ? { 
-          ...prev, 
-          status: 'completed',
-          endTime: new Date().toISOString()
-        } : null);
+        
+        // Check for user action required (feedback instructions)
+        if (event.data?.requiresUserAction && event.data?.actionType === 'feedback_instructions') {
+          console.log(`📋 [${reportId}-${stageId}] Feedback ready for user instructions`);
+          setSession(prev => prev ? { 
+            ...prev, 
+            status: 'awaiting_user_action',
+            endTime: new Date().toISOString(),
+            userActionData: {
+              actionType: 'feedback_instructions',
+              rawFeedback: event.data.rawFeedback,
+              message: event.message
+            }
+          } : null);
+        } else {
+          // Normal completion
+          setSession(prev => prev ? { 
+            ...prev, 
+            status: 'completed',
+            endTime: new Date().toISOString()
+          } : null);
+        }
+        
         onComplete?.(event);
         break;
 
@@ -393,6 +412,31 @@ export function StreamingWorkflow({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* User Action Required - Feedback Instructions */}
+        {session?.status === 'awaiting_user_action' && session.userActionData?.actionType === 'feedback_instructions' && (
+          <div className="space-y-4">
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+              <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">
+                🔍 Feedback Review Vereist
+              </h4>
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                {session.userActionData.message || `Stage ${stageId} is voltooid. Review de feedback en geef instructies wat je wilt verwerken.`}
+              </p>
+            </div>
+            
+            <SimpleFeedbackProcessor
+              reportId={reportId}
+              stageId={stageId}
+              stageName={stageId}
+              rawFeedback={session.userActionData.rawFeedback || 'Geen feedback beschikbaar'}
+              onProcessingComplete={() => {
+                console.log(`🎉 Feedback processing completed for ${stageId}`);
+                // Session will update automatically via SSE events
+              }}
+            />
           </div>
         )}
 
