@@ -25,7 +25,7 @@ export default function CaseDetail() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center space-x-4 mb-8">
-          <Link href="/cases">
+          <Link href="/cases" asChild>
             <Button variant="outline" size="sm" data-testid="button-back-to-cases">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Terug naar Cases
@@ -41,7 +41,7 @@ export default function CaseDetail() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center space-x-4 mb-8">
-          <Link href="/cases">
+          <Link href="/cases" asChild>
             <Button variant="outline" size="sm" data-testid="button-back-to-cases">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Terug naar Cases

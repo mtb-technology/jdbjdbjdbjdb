@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { 
   FolderOpen, 
   FileText, 
@@ -31,6 +32,7 @@ const InputPanel = memo(function InputPanel({
   onGenerate,
   isGenerating,
 }: InputPanelProps) {
+  const { toast } = useToast();
   const timeoutsRef = useRef<Set<NodeJS.Timeout>>(new Set());
 
   // Cleanup timeouts on unmount
@@ -90,9 +92,14 @@ const InputPanel = memo(function InputPanel({
         }
       } catch (error) {
         console.error('Error loading saved data:', error);
+        toast({
+          title: "Laden mislukt",
+          description: "Kon opgeslagen gegevens niet laden",
+          variant: "destructive",
+        });
       }
     }
-  }, [onDossierChange, onBouwplanChange]);
+  }, [onDossierChange, onBouwplanChange, toast]);
 
   return (
     <div className="lg:col-span-4">

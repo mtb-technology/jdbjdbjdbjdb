@@ -65,7 +65,7 @@ const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, 
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Link href={`/cases/${case_.id}`}>
+            <Link href={`/cases/${case_.id}`} asChild>
               <Button variant="default" size="sm" className="bg-primary hover:bg-primary/90 shadow-md" data-testid={`button-view-case-${case_.id}`}>
                 <Eye className="h-4 w-4 mr-2" />
                 Bekijken
@@ -316,7 +316,7 @@ function Cases() {
             </div>
             <div className="flex items-center gap-3">
               <DarkModeToggle />
-              <Link href="/">
+              <Link href="/" asChild>
                 <Button data-testid="button-new-case">
                   Nieuwe Case
                 </Button>
@@ -422,7 +422,7 @@ function Cases() {
               <p className="text-muted-foreground mb-6">
                 {search || statusFilter ? "Geen cases gevonden die voldoen aan je filters" : "Je hebt nog geen cases aangemaakt"}
               </p>
-              <Link href="/">
+              <Link href="/" asChild>
                 <Button data-testid="button-create-first-case">
                   Eerste Case Aanmaken
                 </Button>
@@ -454,7 +454,7 @@ function Cases() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Link href={`/cases/${case_.id}`}>
+                      <Link href={`/cases/${case_.id}`} asChild>
                         <Button variant="outline" size="sm" data-testid={`button-view-case-${case_.id}`}>
                           <Eye className="h-4 w-4 mr-2" />
                           Bekijken

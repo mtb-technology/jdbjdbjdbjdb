@@ -216,12 +216,14 @@ const Pipeline = memo(function Pipeline() {
                     <><Play className="mr-3 h-5 w-5" /> Start Fiscale Analyse</>
                   )}
                 </Button>
-                <Link href="/cases" className="sm:w-auto w-full">
-                  <Button variant="outline" data-testid="button-view-cases" className="h-12 w-full border-primary/20 hover:border-primary/40">
-                    <FolderOpen className="mr-2 h-4 w-4" />
-                    Bekijk Bestaande Cases
-                  </Button>
-                </Link>
+                <div className="sm:w-auto w-full">
+                  <Link href="/cases" asChild>
+                    <Button variant="outline" data-testid="button-view-cases" className="h-12 w-full border-primary/20 hover:border-primary/40">
+                      <FolderOpen className="mr-2 h-4 w-4" />
+                      Bekijk Bestaande Cases
+                    </Button>
+                  </Link>
+                </div>
               </div>
               
               {!rawText.trim() && (
