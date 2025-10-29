@@ -4,9 +4,8 @@ node_modules
 .env.local
 .env.*.local
 
-# Build artifacts (except dist/public which is needed)
+# Build artifacts (except dist/public and api/index.js which are needed)
 dist/index.js
-server/
 
 # Development tools
 .replit
