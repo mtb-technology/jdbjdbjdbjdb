@@ -445,24 +445,34 @@ export function SimplifiedWorkflowView({
 
   // Auto-fetch prompt preview for current stage and completed stages in detailed view
   useEffect(() => {
-    if (state.currentReport) {
+    console.log("🔍 useEffect for fetchPromptPreview", {
+      hasCurrentReport: !!state.currentReport,
+      reportId: state.currentReport?.id,
+      currentStageKey: currentStage?.key,
+      currentStageIndex: state.currentStageIndex
+    });
+
+    if (state.currentReport && state.currentReport.id) {
       // Fetch for current stage if not completed
       if (currentStage && !state.stageResults[currentStage.key]) {
+        console.log(`📥 Fetching prompt preview for current stage: ${currentStage.key}`);
         fetchPromptPreview(currentStage.key);
       }
-      
+
       // Fetch prompts for completed stages that don't have stored prompts
       WORKFLOW_STAGES.forEach(stage => {
         const hasResult = !!state.stageResults[stage.key];
         const hasStoredPrompt = !!state.stagePrompts[stage.key];
-        
+
         if (hasResult && !hasStoredPrompt && !promptPreviews[stage.key]) {
+          console.log(`📥 Fetching prompt preview for completed stage: ${stage.key}`);
           fetchPromptPreview(stage.key);
         }
       });
-    } else {
+    } else if (!state.currentReport || !state.currentReport.id) {
       // For new cases without a report, fetch template for current stage
       if (currentStage && !promptPreviews[currentStage.key]) {
+        console.log(`📥 Fetching template prompt for stage (no report yet): ${currentStage.key}`);
         fetchPromptPreview(currentStage.key);
       }
     }
