@@ -1,10 +1,11 @@
 import { BaseAIHandler, AIModelResponse } from "./base-handler";
 import type { AIModelParameters } from "./base-handler";
 import { GoogleAIHandler } from "./google-handler";
+import { GoogleDeepResearchHandler } from "./google-deep-research-handler";
 import { OpenAIStandardHandler } from "./openai-standard-handler";
 import { OpenAIReasoningHandler } from "./openai-reasoning-handler";
-import { OpenAIGPT5Handler } from "./openai-gpt5-handler";
 import { OpenAIDeepResearchHandler } from "./openai-deep-research-handler";
+import { OpenAIGPT5Handler } from "./openai-gpt5-handler";
 import type { AiConfig } from "@shared/schema";
 import { config, getAIModelConfig, type AIModelName } from "../../config";
 import { ServerError } from "../../middleware/errorHandler";
@@ -14,7 +15,7 @@ export type { AIModelParameters } from "./base-handler";
 
 export interface ModelInfo {
   provider: "google" | "openai";
-  handlerType: "google" | "openai-standard" | "openai-reasoning" | "openai-gpt5" | "openai-deep-research";
+  handlerType: "google" | "google-deep-research" | "openai-standard" | "openai-reasoning" | "openai-gpt5" | "openai-deep-research";
   supportedParameters: string[];
   requiresResponsesAPI?: boolean;
   timeout?: number;
@@ -63,27 +64,78 @@ export class AIModelFactory {
     const googleApiKey = config.GOOGLE_AI_API_KEY;
     const openaiApiKey = config.OPENAI_API_KEY;
 
-    // Initialize Google handler
-    if (googleApiKey) {
-      this.handlers.set("google", new GoogleAIHandler(googleApiKey));
-      console.log('✅ Google AI handler initialized');
-    } else {
-      console.warn('⚠️ Google AI API key not configured');
+    // Validate and initialize handlers with better error tracking
+    const initializeHandler = (
+      type: string, 
+      Handler: new (key: string, ...args: any[]) => BaseAIHandler,
+      apiKey?: string,
+      ...args: any[]
+    ) => {
+      if (!apiKey) {
+        console.warn(`⚠️ ${type} API key not configured`);
+        return;
+      }
+
+      try {
+        const handler = new Handler(apiKey, ...args);
+        this.handlers.set(type, handler);
+        console.log(`✅ ${type} handler initialized`);
+      } catch (error) {
+        console.error(`❌ Failed to initialize ${type} handler:`, error);
+        // Track initialization failure in circuit breaker
+        this.circuitBreaker.set(type, {
+          failures: 1,
+          lastFailure: Date.now(),
+          isOpen: true
+        });
+      }
+    };
+
+    // Initialize Google handlers
+    initializeHandler("google", GoogleAIHandler, googleApiKey);
+
+    // Initialize Google Deep Research handler (requires GOOGLE_CLOUD_PROJECT env var)
+    if (googleApiKey && process.env.GOOGLE_CLOUD_PROJECT) {
+      initializeHandler("google-deep-research", GoogleDeepResearchHandler, googleApiKey);
+    } else if (googleApiKey && !process.env.GOOGLE_CLOUD_PROJECT) {
+      console.warn('⚠️ Google Deep Research not initialized - GOOGLE_CLOUD_PROJECT environment variable required');
     }
 
-    // Initialize OpenAI handlers
+    // Initialize OpenAI handlers with additional validation
     if (openaiApiKey) {
-      this.handlers.set("openai-standard", new OpenAIStandardHandler(openaiApiKey));
-      this.handlers.set("openai-reasoning", new OpenAIReasoningHandler(openaiApiKey));
-      this.handlers.set("openai-gpt5", new OpenAIGPT5Handler(openaiApiKey));
+      // Validate OpenAI key format
+      if (!openaiApiKey.startsWith('sk-') || openaiApiKey.length < 32) {
+        console.error('❌ Invalid OpenAI API key format');
+        throw ServerError.business(
+          ERROR_CODES.AI_AUTHENTICATION_FAILED,
+          'OpenAI API key heeft een ongeldig formaat. Key moet beginnen met "sk-" en minimaal 32 karakters lang zijn.',
+          { provider: 'openai' }
+        );
+      }
+
+      // Initialize all OpenAI handlers
+      initializeHandler("openai-standard", OpenAIStandardHandler, openaiApiKey);
+      initializeHandler("openai-reasoning", OpenAIReasoningHandler, openaiApiKey);
+      initializeHandler("openai-standard", OpenAIStandardHandler, openaiApiKey, "gpt-4o");
       
-      // Create deep research handlers for each model
-      this.handlers.set("openai-deep-research-o3", new OpenAIDeepResearchHandler(openaiApiKey, "o3-deep-research"));
-      this.handlers.set("openai-deep-research-o4", new OpenAIDeepResearchHandler(openaiApiKey, "o4-mini-deep-research"));
-      
-      console.log('✅ OpenAI handlers initialized');
+      // Deep research handlers
+      // Note: Deep research models are experimental and may not be available
+      // Using o3-mini for advanced reasoning instead
+      initializeHandler(
+        "openai-reasoning",
+        OpenAIReasoningHandler,
+        openaiApiKey,
+        "o3-mini"
+      );
+      initializeHandler("openai-gpt5", OpenAIGPT5Handler, openaiApiKey);
     } else {
       console.warn('⚠️ OpenAI API key not configured');
+      // Track missing OpenAI configuration
+      this.circuitBreaker.set('openai', {
+        failures: 1,
+        lastFailure: Date.now(),
+        isOpen: true
+      });
     }
   }
 
@@ -133,7 +185,7 @@ export class AIModelFactory {
 
     // Get the appropriate handler
     let handler: BaseAIHandler | undefined;
-    
+
     if (modelInfo.handlerType === "openai-deep-research") {
       // Use specific deep research handler based on model
       if (config.model.includes("o3")) {
@@ -141,6 +193,9 @@ export class AIModelFactory {
       } else if (config.model.includes("o4")) {
         handler = this.handlers.get("openai-deep-research-o4");
       }
+    } else if (modelInfo.handlerType === "google-deep-research") {
+      // Use Google Deep Research handler
+      handler = this.handlers.get("google-deep-research");
     } else {
       handler = this.handlers.get(modelInfo.handlerType);
     }
@@ -285,7 +340,11 @@ export class AIModelFactory {
         return this.handlers.get("openai-deep-research-o4") || null;
       }
     }
-    
+
+    if (modelInfo.handlerType === "google-deep-research") {
+      return this.handlers.get("google-deep-research") || null;
+    }
+
     return this.handlers.get(modelInfo.handlerType) || null;
   }
 }

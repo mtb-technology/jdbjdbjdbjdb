@@ -266,12 +266,13 @@ function WorkflowManagerContent({
         
         console.log(`🎯 Auto-advance check: current=${state.currentStageIndex}, next=${nextIndex}, stage=${variables.stage}`);
         console.log(`🎯 Stage results after completion:`, Object.keys(updatedStageResults));
-        if (nextIndex !== state.currentStageIndex) {
-          console.log(`✅ Auto-advancing from stage ${state.currentStageIndex} to ${nextIndex}`);
-          dispatch({ type: "SET_STAGE_INDEX", payload: nextIndex });
-        } else {
-          console.log(`⏸️ No auto-advance: already at target index ${nextIndex}`);
-        }
+        // AUTO-ADVANCE DISABLED: User moet zelf op "Volgende Stap" klikken om output te kunnen bekijken
+        // if (nextIndex !== state.currentStageIndex) {
+        //   console.log(`✅ Auto-advancing from stage ${state.currentStageIndex} to ${nextIndex}`);
+        //   dispatch({ type: "SET_STAGE_INDEX", payload: nextIndex });
+        // } else {
+        //   console.log(`⏸️ No auto-advance: already at target index ${nextIndex}`);
+        // }
       } else {
         console.log(`⚠️ No auto-advance: executed stage "${variables.stage}" != current stage "${currentStage.key}"`);
       }
@@ -351,12 +352,13 @@ function WorkflowManagerContent({
         substepResults.processing = data.stageResult;
       }
       
-      if (substepResults.review && substepResults.processing) {
-        const nextIndex = getNextStageIndex();
-        if (nextIndex !== state.currentStageIndex) {
-          dispatch({ type: "SET_STAGE_INDEX", payload: nextIndex });
-        }
-      }
+      // AUTO-ADVANCE DISABLED: User moet zelf op "Volgende Stap" klikken
+      // if (substepResults.review && substepResults.processing) {
+      //   const nextIndex = getNextStageIndex();
+      //   if (nextIndex !== state.currentStageIndex) {
+      //     dispatch({ type: "SET_STAGE_INDEX", payload: nextIndex });
+      //   }
+      // }
     },
     onError: (error: Error, variables) => {
       const trackingKey = `${variables.substepType === "review" ? variables.substepKey : "5_feedback_verwerker"}_${variables.substepType}`;

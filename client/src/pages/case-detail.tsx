@@ -4,22 +4,117 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, FileText, Calendar, User, Download, FileDown } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, FileText, Calendar, User, Download, FileDown, GitBranch, Eye, Activity } from "lucide-react";
 import WorkflowInterface from "@/components/workflow-interface";
+import { VersionTimeline } from "@/components/report/VersionTimeline";
+import { ReportDiffViewer } from "@/components/report/ReportDiffViewer";
+import { StickyReportPreview, FullScreenReportPreview } from "@/components/report/StickyReportPreview";
+import { ExportDialog } from "@/components/export/ExportDialog";
 import type { Report } from "@shared/schema";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function CaseDetail() {
   const params = useParams();
   const reportId = params.id;
-  const [isExporting, setIsExporting] = useState(false);
+  const [showFullScreen, setShowFullScreen] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("workflow");
   const { toast } = useToast();
 
   const { data: report, isLoading, error } = useQuery<Report>({
-    queryKey: [`/api/reports`, reportId],
+    queryKey: [`/api/reports/${reportId}`],
     enabled: !!reportId,
+    refetchInterval: 5000, // Auto-refresh every 5 seconds for real-time updates
   });
+
+  // Transform conceptReportVersions into version timeline format
+  const versionCheckpoints = useMemo(() => {
+    if (!report?.conceptReportVersions) return [];
+
+    const stageNames: Record<string, string> = {
+      '1_informatiecheck': 'Informatie Check',
+      '2_complexiteitscheck': 'Complexiteits Check',
+      '3_generatie': 'Basis Rapport',
+      '4a_BronnenSpecialist': 'Bronnen Review',
+      '4b_FiscaalTechnischSpecialist': 'Fiscaal Technisch',
+      '4c_ScenarioGatenAnalist': 'Scenario Analyse',
+      '4d_DeVertaler': 'Communicatie Review',
+      '4e_DeAdvocaat': 'Juridisch Review',
+      '4f_DeKlantpsycholoog': 'Client Psychologie',
+      '4g_ChefEindredactie': 'Eindredactie',
+      '5_feedback_verwerker': 'Feedback Integratie',
+      '6_change_summary': 'Wijzigingen Samenvatting',
+      'final_check': 'Finale Controle'
+    };
+
+    const versions = Object.keys(report.conceptReportVersions || {})
+      .filter(key => key !== 'latest' && key !== 'history')
+      .map((stageKey, index) => {
+        const versionData = report.conceptReportVersions?.[stageKey];
+        return {
+          version: index + 1,
+          stageKey,
+          stageName: stageNames[stageKey] || stageKey,
+          changeCount: (versionData as any)?.changeCount,
+          timestamp: (versionData as any)?.createdAt || (versionData as any)?.timestamp,
+          isCurrent: report.conceptReportVersions?.latest?.pointer === stageKey
+        };
+      })
+      .sort((a, b) => a.version - b.version);
+
+    return versions;
+  }, [report?.conceptReportVersions]);
+
+  const currentVersion = useMemo(() => {
+    if (!report?.conceptReportVersions?.latest) return versionCheckpoints.length;
+    const latestPointer = report.conceptReportVersions.latest.pointer;
+    const checkpoint = versionCheckpoints.find(v => v.stageKey === latestPointer);
+    return checkpoint?.version || versionCheckpoints.length;
+  }, [report?.conceptReportVersions, versionCheckpoints]);
+
+  const currentContent = useMemo(() => {
+    if (!report?.conceptReportVersions) return report?.generatedContent || "";
+
+    // PRIORITEIT 1: Kijk altijd eerst naar het gegenereerde rapport (3_generatie)
+    // Dit is het eigenlijke rapport, niet de reviewer feedback
+    if (report.conceptReportVersions['3_generatie']) {
+      const generationData = report.conceptReportVersions['3_generatie'];
+      if (typeof generationData === 'string') return generationData;
+      if (typeof generationData === 'object' && (generationData as any).content) {
+        return (generationData as any).content;
+      }
+    }
+
+    // PRIORITEIT 2: Kijk naar feedback verwerker output (5_feedback_verwerker)
+    // Dit is het rapport NA verwerking van reviewer feedback
+    if (report.conceptReportVersions['5_feedback_verwerker']) {
+      const feedbackData = report.conceptReportVersions['5_feedback_verwerker'];
+      if (typeof feedbackData === 'string') return feedbackData;
+      if (typeof feedbackData === 'object' && (feedbackData as any).content) {
+        return (feedbackData as any).content;
+      }
+    }
+
+    // FALLBACK 3: Latest pointer (alleen als geen rapport beschikbaar)
+    const latestPointer = report.conceptReportVersions.latest?.pointer;
+    if (latestPointer && report.conceptReportVersions[latestPointer]) {
+      const versionData = report.conceptReportVersions[latestPointer];
+      if (typeof versionData === 'string') return versionData;
+      if (typeof versionData === 'object' && (versionData as any).content) {
+        return (versionData as any).content;
+      }
+    }
+
+    // FALLBACK 4: generatedContent field
+    return report?.generatedContent || "";
+  }, [report?.conceptReportVersions, report?.generatedContent]);
+
+  const latestChanges = useMemo(() => {
+    if (!versionCheckpoints.length) return 0;
+    const latestCheckpoint = versionCheckpoints[versionCheckpoints.length - 1];
+    return latestCheckpoint.changeCount || 0;
+  }, [versionCheckpoints]);
 
   if (isLoading) {
     return (
@@ -71,12 +166,11 @@ export default function CaseDetail() {
       case "draft": return "Concept";
       case "processing": return "In Behandeling";
       case "generated": {
-        // Calculate progress based on completed stages
         if (report?.stageResults) {
           const completedStages = Object.keys(report.stageResults).length;
-          const totalStages = 13; // 13 workflow stages: 1-3 (3) + 4a-4g (7) + 5,6,final = 13
+          const totalStages = 13;
           const percentage = Math.round((completedStages / totalStages) * 100);
-          
+
           if (completedStages >= 3) {
             return `Stap ${completedStages}/13 (${percentage}%)`;
           } else {
@@ -91,135 +185,194 @@ export default function CaseDetail() {
     }
   };
 
-  const handlePDFExport = async () => {
-    if (!reportId) return;
-    
-    setIsExporting(true);
-    try {
-      const response = await fetch(`/api/cases/${reportId}/export/pdf`);
-      
-      if (!response.ok) {
-        throw new Error('PDF export mislukt');
-      }
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = `rapport-${report?.clientName?.replace(/[^a-zA-Z0-9]/g, '-')}-${reportId.slice(0, 8)}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      toast({
-        title: "PDF Geëxporteerd",
-        description: "Het rapport is succesvol geëxporteerd als PDF",
-      });
-    } catch (error: any) {
-      console.error('PDF export error:', error);
-      toast({
-        title: "Export Mislukt",
-        description: error.message || "Er ging iets mis bij het exporteren van het PDF",
-        variant: "destructive",
-      });
-    } finally {
-      setIsExporting(false);
-    }
+  const handleVersionRestore = async (version: number) => {
+    const checkpoint = versionCheckpoints.find(v => v.version === version);
+    if (!checkpoint) return;
+
+    toast({
+      title: "Versie Herstellen",
+      description: `Versie ${version} (${checkpoint.stageName}) wordt hersteld...`,
+    });
+
+    // TODO: Implement version restore API call
+    // await apiRequest(`/api/reports/${reportId}/restore-version`, {
+    //   method: 'POST',
+    //   body: JSON.stringify({ stageKey: checkpoint.stageKey })
+    // });
   };
 
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header with back button */}
-      <div className="flex items-center space-x-4 mb-8">
+      <div className="flex items-center justify-between mb-8">
         <Link href="/cases">
           <Button variant="outline" size="sm" data-testid="button-back-to-cases">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Terug naar Cases
           </Button>
         </Link>
+
+        {/* Quick Actions */}
+        <div className="flex items-center gap-2">
+          <Badge className={getStatusColor(report.status)} data-testid="badge-case-status">
+            {getStatusLabel(report.status, report)}
+          </Badge>
+          <ExportDialog
+            reportId={reportId || ""}
+            reportTitle={report.title}
+            clientName={report.clientName}
+          />
+        </div>
       </div>
 
-      {/* Case Overview */}
-      <Card className="mb-8">
+      {/* Document Header */}
+      <Card className="mb-6">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center space-x-2">
-              <FileText className="h-5 w-5" />
-              <span>{report.title}</span>
-            </CardTitle>
-            <Badge className={getStatusColor(report.status)} data-testid="badge-case-status">
-              {getStatusLabel(report.status, report)}
-            </Badge>
+            <div>
+              <CardTitle className="flex items-center space-x-2 text-2xl mb-2">
+                <FileText className="h-6 w-6" />
+                <span>{report.title}</span>
+              </CardTitle>
+              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <User className="h-4 w-4" />
+                  <span>{report.clientName}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Calendar className="h-4 w-4" />
+                  <span>Bijgewerkt: {report.updatedAt ? new Date(report.updatedAt).toLocaleDateString('nl-NL') : 'Onbekend'}</span>
+                </div>
+                {versionCheckpoints.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <GitBranch className="h-4 w-4" />
+                    <span>Versie {currentVersion} van {versionCheckpoints.length}</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div className="flex items-center space-x-2">
-              <User className="h-4 w-4 text-muted-foreground" />
-              <span>Client: {report.clientName}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span>Aangemaakt: {report.createdAt ? new Date(report.createdAt).toLocaleDateString('nl-NL') : 'Onbekend'}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span>Bijgewerkt: {report.updatedAt ? new Date(report.updatedAt).toLocaleDateString('nl-NL') : 'Onbekend'}</span>
-            </div>
-          </div>
-        </CardContent>
       </Card>
 
-      {/* Show generated report if available */}
-      {report.generatedContent && (
-        <Card className="mb-8">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>📄 Gegenereerd Rapport</CardTitle>
-              <Button
-                onClick={handlePDFExport}
-                disabled={isExporting}
-                variant="outline"
-                size="sm"
-                data-testid="button-export-pdf"
-              >
-                {isExporting ? (
-                  <>
-                    <Download className="mr-2 h-4 w-4 animate-spin" />
-                    Exporteren...
-                  </>
-                ) : (
-                  <>
-                    <FileDown className="mr-2 h-4 w-4" />
-                    Export PDF
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div 
-              className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: report.generatedContent }}
-            />
-          </CardContent>
-        </Card>
-      )}
+      {/* 2-Column Layout: Content + Sticky Preview */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">
+        {/* Main Content Area */}
+        <div className="space-y-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="workflow" className="flex items-center gap-2">
+                <Activity className="h-4 w-4" />
+                Workflow
+              </TabsTrigger>
+              <TabsTrigger value="timeline" className="flex items-center gap-2">
+                <GitBranch className="h-4 w-4" />
+                Timeline {versionCheckpoints.length > 0 && `(${versionCheckpoints.length})`}
+              </TabsTrigger>
+              <TabsTrigger value="diff" className="flex items-center gap-2">
+                <Eye className="h-4 w-4" />
+                Vergelijk
+              </TabsTrigger>
+            </TabsList>
 
-      {/* Continue workflow if not completed */}
-      {report.status !== 'exported' && report.status !== 'archived' && (
-        <WorkflowInterface
-          dossier={report.dossierData as any}
-          bouwplan={report.bouwplanData as any}
-          clientName={report.clientName}
-          rawText={(report.dossierData as any)?.rawText || ""}
-          existingReport={report}
-          onComplete={(updatedReport) => {
-            // Refresh the report data
-            window.location.reload();
-          }}
+            <TabsContent value="workflow" className="mt-6">
+              {report.status !== 'exported' && report.status !== 'archived' ? (
+                <WorkflowInterface
+                  dossier={report.dossierData as any}
+                  bouwplan={report.bouwplanData as any}
+                  clientName={report.clientName}
+                  rawText={(report.dossierData as any)?.rawText || ""}
+                  existingReport={report}
+                  onComplete={(updatedReport) => {
+                    // Trigger re-fetch
+                    window.location.reload();
+                  }}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Dit rapport is voltooid en geëxporteerd.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="timeline" className="mt-6">
+              {versionCheckpoints.length > 0 ? (
+                <VersionTimeline
+                  versions={versionCheckpoints}
+                  currentVersion={currentVersion}
+                  onVersionSelect={(version) => {
+                    console.log('Version selected:', version);
+                  }}
+                  onRestore={handleVersionRestore}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    <GitBranch className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Nog geen versie geschiedenis beschikbaar.</p>
+                    <p className="text-sm mt-2">Start de workflow om versies te zien.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="diff" className="mt-6">
+              {report.conceptReportVersions && Object.keys(report.conceptReportVersions).filter(k => k !== 'latest' && k !== 'history').length > 1 ? (
+                <ReportDiffViewer
+                  versions={report.conceptReportVersions}
+                  currentStageKey={report.conceptReportVersions?.latest?.pointer}
+                  stageNames={{
+                    '1_informatiecheck': 'Informatie Check',
+                    '2_complexiteitscheck': 'Complexiteits Check',
+                    '3_generatie': 'Basis Rapport',
+                    '4a_BronnenSpecialist': 'Bronnen Review',
+                    '4b_FiscaalTechnischSpecialist': 'Fiscaal Technisch',
+                    '4c_ScenarioGatenAnalist': 'Scenario Analyse',
+                    '4d_DeVertaler': 'Communicatie Review',
+                    '4e_DeAdvocaat': 'Juridisch Review',
+                    '4f_DeKlantpsycholoog': 'Client Psychologie',
+                    '4g_ChefEindredactie': 'Eindredactie',
+                    '5_feedback_verwerker': 'Feedback Integratie',
+                    '6_change_summary': 'Wijzigingen Samenvatting',
+                    'final_check': 'Finale Controle'
+                  }}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    <Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Minimaal 2 versies nodig om te vergelijken.</p>
+                    <p className="text-sm mt-2">Voer meer workflow stappen uit.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        {/* Sticky Report Preview */}
+        <div className="hidden lg:block">
+          <StickyReportPreview
+            content={currentContent}
+            version={currentVersion}
+            stageName={versionCheckpoints.find(v => v.version === currentVersion)?.stageName || "Concept"}
+            changeCount={latestChanges}
+            versions={versionCheckpoints}
+            onFullView={() => setShowFullScreen(true)}
+          />
+        </div>
+      </div>
+
+      {/* Full Screen Preview Modal */}
+      {showFullScreen && (
+        <FullScreenReportPreview
+          content={currentContent}
+          version={currentVersion}
+          stageName={versionCheckpoints.find(v => v.version === currentVersion)?.stageName || "Concept"}
+          onClose={() => setShowFullScreen(false)}
         />
       )}
     </div>

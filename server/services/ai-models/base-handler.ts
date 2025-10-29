@@ -242,11 +242,11 @@ export abstract class BaseAIHandler {
       if (!content && rawResponse?.output_text) {
         content = rawResponse.output_text;
       }
-    } else if (modelType === "gpt5") {
-      // GPT-5 format: direct output_text field
+    } else if (modelType === "gpt4o") {
+      // GPT-4o format: direct output_text field (legacy support)
       content = rawResponse?.output_text || "";
-      
-      // Alternative GPT-5 format with output array
+
+      // Alternative GPT-4o format with output array
       if (!content && rawResponse?.output && Array.isArray(rawResponse.output)) {
         const lastItem = rawResponse.output[rawResponse.output.length - 1];
         if (lastItem?.text) content = lastItem.text;

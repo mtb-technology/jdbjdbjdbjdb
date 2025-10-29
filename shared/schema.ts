@@ -17,9 +17,15 @@ export const reports = pgTable("reports", {
   bouwplanData: json("bouwplan_data").notNull(),
   generatedContent: text("generated_content"),
   stageResults: json("stage_results"), // Store stage-specific outputs from each specialist
-  conceptReportVersions: json("concept_report_versions"), // Store evolving concept report through stages
+  conceptReportVersions: json("concept_report_versions"), // Store evolving concept report through stages (legacy)
   substepResults: json("substep_results"), // Store substep results for reviewers (review + processing)
   stagePrompts: json("stage_prompts"), // Store the exact prompts sent to AI for each stage - for input tracking
+  
+  // New document system - structured living document
+  documentState: jsonb("document_state"), // TipTap JSON document state
+  pendingChanges: jsonb("pending_changes"), // Structured change proposals from specialists
+  documentSnapshots: jsonb("document_snapshots"), // Snapshots per stage for audit trail
+  
   currentStage: text("current_stage").default("1_informatiecheck"),
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),

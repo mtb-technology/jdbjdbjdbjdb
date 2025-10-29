@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, RefreshCw, Menu } from "lucide-react";
+import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, RefreshCw, Menu, Package } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -303,7 +303,7 @@ function Cases() {
               </div>
               {/* Desktop Navigation */}
               <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <Link href="/" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
+                <Link href="/pipeline" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
                   Pipeline
                 </Link>
                 <Link href="/cases" className="text-primary font-medium" data-testid="nav-cases">
@@ -316,7 +316,13 @@ function Cases() {
             </div>
             <div className="flex items-center gap-3">
               <DarkModeToggle />
-              <Link href="/" asChild>
+              <Link href="/batch" asChild>
+                <Button variant="outline" data-testid="button-batch-processing">
+                  <Package className="mr-2 h-4 w-4" />
+                  Batch
+                </Button>
+              </Link>
+              <Link href="/pipeline" asChild>
                 <Button data-testid="button-new-case">
                   Nieuwe Case
                 </Button>
@@ -331,11 +337,14 @@ function Cases() {
                   </SheetTrigger>
                   <SheetContent side="right" className="w-64">
                     <nav className="flex flex-col space-y-4 mt-8">
-                      <Link href="/" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-pipeline">
+                      <Link href="/pipeline" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-pipeline">
                         Pipeline
                       </Link>
                       <Link href="/cases" className="text-primary font-medium p-2 rounded-md" data-testid="nav-mobile-cases">
                         Cases
+                      </Link>
+                      <Link href="/batch" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-batch">
+                        Batch Verwerking
                       </Link>
                       <Link href="/settings" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-settings">
                         Instellingen

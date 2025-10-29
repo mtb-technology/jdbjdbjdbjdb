@@ -18,7 +18,7 @@ export default function Dashboard() {
                 <span className="text-xl font-bold text-foreground">De Fiscale Analist</span>
               </div>
               <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <a href="/" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
+                <a href="/pipeline" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
                   Pipeline
                 </a>
                 <a href="/dashboard" className="text-primary font-medium" data-testid="nav-dashboard">

@@ -9,7 +9,7 @@ import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import WorkflowInterface from "@/components/workflow-interface";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
-import { apiRequest } from "@/lib/apiWrapper";
+import { apiRequest } from "@/lib/queryClient";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
 
 const Pipeline = memo(function Pipeline() {
@@ -43,11 +43,14 @@ const Pipeline = memo(function Pipeline() {
     setIsCreatingCase(true);
     try {
       // Create the case immediately when "Start Case" is clicked
-      const report = await apiRequest("POST", "/api/reports/create", {
-        dossier: dossierData,
-        bouwplan: bouwplanData,
-        clientName: "Client",
-        rawText: rawText.trim(),
+      const report = await apiRequest("/api/reports/create", {
+        method: "POST",
+        body: JSON.stringify({
+          dossier: dossierData,
+          bouwplan: bouwplanData,
+          clientName: "Client",
+          rawText: rawText.trim(),
+        }),
       }) as Report;
       
       setCreatedReport(report);
