@@ -17,6 +17,7 @@ import { SSEHandler } from "./services/streaming/sse-handler";
 import { StreamingSessionManager } from "./services/streaming/streaming-session-manager";
 import { DecomposedStages } from "./services/streaming/decomposed-stages";
 import { registerStreamingRoutes } from "./routes/streaming-routes";
+import { documentRouter } from "./routes/document-routes";
 import { z } from "zod";
 import { ServerError, asyncHandler } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
@@ -1211,6 +1212,9 @@ ${bouwplanContent}`;
   
   // Register streaming routes
   registerStreamingRoutes(app, sseHandler, sessionManager, decomposedStages);
+  
+  // Register document management routes
+  app.use("/api/documents", documentRouter);
 
   const httpServer = createServer(app);
   return httpServer;

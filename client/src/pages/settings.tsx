@@ -30,20 +30,21 @@ import {
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
 import type { PromptConfigRecord, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 
-// Available AI models by provider
+// Available AI models by provider - MUST match server/config/index.ts AI_MODELS
 const AI_MODELS = {
   google: [
-    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { value: "gemini-2.5-pro", label: "🌟 Gemini 2.5 Pro (Beste kwaliteit)" },
+    { value: "gemini-2.5-flash", label: "⚡ Gemini 2.5 Flash (Snelste)" },
+    { value: "gemini-2.5-pro-deep-research", label: "🔬 Gemini 2.5 Pro Deep Research (Diepgaande analyse)" },
   ],
   openai: [
-    { value: "gpt-5", label: "GPT-5 (Nieuwste - Responses API)" },
-    { value: "gpt-4o", label: "GPT-4o (Stabiel)" },
-    { value: "gpt-4o-mini", label: "GPT-4o Mini (Sneller)" },
+    { value: "gpt-5", label: "🚀 GPT-5 (Nieuwste - Responses API)" },
+    { value: "gpt-4o", label: "GPT-4o (Beste kwaliteit)" },
+    { value: "gpt-4o-mini", label: "GPT-4o Mini (Snel & Efficiënt)" },
     { value: "o3-mini", label: "o3-mini (Reasoning)" },
     { value: "o3", label: "o3 (Advanced Reasoning)" },
-    { value: "o3-deep-research-2025-06-26", label: "o3 Deep Research (Experimenteel)" },
-    { value: "o4-mini-deep-research-2025-06-26", label: "o4-mini Deep Research (Experimenteel)" },
+    { value: "o3-deep-research-2025-06-26", label: "o3 Deep Research (Deep Analysis)" },
+    { value: "o4-mini-deep-research-2025-06-26", label: "o4-mini Deep Research (Fast Deep Analysis)" },
   ],
 } as const;
 
@@ -63,6 +64,8 @@ const PROMPT_STAGES = [
 
 const Settings = memo(function Settings() {
   const [activeConfig, setActiveConfig] = useState<PromptConfig | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [aiConfig, setAiConfig] = useState<AiConfig>({
     provider: "google",
     model: "gemini-2.5-pro",
@@ -72,8 +75,27 @@ const Settings = memo(function Settings() {
     maxOutputTokens: 2048,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const originalConfig = useRef<PromptConfig | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Track unsaved changes
+  useEffect(() => {
+    if (!originalConfig.current || !activeConfig) return;
+    const hasChanges = JSON.stringify(originalConfig.current) !== JSON.stringify(activeConfig);
+    setHasUnsavedChanges(hasChanges);
+
+    // Warn before leaving with unsaved changes
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeConfig]);
 
   const { data: activePromptConfig, isLoading, refetch } = useQuery<PromptConfigRecord>({
     queryKey: ["/api/prompts/active"],
@@ -84,18 +106,66 @@ const Settings = memo(function Settings() {
 
   const updatePromptMutation = useMutation({
     mutationFn: async (data: { id: string; config: PromptConfig }) => {
-      const response = await apiRequest("PUT", `/api/prompts/${data.id}`, {
-        config: data.config,
-        isActive: true,
-      });
-      const responseData = await response.json();
-      // Handle new API response format
-      if (responseData && typeof responseData === 'object' && 'success' in responseData && responseData.success === true) {
-        return responseData.data;
+      try {
+        const response = await apiRequest("PUT", `/api/prompts/${data.id}`, {
+          config: data.config,
+          isActive: true,
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const responseData = await response.json();
+        
+        // Validate response structure
+        if (!responseData || typeof responseData !== 'object') {
+          throw new Error('Invalid response format');
+        }
+
+        if ('error' in responseData) {
+          throw new Error(responseData.error?.message || 'Failed to update settings');
+        }
+
+        if ('success' in responseData && responseData.success === true) {
+          return responseData.data;
+        }
+
+        return responseData;
+      } catch (error: any) {
+        console.error('Settings update failed:', error);
+        throw new Error(error.message || 'Failed to update settings');
       }
-      return responseData;
     },
-    onSuccess: () => {
+    onMutate: async (newData) => {
+      // Cancel any outgoing refetches 
+      await queryClient.cancelQueries({ queryKey: ["/api/prompts/active"] });
+      await queryClient.cancelQueries({ queryKey: ["/api/prompts"] });
+
+      // Snapshot previous values
+      const previousData = queryClient.getQueryData(["/api/prompts/active"]);
+
+      // Optimistically update
+      queryClient.setQueryData(["/api/prompts/active"], (old: any) => ({
+        ...old,
+        [newData.id]: newData.config
+      }));
+
+      return { previousData };
+    },
+    onError: (err, newData, context: any) => {
+      // Rollback on error
+      if (context?.previousData) {
+        queryClient.setQueryData(["/api/prompts/active"], context.previousData);
+      }
+      
+      toast({
+        title: "Instellingen niet opgeslagen",
+        description: err.message || "Er ging iets mis bij het opslaan van de instellingen",
+        variant: "destructive",
+      });
+    },
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/prompts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/prompts/active"] });
       toast({
@@ -103,22 +173,19 @@ const Settings = memo(function Settings() {
         description: "Prompt configuratie is succesvol bijgewerkt.",
       });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Fout bij opslaan",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
+    retry: 2, // Retry failed mutations twice
+    retryDelay: 1000 // Wait 1 second between retries
   });
 
   useEffect(() => {
     if (activePromptConfig?.config) {
       const config = activePromptConfig.config as PromptConfig;
       setActiveConfig(config);
+      originalConfig.current = config; // Store original for change detection
       if (config.aiConfig) {
         setAiConfig(config.aiConfig);
       }
+      setHasUnsavedChanges(false); // Reset unsaved changes flag
     }
   }, [activePromptConfig]);
 
@@ -260,14 +327,42 @@ const Settings = memo(function Settings() {
   }, [activeConfig]);
 
   const handleSave = useCallback(async () => {
-    if (!activeConfig || !activePromptConfig?.id) return;
+    if (!activeConfig || !activePromptConfig?.id) {
+      toast({
+        title: "Kan niet opslaan",
+        description: "Er is geen actieve configuratie om op te slaan",
+        variant: "destructive",
+      });
+      return;
+    }
     
-    // Don't add global aiConfig - per-stage configs are already in activeConfig
-    await updatePromptMutation.mutateAsync({
-      id: activePromptConfig.id,
-      config: activeConfig,
-    });
-  }, [activeConfig, updatePromptMutation, activePromptConfig?.id]);
+    try {
+      // Add loading state
+      toast({
+        title: "Bezig met opslaan...",
+        description: "Even geduld terwijl we je instellingen opslaan",
+      });
+      
+      // Make sure we have the latest data before saving
+      const currentConfig = queryClient.getQueryData(["/api/prompts/active"]);
+      if (!currentConfig) {
+        await queryClient.fetchQuery({ queryKey: ["/api/prompts/active"] });
+      }
+      
+      // Save with optimistic updates and error handling
+      await updatePromptMutation.mutateAsync({
+        id: activePromptConfig.id,
+        config: {
+          ...activeConfig,
+          aiConfig: aiConfig // Make sure we save the current AI config
+        },
+      });
+
+    } catch (error: any) {
+      console.error('Save failed:', error);
+      // Error is already handled by mutation error handler
+    }
+  }, [activeConfig, updatePromptMutation, activePromptConfig?.id, aiConfig, queryClient, toast]);
 
   const handleBackup = async () => {
     try {
@@ -420,7 +515,7 @@ const Settings = memo(function Settings() {
                 <span className="text-xl font-bold text-foreground">Instellingen</span>
               </div>
               <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <a href="/" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
+                <a href="/pipeline" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
                   Pipeline
                 </a>
                 <a href="/cases" className="text-muted-foreground hover:text-foreground" data-testid="nav-cases">
@@ -770,7 +865,7 @@ const Settings = memo(function Settings() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="minimal">Minimal (Snelst, GPT-5 only)</SelectItem>
+                                <SelectItem value="minimal">Minimal (Snelst, GPT-4o-mini)</SelectItem>
                                 <SelectItem value="low">Low (Snel)</SelectItem>
                                 <SelectItem value="medium">Medium (Balans)</SelectItem>
                                 <SelectItem value="high">High (Diep)</SelectItem>

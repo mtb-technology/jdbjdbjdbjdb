@@ -6,6 +6,7 @@ import { StreamingSessionManager } from "./streaming-session-manager";
 import { BRONNEN_SPECIALIST_SUBSTEPS, type SubstepDefinition } from "@shared/streaming-types";
 import { SourceValidator } from "../source-validator";
 import type { AiConfig } from "@shared/schema";
+import { storage } from "../../storage";
 
 export class DecomposedStages {
   private streamingAI: StreamingAIService;
@@ -123,17 +124,39 @@ export class DecomposedStages {
       );
 
       const finalOutput = reviewSynthesis;
-      const conceptReport = conceptReportVersions['latest'] || stageResults['3_generatie'] || '';
+
+      // BELANGRIJK: Reviewers (4a-4g) produceren FEEDBACK, geen nieuwe rapport versie
+      // De conceptReport blijft LEEG voor reviewers - hun output gaat alleen in stageResults
+      const conceptReport = ''; // Reviewers updaten het rapport NIET
 
       // Complete stage
       this.sessionManager.completeStage(reportId, stageId, finalOutput, conceptReport, 'Generated from decomposed substeps');
 
       console.log(`🎉 [${reportId}-${stageId}] Decomposed stage completed successfully`);
 
+      // Get the actual prompt from configuration instead of status message
+      let actualPrompt = '';
+      try {
+        const promptConfig = await storage.getActivePromptConfig();
+        const stageConfig: any = promptConfig?.config?.[stageId as keyof typeof promptConfig.config] || {};
+
+        if (stageConfig?.prompt) {
+          actualPrompt = stageConfig.prompt;
+          console.log(`✅ [${reportId}-${stageId}] Using actual prompt from configuration (${actualPrompt.length} chars)`);
+        } else {
+          console.warn(`⚠️ [${reportId}-${stageId}] No prompt found in configuration for ${stageId}`);
+          // Fallback: use a generic message
+          actualPrompt = `Review stage ${stageId} - Prompts kunnen worden geconfigureerd in Instellingen`;
+        }
+      } catch (error) {
+        console.error(`❌ [${reportId}-${stageId}] Failed to get prompt from configuration:`, error);
+        actualPrompt = `Review stage ${stageId}`;
+      }
+
       return {
         stageOutput: finalOutput,
         conceptReport,
-        prompt: 'Decomposed 4a_BronnenSpecialist execution completed'
+        prompt: actualPrompt
       };
 
     } catch (error: any) {
@@ -344,13 +367,15 @@ Schrijf in professionele consultancy stijl.`;
         model: "gpt-4o",
         temperature: 0.2,
         topP: 0.9,
+        topK: 20,
         maxOutputTokens: 8192
       },
       '4c_SeniorSpecialist': {
         provider: "openai",
-        model: "gpt-5",
+        model: "gpt-4o",
         temperature: 0.1,
         topP: 0.85,
+        topK: 20,
         maxOutputTokens: 12288
       },
       '4d_KwaliteitsReviewer': {
@@ -358,11 +383,12 @@ Schrijf in professionele consultancy stijl.`;
         model: "gpt-4o-mini",
         temperature: 0.3,
         topP: 0.9,
+        topK: 20,
         maxOutputTokens: 6144
       },
       '1_informatiecheck': {
         provider: "google",
-        model: "gemini-2.5-flash",
+        model: "gemini-2.5-flash-exp",
         temperature: 0.2,
         topP: 0.9,
         topK: 30,
@@ -373,6 +399,7 @@ Schrijf in professionele consultancy stijl.`;
         model: "gpt-4o",
         temperature: 0.1,
         topP: 0.8,
+        topK: 20,
         maxOutputTokens: 8192
       },
       '3_generatie': {
@@ -380,13 +407,15 @@ Schrijf in professionele consultancy stijl.`;
         model: "gpt-4o",
         temperature: 0.3,
         topP: 0.9,
+        topK: 20,
         maxOutputTokens: 16384
       },
       '5_eindredactie': {
-        provider: "openai", 
+        provider: "openai",
         model: "gpt-4o-mini",
         temperature: 0.2,
         topP: 0.95,
+        topK: 20,
         maxOutputTokens: 8192
       }
     };

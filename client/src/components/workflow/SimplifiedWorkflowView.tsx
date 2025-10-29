@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WORKFLOW_STAGES } from "./constants";
-import { ReviewFeedbackEditor } from "./ReviewFeedbackEditor";
 import { StreamingWorkflow } from "../streaming/StreamingWorkflow";
 import { OverrideConceptDialog } from "./OverrideConceptDialog";
 import { SimpleFeedbackProcessor } from "./SimpleFeedbackProcessor";
@@ -755,8 +754,30 @@ export function SimplifiedWorkflowView({
                             {WORKFLOW_STAGES.slice(0, index).map((prevStage, prevIndex) => {
                               const prevResult = state.stageResults[prevStage.key];
                               console.log(`🔍 Previous stage ${prevStage.key}:`, { prevResult, hasPrevResult: !!prevResult, resultLength: prevResult?.length });
+
+                              // Filter out status messages and execution summaries - alleen echte AI output tonen
                               if (!prevResult) return null;
-                              
+
+                              // Skip korte berichten
+                              if (prevResult.length < 50) {
+                                console.log(`⏭️  Skipping short message from ${prevStage.key}`);
+                                return null;
+                              }
+
+                              // Skip expliciete status berichten
+                              const statusPhrases = [
+                                'execution completed',
+                                'Decomposed',
+                                '[Streaming Execution Summary',
+                                'stage completed',
+                                'Generated from decomposed'
+                              ];
+
+                              if (statusPhrases.some(phrase => prevResult.includes(phrase))) {
+                                console.log(`⏭️  Skipping status message from ${prevStage.key}: "${prevResult.substring(0, 50)}..."`);
+                                return null;
+                              }
+
                               return (
                                 <div key={prevStage.key} className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                                   <div className="flex items-center justify-between p-2 border-b border-blue-200 dark:border-blue-800">
@@ -1046,8 +1067,8 @@ export function SimplifiedWorkflowView({
                         )}
 
 
-                        {/* Streaming Workflow Component for All Stages */}
-                        {(isActive || isCompleted) && streamingMode[stage.key] && (
+                        {/* Streaming Workflow Component for All Stages - Default ON */}
+                        {(isActive || isCompleted) && (streamingMode[stage.key] ?? true) && (
                           <div className="mb-4">
                             <StreamingWorkflow
                               reportId={state.currentReport?.id || ''}
@@ -1087,8 +1108,8 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
 
-                        {/* Action buttons for active stage */}
-                        {isActive && !isCompleted && !streamingMode[stage.key] && (
+                        {/* Action buttons for active stage - Only show when streaming is OFF */}
+                        {isActive && !isCompleted && !(streamingMode[stage.key] ?? true) && (
                           <>
                             {isReviewer ? (
                               <div className="space-y-3 mt-3">
@@ -1118,23 +1139,26 @@ export function SimplifiedWorkflowView({
                                 )}
                                 
                                 {hasReview && !hasProcessing && (
-                                  <ReviewFeedbackEditor
-                                    stageName={stage.label}
-                                    stageId={stage.key}
+                                  <SimpleFeedbackProcessor
                                     reportId={state.currentReport?.id || ""}
-                                    aiReviewOutput={substepResults.review || ""}
-                                    onProcessFeedback={(mergedFeedback) => {
-                                      if (state.currentReport) {
-                                        executeSubstepM.mutate({
-                                          substepKey: "5_feedback_verwerker",
-                                          substepType: "processing",
-                                          reportId: state.currentReport.id,
-                                          customInput: mergedFeedback
-                                        });
-                                      }
+                                    stageId={stage.key}
+                                    stageName={stage.label}
+                                    rawFeedback={substepResults.review || ""}
+                                    onProcessingComplete={(response) => {
+                                      console.log(`✅ Feedback processing completed for ${stage.key}:`, response);
+
+                                      // Update substep results to reflect processing completion
+                                      dispatch({
+                                        type: "SET_SUBSTEP_RESULT",
+                                        stage: stage.key,
+                                        substep: "processing",
+                                        result: `Feedback verwerkt - versie ${response.newVersion}`
+                                      });
+
+                                      // Invalidate queries to refresh data
+                                      queryClient.invalidateQueries({ queryKey: ['/api/reports', state.currentReport?.id] });
+                                      queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
                                     }}
-                                    isProcessing={executeSubstepM.isPending && executeSubstepM.variables?.substepType === "processing"}
-                                    hasProcessingResult={hasProcessing}
                                   />
                                 )}
                               </div>
@@ -1203,21 +1227,21 @@ export function SimplifiedWorkflowView({
                                 })}
                                 {/* Unified execution with streaming toggle */}
                                 <div className="space-y-2">
-                                  {/* Streaming toggle */}
+                                  {/* Streaming toggle - Default ON */}
                                   <div className="flex items-center justify-between p-2 border rounded-lg bg-muted/30">
-                                    <span className="text-sm font-medium">Uitvoering</span>
+                                    <span className="text-sm font-medium">Uitvoering Modus</span>
                                     <div className="flex items-center gap-2">
                                       <Label className="text-xs text-muted-foreground">
-                                        {streamingMode[stage.key] ? 'Streaming' : 'Regulier'}
+                                        {(streamingMode[stage.key] ?? true) ? 'Live streaming' : 'Wacht op volledig resultaat'}
                                       </Label>
                                       <Switch
-                                        checked={streamingMode[stage.key] || false}
-                                        onCheckedChange={(checked: boolean) => setStreamingMode(prev => ({ 
-                                          ...prev, 
-                                          [stage.key]: checked 
+                                        checked={streamingMode[stage.key] ?? true}
+                                        onCheckedChange={(checked: boolean) => setStreamingMode(prev => ({
+                                          ...prev,
+                                          [stage.key]: checked
                                         }))}
                                       />
-                                      <Zap className={`h-4 w-4 ${streamingMode[stage.key] ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                                      <Zap className={`h-4 w-4 ${(streamingMode[stage.key] ?? true) ? 'text-blue-600' : 'text-muted-foreground'}`} />
                                     </div>
                                   </div>
                                   
@@ -1242,17 +1266,8 @@ export function SimplifiedWorkflowView({
                                           </>
                                         ) : (
                                           <>
-                                            {streamingMode[stage.key] ? (
-                                              <>
-                                                <Zap className="mr-2 h-4 w-4" />
-                                                Uitvoeren (Streaming)
-                                              </>
-                                            ) : (
-                                              <>
-                                                <Play className="mr-2 h-4 w-4" />
-                                                Uitvoeren (Regulier)
-                                              </>
-                                            )}
+                                            <Play className="mr-2 h-4 w-4" />
+                                            Uitvoeren
                                           </>
                                         )}
                                       </>
@@ -1446,17 +1461,17 @@ export function SimplifiedWorkflowView({
                           </div>
                         )}
                         
-                        {/* Feedback Processor for completed review stages (outside streaming mode) */}
-                        {isCompleted && !streamingMode[stage.key] && stage.key.startsWith('4') && stage.key !== '4g_ChefEindredactie' && (
+                        {/* Feedback Processor for completed review stages (only when streaming is OFF) */}
+                        {isCompleted && !(streamingMode[stage.key] ?? true) && stage.key.startsWith('4') && stage.key !== '4g_ChefEindredactie' && (
                           (() => {
                             const substepResults = state.substepResults?.[stage.key];
                             const hasRawFeedback = substepResults?.review;
                             const hasProcessing = substepResults?.processing;
-                            
+
                             // Debug logging for feedback processor state
                             console.log(`🔍 Feedback Processor Debug for ${stage.key}:`, {
                               isCompleted,
-                              streamingMode: streamingMode[stage.key],
+                              streamingMode: streamingMode[stage.key] ?? true,
                               substepResults,
                               hasRawFeedback: !!hasRawFeedback,
                               hasProcessing: !!hasProcessing,

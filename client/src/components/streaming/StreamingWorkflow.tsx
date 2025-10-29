@@ -444,11 +444,15 @@ export function StreamingWorkflow({
         {streamingContent && (
           <div className="space-y-2">
             <h4 className="font-medium">Live Output</h4>
-            <div 
-              className="p-3 bg-muted rounded-lg text-sm font-mono max-h-40 overflow-y-auto"
+            <div
+              className="p-4 bg-muted rounded-lg text-sm max-h-96 overflow-y-auto border border-border"
               data-testid={`streaming-content-${stageId}`}
             >
-              {streamingContent}
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                <div className="whitespace-pre-wrap break-words leading-relaxed">
+                  {streamingContent}
+                </div>
+              </div>
             </div>
           </div>
         )}

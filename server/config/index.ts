@@ -89,6 +89,23 @@ export const AI_MODELS = {
       maxRequestsPerMinute: 1000
     }
   },
+  'gemini-2.5-pro-deep-research': {
+    provider: 'google' as const,
+    handlerType: 'google-deep-research' as const,
+    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useWebSearch'],
+    requiresResponsesAPI: true,
+    timeout: 900000, // 15 minutes for Deep Research
+    defaultConfig: {
+      temperature: 0.1,
+      topP: 0.95,
+      topK: 20,
+      maxOutputTokens: 32768 // Higher default for research outputs
+    },
+    limits: {
+      maxTokensPerRequest: 65536,
+      maxRequestsPerMinute: 30
+    }
+  },
   
   // OpenAI Models
   'gpt-4o': {
@@ -294,7 +311,7 @@ export const REPORT_CONFIG = {
   },
   // Hybrid workflow model selection
   defaultModel: 'gpt-4o-mini' as AIModelName, // Fast for automated checks
-  reviewerModel: 'gpt-4o' as AIModelName, // Balanced for reviews
+  reviewerModel: 'gpt-4o' as AIModelName, // Balanced for reviews - restored with fallback handling
   generationModel: 'gpt-5' as AIModelName, // Powerful for large reports
   simpleTaskModel: 'gpt-4o-mini' as AIModelName, // Quick tasks (1-2 mins)
   complexTaskModel: 'gpt-5' as AIModelName // Complex reports (5-10 mins)

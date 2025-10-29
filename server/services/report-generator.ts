@@ -349,10 +349,10 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 24576);
           console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for Deep Research reviewer stage ${stageName}`);
         }
-      } else if (aiConfig.model?.includes('gpt-5')) {
-        // GPT-5 also benefits from more tokens for complex analysis
+      } else if (aiConfig.model?.includes('gpt-4o')) {
+        // GPT-4o also benefits from more tokens for complex analysis
         aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 16384);
-        console.log(`🎯 [${jobId}] Set maxOutputTokens to ${aiConfig.maxOutputTokens} for GPT-5 reviewer stage ${stageName}`);
+        console.log(`🎯 [${jobId}] Set maxOutputTokens to ${aiConfig.maxOutputTokens} for GPT-4o reviewer stage ${stageName}`);
       } else if (aiConfig.maxOutputTokens < 4096) {
         aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 4096);
         console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for reviewer stage ${stageName}`);
@@ -410,6 +410,75 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     } catch (error: any) {
       console.error(`🚨 [${jobId}] Model failed (${aiConfig.model}):`, error.message);
       
+      // Check if this is an OpenAI authentication error - try fallback to gpt-4o-mini
+      const isOpenAIAuthError = error.message?.includes('Authentication failed for OpenAI') ||
+                               error.code === 'AI_AUTHENTICATION_FAILED';
+      
+      if (isOpenAIAuthError && aiConfig.model === 'gpt-4o' && aiConfig.provider === 'openai') {
+        console.log(`🔄 [${jobId}] OpenAI authentication failed for gpt-4o, trying fallback to gpt-4o-mini`);
+        
+        try {
+          // Create fallback config with gpt-4o-mini
+          const fallbackConfig = { ...aiConfig, model: 'gpt-4o-mini' as const };
+          
+          const fallbackResponse = await this.modelFactory.callModel(fallbackConfig, prompt, {
+            ...options,
+            jobId: `${jobId}-fallback`
+          });
+          
+          console.log(`✅ [${jobId}] Fallback to gpt-4o-mini succeeded`);
+          
+          // Process the fallback response
+          let stageOutput = fallbackResponse.content;
+          let conceptReport = "";
+          
+          if (["3_generatie", "5_feedback_verwerker", "final_check"].includes(stageName)) {
+            conceptReport = stageOutput;
+          } else {
+            conceptReport = conceptReportVersions?.["latest"] || "";
+          }
+          
+          return { stageOutput, conceptReport, prompt };
+          
+        } catch (fallbackError: any) {
+          console.error(`❌ [${jobId}] Fallback to gpt-4o-mini also failed:`, fallbackError.message);
+          
+          // Try Google AI as final fallback
+          console.log(`🔄 [${jobId}] Trying final fallback to Google AI`);
+          
+          try {
+            const googleConfig = { 
+              ...aiConfig, 
+              provider: 'google' as const, 
+              model: 'gemini-2.5-flash' as const 
+            };
+            
+            const googleResponse = await this.modelFactory.callModel(googleConfig, prompt, {
+              ...options,
+              jobId: `${jobId}-google-fallback`
+            });
+            
+            console.log(`✅ [${jobId}] Google AI fallback succeeded`);
+            
+            // Process the Google response
+            let stageOutput = googleResponse.content;
+            let conceptReport = "";
+            
+            if (["3_generatie", "5_feedback_verwerker", "final_check"].includes(stageName)) {
+              conceptReport = stageOutput;
+            } else {
+              conceptReport = conceptReportVersions?.["latest"] || "";
+            }
+            
+            return { stageOutput, conceptReport, prompt };
+            
+          } catch (googleError: any) {
+            console.error(`❌ [${jobId}] Google AI fallback also failed:`, googleError.message);
+            // Continue with normal error handling
+          }
+        }
+      }
+      
       // Check if error is due to token limit for Deep Research models
       const isTokenLimitError = error.message.includes('maxOutputTokens') || 
                                 error.message.includes('token limit') ||
@@ -455,19 +524,22 @@ Gebruik een standaard model zoals **gpt-4o** of **gemini-2.5-pro** die efficiën
       // Default error handling for other errors
       const stageDisplayName = this.getStageDisplayName(stageName);
       
+      // Check if we already tried fallbacks
+      const triedFallback = isOpenAIAuthError && aiConfig.model === 'gpt-4o' && aiConfig.provider === 'openai';
+      
       const placeholderResponse = `## ${stageDisplayName}
 
 De AI-analyse kon niet worden uitgevoerd vanwege technische problemen.
 
 ### Technische Details:
-- Model: ${aiConfig.model}
+- Model: ${aiConfig.model}${triedFallback ? ' (automatische fallbacks geprobeerd: gpt-4o-mini, gemini-2.5-flash)' : ''}
 - Prompt lengte: ${prompt.length} karakters
 - Foutmelding: ${error.message}
 
 ### Advies:
-1. Probeer de stap opnieuw uit te voeren
-2. Controleer of uw API keys correct zijn geconfigureerd
-3. Overweeg een ander AI model te gebruiken
+${triedFallback ? '1. Het systeem heeft automatisch geprobeerd terug te vallen naar gpt-4o-mini en Google AI, maar alle opties zijn mislukt\n' : ''}1. Controleer of uw API keys geldig zijn en voldoende credits hebben
+2. Controleer of zowel OpenAI als Google AI API keys zijn geconfigureerd
+3. Overweeg de AI instellingen aan te passen in de instellingen pagina
 4. Neem contact op met support als het probleem aanhoudt
 
 ### Status:

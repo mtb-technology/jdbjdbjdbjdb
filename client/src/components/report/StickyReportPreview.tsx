@@ -1,0 +1,241 @@
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { 
+  FileText, 
+  Maximize2, 
+  Minimize2, 
+  Download,
+  Eye,
+  EyeOff,
+  ChevronRight,
+  ChevronLeft,
+  AlertCircle
+} from "lucide-react";
+import { CompactVersionTimeline } from "./VersionTimeline";
+
+interface StickyReportPreviewProps {
+  content: string;
+  version?: number;
+  stageName?: string;
+  changeCount?: number;
+  versions?: Array<{
+    version: number;
+    stageKey: string;
+    stageName: string;
+    changeCount?: number;
+  }>;
+  onExport?: () => void;
+  onFullView?: () => void;
+  className?: string;
+}
+
+export function StickyReportPreview({ 
+  content, 
+  version = 1,
+  stageName = "Concept",
+  changeCount,
+  versions = [],
+  onExport,
+  onFullView,
+  className = ""
+}: StickyReportPreviewProps) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  if (isCollapsed) {
+    return (
+      <div className={`fixed right-4 top-4 z-40 ${className}`}>
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => setIsCollapsed(false)}
+          className="shadow-lg"
+        >
+          <ChevronLeft className="h-4 w-4 mr-2" />
+          Toon Rapport Preview
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className={`sticky top-4 h-[calc(100vh-2rem)] flex flex-col ${className}`}
+      style={{ minWidth: isExpanded ? '400px' : '350px' }}
+    >
+      <Card className="flex flex-col h-full shadow-lg border-2 border-primary/20">
+        <CardHeader className="pb-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-5 w-5" />
+              Live Rapport Preview
+            </CardTitle>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="h-7 w-7 p-0"
+              >
+                {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsCollapsed(true)}
+                className="h-7 w-7 p-0"
+              >
+                <ChevronRight className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Version info */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant="default" className="text-xs">
+                Versie {version}
+              </Badge>
+              {changeCount !== undefined && changeCount > 0 && (
+                <Badge variant="secondary" className="text-xs">
+                  +{changeCount} wijz.
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <div className="text-xs text-muted-foreground">
+            {stageName}
+          </div>
+
+          {/* Compact timeline if versions available */}
+          {versions.length > 1 && isExpanded && (
+            <div className="pt-2 border-t">
+              <CompactVersionTimeline 
+                versions={versions} 
+                currentVersion={version}
+              />
+            </div>
+          )}
+        </CardHeader>
+
+        <CardContent className="flex-1 flex flex-col p-0 min-h-0">
+          {/* Content preview */}
+          <ScrollArea className="flex-1 px-4">
+            {content ? (
+              <div className="prose prose-sm max-w-none pb-4">
+                <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed bg-muted/30 p-3 rounded-md">
+                  {content}
+                </pre>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-center p-4 text-muted-foreground">
+                <AlertCircle className="h-8 w-8 mb-2 opacity-50" />
+                <p className="text-sm">Nog geen rapport content beschikbaar</p>
+                <p className="text-xs mt-1">Start de workflow om een rapport te genereren</p>
+              </div>
+            )}
+          </ScrollArea>
+
+          {/* Action buttons */}
+          <div className="border-t p-3 space-y-2 bg-muted/20">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-xs h-8"
+              onClick={onFullView}
+            >
+              <Eye className="h-3 w-3 mr-2" />
+              Volledig Scherm
+            </Button>
+            {onExport && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full text-xs h-8"
+                onClick={onExport}
+              >
+                <Download className="h-3 w-3 mr-2" />
+                Exporteer
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Floating indicator for unsaved changes */}
+      {changeCount !== undefined && changeCount > 0 && (
+        <div className="absolute -top-2 -right-2 z-10">
+          <div className="bg-blue-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center shadow-lg animate-pulse">
+            {changeCount > 9 ? '9+' : changeCount}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Full screen modal version
+interface FullScreenReportPreviewProps {
+  content: string;
+  version?: number;
+  stageName?: string;
+  onClose: () => void;
+  onExport?: () => void;
+}
+
+export function FullScreenReportPreview({
+  content,
+  version = 1,
+  stageName = "Concept",
+  onClose,
+  onExport
+}: FullScreenReportPreviewProps) {
+  return (
+    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm">
+      <div className="container mx-auto h-full flex flex-col py-8">
+        <Card className="flex-1 flex flex-col min-h-0">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-6 w-6" />
+                  Fiscaal Duidingsrapport - Preview
+                </CardTitle>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge variant="default">Versie {version}</Badge>
+                  <span className="text-sm text-muted-foreground">{stageName}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {onExport && (
+                  <Button variant="outline" size="sm" onClick={onExport}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Exporteer
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={onClose}>
+                  <EyeOff className="h-4 w-4 mr-2" />
+                  Sluiten
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent className="flex-1 min-h-0">
+            <ScrollArea className="h-full">
+              <div className="prose prose-sm max-w-none">
+                <pre className="whitespace-pre-wrap font-sans leading-relaxed">
+                  {content}
+                </pre>
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
