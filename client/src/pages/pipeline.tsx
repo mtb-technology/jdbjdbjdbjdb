@@ -43,16 +43,18 @@ const Pipeline = memo(function Pipeline() {
     setIsCreatingCase(true);
     try {
       // Create the case immediately when "Start Case" is clicked
-      const report = await apiRequest("/api/reports/create", {
-        method: "POST",
-        body: JSON.stringify({
-          dossier: dossierData,
-          bouwplan: bouwplanData,
-          clientName: "Client",
-          rawText: rawText.trim(),
-        }),
-      }) as Report;
-      
+      const response = await apiRequest("POST", "/api/reports/create", {
+        dossier: dossierData,
+        bouwplan: bouwplanData,
+        clientName: "Client",
+        rawText: rawText.trim(),
+      });
+      const data = await response.json();
+      // Handle API response format - extract report from success response or use data directly
+      const report = (data && typeof data === 'object' && 'success' in data && data.success === true) ? data.data : data;
+
+      console.log("🎯 Pipeline: Report created from API:", { reportId: report?.id, hasId: !!report?.id, data, report });
+
       setCreatedReport(report);
       setShowWorkflow(true);
       

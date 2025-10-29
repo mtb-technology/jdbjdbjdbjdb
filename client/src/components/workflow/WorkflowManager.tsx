@@ -108,13 +108,16 @@ function WorkflowManagerContent({
   // Create report mutation
   const createReportMutation = useMutation({
     mutationFn: async () => {
-      const data = await apiRequest("POST", "/api/reports/create", {
+      const response = await apiRequest("POST", "/api/reports/create", {
         dossier,
         bouwplan,
         clientName,
         rawText,
-      }) as unknown as Report;
-      return data;
+      });
+      const data = await response.json();
+      // Handle API response format - extract report from success response or use data directly
+      const report = (data && typeof data === 'object' && 'success' in data && data.success === true) ? data.data : data;
+      return report as Report;
     },
     onMutate: () => {
       dispatch({ type: "SET_STAGE_PROCESSING", stage: "validation", isProcessing: true });
@@ -122,9 +125,15 @@ function WorkflowManagerContent({
       dispatch({ type: "UPDATE_TIMER", time: 0 });
     },
     onSuccess: (report: Report) => {
+      console.log("🎯 Report created successfully:", { reportId: report.id, hasId: !!report.id, report });
+
       // Save report ID in session FIRST to prevent race conditions
-      sessionStorage.setItem('current-workflow-report-id', report.id);
-      
+      if (report.id) {
+        sessionStorage.setItem('current-workflow-report-id', report.id);
+      } else {
+        console.error("❌ Report created without ID!", report);
+      }
+
       // Save validation time
       if (state.stageStartTime) {
         const elapsed = Math.floor((Date.now() - state.stageStartTime.getTime()) / 1000);
@@ -132,14 +141,18 @@ function WorkflowManagerContent({
       }
       dispatch({ type: "SET_STAGE_PROCESSING", stage: "validation", isProcessing: false });
       dispatch({ type: "SET_REPORT", payload: report });
-      
+
       // Clean stage results to ensure we only have the latest for each stage
       const cleanedStageResults = cleanStageResults(report.stageResults as Record<string, string> || {});
       const reportWithCleanedResults = {
         ...report,
         stageResults: cleanedStageResults
       };
-      
+
+      console.log("🔄 Dispatching LOAD_EXISTING_REPORT with:", {
+        reportId: reportWithCleanedResults.id,
+        hasId: !!reportWithCleanedResults.id
+      });
       dispatch({ type: "LOAD_EXISTING_REPORT", report: reportWithCleanedResults });
       
       // Auto-start first step
