@@ -89,6 +89,23 @@ export const AI_MODELS = {
       maxRequestsPerMinute: 1000
     }
   },
+  'gemini-2.5-flash-exp': {
+    provider: 'google' as const,
+    handlerType: 'google' as const,
+    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding'],
+    requiresResponsesAPI: false,
+    timeout: 300000, // 5 minutes
+    defaultConfig: {
+      temperature: 0.1,
+      topP: 0.95,
+      topK: 20,
+      maxOutputTokens: 8192
+    },
+    limits: {
+      maxTokensPerRequest: 32768,
+      maxRequestsPerMinute: 1000
+    }
+  },
   'gemini-2.5-pro-deep-research': {
     provider: 'google' as const,
     handlerType: 'google-deep-research' as const,

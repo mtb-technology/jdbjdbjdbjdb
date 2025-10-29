@@ -39,7 +39,7 @@ export class DecomposedStages {
 
     try {
       // Get AI config for this stage
-      const aiConfig: AiConfig = this.getAIConfigForStage(stageId);
+      const aiConfig: AiConfig = await this.getAIConfigForStage(stageId);
       
       let accumulatedResults = '';
       let sourcesList: string[] = [];
@@ -352,7 +352,43 @@ Schrijf in professionele consultancy stijl.`;
   }
 
   // Get AI configuration for each stage
-  private getAIConfigForStage(stageId: string): AiConfig {
+  private async getAIConfigForStage(stageId: string): Promise<AiConfig> {
+    // First try to get configuration from database/storage
+    try {
+      const promptConfig = await storage.getActivePromptConfig();
+      const stageConfig: any = promptConfig?.config?.[stageId as keyof typeof promptConfig.config] || {};
+      const globalConfig: any = promptConfig?.config || {};
+
+      const stageAiConfig = stageConfig?.aiConfig;
+      const globalAiConfig = globalConfig?.aiConfig;
+
+      // If we have a configured model in the database, use it
+      if (stageAiConfig || globalAiConfig) {
+        const model = stageAiConfig?.model || globalAiConfig?.model || 'gpt-4o';
+        const aiConfig: AiConfig = {
+          provider: stageAiConfig?.provider || globalAiConfig?.provider || (model.startsWith('gpt') ? 'openai' : 'google'),
+          model: model as any,
+          temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.1,
+          topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
+          topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 20,
+          maxOutputTokens: stageAiConfig?.maxOutputTokens || globalAiConfig?.maxOutputTokens || 8192,
+          reasoning: stageAiConfig?.reasoning || globalAiConfig?.reasoning,
+          verbosity: stageAiConfig?.verbosity || globalAiConfig?.verbosity
+        };
+
+        console.log(`✅ Using stored AI config for ${stageId}:`, {
+          provider: aiConfig.provider,
+          model: aiConfig.model,
+          maxOutputTokens: aiConfig.maxOutputTokens
+        });
+
+        return aiConfig;
+      }
+    } catch (error) {
+      console.warn(`⚠️ Failed to load AI config from storage for ${stageId}, using fallbacks:`, error);
+    }
+
+    // Fallback to hardcoded defaults if no database config available
     const aiConfigs: Record<string, AiConfig> = {
       '4a_BronnenSpecialist': {
         provider: "google",
@@ -387,8 +423,8 @@ Schrijf in professionele consultancy stijl.`;
         maxOutputTokens: 6144
       },
       '1_informatiecheck': {
-        provider: "google",
-        model: "gemini-2.5-flash-exp",
+        provider: "openai",
+        model: "gpt-4o-mini",
         temperature: 0.2,
         topP: 0.9,
         topK: 30,
@@ -420,6 +456,12 @@ Schrijf in professionele consultancy stijl.`;
       }
     };
 
-    return aiConfigs[stageId] || aiConfigs['4a_BronnenSpecialist'];
+    const fallbackConfig = aiConfigs[stageId] || aiConfigs['4a_BronnenSpecialist'];
+    console.log(`🔄 Using fallback AI config for ${stageId}:`, {
+      provider: fallbackConfig.provider,
+      model: fallbackConfig.model
+    });
+
+    return fallbackConfig;
   }
 }
