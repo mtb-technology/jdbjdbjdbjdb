@@ -130,6 +130,7 @@ npm run db:push
 3. **Environment Variables**: Never commit `.env` files with real credentials
 4. **Database Changes**: After schema changes, always run `npm run db:push`
 
+
 ## Support
 
 For issues or questions about the setup, check:
