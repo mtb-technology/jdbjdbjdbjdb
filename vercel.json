@@ -2,13 +2,6 @@
   "version": 2,
   "buildCommand": "vite build && npm run build:api",
   "outputDirectory": "dist/public",
-  "functions": {
-    "api/index.js": {
-      "memory": 1024,
-      "maxDuration": 60,
-      "includeFiles": "api/**"
-    }
-  },
   "rewrites": [
     {
       "source": "/api/(.*)",

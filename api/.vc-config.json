@@ -1,0 +1,7 @@
+{
+  "runtime": "nodejs20.x",
+  "handler": "index.js",
+  "launcherType": "Nodejs",
+  "shouldAddHelpers": false,
+  "maxDuration": 60
+}
