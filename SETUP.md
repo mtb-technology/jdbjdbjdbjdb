@@ -137,3 +137,7 @@ For issues or questions about the setup, check:
 - Database connection status
 - API key validity
 - Network/firewall settings for database connections
+
+
+ Consider Railway.app or Render.com instead - better for long-running connections at similar     │ │
+│ │ pricing.   
