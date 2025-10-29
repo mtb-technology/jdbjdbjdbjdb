@@ -1,9 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "npm run build:vercel",
+  "buildCommand": "vite build && esbuild api/index.ts --platform=node --packages=bundle --bundle --format=esm --outfile=api/index.js --external:@neondatabase/serverless --external:ws --external:bufferutil",
   "outputDirectory": "dist/public",
   "functions": {
-    "api/index.ts": {
+    "api/index.js": {
       "memory": 1024,
       "maxDuration": 60
     }

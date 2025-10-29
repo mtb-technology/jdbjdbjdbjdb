@@ -1,29 +1,29 @@
-import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "../server/routes";
-import { errorHandler } from "../server/middleware/errorHandler";
-import { config, validateConfig } from "../server/config";
-import { checkDatabaseConnection } from "../server/db";
+import express, { type Request, type Response, type NextFunction } from "express";
+import { registerRoutes } from "../server/routes.js";
+import { errorHandler } from "../server/middleware/errorHandler.js";
+import { config, validateConfig } from "../server/config/index.js";
+import { checkDatabaseConnection } from "../server/db.js";
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // Request ID middleware voor betere error tracking
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   req.headers['x-request-id'] = req.headers['x-request-id'] ||
     Date.now().toString(36) + Math.random().toString(36).substr(2);
   next();
 });
 
 // Request logging middleware
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
   const path = req.path;
   const requestId = req.headers['x-request-id'];
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
+  res.json = function (bodyJson: any, ...args: any[]) {
     capturedJsonResponse = bodyJson;
     return originalResJson.apply(res, [bodyJson, ...args]);
   };
@@ -103,22 +103,24 @@ async function initializeApp() {
 }
 
 // Vercel serverless handler
-export default async function handler(req: Request, res: Response) {
+export default async function handler(req: Request, res: Response): Promise<void> {
   try {
     // Initialize app on first request (cold start)
     await initializeApp();
 
     // Handle the request with Express
-    return app(req, res);
+    app(req, res);
   } catch (error) {
     console.error('❌ Serverless handler error:', error);
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Internal server error',
-        userMessage: 'Er is een interne fout opgetreden'
-      }
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Internal server error',
+          userMessage: 'Er is een interne fout opgetreden'
+        }
+      });
+    }
   }
 }
