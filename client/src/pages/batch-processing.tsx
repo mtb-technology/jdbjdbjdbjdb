@@ -141,15 +141,15 @@ export default function BatchProcessing() {
 
     try {
       // Step 1: Create report
-      const report = await apiRequest("/api/reports/create", {
-        method: "POST",
-        body: JSON.stringify({
-          clientName: item.clientName,
-          title: `Fiscaal Advies - ${item.clientName}`,
-          dossierData: { rawText: item.rawText },
-        }),
+      const response = await apiRequest("POST", "/api/reports/create", {
+        clientName: item.clientName,
+        title: `Fiscaal Advies - ${item.clientName}`,
+        dossierData: { rawText: item.rawText },
       });
 
+      const data = await response.json();
+      // Handle API response format - extract report from success response or use data directly
+      const report = (data && typeof data === 'object' && 'success' in data && data.success === true) ? data.data : data;
       const reportId = report.id;
 
       // Update with report ID
@@ -183,12 +183,9 @@ export default function BatchProcessing() {
         );
 
         // Execute stage (non-streaming for batch)
-        await apiRequest(`/api/reports/${reportId}/execute-stage`, {
-          method: "POST",
-          body: JSON.stringify({
-            stageKey,
-            streamingMode: false,
-          }),
+        await apiRequest("POST", `/api/reports/${reportId}/execute-stage`, {
+          stageKey,
+          streamingMode: false,
         });
       }
 

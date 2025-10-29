@@ -356,10 +356,10 @@ export function SimplifiedWorkflowView({
   // Fetch prompt preview for a stage
   const fetchPromptPreview = async (stageKey: string) => {
     if (promptPreviews[stageKey]) return;
-    
+
     setLoadingPreview(stageKey);
     try {
-      if (state.currentReport) {
+      if (state.currentReport && state.currentReport.id) {
         // For existing reports, use the specific report preview
         const response = await fetch(`/api/reports/${state.currentReport.id}/stage/${stageKey}/preview`);
         if (response.ok) {
