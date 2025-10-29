@@ -1,9 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "vite build && esbuild api/index.ts --platform=node --packages=bundle --bundle --format=esm --outfile=api/index.js --external:@neondatabase/serverless --external:ws --external:bufferutil",
+  "buildCommand": "vite build",
   "outputDirectory": "dist/public",
   "functions": {
-    "api/index.js": {
+    "api/**/*.ts": {
       "memory": 1024,
       "maxDuration": 60
     }
@@ -11,7 +11,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index"
+      "destination": "/api"
     }
   ],
   "headers": [
