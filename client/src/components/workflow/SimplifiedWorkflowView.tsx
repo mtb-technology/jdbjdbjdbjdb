@@ -10,11 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
-import { 
-  Play, 
-  CheckCircle, 
-  Eye, 
-  EyeOff, 
+import {
+  Play,
+  CheckCircle,
+  Eye,
+  EyeOff,
   ChevronRight,
   ChevronDown,
   Copy,
@@ -33,7 +33,9 @@ import {
   Wand2,
   PenTool,
   ArrowUp,
-  Settings
+  Settings,
+  Lock as LockIcon,
+  AlertTriangle
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WORKFLOW_STAGES } from "./constants";
@@ -43,6 +45,9 @@ import { SimpleFeedbackProcessor } from "./SimpleFeedbackProcessor";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { isInformatieCheckComplete, getStage2BlockReason } from "@/lib/workflowParsers";
+import { InformatieCheckViewer } from "./InformatieCheckViewer";
+import { ComplexiteitsCheckViewer } from "./ComplexiteitsCheckViewer";
 
 interface SimplifiedWorkflowViewProps {
   state: any;
@@ -684,8 +689,19 @@ export function SimplifiedWorkflowView({
             const isSubstepProcessing = executeSubstepM.isPending && executeSubstepM.variables?.substepType === "processing";
             const isProcessing = state.stageProcessing[stage.key] || isReviewProcessing || isSubstepProcessing;
             const processingTime = state.stageTimes[stage.key];
-            const canStart = index === 0 || !!state.stageResults[WORKFLOW_STAGES[index - 1].key];
-            
+
+            // Warning logic for Stage 2: Warn if Stage 1 is INCOMPLEET (but allow override)
+            let canStart = index === 0 || !!state.stageResults[WORKFLOW_STAGES[index - 1].key];
+            let warningReason: string | null = null;
+
+            if (stage.key === "2_complexiteitscheck") {
+              const stage1Result = state.stageResults["1_informatiecheck"];
+              if (!isInformatieCheckComplete(stage1Result)) {
+                warningReason = getStage2BlockReason(stage1Result);
+                // Don't block - just warn
+              }
+            }
+
             const isExpanded = expandedStages.has(stage.key) || isActive;
             
             // For reviewer stages
@@ -726,6 +742,12 @@ export function SimplifiedWorkflowView({
                   </div>
                   
                   <div className="flex items-center gap-2">
+                    {warningReason && (
+                      <Badge variant="outline" className="text-xs border-orange-500 text-orange-600">
+                        <AlertTriangle className="h-3 w-3 mr-1" />
+                        Let op
+                      </Badge>
+                    )}
                     {processingTime && (
                       <Badge variant="outline" className="text-xs">
                         {processingTime}s
@@ -923,29 +945,50 @@ export function SimplifiedWorkflowView({
                         {/* Show Output/Response */}
                         {stageResult && (
                           <div className="space-y-2">
-                            <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
-                              <div className="flex items-center justify-between p-2 border-b border-green-200 dark:border-green-800">
-                                <div className="flex items-center gap-2">
-                                  <CheckCircle className="h-3 w-3 text-green-600" />
-                                  <span className="text-xs font-medium text-green-700 dark:text-green-300">
-                                    OUTPUT ← AI
-                                  </span>
+                            {/* Stage 1 (Informatiecheck): Use structured viewer */}
+                            {stage.key === "1_informatiecheck" ? (
+                              <InformatieCheckViewer
+                                rawOutput={stageResult}
+                              />
+                            ) : stage.key === "2_complexiteitscheck" ? (
+                              /* Stage 2 (Complexiteitscheck): Use structured viewer */
+                              <ComplexiteitsCheckViewer
+                                rawOutput={stageResult}
+                                onEditedBouwplan={(editedBouwplan) => {
+                                  // Update the stage result with edited bouwplan
+                                  dispatch({
+                                    type: "SET_STAGE_RESULT",
+                                    stage: "2_complexiteitscheck",
+                                    result: JSON.stringify(editedBouwplan, null, 2)
+                                  });
+                                }}
+                              />
+                            ) : (
+                              /* All other stages: Show raw output */
+                              <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+                                <div className="flex items-center justify-between p-2 border-b border-green-200 dark:border-green-800">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle className="h-3 w-3 text-green-600" />
+                                    <span className="text-xs font-medium text-green-700 dark:text-green-300">
+                                      OUTPUT ← AI
+                                    </span>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => copyToClipboard(stageResult, "Response")}
+                                    className="h-6 w-6 p-0"
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                  </Button>
                                 </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => copyToClipboard(stageResult, "Response")}
-                                  className="h-6 w-6 p-0"
-                                >
-                                  <Copy className="h-3 w-3" />
-                                </Button>
+                                <div className="p-2 max-h-96 overflow-y-auto">
+                                  <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200">
+                                    {stageResult}
+                                  </pre>
+                                </div>
                               </div>
-                              <div className="p-2 max-h-96 overflow-y-auto">
-                                <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200">
-                                  {stageResult}
-                                </pre>
-                              </div>
-                            </div>
+                            )}
                           </div>
                         )}
 
@@ -1237,6 +1280,18 @@ export function SimplifiedWorkflowView({
                                 })}
                                 {/* Unified execution with streaming toggle */}
                                 <div className="space-y-2">
+                                  {/* Show warning if stage 1 is incomplete */}
+                                  {warningReason && (
+                                    <div className="p-3 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                                      <div className="flex items-start gap-2">
+                                        <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
+                                        <p className="text-xs text-orange-700 dark:text-orange-300">
+                                          <strong>Let op:</strong> {warningReason}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+
                                   {/* Streaming toggle - Default ON */}
                                   <div className="flex items-center justify-between p-2 border rounded-lg bg-muted/30">
                                     <span className="text-sm font-medium">Uitvoering Modus</span>

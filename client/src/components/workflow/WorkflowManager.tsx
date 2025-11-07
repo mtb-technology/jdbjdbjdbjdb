@@ -20,6 +20,7 @@ import { WorkflowProvider, useWorkflow } from "./WorkflowContext";
 import { SimplifiedWorkflowView } from "./SimplifiedWorkflowView";
 import { WORKFLOW_STAGES } from "./constants";
 import { cleanStageResults } from "@/lib/stageResultsHelper";
+import { isInformatieCheckComplete } from "@/lib/workflowParsers";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
 
 // Format plain text/markdown to professional fiscal report HTML - ONLY styling, no structure changes
@@ -499,18 +500,30 @@ function WorkflowManagerContent({
       
       // Set current stage index based on completed stages
       const completedStages = Object.keys(existingReport.stageResults as Record<string, string> || {});
-      const lastCompletedIndex = completedStages.length > 0 
+      const lastCompletedIndex = completedStages.length > 0
         ? Math.max(...completedStages.map(stage => WORKFLOW_STAGES.findIndex(s => s.key === stage)))
         : -1;
-      const newStageIndex = Math.min(lastCompletedIndex + 1, WORKFLOW_STAGES.length - 1);
-      
+
+      // Check if stage 1 is INCOMPLEET - if so, stay at stage 1
+      let newStageIndex = Math.min(lastCompletedIndex + 1, WORKFLOW_STAGES.length - 1);
+
+      const stageResults = existingReport.stageResults as Record<string, string> || {};
+      const stage1Result = stageResults["1_informatiecheck"];
+
+      // If stage 1 exists and is INCOMPLEET, stay at stage 1 (index 0)
+      if (stage1Result && !isInformatieCheckComplete(stage1Result)) {
+        console.log(`⚠️ Stage 1 is INCOMPLEET - staying at stage 1`);
+        newStageIndex = 0; // Force to stage 1
+      }
+
       console.log(`🔄 Stage index calculation:`, {
         completedStages,
         lastCompletedIndex,
         newStageIndex,
+        stage1Complete: stage1Result ? isInformatieCheckComplete(stage1Result) : 'N/A',
         workflowStages: WORKFLOW_STAGES.map(s => s.key)
       });
-      
+
       dispatch({ type: "SET_STAGE_INDEX", payload: newStageIndex });
       
       sessionStorage.setItem('current-workflow-report-id', existingReport.id);

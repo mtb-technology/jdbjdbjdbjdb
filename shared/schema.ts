@@ -218,7 +218,7 @@ export const stageConfigSchema = z.object({
   path: ["useWebSearch"]
 });
 
-// Multi-stage prompting workflow schema  
+// Multi-stage prompting workflow schema
 export const promptConfigSchema = z.object({
   "1_informatiecheck": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "2_complexiteitscheck": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
@@ -230,6 +230,7 @@ export const promptConfigSchema = z.object({
   "4e_DeAdvocaat": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
   "4f_DeKlantpsycholoog": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "4g_ChefEindredactie": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+  "editor": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }), // Chirurgische Redacteur - past wijzigingen toe
   "5_feedback_verwerker": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "6_change_summary": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "final_check": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
@@ -399,3 +400,64 @@ export type StageResult = z.infer<typeof stageResultSchema>;
 export type StageResults = z.infer<typeof stageResultsSchema>;
 export type ReportProcessorInput = z.infer<typeof reportProcessorInputSchema>;
 export type ReportProcessorOutput = z.infer<typeof reportProcessorOutputSchema>;
+
+// ===== STAGE 1: INFORMATIECHECK STRUCTURED OUTPUT =====
+
+// Schema for Stage 1 (Informatiecheck) structured JSON output
+export const informatieCheckOutputSchema = z.object({
+  status: z.enum(["COMPLEET", "INCOMPLEET"], {
+    errorMap: () => ({ message: "Status moet 'COMPLEET' of 'INCOMPLEET' zijn" })
+  }),
+
+  // For INCOMPLEET status - email to client
+  email_subject: z.string().optional(),
+  email_body: z.string().optional(), // HTML formatted email body
+
+  // For COMPLEET status - generated dossier
+  dossier: z.object({
+    samenvatting_onderwerp: z.string(),
+    klantvraag_verbatim: z.array(z.string()),
+    gestructureerde_data: z.object({
+      partijen: z.array(z.string()),
+      fiscale_partner: z.boolean(),
+      relevante_bedragen: z.record(z.string(), z.union([z.string(), z.number()])),
+      overige_info: z.array(z.string())
+    })
+  }).optional()
+}).strict()
+.refine((data) => {
+  // Validation: INCOMPLEET must have email fields
+  if (data.status === "INCOMPLEET") {
+    return !!data.email_subject && !!data.email_body;
+  }
+  return true;
+}, {
+  message: "INCOMPLEET status vereist email_subject en email_body",
+  path: ["email_subject"]
+})
+.refine((data) => {
+  // Validation: COMPLEET must have dossier field
+  if (data.status === "COMPLEET") {
+    return !!data.dossier;
+  }
+  return true;
+}, {
+  message: "COMPLEET status vereist dossier object",
+  path: ["dossier"]
+});
+
+export type InformatieCheckOutput = z.infer<typeof informatieCheckOutputSchema>;
+
+// ===== STAGE 2: COMPLEXITEITSCHECK (BOUWPLAN) STRUCTURED OUTPUT =====
+
+// Schema for Stage 2 (Complexiteitscheck) structured JSON output
+export const bouwplanDataSchema = z.object({
+  fiscale_kernthemas: z.array(z.string()).describe("Gedetecteerde fiscale kernthema's"),
+  geidentificeerde_risicos: z.array(z.string()).describe("Geïdentificeerde risico's"),
+  bouwplan_voor_rapport: z.record(z.string(), z.object({
+    koptekst: z.string(),
+    subdoelen: z.array(z.string()).optional()
+  })).describe("Voorgestelde rapportstructuur met secties")
+}).strict();
+
+export type BouwplanData = z.infer<typeof bouwplanDataSchema>;
