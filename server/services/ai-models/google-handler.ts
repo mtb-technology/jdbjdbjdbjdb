@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { BaseAIHandler, AIModelResponse, AIModelParameters } from "./base-handler";
-import { AIError } from "@shared/errors";
+import { AIError, ERROR_CODES } from "@shared/errors";
 import type { AiConfig } from "@shared/schema";
 
 export class GoogleAIHandler extends BaseAIHandler {
@@ -77,17 +77,48 @@ export class GoogleAIHandler extends BaseAIHandler {
       if (error instanceof AIError) {
         throw error;
       }
-      
+
+      // Enhanced rate limit detection for Google API
+      const errorMessage = error.message || error.toString() || '';
+      const is429Error = error.status === 429;
+      const isRateLimitMessage = errorMessage.toLowerCase().includes('rate limit') ||
+                                 errorMessage.toLowerCase().includes('quota') ||
+                                 errorMessage.toLowerCase().includes('resource_exhausted');
+
+      if (is429Error || isRateLimitMessage) {
+        console.error(`🚨 [${jobId}] Google API Rate Limit Detected:`, {
+          status: error.status,
+          message: errorMessage.substring(0, 200),
+          model: config.model,
+          recommendation: 'Wait 5-10 minutes before retrying. Rate limits indicate API quota exhaustion.'
+        });
+
+        // Rate limits are NOT retryable - fail immediately with clear error
+        throw new AIError(
+          `Rate limit exceeded for Google AI`,
+          ERROR_CODES.AI_RATE_LIMITED,
+          false, // NOT retryable - fail fast
+          undefined,
+          {
+            statusCode: error.status,
+            responseText: errorMessage,
+            provider: 'Google AI',
+            model: config.model,
+            suggestedWaitTime: '5-10 minutes'
+          }
+        );
+      }
+
       // Convert HTTP errors
       if (error.status) {
         throw AIError.fromHttpError(error.status, error.message, 'Google AI');
       }
-      
+
       // Convert network errors
       if (error.code && ['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET'].includes(error.code)) {
         throw AIError.networkError('Google AI', error);
       }
-      
+
       throw new AIError(error.message || 'Unknown Google AI error', 'EXTERNAL_API_ERROR' as any);
     }
   }

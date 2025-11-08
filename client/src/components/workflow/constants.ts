@@ -1,4 +1,4 @@
-import { 
+import {
   FileSearch,
   Brain,
   Wand2,
@@ -8,7 +8,6 @@ import {
   MessageSquare,
   UserCheck,
   PenTool,
-  Shield,
   CheckCircle,
   FileText,
   GitCompare
@@ -116,35 +115,10 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     ]
   },
   {
-    key: "4g_ChefEindredactie",
-    label: "4g. Chef Eindredactie",
-    description: "Review eindredactie → JSON feedback → Rapport update",
-    icon: Shield,
-    type: "reviewer",
-    substeps: [
-      { key: "review", label: "Review & JSON feedback", type: "review" },
-      { key: "update", label: "Rapport update", type: "processing" }
-    ]
-  },
-  {
-    key: "5_feedback_verwerker",
-    label: "5. Feedback Verwerking",
-    description: "Integratie van alle reviewer feedback",
-    icon: FileText,
-    type: "processor",
-  },
-  {
     key: "6_change_summary",
     label: "6. Change Summary",
     description: "Overzicht wijzigingen per stage",
     icon: GitCompare,
     type: "processor",
-  },
-  {
-    key: "final_check",
-    label: "7. Finale Controle",
-    description: "Laatste controle voor Mathijs",
-    icon: CheckCircle,
-    type: "generator",
   },
 ];

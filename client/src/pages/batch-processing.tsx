@@ -168,8 +168,6 @@ export default function BatchProcessing() {
         '4d_DeVertaler',
         '4e_DeAdvocaat',
         '4f_DeKlantpsycholoog',
-        '4g_ChefEindredactie',
-        '5_feedback_verwerker',
         '6_change_summary',
       ];
 

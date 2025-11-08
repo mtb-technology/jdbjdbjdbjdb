@@ -136,8 +136,8 @@ export class AIError extends Error {
         return new AIError(
           `Rate limit exceeded for ${provider}`,
           ERROR_CODES.AI_RATE_LIMITED,
-          true,
-          60000, // Retry after 1 minute
+          false, // NOT retryable - fail immediately
+          undefined,
           details
         );
       case 503:
@@ -229,12 +229,12 @@ export class AIError extends Error {
     );
   }
 
-  static rateLimited(provider: string, retryAfter?: number): AIError {
+  static rateLimited(provider: string): AIError {
     return new AIError(
       `Rate limit exceeded for ${provider}`,
       ERROR_CODES.AI_RATE_LIMITED,
-      true,
-      retryAfter || 60000, // Default 60 seconds
+      false, // NOT retryable - fail fast with clear error
+      undefined,
       { provider }
     );
   }

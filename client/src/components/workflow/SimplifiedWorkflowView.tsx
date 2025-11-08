@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
@@ -33,8 +32,6 @@ import {
   Wand2,
   PenTool,
   ArrowUp,
-  Settings,
-  Lock as LockIcon,
   AlertTriangle
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -43,11 +40,14 @@ import { StreamingWorkflow } from "../streaming/StreamingWorkflow";
 import { OverrideConceptDialog } from "./OverrideConceptDialog";
 import { SimpleFeedbackProcessor } from "./SimpleFeedbackProcessor";
 import { useToast } from "@/hooks/use-toast";
+import { debug } from "@/lib/debug";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { isInformatieCheckComplete, getStage2BlockReason } from "@/lib/workflowParsers";
 import { InformatieCheckViewer } from "./InformatieCheckViewer";
 import { ComplexiteitsCheckViewer } from "./ComplexiteitsCheckViewer";
+import { normalizePromptToString } from "@/lib/promptUtils";
+import { useCollapsibleSections } from "@/hooks/useCollapsibleSections";
 
 interface SimplifiedWorkflowViewProps {
   state: any;
@@ -83,10 +83,39 @@ export function SimplifiedWorkflowView({
   const [manualMode, setManualMode] = useState<Record<string, "ai" | "manual">>({});
   const [manualContent, setManualContent] = useState<Record<string, string>>({});
   const [streamingMode, setStreamingMode] = useState<Record<string, boolean>>({});
+  const {
+    toggleInput: toggleInputCollapse,
+    toggleSection: toggleSectionCollapse,
+    isInputCollapsed,
+    isSectionCollapsed
+  } = useCollapsibleSections();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
-  // Override dialog state  
+
+  // Auto-open output section when a stage completes successfully
+  useEffect(() => {
+    if (!state.stageResults) return;
+
+    // Check if any stage just completed (has a result but output section is collapsed)
+    Object.keys(state.stageResults).forEach(stageKey => {
+      if (state.stageResults[stageKey] && isSectionCollapsed(stageKey, 'output')) {
+        // Auto-expand the output section for this stage
+        toggleSectionCollapse(stageKey, 'output');
+      }
+    });
+  }, [state.stageResults]);
+
+  // Debug: Log state changes to help diagnose output visibility issues
+  useEffect(() => {
+    debug.workflow.stage('Stage Results Update', {
+      stageResults: state.stageResults,
+      stageResultKeys: Object.keys(state.stageResults || {}),
+      currentStageIndex: state.currentStageIndex,
+      totalResults: Object.keys(state.stageResults || {}).length
+    });
+  }, [state.stageResults, state.currentStageIndex]);
+
+  // Override dialog state
   const [overrideDialog, setOverrideDialog] = useState<{
     isOpen: boolean;
     stageId: string;
@@ -153,28 +182,28 @@ export function SimplifiedWorkflowView({
     onSuccess: (data, { stage }) => {
       // Update local state with manual result
       dispatch({ type: "SET_STAGE_RESULT", stage, result: data.stageResult });
-      
+
       // For generation stage, also set concept report
       if (stage === "3_generatie") {
         dispatch({ type: "SET_CONCEPT_VERSION", stage, content: data.conceptReport });
       }
-      
-      // Advance to next stage
-      const currentStageIndex = WORKFLOW_STAGES.findIndex(s => s.key === stage);
-      const nextStageIndex = currentStageIndex + 1;
-      if (nextStageIndex < WORKFLOW_STAGES.length) {
-        dispatch({ type: "SET_STAGE_INDEX", payload: nextStageIndex });
-      }
-      
+
+      // ❌ DISABLED: Auto-advance removed - user controls when to go to next stage
+      // const currentStageIndex = WORKFLOW_STAGES.findIndex(s => s.key === stage);
+      // const nextStageIndex = currentStageIndex + 1;
+      // if (nextStageIndex < WORKFLOW_STAGES.length) {
+      //   dispatch({ type: "SET_STAGE_INDEX", payload: nextStageIndex });
+      // }
+
       // Invalidate queries to refresh UI
       queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
       if (state.currentReport) {
         queryClient.invalidateQueries({ queryKey: ["/api/reports", state.currentReport.id] });
       }
-      
+
       toast({
         title: "Handmatige input verwerkt",
-        description: "Je handmatige content is succesvol opgeslagen en de workflow gaat door naar de volgende stap."
+        description: "Je handmatige content is succesvol opgeslagen. Controleer het resultaat voordat je verder gaat."
       });
     },
     onError: (error: Error) => {
@@ -258,12 +287,12 @@ export function SimplifiedWorkflowView({
 
   const executeCurrentStage = () => {
     if (!state.currentReport) return;
-    
+
     const stageKey = currentStage.key;
     const isManualMode = manualMode[stageKey] === "manual";
-    
-    if (isManualMode && stageKey === "3_generatie") {
-      // Execute manual mode for generation stage
+
+    if (isManualMode) {
+      // Execute manual mode for any stage
       manualStageM.mutate({
         reportId: state.currentReport.id,
         stage: stageKey,
@@ -315,11 +344,13 @@ export function SimplifiedWorkflowView({
       
       // Load current prompt into editor when opening
       if (!prev[stageKey]) {
-        const currentPrompt = state.stagePrompts[stageKey] || promptPreviews[stageKey] || '';
-        if (currentPrompt) {
+        const rawPrompt = state.stagePrompts[stageKey] || promptPreviews[stageKey];
+        const promptText = normalizePromptToString(rawPrompt);
+
+        if (promptText) {
           setEditingPrompts(prevPrompts => ({
             ...prevPrompts,
-            [stageKey]: currentPrompt
+            [stageKey]: promptText
           }));
         } else {
           // Fetch prompt if not available
@@ -400,24 +431,24 @@ export function SimplifiedWorkflowView({
     const currentStageIndex = state.currentStageIndex;
     const isCompleted = !!state.stageResults[stageKey] || (stageKey === "3_generatie" && !!state.conceptReportVersions[stageKey]);
     const isCurrent = index === currentStageIndex;
-    
-    console.log(`🎯 Stage click: ${stageKey} (index: ${index})`, {
+
+    debug.workflow.stage(`Stage click: ${stageKey} (index: ${index})`, {
       currentStageIndex,
       isCompleted,
       isCurrent,
       hasResult: !!state.stageResults[stageKey],
       hasConceptReport: !!state.conceptReportVersions[stageKey]
     });
-    
+
     // Allow navigation to:
     // 1. Completed stages (to view results) - always allow
-    // 2. Current stage (to execute or re-execute) - always allow  
+    // 2. Current stage (to execute or re-execute) - always allow
     // 3. Any stage if user wants to navigate (remove restrictions for better UX)
     if (isCompleted || isCurrent || index <= currentStageIndex) {
-      console.log(`✅ Navigating to stage ${index}: ${stageKey}`);
+      debug.workflow.navigation(`Navigating to stage ${index}: ${stageKey}`);
       dispatch({ type: "SET_STAGE_INDEX", payload: index });
     } else {
-      console.log(`⚠️ Navigation blocked to stage ${index}: ${stageKey} - stage not yet accessible`);
+      debug.workflow.navigation(`Navigation blocked to stage ${index}: ${stageKey} - stage not yet accessible`);
     }
   };
 
@@ -460,7 +491,7 @@ export function SimplifiedWorkflowView({
     if (state.currentReport && state.currentReport.id) {
       // Fetch for current stage if not completed
       if (currentStage && !state.stageResults[currentStage.key]) {
-        console.log(`📥 Fetching prompt preview for current stage: ${currentStage.key}`);
+        debug.workflow.prompt(`Fetching prompt preview for current stage: ${currentStage.key}`);
         fetchPromptPreview(currentStage.key);
       }
 
@@ -470,14 +501,14 @@ export function SimplifiedWorkflowView({
         const hasStoredPrompt = !!state.stagePrompts[stage.key];
 
         if (hasResult && !hasStoredPrompt && !promptPreviews[stage.key]) {
-          console.log(`📥 Fetching prompt preview for completed stage: ${stage.key}`);
+          debug.workflow.prompt(`Fetching prompt preview for completed stage: ${stage.key}`);
           fetchPromptPreview(stage.key);
         }
       });
     } else if (!state.currentReport || !state.currentReport.id) {
       // For new cases without a report, fetch template for current stage
       if (currentStage && !promptPreviews[currentStage.key]) {
-        console.log(`📥 Fetching template prompt for stage (no report yet): ${currentStage.key}`);
+        debug.workflow.prompt(`Fetching template prompt for stage (no report yet): ${currentStage.key}`);
         fetchPromptPreview(currentStage.key);
       }
     }
@@ -487,11 +518,13 @@ export function SimplifiedWorkflowView({
   useEffect(() => {
     Object.entries(showPromptEditor).forEach(([stageKey, isShowing]) => {
       if (isShowing && !editingPrompts[stageKey]) {
-        const availablePrompt = state.stagePrompts[stageKey] || promptPreviews[stageKey];
-        if (availablePrompt) {
+        const rawPrompt = state.stagePrompts[stageKey] || promptPreviews[stageKey];
+        const promptText = normalizePromptToString(rawPrompt);
+
+        if (promptText) {
           setEditingPrompts(prev => ({
             ...prev,
-            [stageKey]: availablePrompt
+            [stageKey]: promptText
           }));
         }
       }
@@ -680,6 +713,18 @@ export function SimplifiedWorkflowView({
           {WORKFLOW_STAGES.map((stage, index) => {
             const stageResult = state.stageResults[stage.key] || "";
             const stagePrompt = state.stagePrompts[stage.key] || "";
+
+            // Debug log for each stage
+            if (index === state.currentStageIndex || stageResult) {
+              debug.workflow.stage(`Stage ${stage.key}`, {
+                index,
+                hasResult: !!stageResult,
+                resultLength: stageResult?.length,
+                resultPreview: stageResult?.substring(0, 100),
+                hasPrompt: !!stagePrompt
+              });
+            }
+
             const isActive = index === state.currentStageIndex;
             // Use the improved getStageStatus function from parent
             const stageStatus = getStageStatus(index);
@@ -773,7 +818,7 @@ export function SimplifiedWorkflowView({
                           <div className="space-y-2">
                             {/* Debug logging for INPUT UIT STAP */}
                             {(() => { 
-                              console.log(`🔍 INPUT UIT STAP Debug for stage ${stage.key} (index ${index}):`, {
+                              debug.workflow.stage(`INPUT UIT STAP Debug for stage ${stage.key} (index ${index}):`, {
                                 allStageResults: Object.keys(state.stageResults),
                                 stageResultValues: state.stageResults,
                                 previousStages: WORKFLOW_STAGES.slice(0, index).map(s => s.key),
@@ -785,14 +830,14 @@ export function SimplifiedWorkflowView({
                             {/* Get previous stage results to show as input */}
                             {WORKFLOW_STAGES.slice(0, index).map((prevStage, prevIndex) => {
                               const prevResult = state.stageResults[prevStage.key];
-                              console.log(`🔍 Previous stage ${prevStage.key}:`, { prevResult, hasPrevResult: !!prevResult, resultLength: prevResult?.length });
+                              debug.workflow.stage(`Previous stage ${prevStage.key}:`, { prevResult, hasPrevResult: !!prevResult, resultLength: prevResult?.length });
 
                               // Filter out status messages and execution summaries - alleen echte AI output tonen
                               if (!prevResult) return null;
 
                               // Skip korte berichten
                               if (prevResult.length < 50) {
-                                console.log(`⏭️  Skipping short message from ${prevStage.key}`);
+                                debug.workflow.stage(`Skipping short message from ${prevStage.key}`);
                                 return null;
                               }
 
@@ -806,33 +851,50 @@ export function SimplifiedWorkflowView({
                               ];
 
                               if (statusPhrases.some(phrase => prevResult.includes(phrase))) {
-                                console.log(`⏭️  Skipping status message from ${prevStage.key}: "${prevResult.substring(0, 50)}..."`);
+                                debug.workflow.stage(`Skipping status message from ${prevStage.key}: "${prevResult.substring(0, 50)}..."`);
                                 return null;
                               }
 
+                              const isCollapsed = isInputCollapsed(stage.key, prevStage.key);
+
                               return (
                                 <div key={prevStage.key} className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                                  <div className="flex items-center justify-between p-2 border-b border-blue-200 dark:border-blue-800">
+                                  <div
+                                    className="flex items-center justify-between p-2 border-b border-blue-200 dark:border-blue-800 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                                    onClick={() => toggleInputCollapse(stage.key, prevStage.key)}
+                                  >
                                     <div className="flex items-center gap-2">
-                                      <ArrowRight className="h-3 w-3 text-blue-600" />
+                                      {isCollapsed ? (
+                                        <ChevronRight className="h-3 w-3 text-blue-600" />
+                                      ) : (
+                                        <ChevronDown className="h-3 w-3 text-blue-600" />
+                                      )}
                                       <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
                                         INPUT UIT STAP {prevIndex + 1}: {prevStage.label}
                                       </span>
+                                      <Badge variant="outline" className="text-xs bg-white/50">
+                                        {isCollapsed ? 'Klik om te tonen' : 'Klik om te verbergen'}
+                                      </Badge>
                                     </div>
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      onClick={() => copyToClipboard(prevResult, `Output Stap ${prevIndex + 1}`)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        copyToClipboard(prevResult, `Output Stap ${prevIndex + 1}`);
+                                      }}
                                       className="h-6 w-6 p-0"
                                     >
                                       <Copy className="h-3 w-3" />
                                     </Button>
                                   </div>
-                                  <div className="p-2 max-h-48 overflow-y-auto">
-                                    <div className="text-xs text-blue-800 dark:text-blue-200 whitespace-pre-wrap bg-white/50 dark:bg-gray-900/50 p-2 rounded border">
-                                      {prevResult}
+                                  {!isCollapsed && (
+                                    <div className="p-2 max-h-48 overflow-y-auto">
+                                      <div className="text-xs text-blue-800 dark:text-blue-200 whitespace-pre-wrap bg-white/50 dark:bg-gray-900/50 p-2 rounded border">
+                                        {prevResult}
+                                      </div>
                                     </div>
-                                  </div>
+                                  )}
                                 </div>
                               );
                             })}
@@ -843,36 +905,53 @@ export function SimplifiedWorkflowView({
                         {(!stagePrompt || !isCompleted) && (promptPreviews[stage.key] || loadingPreview === stage.key) && (
                           <div className="space-y-2">
                             <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                              <div className="flex items-center justify-between p-2 border-b border-yellow-200 dark:border-yellow-800">
+                              <div
+                                className="flex items-center justify-between p-2 border-b border-yellow-200 dark:border-yellow-800 cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-900/30"
+                                onClick={() => toggleSectionCollapse(stage.key, 'promptPreview')}
+                              >
                                 <div className="flex items-center gap-2">
+                                  {isSectionCollapsed(stage.key, 'promptPreview') ? (
+                                    <ChevronRight className="h-3 w-3 text-yellow-600" />
+                                  ) : (
+                                    <ChevronDown className="h-3 w-3 text-yellow-600" />
+                                  )}
                                   <Info className="h-3 w-3 text-yellow-600" />
                                   <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
                                     VOLLEDIGE PROMPT (exacte tekst naar AI - inclusief vorige stappen)
                                   </span>
+                                  <Badge variant="outline" className="text-xs bg-white/50">
+                                    {isSectionCollapsed(stage.key, 'promptPreview') ? 'Klik om te tonen' : 'Klik om te verbergen'}
+                                  </Badge>
                                 </div>
                                 {promptPreviews[stage.key] && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => copyToClipboard(promptPreviews[stage.key], "Prompt Preview")}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const textToCopy = normalizePromptToString(promptPreviews[stage.key]);
+                                      copyToClipboard(textToCopy, "Prompt Preview");
+                                    }}
                                     className="h-6 w-6 p-0"
                                   >
                                     <Copy className="h-3 w-3" />
                                   </Button>
                                 )}
                               </div>
-                              <div className="p-2 max-h-96 overflow-y-auto">
-                                {loadingPreview === stage.key ? (
-                                  <div className="flex items-center gap-2 text-xs text-yellow-600">
-                                    <div className="w-3 h-3 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin" />
-                                    Prompt preview ophalen...
-                                  </div>
-                                ) : (
-                                  <pre className="text-xs font-mono whitespace-pre-wrap text-yellow-800 dark:text-yellow-200">
-                                    {promptPreviews[stage.key]}
-                                  </pre>
-                                )}
-                              </div>
+                              {!isSectionCollapsed(stage.key, 'promptPreview') && (
+                                <div className="p-2 max-h-96 overflow-y-auto">
+                                  {loadingPreview === stage.key ? (
+                                    <div className="flex items-center gap-2 text-xs text-yellow-600">
+                                      <div className="w-3 h-3 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin" />
+                                      Prompt preview ophalen...
+                                    </div>
+                                  ) : (
+                                    <pre className="text-xs font-mono whitespace-pre-wrap text-yellow-800 dark:text-yellow-200">
+                                      {normalizePromptToString(promptPreviews[stage.key])}
+                                    </pre>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
@@ -881,67 +960,49 @@ export function SimplifiedWorkflowView({
                         {(stagePrompt || (isCompleted && promptPreviews[stage.key])) && (
                           <div className="space-y-2">
                             <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                              <div className="flex items-center justify-between p-2 border-b border-blue-200 dark:border-blue-800">
+                              <div
+                                className="flex items-center justify-between p-2 border-b border-blue-200 dark:border-blue-800 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                                onClick={() => toggleSectionCollapse(stage.key, 'inputPrompt')}
+                              >
                                 <div className="flex items-center gap-2">
+                                  {isSectionCollapsed(stage.key, 'inputPrompt') ? (
+                                    <ChevronRight className="h-3 w-3 text-blue-600" />
+                                  ) : (
+                                    <ChevronDown className="h-3 w-3 text-blue-600" />
+                                  )}
                                   <Send className="h-3 w-3 text-blue-600" />
                                   <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
                                     INPUT → AI
                                   </span>
+                                  <Badge variant="outline" className="text-xs bg-white/50">
+                                    {isSectionCollapsed(stage.key, 'inputPrompt') ? 'Klik om te tonen' : 'Klik om te verbergen'}
+                                  </Badge>
                                 </div>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => copyToClipboard(stagePrompt || promptPreviews[stage.key], "Prompt")}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const rawPrompt = stagePrompt || promptPreviews[stage.key];
+                                    const textToCopy = normalizePromptToString(rawPrompt);
+                                    copyToClipboard(textToCopy, "Prompt");
+                                  }}
                                   className="h-6 w-6 p-0"
                                 >
                                   <Copy className="h-3 w-3" />
                                 </Button>
                               </div>
-                              <div className="p-2 max-h-96 overflow-y-auto">
-                                <pre className="text-xs font-mono whitespace-pre-wrap text-blue-800 dark:text-blue-200">
-                                  {stagePrompt || promptPreviews[stage.key]}
-                                </pre>
-                              </div>
+                              {!isSectionCollapsed(stage.key, 'inputPrompt') && (
+                                <div className="p-2 max-h-96 overflow-y-auto">
+                                  <pre className="text-xs font-mono whitespace-pre-wrap text-blue-800 dark:text-blue-200">
+                                    {normalizePromptToString(stagePrompt || promptPreviews[stage.key])}
+                                  </pre>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
 
-                        {/* Show Concept Report for Generation Stage */}
-                        {stage.key === "3_generatie" && !!state.conceptReportVersions[stage.key] && (
-                          <div className="space-y-2">
-                            <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg">
-                              <div className="flex items-center justify-between p-2 border-b border-purple-200 dark:border-purple-800">
-                                <div className="flex items-center gap-2">
-                                  <FileText className="h-3 w-3 text-purple-600" />
-                                  <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
-                                    📄 CONCEPT RAPPORT (Eerste versie)
-                                  </span>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => copyToClipboard(
-                                    typeof state.conceptReportVersions[stage.key] === 'string' 
-                                      ? state.conceptReportVersions[stage.key] 
-                                      : state.conceptReportVersions[stage.key]?.content || JSON.stringify(state.conceptReportVersions[stage.key]), 
-                                    "Concept Rapport"
-                                  )}
-                                  className="h-6 w-6 p-0"
-                                >
-                                  <Copy className="h-3 w-3" />
-                                </Button>
-                              </div>
-                              <div className="p-2 max-h-96 overflow-y-auto">
-                                <div className="text-xs text-purple-800 dark:text-purple-200 whitespace-pre-wrap bg-white/50 dark:bg-gray-900/50 p-2 rounded border">
-                                  {typeof state.conceptReportVersions[stage.key] === 'string' 
-                                    ? state.conceptReportVersions[stage.key] 
-                                    : state.conceptReportVersions[stage.key]?.content || JSON.stringify(state.conceptReportVersions[stage.key])}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                        
                         {/* Show Output/Response */}
                         {stageResult && (
                           <div className="space-y-2">
@@ -966,27 +1027,43 @@ export function SimplifiedWorkflowView({
                             ) : (
                               /* All other stages: Show raw output */
                               <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
-                                <div className="flex items-center justify-between p-2 border-b border-green-200 dark:border-green-800">
+                                <div
+                                  className="flex items-center justify-between p-2 border-b border-green-200 dark:border-green-800 cursor-pointer hover:bg-green-100 dark:hover:bg-green-900/30"
+                                  onClick={() => toggleSectionCollapse(stage.key, 'output')}
+                                >
                                   <div className="flex items-center gap-2">
+                                    {isSectionCollapsed(stage.key, 'output') ? (
+                                      <ChevronRight className="h-3 w-3 text-green-600" />
+                                    ) : (
+                                      <ChevronDown className="h-3 w-3 text-green-600" />
+                                    )}
                                     <CheckCircle className="h-3 w-3 text-green-600" />
                                     <span className="text-xs font-medium text-green-700 dark:text-green-300">
                                       OUTPUT ← AI
                                     </span>
+                                    <Badge variant="outline" className="text-xs bg-white/50">
+                                      {isSectionCollapsed(stage.key, 'output') ? 'Klik om te tonen' : 'Klik om te verbergen'}
+                                    </Badge>
                                   </div>
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => copyToClipboard(stageResult, "Response")}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      copyToClipboard(stageResult, "Response");
+                                    }}
                                     className="h-6 w-6 p-0"
                                   >
                                     <Copy className="h-3 w-3" />
                                   </Button>
                                 </div>
-                                <div className="p-2 max-h-96 overflow-y-auto">
-                                  <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200">
-                                    {stageResult}
-                                  </pre>
-                                </div>
+                                {!isSectionCollapsed(stage.key, 'output') && (
+                                  <div className="p-2 max-h-96 overflow-y-auto">
+                                    <pre className="text-xs font-mono whitespace-pre-wrap text-green-800 dark:text-green-200">
+                                      {stageResult}
+                                    </pre>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1088,8 +1165,9 @@ export function SimplifiedWorkflowView({
                                     variant="outline"
                                     size="sm"
                                     onClick={() => {
-                                      const originalPrompt = state.stagePrompts[stage.key] || promptPreviews[stage.key] || '';
-                                      updateEditingPrompt(stage.key, originalPrompt);
+                                      const rawPrompt = state.stagePrompts[stage.key] || promptPreviews[stage.key];
+                                      const promptText = normalizePromptToString(rawPrompt);
+                                      updateEditingPrompt(stage.key, promptText);
                                     }}
                                   >
                                     Reset
@@ -1128,7 +1206,7 @@ export function SimplifiedWorkflowView({
                               stageId={stage.key}
                               stageName={stage.label}
                               onComplete={(result) => {
-                                console.log(`🎉 Streaming stage ${stage.key} completed:`, result);
+                                debug.workflow.stage(`Streaming stage ${stage.key} completed:`, result);
                                 
                                 // Update the stage results in the workflow state
                                 dispatch({ 
@@ -1139,8 +1217,8 @@ export function SimplifiedWorkflowView({
                                 
                                 // Show completion toast
                                 toast({
-                                  title: "Streaming Stage Voltooid",
-                                  description: `${stage.label} is succesvol uitgevoerd met streaming.`,
+                                  title: "Stage Voltooid",
+                                  description: `${stage.label} is succesvol uitgevoerd.`,
                                 });
                                 
                                 // Invalidate queries to refresh UI
@@ -1152,7 +1230,7 @@ export function SimplifiedWorkflowView({
                               onError={(error) => {
                                 console.error(`❌ Streaming stage ${stage.key} failed:`, error);
                                 toast({
-                                  title: "Streaming Stage Fout",
+                                  title: "Stage Fout",
                                   description: `${stage.label} ondervond een fout: ${error}`,
                                   variant: "destructive"
                                 });
@@ -1198,7 +1276,7 @@ export function SimplifiedWorkflowView({
                                     stageName={stage.label}
                                     rawFeedback={substepResults.review || ""}
                                     onProcessingComplete={(response) => {
-                                      console.log(`✅ Feedback processing completed for ${stage.key}:`, response);
+                                      debug.workflow.stage(`Feedback processing completed for ${stage.key}:`, response);
 
                                       // Update substep results to reflect processing completion
                                       dispatch({
@@ -1217,67 +1295,59 @@ export function SimplifiedWorkflowView({
                               </div>
                             ) : (
                               <div className="mt-3">
-                                {/* Manual mode options for generation stage */}
-                                {stage.key === "3_generatie" && (
-                                  <div className="space-y-3 mb-4">
-                                    {/* Mode selector */}
-                                    <div className="flex items-center gap-4 p-3 border rounded-lg bg-muted/50">
-                                      <RadioGroup 
-                                        value={manualMode[stage.key] || "ai"}
-                                        onValueChange={(value) => setManualMode(prev => ({ ...prev, [stage.key]: value as "ai" | "manual" }))}
-                                        className="flex items-center gap-4"
-                                      >
-                                        <div className="flex items-center space-x-2">
-                                          <RadioGroupItem value="ai" id={`mode-ai-${stage.key}`} />
-                                          <Label htmlFor={`mode-ai-${stage.key}`} className="flex items-center gap-2 cursor-pointer">
-                                            <Wand2 className="h-4 w-4" />
-                                            AI Uitvoering
-                                          </Label>
-                                        </div>
-                                        <div className="flex items-center space-x-2">
-                                          <RadioGroupItem value="manual" id={`mode-manual-${stage.key}`} />
-                                          <Label htmlFor={`mode-manual-${stage.key}`} className="flex items-center gap-2 cursor-pointer">
-                                            <PenTool className="h-4 w-4" />
-                                            Handmatig
-                                          </Label>
-                                        </div>
-                                      </RadioGroup>
-                                    </div>
-
-                                    {/* Manual content input */}
-                                    {manualMode[stage.key] === "manual" && (
-                                      <div className="space-y-3 p-4 border-2 border-primary/20 rounded-lg bg-primary/5">
-                                        <div className="flex items-center justify-between">
-                                          <Label className="text-sm font-medium">
-                                            Rapportinhoud (Handmatig)
-                                          </Label>
-                                          <Badge variant="outline">Vereist</Badge>
-                                        </div>
-                                        <Textarea
-                                          placeholder="Plak hier je handmatig geschreven rapportinhoud. Dit kan uit ChatGPT komen of je eigen analyse zijn..."
-                                          value={manualContent[stage.key] || ''}
-                                          onChange={(e) => setManualContent(prev => ({ ...prev, [stage.key]: e.target.value }))}
-                                          className="min-h-[200px] font-mono text-sm"
-                                          data-testid={`textarea-manual-content-${stage.key}`}
-                                        />
-                                        <p className="text-xs text-muted-foreground">
-                                          Voer de volledige rapportinhoud in die je wilt gebruiken voor stap 3. De workflow gaat automatisch door naar stap 4 na opslaan.
-                                        </p>
+                                {/* Manual mode options for all stages */}
+                                <div className="space-y-3 mb-4">
+                                  {/* Mode selector */}
+                                  <div className="flex items-center gap-4 p-3 border rounded-lg bg-muted/50">
+                                    <RadioGroup
+                                      value={manualMode[stage.key] || "ai"}
+                                      onValueChange={(value) => setManualMode(prev => ({ ...prev, [stage.key]: value as "ai" | "manual" }))}
+                                      className="flex items-center gap-4"
+                                    >
+                                      <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="ai" id={`mode-ai-${stage.key}`} />
+                                        <Label htmlFor={`mode-ai-${stage.key}`} className="flex items-center gap-2 cursor-pointer">
+                                          <Wand2 className="h-4 w-4" />
+                                          AI Uitvoering
+                                        </Label>
                                       </div>
-                                    )}
+                                      <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="manual" id={`mode-manual-${stage.key}`} />
+                                        <Label htmlFor={`mode-manual-${stage.key}`} className="flex items-center gap-2 cursor-pointer">
+                                          <PenTool className="h-4 w-4" />
+                                          Handmatig
+                                        </Label>
+                                      </div>
+                                    </RadioGroup>
                                   </div>
-                                )}
 
-                                {/* Debug logging for button state */}
-                                {console.log(`🐛 Button Debug for ${stage.key}:`, {
-                                  isProcessing,
-                                  canStart,
-                                  isDisabled: isProcessing || !canStart,
-                                  currentStageIndex: state.currentStageIndex,
-                                  stageIndex: index,
-                                  hasCurrentReport: !!state.currentReport,
-                                  previousStageResult: index > 0 ? !!state.stageResults[WORKFLOW_STAGES[index - 1].key] : 'N/A (first stage)'
-                                })}
+                                  {/* Manual content input */}
+                                  {manualMode[stage.key] === "manual" && (
+                                    <div className="space-y-3 p-4 border-2 border-primary/20 rounded-lg bg-primary/5">
+                                      <div className="flex items-center justify-between">
+                                        <Label className="text-sm font-medium">
+                                          {stage.key === "3_generatie" ? "Rapportinhoud (Handmatig)" : "Output (Handmatig)"}
+                                        </Label>
+                                        <Badge variant="outline">Vereist</Badge>
+                                      </div>
+                                      <Textarea
+                                        placeholder={stage.key === "3_generatie"
+                                          ? "Plak hier je handmatig geschreven rapportinhoud. Dit kan uit ChatGPT komen of je eigen analyse zijn..."
+                                          : "Plak hier de handmatige output voor deze stap. Dit kan uit ChatGPT komen of je eigen analyse zijn..."}
+                                        value={manualContent[stage.key] || ''}
+                                        onChange={(e) => setManualContent(prev => ({ ...prev, [stage.key]: e.target.value }))}
+                                        className="min-h-[200px] font-mono text-sm"
+                                        data-testid={`textarea-manual-content-${stage.key}`}
+                                      />
+                                      <p className="text-xs text-muted-foreground">
+                                        {stage.key === "3_generatie"
+                                          ? "Voer de volledige rapportinhoud in die je wilt gebruiken voor stap 3. De workflow gaat automatisch door naar stap 4 na opslaan."
+                                          : `Voer de output in voor ${stage.label}. De workflow gaat automatisch door naar de volgende stap na opslaan.`}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+
                                 {/* Unified execution with streaming toggle */}
                                 <div className="space-y-2">
                                   {/* Show warning if stage 1 is incomplete */}
@@ -1310,9 +1380,9 @@ export function SimplifiedWorkflowView({
                                     </div>
                                   </div>
                                   
-                                  <Button 
+                                  <Button
                                     onClick={executeCurrentStage}
-                                    disabled={isProcessing || !canStart || manualStageM.isPending || (stage.key === "3_generatie" && manualMode[stage.key] === "manual" && !manualContent[stage.key])}
+                                    disabled={isProcessing || !canStart || manualStageM.isPending || (manualMode[stage.key] === "manual" && !manualContent[stage.key])}
                                     className="w-full"
                                     size="sm"
                                     data-testid={`button-start-stage-${stage.key}`}
@@ -1324,7 +1394,7 @@ export function SimplifiedWorkflowView({
                                       </>
                                     ) : (
                                       <>
-                                        {stage.key === "3_generatie" && manualMode[stage.key] === "manual" ? (
+                                        {manualMode[stage.key] === "manual" ? (
                                           <>
                                             <PenTool className="mr-2 h-4 w-4" />
                                             Verwerk Handmatige Content
@@ -1413,7 +1483,7 @@ export function SimplifiedWorkflowView({
                                               size="sm"
                                               onClick={() => {
                                                 // TODO: Implement cancel functionality
-                                                console.log('Cancel requested for', stage.key);
+                                                debug.workflow.stage('Cancel requested for', stage.key);
                                               }}
                                               className="text-xs h-6 px-2"
                                             >
@@ -1489,7 +1559,7 @@ export function SimplifiedWorkflowView({
                             
                             {/* Apply Feedback to Concept button for review stages */}
                             {(() => {
-                              const isReviewStage = stage.key.startsWith('4') && stage.key !== '4g_ChefEindredactie';
+                              const isReviewStage = stage.key.startsWith('4');
                               const hasReview = isReviewStage && state.stageResults[stage.key];
                               const hasCurrentReport = !!state.currentReport?.id;
                               
@@ -1527,14 +1597,14 @@ export function SimplifiedWorkflowView({
                         )}
                         
                         {/* Feedback Processor for completed review stages (only when streaming is OFF) */}
-                        {isCompleted && !(streamingMode[stage.key] ?? true) && stage.key.startsWith('4') && stage.key !== '4g_ChefEindredactie' && (
+                        {isCompleted && !(streamingMode[stage.key] ?? true) && stage.key.startsWith('4') && (
                           (() => {
                             const substepResults = state.substepResults?.[stage.key];
                             const hasRawFeedback = substepResults?.review;
                             const hasProcessing = substepResults?.processing;
 
                             // Debug logging for feedback processor state
-                            console.log(`🔍 Feedback Processor Debug for ${stage.key}:`, {
+                            debug.workflow.stage(`Feedback Processor Debug for ${stage.key}:`, {
                               isCompleted,
                               streamingMode: streamingMode[stage.key] ?? true,
                               substepResults,
@@ -1551,7 +1621,7 @@ export function SimplifiedWorkflowView({
                                   stageName={stage.label}
                                   rawFeedback={hasRawFeedback}
                                   onProcessingComplete={(response) => {
-                                    console.log(`✅ Feedback processing completed for ${stage.key}:`, response);
+                                    debug.workflow.stage(`Feedback processing completed for ${stage.key}:`, response);
                                     
                                     // Update substep results to reflect processing completion
                                     dispatch({ 

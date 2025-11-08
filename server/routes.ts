@@ -20,9 +20,7 @@ import { documentRouter } from "./routes/document-routes";
 import { z } from "zod";
 import { ServerError, asyncHandler } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
-
-// Track active stage requests to prevent duplicates - using Map for better race condition handling
-const activeStageRequests = new Map<string, Promise<any>>();
+import { deduplicateRequests } from "./middleware/deduplicate";
 
 const generateReportSchema = z.object({
   dossier: dossierSchema,
@@ -163,52 +161,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Create new report (start workflow)
-  app.post("/api/reports/create", async (req, res) => {
-    try {
-      const { clientName, rawText } = req.body;
-      
-      if (!rawText || !clientName) {
-        res.status(400).json({ message: "Ruwe tekst en klantnaam zijn verplicht" });
-        return;
-      }
-      
-      // Create report in draft state - sla alleen ruwe tekst op
-      const report = await storage.createReport({
-        title: `Fiscaal Duidingsrapport - ${clientName}`,
-        clientName: clientName,
-        dossierData: { rawText, klant: { naam: clientName } }, // Ruwe tekst + klantnaam voor fallback prompts
-        bouwplanData: {},
-        generatedContent: null,
-        stageResults: {},
-        conceptReportVersions: {},
-        currentStage: "1_informatiecheck",
-        status: "processing",
-      });
+  app.post("/api/reports/create", asyncHandler(async (req: Request, res: Response) => {
+    const { clientName, rawText } = req.body;
 
-      res.json(createApiSuccessResponse(report, "Rapport succesvol aangemaakt"));
-    } catch (error) {
-      console.error("Error creating report:", error);
-      if (error instanceof z.ZodError) {
-        res.status(400).json({ 
-          message: "Validatiefout in invoergegevens", 
-          errors: error.errors 
-        });
-      } else {
-        res.status(500).json({ 
-          message: "Fout bij het aanmaken van het rapport" 
-        });
-      }
+    console.log("📝 Creating new report:", { clientName, hasRawText: !!rawText, rawTextLength: rawText?.length });
+
+    if (!rawText || !clientName) {
+      throw ServerError.validation(
+        'Missing required fields',
+        'Ruwe tekst en klantnaam zijn verplicht'
+      );
     }
-  });
+
+    // Create report in draft state - sla alleen ruwe tekst op
+    const report = await storage.createReport({
+      title: `Fiscaal Duidingsrapport - ${clientName}`,
+      clientName: clientName,
+      dossierData: { rawText, klant: { naam: clientName } }, // Ruwe tekst + klantnaam voor fallback prompts
+      bouwplanData: {},
+      generatedContent: null,
+      stageResults: {},
+      conceptReportVersions: {},
+      currentStage: "1_informatiecheck",
+      status: "processing",
+    });
+
+    console.log("✅ Report created successfully:", { reportId: report.id });
+    res.json(createApiSuccessResponse(report, "Rapport succesvol aangemaakt"));
+  }));
 
   // Get prompt preview for a stage without executing it
   app.get("/api/reports/:id/stage/:stage/preview", async (req, res) => {
     try {
       const { id, stage } = req.params;
       const report = await storage.getReport(id);
-      
+
       if (!report) {
-        return res.status(404).json({ message: "Rapport niet gevonden" });
+        throw ServerError.notFound("Report");
       }
 
       // Generate the prompt without executing the stage
@@ -224,38 +213,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(createApiSuccessResponse({ prompt }, "Prompt preview succesvol opgehaald"));
     } catch (error: any) {
       console.error("Error generating prompt preview:", error);
-      res.status(500).json({ 
-        message: "Fout bij het genereren van prompt preview",
-        error: error.message 
-      });
+      res.status(500).json(createApiErrorResponse(
+        'PREVIEW_GENERATION_FAILED',
+        ERROR_CODES.INTERNAL_SERVER_ERROR,
+        'Fout bij het genereren van prompt preview',
+        error.message
+      ));
     }
   });
 
   // Execute specific stage of report generation
-  app.post("/api/reports/:id/stage/:stage", async (req, res) => {
-    const requestKey = `${req.params.id}-${req.params.stage}`;
-    
-    // More robust deduplication to prevent race conditions
-    if (activeStageRequests.has(requestKey)) {
-      // Wait for the existing request to complete, then return its result
-      try {
-        await activeStageRequests.get(requestKey);
-        // Fetch the updated report to return current state
-        const report = await storage.getReport(req.params.id);
-        if (report) {
-          res.json(createApiSuccessResponse(report, "Stage reeds uitgevoerd"));
-        } else {
-          res.status(404).json({ message: "Rapport niet gevonden" });
-        }
-        return;
-      } catch (error) {
-        res.status(500).json({ message: "Fout bij het wachten op actieve stage uitvoering" });
-        return;
-      }
-    }
-    
-    // Create a promise for this stage execution  
-    const stageExecutionPromise = (async () => {
+  app.post("/api/reports/:id/stage/:stage",
+    deduplicateRequests({
+      keyFn: (req) => `${req.params.id}-${req.params.stage}`,
+      timeout: 300000 // 5 minutes for long AI operations
+    }),
+    asyncHandler(async (req, res) => {
       const { id, stage } = req.params;
       const { customInput } = req.body;
 
@@ -331,48 +304,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedReport = await storage.updateReport(id, updateData);
-      
-      return {
+
+      const result = {
         report: updatedReport,
         stageResult: stageExecution.stageOutput,
         conceptReport: stageExecution.conceptReport,
         prompt: stageExecution.prompt,
       };
-    })();
-    
-    // Store the promise to prevent concurrent executions
-    activeStageRequests.set(requestKey, stageExecutionPromise.then(() => {}));
-    
-    try {
-      const result = await stageExecutionPromise;
-      res.json(createApiSuccessResponse(result, "Stage succesvol uitgevoerd"));
-    } catch (error) {
-      console.error(`Error executing stage ${req.params.stage}:`, error);
-      if (error instanceof Error && error.message === "Rapport niet gevonden") {
-        res.status(404).json({ message: error.message });
-      } else {
-        res.status(500).json({ 
-          message: `Fout bij uitvoeren van stap ${req.params.stage}` 
-        });
-      }
-    } finally {
-      // Always clean up the tracking
-      activeStageRequests.delete(requestKey);
-    }
-  });
 
-  // Process manual stage content
+      res.json(createApiSuccessResponse(result, "Stage succesvol uitgevoerd"));
+    })
+  );
+
+  // Process manual stage content for any stage
   app.post("/api/reports/:id/manual-stage", async (req, res) => {
     try {
       const { id } = req.params;
-      
-      // Validate request body with zod
+
+      // Validate request body with zod - accept any stage now
       const manualStageSchema = z.object({
-        stage: z.literal("3_generatie", { 
-          errorMap: () => ({ message: "Alleen generatie stap (3_generatie) ondersteunt handmatige input" })
-        }),
+        stage: z.string().min(1, "Stage mag niet leeg zijn"),
         content: z.string().min(1, "Content mag niet leeg zijn"),
-        isManual: z.boolean()
+        isManual: z.boolean().optional()
       });
 
       const validatedData = manualStageSchema.parse(req.body);
@@ -380,7 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const report = await storage.getReport(id);
       if (!report) {
-        return res.status(404).json({ message: "Rapport niet gevonden" });
+        throw ServerError.notFound("Report");
       }
 
       // Update the report with manual content
@@ -388,12 +341,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentConceptVersions = (report.conceptReportVersions as Record<string, string>) || {};
 
       currentStageResults[stage] = content;
-      
-      // For generation stage, set concept report with versioned key
-      const versionKey = `${stage}_${new Date().toISOString()}`;
-      currentConceptVersions[versionKey] = content;
-      // Also maintain the stage key for backward compatibility
-      currentConceptVersions[stage] = content;
+
+      // For generation stages (3_generatie),
+      // also update concept report versions
+      if (["3_generatie"].includes(stage)) {
+        const versionKey = `${stage}_${new Date().toISOString()}`;
+        currentConceptVersions[versionKey] = content;
+        // Also maintain the stage key for backward compatibility
+        currentConceptVersions[stage] = content;
+      }
 
       const updatedReport = await storage.updateReport(id, {
         stageResults: currentStageResults,
@@ -404,21 +360,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(createApiSuccessResponse({
         report: updatedReport,
         stageResult: content,
-        conceptReport: content,
+        conceptReport: ["3_generatie"].includes(stage) ? content : undefined,
         isManual: true
       }, "Handmatige content succesvol verwerkt"));
 
     } catch (error) {
       console.error("Error processing manual stage:", error);
       if (error instanceof z.ZodError) {
-        res.status(400).json({ 
-          message: "Validatiefout in invoergegevens", 
-          errors: error.errors 
-        });
+        res.status(400).json(createApiErrorResponse(
+          'VALIDATION_ERROR',
+          ERROR_CODES.VALIDATION_FAILED,
+          'Validatiefout in invoergegevens',
+          JSON.stringify(error.errors)
+        ));
+      } else if (error instanceof ServerError) {
+        throw error;
       } else {
-        res.status(500).json({ 
-          message: "Fout bij verwerken van handmatige content" 
-        });
+        res.status(500).json(createApiErrorResponse(
+          'PROCESSING_FAILED',
+          ERROR_CODES.INTERNAL_SERVER_ERROR,
+          'Fout bij verwerken van handmatige content',
+          error instanceof Error ? error.message : 'Unknown error'
+        ));
       }
     }
   });
@@ -443,9 +406,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     // Validate stage ID for review stages only
     const validReviewStages = [
-      '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', 
-      '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat', 
-      '4f_DeKlantpsycholoog', '4g_ChefEindredactie'
+      '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist',
+      '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat',
+      '4f_DeKlantpsycholoog'
     ];
 
     if (!validReviewStages.includes(stageId)) {
@@ -531,9 +494,9 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
 
     // Validate stage ID for review stages only
     const validReviewStages = [
-      '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', 
-      '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat', 
-      '4f_DeKlantpsycholoog', '4g_ChefEindredactie'
+      '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist',
+      '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat',
+      '4f_DeKlantpsycholoog'
     ];
 
     if (!validReviewStages.includes(stageId)) {
@@ -629,15 +592,13 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
   }));
 
   // Generate final report from all stages
-  app.post("/api/reports/:id/finalize", async (req, res) => {
-    try {
-      const { id } = req.params;
-      
-      const report = await storage.getReport(id);
-      if (!report) {
-        res.status(404).json({ message: "Rapport niet gevonden" });
-        return;
-      }
+  app.post("/api/reports/:id/finalize", asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
 
       // Use the latest concept report version as the final content
       const conceptVersions = report.conceptReportVersions as Record<string, string> || {};
@@ -652,15 +613,8 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
         status: "generated",
       });
 
-      res.json(createApiSuccessResponse(finalizedReport, "Rapport succesvol gefinaliseerd"));
-
-    } catch (error) {
-      console.error("Error finalizing report:", error);
-      res.status(500).json({ 
-        message: "Fout bij finaliseren van het rapport" 
-      });
-    }
-  });
+    res.json(createApiSuccessResponse(finalizedReport, "Rapport succesvol gefinaliseerd"));
+  }));
 
   // Get reports endpoint
   app.get("/api/reports", async (req, res) => {
@@ -714,23 +668,10 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
         day: 'numeric'
       });
       
-      // Use real data if provided, otherwise placeholder text
-      const dossierContent = rawText 
-        ? `Ruwe klantinformatie:\n${rawText}\n\nKlantnaam: ${clientName || 'Client'}`
-        : '[Uw klantgegevens en fiscale situatie zullen hier worden ingevuld]';
-      
-      const bouwplanContent = '[De rapport structuur en gewenste onderwerpen zullen hier worden ingevuld]';
-      
-      // Create a template prompt with real or placeholder data
+      // Create a template prompt
       const templatePrompt = `${prompt}
 
-### Datum: ${currentDate}
-
-### Dossier:
-${dossierContent}
-
-### Bouwplan:
-${bouwplanContent}`;
+### Datum: ${currentDate}`;
 
       res.json(createApiSuccessResponse({ prompt: templatePrompt }));
     } catch (error) {

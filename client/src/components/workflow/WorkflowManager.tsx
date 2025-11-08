@@ -22,46 +22,13 @@ import { WORKFLOW_STAGES } from "./constants";
 import { cleanStageResults } from "@/lib/stageResultsHelper";
 import { isInformatieCheckComplete } from "@/lib/workflowParsers";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
-
-// Format plain text/markdown to professional fiscal report HTML - ONLY styling, no structure changes
-function formatReportContent(content: string): string {
-  if (!content) return "";
-  
-  // Just apply styling to whatever content comes from AI - no structural changes
-  return content
-    // Headers - professional styling without changing structure
-    .replace(/^#{3}\s+(.+)$/gm, '<h3 class="text-lg font-bold text-gray-900 mt-8 mb-3 border-b border-gray-300 pb-2">$1</h3>')
-    .replace(/^#{2}\s+(.+)$/gm, '<h2 class="text-xl font-bold text-gray-900 mt-10 mb-4 border-b-2 border-blue-600 pb-3">$1</h2>')
-    .replace(/^#{1}\s+(.+)$/gm, '<h1 class="text-2xl font-bold text-gray-900 mt-10 mb-6">$1</h1>')
-    
-    // Special title patterns from PDF
-    .replace(/^(Fiscale Analyse.*?)$/m, '<h1 class="text-3xl font-bold text-gray-900 mb-4 text-center">$1</h1>')
-    .replace(/^(Uw vraag beantwoord)$/gm, '<h2 class="text-xl font-bold text-gray-900 mt-10 mb-4 text-blue-700">$1</h2>')
-    
-    // Bold and italic
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-gray-900">$1</strong>')
-    .replace(/\*([^\*]+?)\*/g, '<em class="italic text-gray-700">$1</em>')
-    
-    // Bullet lists - professional indentation
-    .replace(/^[\*\-•]\s+(.+)$/gm, '<li class="ml-8 mb-2 text-gray-700 leading-relaxed">$1</li>')
-    .replace(/(<li class="ml-8.*?<\/li>\s*)+/g, '<ul class="mb-6 list-disc list-outside pl-2">$&</ul>')
-    
-    // Numbered lists  
-    .replace(/^\d+\.\s+(.+)$/gm, '<li class="ml-8 mb-2 text-gray-700 leading-relaxed">$1</li>')
-    .replace(/(<li class="ml-8 mb-2 text-gray-700.*?<\/li>\s*)+/g, '<ol class="mb-6 list-decimal list-outside pl-2">$&</ol>')
-    
-    // Quotes and special sections
-    .replace(/^>\s+(.+)$/gm, '<blockquote class="border-l-4 border-blue-500 pl-4 py-2 my-4 bg-blue-50 dark:bg-blue-950/20 italic text-gray-700">$1</blockquote>')
-    
-    // Professional line breaks
-    .replace(/\n\n/g, '</p><p class="mb-4 text-gray-700 leading-relaxed">')
-    .replace(/^(.+)$/gm, (match) => {
-      if (!match.includes('<')) {
-        return `<p class="mb-4 text-gray-700 leading-relaxed">${match}</p>`;
-      }
-      return match;
-    });
-}
+import {
+  handleStageCompletion,
+  handleSubstepCompletion,
+  handleMutationError,
+  handleStageStart,
+  handleSubstepStart
+} from "@/lib/mutationHelpers";
 
 interface WorkflowManagerProps {
   dossier: DossierData;
@@ -109,13 +76,22 @@ function WorkflowManagerContent({
   // Create report mutation
   const createReportMutation = useMutation({
     mutationFn: async () => {
+      console.log("📤 Sending create report request:", {
+        hasClientName: !!clientName,
+        clientName,
+        hasRawText: !!rawText,
+        rawTextLength: rawText?.length,
+        hasDossier: !!dossier,
+        hasBouwplan: !!bouwplan
+      });
+
       const response = await apiRequest("POST", "/api/reports/create", {
-        dossier,
-        bouwplan,
         clientName,
         rawText,
       });
       const data = await response.json();
+      console.log("📥 Create report response:", { success: data.success, hasData: !!data.data });
+
       // Handle API response format - extract report from success response or use data directly
       const report = (data && typeof data === 'object' && 'success' in data && data.success === true) ? data.data : data;
       return report as Report;
@@ -182,80 +158,33 @@ function WorkflowManagerContent({
   // Execute stage mutation
   const executeStageM = useMutation({
     mutationFn: async ({ reportId, stage, customInput }: { reportId: string; stage: string; customInput?: string }) => {
-      const data = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
+      const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
         customInput,
       });
+      const data = await response.json();
+
+      // Handle new API response format (wrapped in createApiSuccessResponse)
+      if (data && typeof data === 'object' && 'success' in data && data.success === true) {
+        return data.data;
+      }
       return data;
     },
     onMutate: ({ stage }) => {
-      dispatch({ type: "SET_STAGE_PROCESSING", stage, isProcessing: true });
-      dispatch({ type: "SET_STAGE_START_TIME", time: new Date() });
-      dispatch({ type: "UPDATE_TIMER", time: 0 });
+      handleStageStart(stage, { dispatch });
     },
     onSuccess: (data: any, variables) => {
-      // Handle both old and new API response formats
-      const stageResult = data.stageResult || data.stageOutput || "";
-      const conceptReport = data.conceptReport;
-      const updatedReport = data.report;
-      const prompt = data.prompt || "";
-      
-      console.log("✅ ExecuteStage Success:", { 
-        stage: variables.stage, 
-        stageResult: stageResult?.slice(0, 100) + "...",
-        hasConceptReport: !!conceptReport,
-        hasReport: !!updatedReport,
-        hasPrompt: !!prompt
+      // Use centralized handler
+      handleStageCompletion(data, variables, {
+        dispatch,
+        queryClient,
+        toast,
+        currentReport: state.currentReport,
+        stageStartTime: state.stageStartTime
       });
-      
-      // Store the prompt that was sent to AI
-      if (prompt) {
-        dispatch({ type: "SET_STAGE_PROMPT", stage: variables.stage, prompt });
-      }
-      
-      if (updatedReport) {
-        console.log(`🔄 Updating report after stage completion:`, {
-          stage: variables.stage,
-          hasUpdatedStageResults: !!(updatedReport.stageResults),
-          updatedStageResultKeys: Object.keys((updatedReport.stageResults as Record<string, string>) || {})
-        });
-        
-        // Update report and merge state (LOAD_EXISTING_REPORT now merges instead of overwriting)
-        dispatch({ type: "SET_REPORT", payload: updatedReport });
-        dispatch({ type: "LOAD_EXISTING_REPORT", report: updatedReport });
-      }
-      
+
       const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
-      
-      // Save the time this stage took
-      if (state.stageStartTime) {
-        const elapsed = Math.floor((Date.now() - state.stageStartTime.getTime()) / 1000);
-        dispatch({ type: "SET_STAGE_TIME", stage: variables.stage, time: elapsed });
-      }
-      
-      dispatch({ type: "SET_STAGE_PROCESSING", stage: variables.stage, isProcessing: false });
-      
-      // Always update the result for the executed stage
-      if (stageResult) {
-        dispatch({ type: "SET_STAGE_RESULT", stage: variables.stage, result: stageResult });
-      }
-      
-      // Update concept report versions if provided
-      if (conceptReport) {
-        dispatch({ type: "SET_CONCEPT_VERSION", stage: variables.stage, content: conceptReport });
-      }
-      
-      // Invalidate queries to refresh UI
-      queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
-      if (state.currentReport) {
-        queryClient.invalidateQueries({ queryKey: ['/api/reports', state.currentReport.id] });
-      }
-      
-      // Show completion toast
-      const stageInfo = WORKFLOW_STAGES.find(s => s.key === variables.stage);
-      toast({
-        title: "Stap voltooid",
-        description: `${stageInfo?.label || variables.stage} is succesvol uitgevoerd.`,
-      });
+      const stageResult = data.stageResult || data.stageOutput || "";
+      const updatedReport = data.report;
       
       // Only auto-advance if we're still on the same stage that was executed
       console.log(`🎯 Auto-advance evaluation: executedStage="${variables.stage}", currentStageKey="${currentStage.key}", currentIndex=${state.currentStageIndex}`);
@@ -292,23 +221,7 @@ function WorkflowManagerContent({
       }
     },
     onError: (error: Error, variables) => {
-      dispatch({ type: "SET_STAGE_PROCESSING", stage: variables.stage, isProcessing: false });
-      
-      // Check for NO_PROMPT_CONFIGURED error
-      if (error.message.includes("NO_PROMPT_CONFIGURED")) {
-        const [, userMessage] = error.message.split("|");
-        toast({
-          title: "Prompt Configuratie Vereist",
-          description: `${userMessage || error.message} Ga naar Instellingen om prompts te configureren.`,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Fout bij uitvoeren stap",
-          description: error.message,
-          variant: "destructive",
-        });
-      }
+      handleMutationError(error, { stage: variables.stage }, { dispatch, toast });
     },
   });
 
@@ -376,23 +289,7 @@ function WorkflowManagerContent({
     },
     onError: (error: Error, variables) => {
       const trackingKey = `${variables.substepType === "review" ? variables.substepKey : "5_feedback_verwerker"}_${variables.substepType}`;
-      dispatch({ type: "SET_STAGE_PROCESSING", stage: trackingKey, isProcessing: false });
-      
-      // Check for NO_PROMPT_CONFIGURED error
-      if (error.message.includes("NO_PROMPT_CONFIGURED")) {
-        const [, userMessage] = error.message.split("|");
-        toast({
-          title: "Prompt Configuratie Vereist", 
-          description: `${userMessage || error.message} Ga naar Instellingen om prompts te configureren.`,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Fout bij uitvoeren substap",
-          description: error.message,
-          variant: "destructive",
-        });
-      }
+      handleMutationError(error, { stage: trackingKey }, { dispatch, toast });
     },
   });
 

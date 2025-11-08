@@ -206,7 +206,7 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
       // Calculate proper stage index based on completed stages (same logic as initialization)
       const WORKFLOW_STAGES = [
         { key: "1_informatiecheck" },
-        { key: "2_complexiteitscheck" }, 
+        { key: "2_complexiteitscheck" },
         { key: "3_generatie" },
         { key: "4a_BronnenSpecialist" },
         { key: "4b_FiscaalTechnischSpecialist" },
@@ -214,22 +214,24 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         { key: "4d_DeVertaler" },
         { key: "4e_DeAdvocaat" },
         { key: "4f_DeKlantpsycholoog" },
-        { key: "4g_ChefEindredactie" },
-        { key: "5_feedback_verwerker" },
-        { key: "6_change_summary" },
-        { key: "final_check" }
+        { key: "6_change_summary" }
       ];
       
-      let newStageIndex = 0;
-      if (completedStages.length > 0) {
+      // ✅ KEEP CURRENT STAGE: Don't auto-advance, user controls progression
+      // Keep the current stage index unless it's a completely new report
+      let newStageIndex = state.currentStageIndex;
+
+      // Only initialize to first incomplete stage if this is the first load (index is 0)
+      if (state.currentStageIndex === 0 && completedStages.length > 0) {
         // Find the highest completed stage index (not just the last key)
         const completedIndices = completedStages
           .map(stageKey => WORKFLOW_STAGES.findIndex(s => s.key === stageKey))
           .filter(index => index >= 0);
-        
+
         if (completedIndices.length > 0) {
           const highestCompletedIndex = Math.max(...completedIndices);
-          newStageIndex = Math.min(highestCompletedIndex + 1, WORKFLOW_STAGES.length - 1);
+          // Stay on the last completed stage, NOT the next one
+          newStageIndex = highestCompletedIndex;
         }
       }
       
@@ -243,9 +245,25 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
       });
       
       // Merge existing stage prompts with report stage prompts, preserving existing ones
+      // Normalize prompt objects to strings (handle { systemPrompt, userInput } format)
+      const reportStagePrompts = (action.report.stagePrompts as Record<string, any>) || {};
+      const normalizedPrompts: Record<string, string> = {};
+
+      Object.entries(reportStagePrompts).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          normalizedPrompts[key] = value;
+        } else if (value && typeof value === 'object' && 'systemPrompt' in value && 'userInput' in value) {
+          // Convert { systemPrompt, userInput } to single string
+          normalizedPrompts[key] = `${value.systemPrompt}\n\n### USER INPUT:\n${value.userInput}`;
+        } else if (value && typeof value === 'object') {
+          // Fallback: stringify other objects
+          normalizedPrompts[key] = JSON.stringify(value, null, 2);
+        }
+      });
+
       const mergedStagePrompts = {
         ...state.stagePrompts,
-        ...((action.report.stagePrompts as Record<string, string>) || {})
+        ...normalizedPrompts
       };
       
       return {

@@ -1,4 +1,12 @@
 import type { DossierData, BouwplanData, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
+
+// Internal type for stage configuration
+interface StagePromptConfig {
+  prompt: string;
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
 import { SourceValidator } from "./source-validator";
 import { AIModelFactory, AIModelParameters } from "./ai-models/ai-model-factory";
 import { storage } from "../storage";
@@ -7,6 +15,20 @@ import { ERROR_CODES } from "@shared/errors";
 import { REPORT_CONFIG, getStageConfig } from "../config/index";
 
 export class ReportGenerator {
+  /**
+   * Validates that a stage has a configured prompt.
+   * Throws an error with user-friendly message if prompt is missing.
+   *
+   * @param stageName - The stage identifier (e.g. "1_informatiecheck")
+   * @param stageConfig - The stage configuration object
+   * @throws {Error} NO_PROMPT_CONFIGURED error if prompt is missing or empty
+   */
+  private validateStagePrompt(stageName: string, stageConfig?: StagePromptConfig): void {
+    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
+      throw new Error(`NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap ${stageName} — configureer dit in Instellingen.`);
+    }
+  }
+
   private getStageDisplayName(stageName: string): string {
     const stageNames: Record<string, string> = {
       '1_informatiecheck': 'Informatie Check',
@@ -18,10 +40,7 @@ export class ReportGenerator {
       '4d_DeVertaler': 'Vertaling Review',
       '4e_DeAdvocaat': 'Juridisch Review',
       '4f_DeKlantpsycholoog': 'Klant Psychologie Review',
-      '4g_ChefEindredactie': 'Eindredactie',
-      '5_feedback_verwerker': 'Feedback Verwerking',
-      '6_change_summary': 'Change Summary',
-      'final_check': 'Finale Check'
+      '6_change_summary': 'Change Summary'
     };
     return stageNames[stageName] || stageName;
   }
@@ -163,10 +182,10 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     previousStageResults: Record<string, string>,
     conceptReportVersions: Record<string, any>,
     customInput?: string
-  ): Promise<string> {
+  ): Promise<string | { systemPrompt: string; userInput: string }> {
     const currentDate = new Date().toLocaleDateString('nl-NL', {
       year: 'numeric',
-      month: 'long', 
+      month: 'long',
       day: 'numeric'
     });
 
@@ -175,7 +194,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const stageConfig: any = promptConfig?.config?.[stageName as keyof typeof promptConfig.config] || {};
 
     // Build the prompt based on stage
-    let prompt: string;
+    let prompt: string | { systemPrompt: string; userInput: string };
 
     switch (stageName) {
       case "1_informatiecheck":
@@ -186,16 +205,6 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         break;
       case "3_generatie":
         prompt = this.buildGeneratiePrompt(dossier, bouwplan, currentDate, stageConfig, previousStageResults);
-        break;
-      case "5_feedback_verwerker":
-        prompt = this.buildFeedbackVerwerkerPrompt(
-          previousStageResults,
-          conceptReportVersions,
-          dossier,
-          bouwplan,
-          currentDate,
-          stageConfig
-        );
         break;
       case "6_change_summary":
         prompt = this.buildChangeSummaryPrompt(
@@ -215,15 +224,6 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           stageConfig
         );
         break;
-      case "final_check":
-        prompt = this.buildFinalCheckPrompt(
-          conceptReportVersions?.["latest"] || "",
-          dossier,
-          bouwplan,
-          currentDate,
-          stageConfig
-        );
-        break;
       default:
         // For reviewer stages (4a-4f)
         if (stageName.startsWith("4")) {
@@ -233,16 +233,22 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
             dossier,
             bouwplan,
             currentDate,
-            stageConfig
+            stageConfig,
+            previousStageResults
           );
         } else {
           throw new Error(`Unknown stage: ${stageName}`);
         }
     }
 
-    // Add custom input if provided
+    // Add custom input if provided - handle both formats
     if (customInput) {
-      prompt = `${prompt}\n\n### Aanvullende Input:\n${customInput}`;
+      if (typeof prompt === 'string') {
+        prompt = `${prompt}\n\n### Aanvullende Input:\n${customInput}`;
+      } else {
+        // For the new format, append to userInput
+        prompt.userInput = `${prompt.userInput}\n\n### Aanvullende Input:\n${customInput}`;
+      }
     }
 
     return prompt;
@@ -258,7 +264,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     jobId?: string
   ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
     // Generate the prompt using the new method
-    const prompt = await this.generatePromptForStage(
+    const promptResult = await this.generatePromptForStage(
       stageName,
       dossier,
       bouwplan,
@@ -266,6 +272,11 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       conceptReportVersions,
       customInput
     );
+
+    // Convert prompt to string for logging (backward compatibility)
+    const promptString = typeof promptResult === 'string'
+      ? promptResult
+      : `${promptResult.systemPrompt}\n\n### USER INPUT:\n${promptResult.userInput}`;
 
     // Get active prompt configuration from database for AI config
     const promptConfig = await storage.getActivePromptConfig();
@@ -300,18 +311,11 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         case '4d_DeVertaler':
         case '4e_DeAdvocaat':
         case '4f_DeKlantpsycholoog':
-        case '4g_ChefEindredactie':
           return REPORT_CONFIG.simpleTaskModel; // Fast for routine reviews
-        
-        case '5_feedback_verwerker':
-          return REPORT_CONFIG.reviewerModel; // Good for consolidation
-        
+
         case '6_change_summary':
           return REPORT_CONFIG.simpleTaskModel; // Fast for analysis
-        
-        case 'final_check':
-          return REPORT_CONFIG.reviewerModel; // Balanced for final review
-        
+
         default:
           return REPORT_CONFIG.defaultModel;
       }
@@ -320,17 +324,25 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const selectedModel = getOptimalModel(stageName);
     
     // Build merged AI config with proper fallbacks - fully configurable via database
+    const provider = stageAiConfig?.provider || globalAiConfig?.provider || (selectedModel.startsWith('gpt') ? 'openai' : 'google');
+    const rawMaxTokens = Math.max(
+      stageAiConfig?.maxOutputTokens || 8192,
+      globalAiConfig?.maxOutputTokens || 8192,
+      8192
+    );
+
+    // Apply provider-specific limits
+    const maxOutputTokens = provider === 'google'
+      ? Math.min(rawMaxTokens, 32768)  // Google AI max is 32768
+      : rawMaxTokens;  // OpenAI has higher limits
+
     const aiConfig: AiConfig = {
-      provider: stageAiConfig?.provider || globalAiConfig?.provider || (selectedModel.startsWith('gpt') ? 'openai' : 'google'),
+      provider,
       model: selectedModel,
       temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.1,
       topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
       topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 20,
-      maxOutputTokens: Math.max(
-        stageAiConfig?.maxOutputTokens || 8192,
-        globalAiConfig?.maxOutputTokens || 8192,
-        8192
-      ),
+      maxOutputTokens,
       reasoning: stageAiConfig?.reasoning || globalAiConfig?.reasoning,
       verbosity: stageAiConfig?.verbosity || globalAiConfig?.verbosity
     };
@@ -398,14 +410,14 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     };
 
     try {
-      const response = await this.modelFactory.callModel(aiConfig, prompt, options);
-      
+      const response = await this.modelFactory.callModel(aiConfig, promptResult, options);
+
       // Process the response based on stage type
       let stageOutput = response.content;
       let conceptReport = "";
 
       // For generation stages, the output IS the concept report
-      if (["3_generatie", "5_feedback_verwerker", "final_check"].includes(stageName)) {
+      if (["3_generatie"].includes(stageName)) {
         conceptReport = stageOutput;
       }
       // For other stages, keep the previous concept report
@@ -413,152 +425,85 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         conceptReport = conceptReportVersions?.["latest"] || "";
       }
 
-      return { stageOutput, conceptReport, prompt };
+      return { stageOutput, conceptReport, prompt: promptString };
 
     } catch (error: any) {
       console.error(`🚨 [${jobId}] Model failed (${aiConfig.model}):`, error.message);
-      
-      // Check if this is an OpenAI authentication error - try fallback to gpt-4o-mini
-      const isOpenAIAuthError = error.message?.includes('Authentication failed for OpenAI') ||
-                               error.code === 'AI_AUTHENTICATION_FAILED';
-      
-      if (isOpenAIAuthError && aiConfig.model === 'gpt-4o' && aiConfig.provider === 'openai') {
-        console.log(`🔄 [${jobId}] OpenAI authentication failed for gpt-4o, trying fallback to gpt-4o-mini`);
-        
-        try {
-          // Create fallback config with gpt-4o-mini
-          const fallbackConfig = { ...aiConfig, model: 'gpt-4o-mini' as const };
-          
-          const fallbackResponse = await this.modelFactory.callModel(fallbackConfig, prompt, {
-            ...options,
-            jobId: `${jobId}-fallback`
-          });
-          
-          console.log(`✅ [${jobId}] Fallback to gpt-4o-mini succeeded`);
-          
-          // Process the fallback response
-          let stageOutput = fallbackResponse.content;
-          let conceptReport = "";
-          
-          if (["3_generatie", "5_feedback_verwerker", "final_check"].includes(stageName)) {
-            conceptReport = stageOutput;
-          } else {
-            conceptReport = conceptReportVersions?.["latest"] || "";
-          }
-          
-          return { stageOutput, conceptReport, prompt };
-          
-        } catch (fallbackError: any) {
-          console.error(`❌ [${jobId}] Fallback to gpt-4o-mini also failed:`, fallbackError.message);
-          
-          // Try Google AI as final fallback
-          console.log(`🔄 [${jobId}] Trying final fallback to Google AI`);
-          
-          try {
-            const googleConfig = { 
-              ...aiConfig, 
-              provider: 'google' as const, 
-              model: 'gemini-2.5-flash' as const 
-            };
-            
-            const googleResponse = await this.modelFactory.callModel(googleConfig, prompt, {
-              ...options,
-              jobId: `${jobId}-google-fallback`
-            });
-            
-            console.log(`✅ [${jobId}] Google AI fallback succeeded`);
-            
-            // Process the Google response
-            let stageOutput = googleResponse.content;
-            let conceptReport = "";
-            
-            if (["3_generatie", "5_feedback_verwerker", "final_check"].includes(stageName)) {
-              conceptReport = stageOutput;
-            } else {
-              conceptReport = conceptReportVersions?.["latest"] || "";
-            }
-            
-            return { stageOutput, conceptReport, prompt };
-            
-          } catch (googleError: any) {
-            console.error(`❌ [${jobId}] Google AI fallback also failed:`, googleError.message);
-            // Continue with normal error handling
-          }
-        }
+
+      // Check for rate limits - these should FAIL IMMEDIATELY with no placeholder
+      const isRateLimitError = error.message?.includes('Rate limit') ||
+                              error.message?.includes('rate_limit') ||
+                              error.message?.includes('rate limit') ||
+                              error.errorCode === 'AI_RATE_LIMITED';
+
+      if (isRateLimitError) {
+        // Rate limits ALWAYS fail - no placeholders, no fallbacks
+        console.error(`💥 [${jobId}] RATE LIMIT - Failing stage ${stageName} immediately`);
+        throw error; // Re-throw to make the stage actually fail
       }
-      
-      // Check if error is due to token limit for Deep Research models
-      const isTokenLimitError = error.message.includes('maxOutputTokens') || 
-                                error.message.includes('token limit') ||
-                                error.message.includes('incomplete');
-      
-      if (isTokenLimitError && aiConfig.model?.includes('deep-research')) {
-        // Provide specific guidance for token limit errors
-        const suggestedTokens = Math.min(aiConfig.maxOutputTokens * 2, 65536);
-        console.error(`📈 [${jobId}] Deep Research model needs more tokens. Current: ${aiConfig.maxOutputTokens}, Suggested: ${suggestedTokens}`);
-        
-        const stageDisplayName = this.getStageDisplayName(stageName);
-        const placeholderResponse = `## ${stageDisplayName}
 
-⚠️ **Deep Research Model Token Limiet Bereikt**
-
-### Probleem:
-Het ${aiConfig.model} model heeft meer tokens nodig om deze analyse volledig uit te voeren.
-
-### Huidige Configuratie:
-- Model: ${aiConfig.model}
-- Huidige token limiet: ${aiConfig.maxOutputTokens}
-- Aanbevolen limiet: ${suggestedTokens}
-
-### Oplossing:
-1. Ga naar **Instellingen → AI Configuratie**
-2. Selecteer stage "${stageName}"
-3. Verhoog "Max Output Tokens" naar minimaal ${suggestedTokens}
-4. Of schakel over naar een ander model (bijv. GPT-4o of Gemini 2.5 Pro)
-5. Voer deze stap opnieuw uit
-
-### Alternatief:
-Gebruik een standaard model zoals **gpt-4o** of **gemini-2.5-pro** die efficiënter omgaan met tokens.
-
-🔄 **Status:** Deze stap moet opnieuw worden uitgevoerd na aanpassing.`;
-        
-        return {
-          stageOutput: placeholderResponse,
-          conceptReport: conceptReportVersions?.["latest"] || placeholderResponse,
-          prompt
-        };
-      }
-      
-      // Default error handling for other errors
+      // NO FALLBACKS - use only configured model for quality consistency
       const stageDisplayName = this.getStageDisplayName(stageName);
-      
-      // Check if we already tried fallbacks
-      const triedFallback = isOpenAIAuthError && aiConfig.model === 'gpt-4o' && aiConfig.provider === 'openai';
-      
+
+      // Check for other specific error types
+      const isAuthError = error.message?.includes('Authentication failed') || error.message?.includes('API key');
+      const isTokenLimitError = error.message?.includes('maxOutputTokens') ||
+                                error.message?.includes('token limit') ||
+                                error.message?.includes('incomplete');
+
+      let errorGuidance = '';
+      if (isAuthError) {
+        errorGuidance = `
+### Authenticatie Probleem:
+De API key voor ${aiConfig.provider === 'google' ? 'Google AI' : 'OpenAI'} is niet geldig of heeft geen toegang.
+
+### Oplossingen:
+1. Controleer je API key in de **.env** file
+2. Zorg dat de API key actief en geldig is
+3. Controleer of de API key toegang heeft tot ${aiConfig.model}`;
+      } else if (isTokenLimitError) {
+        const suggestedTokens = Math.min(aiConfig.maxOutputTokens * 2, 65536);
+        errorGuidance = `
+### Token Limiet Probleem:
+Het model heeft meer tokens nodig dan geconfigureerd.
+
+### Oplossingen:
+1. Ga naar **Instellingen → AI Configuratie**
+2. Verhoog "Max Output Tokens" naar minimaal ${suggestedTokens}
+3. Of kies een ander model dat beter past bij deze taak`;
+      } else {
+        errorGuidance = `
+### Algemene Oplossingen:
+1. Controleer of uw API keys geldig zijn en voldoende credits hebben
+2. Controleer de netwerk verbinding
+3. Probeer de stap opnieuw uit te voeren
+4. Overweeg een ander model te configureren in Instellingen`;
+      }
+
       const placeholderResponse = `## ${stageDisplayName}
 
-De AI-analyse kon niet worden uitgevoerd vanwege technische problemen.
+⚠️ **AI Model Fout**
+
+De geconfigureerde AI (${aiConfig.model}) kon deze stap niet uitvoeren.
 
 ### Technische Details:
-- Model: ${aiConfig.model}${triedFallback ? ' (automatische fallbacks geprobeerd: gpt-4o-mini, gemini-2.5-flash)' : ''}
-- Prompt lengte: ${prompt.length} karakters
+- Model: ${aiConfig.model}
+- Provider: ${aiConfig.provider}
+- Prompt lengte: ${promptString.length} karakters
 - Foutmelding: ${error.message}
-
-### Advies:
-${triedFallback ? '1. Het systeem heeft automatisch geprobeerd terug te vallen naar gpt-4o-mini en Google AI, maar alle opties zijn mislukt\n' : ''}1. Controleer of uw API keys geldig zijn en voldoende credits hebben
-2. Controleer of zowel OpenAI als Google AI API keys zijn geconfigureerd
-3. Overweeg de AI instellingen aan te passen in de instellingen pagina
-4. Neem contact op met support als het probleem aanhoudt
+${errorGuidance}
 
 ### Status:
-⚠️ Deze stap is niet voltooid en moet opnieuw worden uitgevoerd.`;
-      
-      console.log(`⚠️ [${jobId}] Returning placeholder response for failed stage ${stageName}`);
+❌ Deze stap is mislukt en moet opnieuw worden uitgevoerd na het oplossen van het probleem.
+
+**Let op:** Dit systeem gebruikt GEEN automatische fallbacks om kwaliteit te garanderen. Los het probleem op of configureer een ander model in Instellingen.`;
+
+      console.log(`⚠️ [${jobId}] Returning error response for failed stage ${stageName} (no fallbacks)`);
       
       return {
         stageOutput: placeholderResponse,
         conceptReport: conceptReportVersions?.["latest"] || placeholderResponse,
-        prompt
+        prompt: promptString
       };
     }
   }
@@ -600,15 +545,14 @@ Maak een professioneel rapport met:
   }
 
   async finalizeReport(stageResults: Record<string, string>): Promise<string> {
-    // Combine all stage results into final report
-    const finalCheckResult = stageResults.final_check || stageResults["4g_ChefEindredactie"] || "";
-    
-    if (!finalCheckResult) {
-      throw new Error("Geen finale resultaat beschikbaar voor rapport samenstelling");
+    // Use the latest generation result (3_generatie) as the final report
+    const generationResult = stageResults["3_generatie"] || "";
+
+    if (!generationResult) {
+      throw new Error("Geen generatie resultaat beschikbaar voor rapport samenstelling");
     }
 
-    // The final check stage should contain the complete, formatted report
-    return finalCheckResult;
+    return generationResult;
   }
 
   // Helper methods for building prompts
@@ -616,78 +560,67 @@ Maak een professioneel rapport met:
     dossier: DossierData,
     bouwplan: BouwplanData,
     currentDate: string,
-    stageConfig?: any
-  ): string {
-    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
-      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 1_informatiecheck — configureer dit in Instellingen.");
-    }
-    
-    const prompt = stageConfig.prompt;
+    stageConfig?: StagePromptConfig
+  ): { systemPrompt: string; userInput: string } {
+    this.validateStagePrompt("1_informatiecheck", stageConfig);
 
-    return `${prompt}
+    // System Prompt: De instructie voor de AI
+    const systemPrompt = `${stageConfig.prompt}
 
-### Datum: ${currentDate}
+### Datum: ${currentDate}`;
 
-### Dossier:
-${JSON.stringify(dossier, null, 2)}
+    // User Input: De rawText (dit is de ENIGE keer dat we rawText gebruiken!)
+    const rawText = (dossier as any).rawText || JSON.stringify(dossier, null, 2);
+    const userInput = rawText;
 
-### Bouwplan:
-${JSON.stringify(bouwplan, null, 2)}`;
+    return { systemPrompt, userInput };
   }
 
   private buildComplexiteitsCheckPrompt(
     dossier: DossierData,
     bouwplan: BouwplanData,
     currentDate: string,
-    stageConfig?: any,
+    stageConfig?: StagePromptConfig,
     previousStageResults?: Record<string, string>
-  ): string {
-    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
-      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 2_complexiteitscheck — configureer dit in Instellingen.");
-    }
-    
-    const prompt = stageConfig.prompt;
+  ): { systemPrompt: string; userInput: string } {
+    this.validateStagePrompt("2_complexiteitscheck", stageConfig);
 
-    let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
-    
-    // Add previous stage results if available
-    if (previousStageResults && Object.keys(previousStageResults).length > 0) {
-      fullPrompt += `\n\n### Resultaten uit vorige stappen:`;
-      Object.entries(previousStageResults).forEach(([stage, result]) => {
-        fullPrompt += `\n\n#### ${stage}:\n${result}`;
-      });
-    }
-    
-    fullPrompt += `\n\n### Dossier:\n${JSON.stringify(dossier, null, 2)}\n\n### Bouwplan:\n${JSON.stringify(bouwplan, null, 2)}`;
-    
-    return fullPrompt;
+    // System Prompt: De instructie voor de AI
+    const systemPrompt = `${stageConfig.prompt}
+
+### Datum: ${currentDate}`;
+
+    // User Input: ALLEEN de volledige JSON output van stap 1
+    const userInput = previousStageResults?.['1_informatiecheck'] || '{}';
+
+    console.log(`🔍 [2_complexiteitscheck] Building prompt:`, {
+      hasStageConfig: !!stageConfig,
+      hasPreviousResults: !!previousStageResults,
+      step1ResultLength: userInput.length,
+      step1ResultPreview: userInput.substring(0, 200)
+    });
+
+    return { systemPrompt, userInput };
   }
 
   private buildGeneratiePrompt(
     dossier: DossierData,
     bouwplan: BouwplanData,
     currentDate: string,
-    stageConfig?: any,
+    stageConfig?: StagePromptConfig,
     previousStageResults?: Record<string, string>
-  ): string {
-    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
-      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 3_generatie — configureer dit in Instellingen.");
-    }
+  ): { systemPrompt: string; userInput: string } {
+    this.validateStagePrompt("3_generatie", stageConfig);
 
-    const prompt = stageConfig.prompt;
+    // System Prompt: De instructie voor de AI
+    const systemPrompt = `${stageConfig.prompt}
 
-    let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
+### Datum: ${currentDate}`;
 
-    // Only add the most recent stage result (step 2), which already contains step 1
-    // This prevents duplicate information and keeps the prompt concise
-    if (previousStageResults && previousStageResults['2_complexiteitscheck']) {
-      fullPrompt += `\n\n### Resultaat uit stap 2 (bevat al stap 1):`;
-      fullPrompt += `\n\n${previousStageResults['2_complexiteitscheck']}`;
-    }
+    // User Input: ALLEEN de volledige JSON output van stap 2
+    const userInput = previousStageResults?.['2_complexiteitscheck'] || '{}';
 
-    fullPrompt += `\n\n### Dossier:\n${JSON.stringify(dossier, null, 2)}\n\n### Bouwplan:\n${JSON.stringify(bouwplan, null, 2)}`;
-
-    return fullPrompt;
+    return { systemPrompt, userInput };
   }
 
   private buildReviewerPrompt(
@@ -696,90 +629,37 @@ ${JSON.stringify(bouwplan, null, 2)}`;
     dossier: DossierData,
     bouwplan: BouwplanData,
     currentDate: string,
-    stageConfig?: any
-  ): string {
-    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
-      throw new Error(`NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap ${stageName} — configureer dit in Instellingen.`);
+    stageConfig?: StagePromptConfig,
+    previousStageResults?: Record<string, string>
+  ): { systemPrompt: string; userInput: string } {
+    this.validateStagePrompt(stageName, stageConfig);
+
+    // System Prompt: De instructie voor de reviewer
+    const systemPrompt = `${stageConfig.prompt}
+
+### Datum: ${currentDate}`;
+
+    // User Input: Het volledige JSON_Stap_3 object (niet alleen de tekst!)
+    // We moeten hier het volledige JSON object uit stap 3 pakken
+    const step3Output = previousStageResults?.['3_generatie'] || '{}';
+
+    // Als het al een JSON object is, gebruik het direct
+    // Anders proberen we het te construeren
+    let jsonStep3;
+    try {
+      jsonStep3 = JSON.parse(step3Output);
+    } catch {
+      // Als het geen JSON is, maak dan een JSON object met de tekst
+      jsonStep3 = {
+        taal: "nl",
+        concept_rapport_tekst: step3Output,
+        origineel_dossier: dossier
+      };
     }
-    
-    const prompt = stageConfig.prompt;
 
-    return `${prompt}
+    const userInput = JSON.stringify(jsonStep3, null, 2);
 
-### Datum: ${currentDate}
-
-### Concept Rapport:
-${conceptReport}
-
-### Origineel Dossier:
-${JSON.stringify(dossier, null, 2)}
-
-### Bouwplan:
-${JSON.stringify(bouwplan, null, 2)}`;
-  }
-
-  private buildFeedbackVerwerkerPrompt(
-    previousStageResults: Record<string, string>,
-    conceptReportVersions: Record<string, string>,
-    dossier: DossierData,
-    bouwplan: BouwplanData,
-    currentDate: string,
-    stageConfig?: any
-  ): string {
-    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
-      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 5_feedback_verwerker — configureer dit in Instellingen.");
-    }
-    
-    const prompt = stageConfig.prompt;
-
-    // Collect and summarize reviewer feedback - limit to key findings
-    const reviewerFeedback = Object.entries(previousStageResults)
-      .filter(([key]) => key.startsWith("4"))
-      .map(([key, value]) => {
-        // Parse JSON feedback and extract key points
-        try {
-          const feedback = JSON.parse(value);
-          if (Array.isArray(feedback)) {
-            const keyFindings = feedback
-              .slice(0, 3) // Limit to first 3 findings
-              .map(f => `- ${f.bevinding_categorie}: ${f.instructie}`)
-              .join('\n');
-            return `### ${key}:\n${keyFindings}`;
-          }
-        } catch (e) {
-          // If not JSON, truncate to first 200 chars
-          const truncated = value.length > 200 ? value.substring(0, 200) + '...' : value;
-          return `### ${key}:\n${truncated}`;
-        }
-        return `### ${key}:\n${value}`;
-      })
-      .join("\n\n");
-
-    // Truncate original report to first 1000 characters
-    const originalReport = conceptReportVersions?.["3_generatie"] || "Geen vorig rapport beschikbaar";
-    const truncatedReport = originalReport.length > 1000 
-      ? originalReport.substring(0, 1000) + '\n\n[...rapport ingekort voor processing...]' 
-      : originalReport;
-
-    // Minimal dossier info - just key fields
-    const minimalDossier = {
-      onderwerp: 'Fiscale vraag',
-      klant: dossier.klant?.naam || 'Onbekend',
-      situatie: dossier.klant?.situatie || 'Geen situatie beschikbaar'
-    };
-
-    return `${prompt}
-
-### Datum: ${currentDate}
-
-### Concept Rapport (ingekorte versie):
-${truncatedReport}
-
-### Reviewer Feedback:
-${reviewerFeedback}
-
-### Dossier Context:
-${JSON.stringify(minimalDossier, null, 2)}`;
+    return { systemPrompt, userInput };
   }
 
   private buildChangeSummaryPrompt(
@@ -787,12 +667,10 @@ ${JSON.stringify(minimalDossier, null, 2)}`;
     dossier: DossierData,
     bouwplan: BouwplanData,
     currentDate: string,
-    stageConfig?: any,
+    stageConfig?: StagePromptConfig,
     previousStageResults?: Record<string, string>
   ): string {
-    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
-      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 6_change_summary — configureer dit in Instellingen.");
-    }
+    this.validateStagePrompt("6_change_summary", stageConfig);
     
     const prompt = stageConfig.prompt;
 
@@ -821,39 +699,13 @@ ${JSON.stringify(minimalDossier, null, 2)}`;
     return fullPrompt;
   }
 
-  private buildFinalCheckPrompt(
-    latestReport: string,
-    dossier: DossierData,
-    bouwplan: BouwplanData,
-    currentDate: string,
-    stageConfig?: any
-  ): string {
-    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
-      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap final_check — configureer dit in Instellingen.");
-    }
-
-    const prompt = stageConfig.prompt;
-
-    return `${prompt}
-
-### Datum: ${currentDate}
-
-### Finaal Rapport:
-${latestReport}
-
-### Dossier:
-${JSON.stringify(dossier, null, 2)}`;
-  }
-
   private buildEditorPrompt(
     currentReportText: string,
     previousStageResults: Record<string, string>,
     currentDate: string,
-    stageConfig?: any
+    stageConfig?: StagePromptConfig
   ): string {
-    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
-      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor de editor — configureer dit in Instellingen.");
-    }
+    this.validateStagePrompt("editor", stageConfig);
 
     const prompt = stageConfig.prompt;
 

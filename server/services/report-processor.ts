@@ -227,7 +227,6 @@ ${feedback}
       "4d_DeVertaler",
       "4e_DeAdvocaat",
       "4f_DeKlantpsycholoog",
-      "4g_ChefEindredactie",
       "5_eindredactie"
     ];
 
@@ -315,7 +314,6 @@ ${feedback}
       case '4d_DeVertaler': return versions['4d_DeVertaler'] || null;
       case '4e_DeAdvocaat': return versions['4e_DeAdvocaat'] || null;
       case '4f_DeKlantpsycholoog': return versions['4f_DeKlantpsycholoog'] || null;
-      case '4g_ChefEindredactie': return versions['4g_ChefEindredactie'] || null;
       case '5_eindredactie': return versions['5_eindredactie'] || null;
       default: return null;
     }
@@ -335,7 +333,6 @@ ${feedback}
       case '4d_DeVertaler': versions['4d_DeVertaler'] = snapshot; break;
       case '4e_DeAdvocaat': versions['4e_DeAdvocaat'] = snapshot; break;
       case '4f_DeKlantpsycholoog': versions['4f_DeKlantpsycholoog'] = snapshot; break;
-      case '4g_ChefEindredactie': versions['4g_ChefEindredactie'] = snapshot; break;
       case '5_eindredactie': versions['5_eindredactie'] = snapshot; break;
       default: 
         console.warn(`⚠️ [ReportProcessor] Cannot set snapshot for unknown stage: ${stageId}`);

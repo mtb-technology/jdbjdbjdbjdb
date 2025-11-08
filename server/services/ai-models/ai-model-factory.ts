@@ -175,7 +175,7 @@ export class AIModelFactory {
 
   async callModel(
     config: AiConfig,
-    prompt: string,
+    prompt: string | { systemPrompt: string; userInput: string },
     options?: AIModelParameters & { jobId?: string }
   ): Promise<AIModelResponse> {
     const modelInfo = this.modelRegistry.get(config.model);
@@ -217,20 +217,35 @@ export class AIModelFactory {
       timeout: modelInfo.timeout
     });
 
+    // Normalize prompt format - support both old (string) and new (object) formats
+    let finalPrompt: string;
+    if (typeof prompt === 'string') {
+      // Legacy format: single prompt string
+      finalPrompt = prompt;
+      console.log(`📝 [${options?.jobId}] Using legacy prompt format (single string)`);
+    } else {
+      // New format: separate system prompt and user input
+      finalPrompt = `${prompt.systemPrompt}\n\n### USER INPUT:\n${prompt.userInput}`;
+      console.log(`📝 [${options?.jobId}] Using new prompt format (system + user input)`, {
+        systemPromptLength: prompt.systemPrompt.length,
+        userInputLength: prompt.userInput.length
+      });
+    }
+
     // Check circuit breaker
     const breaker = this.circuitBreaker.get(config.model) || { failures: 0, lastFailure: 0, isOpen: false };
-    
+
     // Reset circuit after 60 seconds
     if (breaker.isOpen && Date.now() - breaker.lastFailure > 60000) {
       breaker.isOpen = false;
       breaker.failures = 0;
       console.log(`🔄 Circuit breaker reset for ${config.model}`);
     }
-    
+
     if (breaker.isOpen) {
       throw new Error(`Circuit breaker OPEN for ${config.model} - too many failures`);
     }
-    
+
     try {
       // Pass model-specific timeout to handler via options
       const timeoutMs = modelInfo.timeout || 120000;
@@ -238,8 +253,8 @@ export class AIModelFactory {
         ...options,
         timeout: timeoutMs
       };
-      
-      const result = await handler.call(prompt, filteredConfig, optionsWithTimeout);
+
+      const result = await handler.call(finalPrompt, filteredConfig, optionsWithTimeout);
       
       // Reset failures on success
       breaker.failures = 0;

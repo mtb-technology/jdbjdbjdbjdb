@@ -266,8 +266,8 @@ export const REPORT_CONFIG = {
       maxTokens: 4096
     },
     '2_complexiteitscheck': {
-      name: 'Complexiteits Check', 
-      timeout: 60000,
+      name: 'Complexiteits Check',
+      timeout: 120000, // Increased to 2 minutes for rate limit retries
       maxTokens: 4096
     },
     '3_generatie': {
@@ -304,21 +304,6 @@ export const REPORT_CONFIG = {
       name: 'De Klantpsycholoog Review',
       timeout: 90000,
       maxTokens: 8192
-    },
-    '4g_ChefEindredactie': {
-      name: 'Chef Eindredactie Review',
-      timeout: 90000,
-      maxTokens: 8192
-    },
-    '5_feedback_verwerker': {
-      name: 'Feedback Verwerker',
-      timeout: 300000, // 5 minutes for feedback integration
-      maxTokens: 24576 // More space for consolidated feedback
-    },
-    'final_check': {
-      name: 'Finale Controle',
-      timeout: 120000,
-      maxTokens: 16384
     },
     '6_change_summary': {
       name: 'Change Summary',

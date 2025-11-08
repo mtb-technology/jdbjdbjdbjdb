@@ -195,14 +195,34 @@ export abstract class BaseAIHandler {
   }
 
   protected logRetry(jobId: string | undefined, attempt: number, maxRetries: number, delay: number, errorMessage: string) {
-    console.warn(`🔄 [${jobId || 'unknown'}] ${this.modelName} retry ${attempt}/${maxRetries} in ${delay}ms:`, {
-      model: this.modelName,
-      attempt,
-      maxRetries,
-      delay,
-      errorMessage,
-      timestamp: new Date().toISOString()
-    });
+    const delaySeconds = Math.round(delay / 1000);
+    const delayMinutes = Math.round(delay / 60000);
+    const humanDelay = delayMinutes >= 1 ? `${delayMinutes}min` : `${delaySeconds}s`;
+
+    const isRateLimit = errorMessage.toLowerCase().includes('rate limit') ||
+                       errorMessage.toLowerCase().includes('quota');
+
+    if (isRateLimit) {
+      console.warn(`⏳ [${jobId || 'unknown'}] ${this.modelName} RATE LIMIT - Retry ${attempt}/${maxRetries} in ${humanDelay}:`, {
+        model: this.modelName,
+        attempt,
+        maxRetries,
+        delayMs: delay,
+        humanReadableDelay: humanDelay,
+        errorMessage,
+        timestamp: new Date().toISOString(),
+        suggestion: 'Rate limits may require 5-10 minutes to reset. Consider using a different model or waiting longer.'
+      });
+    } else {
+      console.warn(`🔄 [${jobId || 'unknown'}] ${this.modelName} retry ${attempt}/${maxRetries} in ${humanDelay}:`, {
+        model: this.modelName,
+        attempt,
+        maxRetries,
+        delayMs: delay,
+        errorMessage,
+        timestamp: new Date().toISOString()
+      });
+    }
   }
 
   protected formatPromptWithSearch(prompt: string, useWebSearch: boolean): string {

@@ -42,10 +42,7 @@ export default function CaseDetail() {
       '4d_DeVertaler': 'Communicatie Review',
       '4e_DeAdvocaat': 'Juridisch Review',
       '4f_DeKlantpsycholoog': 'Client Psychologie',
-      '4g_ChefEindredactie': 'Eindredactie',
-      '5_feedback_verwerker': 'Feedback Integratie',
-      '6_change_summary': 'Wijzigingen Samenvatting',
-      'final_check': 'Finale Controle'
+      '6_change_summary': 'Wijzigingen Samenvatting'
     };
 
     const versions = Object.keys(report.conceptReportVersions || {})
@@ -86,15 +83,7 @@ export default function CaseDetail() {
       }
     }
 
-    // PRIORITEIT 2: Kijk naar feedback verwerker output (5_feedback_verwerker)
-    // Dit is het rapport NA verwerking van reviewer feedback
-    if (report.conceptReportVersions['5_feedback_verwerker']) {
-      const feedbackData = report.conceptReportVersions['5_feedback_verwerker'];
-      if (typeof feedbackData === 'string') return feedbackData;
-      if (typeof feedbackData === 'object' && (feedbackData as any).content) {
-        return (feedbackData as any).content;
-      }
-    }
+    // PRIORITEIT 2 removed: 5_feedback_verwerker is deprecated
 
     // FALLBACK 3: Latest pointer (alleen als geen rapport beschikbaar)
     const latestPointer = report.conceptReportVersions.latest?.pointer;
@@ -334,10 +323,7 @@ export default function CaseDetail() {
                     '4d_DeVertaler': 'Communicatie Review',
                     '4e_DeAdvocaat': 'Juridisch Review',
                     '4f_DeKlantpsycholoog': 'Client Psychologie',
-                    '4g_ChefEindredactie': 'Eindredactie',
-                    '5_feedback_verwerker': 'Feedback Integratie',
-                    '6_change_summary': 'Wijzigingen Samenvatting',
-                    'final_check': 'Finale Controle'
+                    '6_change_summary': 'Wijzigingen Samenvatting'
                   }}
                 />
               ) : (

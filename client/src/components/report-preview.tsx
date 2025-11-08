@@ -2,15 +2,11 @@ import { memo, useCallback, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-  Printer, 
-  Download, 
-  Share, 
+import {
+  Printer,
+  Download,
+  Share,
   AlertTriangle,
-  Info,
-  ExternalLink,
-  ArrowRight,
-  Book,
   BarChart3,
   ArrowUp,
   Edit3
@@ -20,55 +16,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from "@/hooks/use-toast";
 import { OverrideConceptDialog } from "./workflow/OverrideConceptDialog";
-
-// Format plain text/markdown to professional fiscal report HTML
-function formatReportContent(content: string): string {
-  if (!content) return "";
-  
-  console.log("🔍 Formatting content:", content.substring(0, 200) + "...");
-  
-  let formatted = content
-    // Headers first - order matters!
-    .replace(/^#{3}\s+(.+)$/gm, '<h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mt-6 mb-3 border-b border-gray-300 dark:border-gray-600 pb-1">$1</h3>')
-    .replace(/^#{2}\s+(.+)$/gm, '<h2 class="text-xl font-bold text-gray-900 dark:text-gray-100 mt-8 mb-4 border-b-2 border-blue-600 pb-2">$1</h2>')
-    .replace(/^#{1}\s+(.+)$/gm, '<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-6 mb-4">$1</h1>')
-    
-    // Bold and italic
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-gray-900 dark:text-gray-100">$1</strong>')
-    .replace(/\*([^\*\n]+?)\*/g, '<em class="italic text-gray-700 dark:text-gray-300">$1</em>')
-    
-    // Lists - handle them before paragraph processing
-    .replace(/^[\*\-•]\s+(.+)$/gm, '<<<UL_ITEM>>>$1<<</UL_ITEM>>>')
-    .replace(/^(\d+)\.\s+(.+)$/gm, '<<<OL_ITEM>>>$2<<</OL_ITEM>>>')
-    
-    // Convert line breaks to paragraph breaks
-    .replace(/\n\s*\n/g, '<<<PARA_BREAK>>>')
-    .replace(/\n/g, ' ')
-    .replace(/<<<PARA_BREAK>>>/g, '\n\n')
-    
-    // Convert to paragraphs
-    .split('\n\n')
-    .map(para => {
-      para = para.trim();
-      if (!para) return '';
-      
-      // Skip if already HTML
-      if (para.includes('<h') || para.includes('<<<')) return para;
-      
-      return `<p class="mb-4 text-gray-700 dark:text-gray-300 leading-relaxed">${para}</p>`;
-    })
-    .join('\n')
-    
-    // Process list items
-    .replace(/<<<UL_ITEM>>>(.*?)<<<\/UL_ITEM>>>/g, '<li class="ml-6 mb-1 text-gray-700 dark:text-gray-300">$1</li>')
-    .replace(/(<li class="ml-6 mb-1[^>]*>.*?<\/li>\s*)+/g, '<ul class="mb-4 list-disc list-outside ml-4">$&</ul>')
-    
-    .replace(/<<<OL_ITEM>>>(.*?)<<<\/OL_ITEM>>>/g, '<li class="ml-6 mb-1 text-gray-700 dark:text-gray-300">$1</li>')
-    .replace(/(<li class="ml-6 mb-1[^>]*>.*?<\/li>\s*)+/g, '<ol class="mb-4 list-decimal list-outside ml-4">$&</ol>');
-  
-  console.log("✅ Formatted result:", formatted.substring(0, 300) + "...");
-  return formatted;
-}
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ReportPreviewProps {
   report: Report | null;
@@ -322,8 +271,103 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
 
           {/* Report Sections */}
           {report.generatedContent ? (
-            <div className="prose prose-sm max-w-none" data-testid="report-content">
-              <div dangerouslySetInnerHTML={{ __html: formatReportContent(report.generatedContent) }} />
+            <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="report-content">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h1: ({ children }) => (
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-6 mb-4 border-b-2 border-blue-600 pb-2">
+                      {children}
+                    </h1>
+                  ),
+                  h2: ({ children }) => (
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-8 mb-4 border-b border-gray-300 dark:border-gray-600 pb-1">
+                      {children}
+                    </h2>
+                  ),
+                  h3: ({ children }) => (
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-6 mb-3">
+                      {children}
+                    </h3>
+                  ),
+                  p: ({ children }) => (
+                    <p className="mb-4 text-gray-700 dark:text-gray-300 leading-relaxed">
+                      {children}
+                    </p>
+                  ),
+                  ul: ({ children }) => (
+                    <ul className="mb-4 list-disc list-outside ml-6 space-y-1">
+                      {children}
+                    </ul>
+                  ),
+                  ol: ({ children }) => (
+                    <ol className="mb-4 list-decimal list-outside ml-6 space-y-1">
+                      {children}
+                    </ol>
+                  ),
+                  li: ({ children }) => (
+                    <li className="text-gray-700 dark:text-gray-300">
+                      {children}
+                    </li>
+                  ),
+                  strong: ({ children }) => (
+                    <strong className="font-bold text-gray-900 dark:text-gray-100">
+                      {children}
+                    </strong>
+                  ),
+                  em: ({ children }) => (
+                    <em className="italic text-gray-700 dark:text-gray-300">
+                      {children}
+                    </em>
+                  ),
+                  table: ({ children }) => (
+                    <div className="overflow-x-auto mb-4">
+                      <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
+                        {children}
+                      </table>
+                    </div>
+                  ),
+                  thead: ({ children }) => (
+                    <thead className="bg-gray-50 dark:bg-gray-800">
+                      {children}
+                    </thead>
+                  ),
+                  tbody: ({ children }) => (
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+                      {children}
+                    </tbody>
+                  ),
+                  th: ({ children }) => (
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      {children}
+                    </th>
+                  ),
+                  td: ({ children }) => (
+                    <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                      {children}
+                    </td>
+                  ),
+                  blockquote: ({ children }) => (
+                    <blockquote className="border-l-4 border-blue-500 pl-4 italic my-4 text-gray-600 dark:text-gray-400">
+                      {children}
+                    </blockquote>
+                  ),
+                  code: ({ className, children }) => {
+                    const isInline = !className || !className.includes('language-');
+                    return isInline ? (
+                      <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-sm font-mono text-blue-600 dark:text-blue-400">
+                        {children}
+                      </code>
+                    ) : (
+                      <code className="block bg-gray-100 dark:bg-gray-800 p-4 rounded text-sm font-mono overflow-x-auto">
+                        {children}
+                      </code>
+                    );
+                  },
+                }}
+              >
+                {report.generatedContent}
+              </ReactMarkdown>
             </div>
           ) : (
             <div className="text-center text-muted-foreground py-8">
