@@ -48,17 +48,7 @@ import { InformatieCheckViewer } from "./InformatieCheckViewer";
 import { ComplexiteitsCheckViewer } from "./ComplexiteitsCheckViewer";
 import { normalizePromptToString } from "@/lib/promptUtils";
 import { useCollapsibleSections } from "@/hooks/useCollapsibleSections";
-
-interface SimplifiedWorkflowViewProps {
-  state: any;
-  dispatch: any;
-  executeStageM: any;
-  executeSubstepM: any;
-  isCreatingCase: boolean;
-  rawText?: string;
-  clientName?: string;
-  getStageStatus: (index: number) => "completed" | "current" | "pending";
-}
+import type { SimplifiedWorkflowViewProps } from "./types";
 
 export function SimplifiedWorkflowView({
   state,

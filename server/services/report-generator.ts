@@ -9,6 +9,8 @@ interface StagePromptConfig {
 }
 import { SourceValidator } from "./source-validator";
 import { AIModelFactory, AIModelParameters } from "./ai-models/ai-model-factory";
+import { AIConfigResolver } from "./ai-config-resolver";
+import { PromptBuilder, StagePromptConfig } from "./prompt-builder";
 import { storage } from "../storage";
 import { ServerError } from "../middleware/errorHandler";
 import { ERROR_CODES } from "@shared/errors";
@@ -47,10 +49,14 @@ export class ReportGenerator {
 
   private sourceValidator: SourceValidator;
   private modelFactory: AIModelFactory;
+  private configResolver: AIConfigResolver;
+  private promptBuilder: PromptBuilder;
 
   constructor() {
     this.sourceValidator = new SourceValidator();
     this.modelFactory = AIModelFactory.getInstance();
+    this.configResolver = new AIConfigResolver();
+    this.promptBuilder = new PromptBuilder();
   }
 
   // Test method for AI functionality
@@ -283,101 +289,13 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const stageConfig: any = promptConfig?.config?.[stageName as keyof typeof promptConfig.config] || {};
     const globalConfig: any = promptConfig?.config || {};
 
-    // Determine which AI configuration to use (stage-specific or global)
-    const stageAiConfig = stageConfig?.aiConfig;
-    const globalAiConfig = globalConfig?.aiConfig;
-
-    // Intelligent model selection for hybrid workflow
-    const getOptimalModel = (stageName: string): string => {
-      // If explicitly configured in database, use that
-      if (stageAiConfig?.model || globalAiConfig?.model) {
-        return stageAiConfig?.model || globalAiConfig?.model;
-      }
-      
-      // Hybrid workflow logic based on stage complexity
-      switch (stageName) {
-        case '1_informatiecheck':
-        case '2_complexiteitscheck':
-          return REPORT_CONFIG.simpleTaskModel; // Fast automated checks
-        
-        case '3_generatie':
-          return REPORT_CONFIG.complexTaskModel; // Powerful for large reports
-        
-        case '4a_BronnenSpecialist':
-        case '4b_FiscaalTechnischSpecialist':
-          return REPORT_CONFIG.reviewerModel; // Balanced for critical reviews
-        
-        case '4c_ScenarioGatenAnalist':
-        case '4d_DeVertaler':
-        case '4e_DeAdvocaat':
-        case '4f_DeKlantpsycholoog':
-          return REPORT_CONFIG.simpleTaskModel; // Fast for routine reviews
-
-        case '6_change_summary':
-          return REPORT_CONFIG.simpleTaskModel; // Fast for analysis
-
-        default:
-          return REPORT_CONFIG.defaultModel;
-      }
-    };
-    
-    const selectedModel = getOptimalModel(stageName);
-    
-    // Build merged AI config with proper fallbacks - fully configurable via database
-    const provider = stageAiConfig?.provider || globalAiConfig?.provider || (selectedModel.startsWith('gpt') ? 'openai' : 'google');
-    const rawMaxTokens = Math.max(
-      stageAiConfig?.maxOutputTokens || 8192,
-      globalAiConfig?.maxOutputTokens || 8192,
-      8192
+    // ✅ REFACTORED: Use centralized AIConfigResolver instead of duplicated logic
+    const aiConfig = this.configResolver.resolveForStage(
+      stageName,
+      stageConfig,
+      globalConfig,
+      jobId
     );
-
-    // Apply provider-specific limits
-    const maxOutputTokens = provider === 'google'
-      ? Math.min(rawMaxTokens, 32768)  // Google AI max is 32768
-      : rawMaxTokens;  // OpenAI has higher limits
-
-    const aiConfig: AiConfig = {
-      provider,
-      model: selectedModel,
-      temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.1,
-      topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
-      topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 20,
-      maxOutputTokens,
-      reasoning: stageAiConfig?.reasoning || globalAiConfig?.reasoning,
-      verbosity: stageAiConfig?.verbosity || globalAiConfig?.verbosity
-    };
-    
-    // Log actual config for debugging
-    console.log(`📊 [${jobId}] Hybrid model selection:`, {
-      stage: stageName,
-      selectedModel: selectedModel,
-      provider: aiConfig.provider,
-      maxOutputTokens: aiConfig.maxOutputTokens,
-      isHybridSelection: !stageAiConfig?.model && !globalAiConfig?.model
-    });
-
-    // Dynamic token adjustment based on model type and stage requirements
-    if (stageName.startsWith("4")) {
-      // Deep Research models need much more tokens (reasoning + conclusion)
-      if (aiConfig.model?.includes('deep-research')) {
-        // Stage 4a (BronnenSpecialist) needs the most tokens for source validation
-        if (stageName === "4a_BronnenSpecialist") {
-          aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 32768);
-          console.log(`📦 [${jobId}] Set maxOutputTokens to ${aiConfig.maxOutputTokens} for Deep Research BronnenSpecialist`);
-        } else {
-          // Other reviewer stages still need more tokens than default
-          aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 24576);
-          console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for Deep Research reviewer stage ${stageName}`);
-        }
-      } else if (aiConfig.model?.includes('gpt-4o')) {
-        // GPT-4o also benefits from more tokens for complex analysis
-        aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 16384);
-        console.log(`🎯 [${jobId}] Set maxOutputTokens to ${aiConfig.maxOutputTokens} for GPT-4o reviewer stage ${stageName}`);
-      } else if (aiConfig.maxOutputTokens < 4096) {
-        aiConfig.maxOutputTokens = Math.max(aiConfig.maxOutputTokens, 4096);
-        console.log(`📈 [${jobId}] Increased maxOutputTokens to ${aiConfig.maxOutputTokens} for reviewer stage ${stageName}`);
-      }
-    }
 
     // Get stage-specific settings
     const useGrounding = stageConfig?.useGrounding ?? globalConfig?.useGrounding ?? false;
@@ -508,54 +426,10 @@ ${errorGuidance}
     }
   }
 
-  // Legacy method for backwards compatibility
-  async generateReport(dossier: DossierData, bouwplan: BouwplanData): Promise<string> {
-    return this.generateBasicReport({ 
-      datum: new Date().toLocaleDateString('nl-NL'),
-      dossier: JSON.stringify(dossier, null, 2)
-    });
-  }
+  // ✅ DEAD CODE REMOVED: generateReport(), generateBasicReport(), finalizeReport()
+  // Modern workflow uses: executeStage() + conceptReportVersions + ReportProcessor
 
-  async generateBasicReport(data: any): Promise<string> {
-    const prompt = `Genereer een fiscaal rapport op basis van de volgende gegevens:
-    
-Datum: ${data.datum}
-Dossier: ${data.dossier}
-
-Maak een professioneel rapport met:
-- Inleiding
-- Analyse
-- Conclusies
-- Aanbevelingen`;
-
-    const config: AiConfig = {
-      provider: "google",
-      model: "gemini-2.5-pro",
-      temperature: 0.1,
-      topP: 0.95,
-      topK: 20,
-      maxOutputTokens: 4096
-    };
-
-    const response = await this.modelFactory.callModel(config, prompt, {
-      jobId: "basic-report"
-    });
-
-    return response.content;
-  }
-
-  async finalizeReport(stageResults: Record<string, string>): Promise<string> {
-    // Use the latest generation result (3_generatie) as the final report
-    const generationResult = stageResults["3_generatie"] || "";
-
-    if (!generationResult) {
-      throw new Error("Geen generatie resultaat beschikbaar voor rapport samenstelling");
-    }
-
-    return generationResult;
-  }
-
-  // Helper methods for building prompts
+  // ✅ REFACTORED: Prompt building methods now use centralized PromptBuilder
   private buildInformatieCheckPrompt(
     dossier: DossierData,
     bouwplan: BouwplanData,
@@ -563,17 +437,9 @@ Maak een professioneel rapport met:
     stageConfig?: StagePromptConfig
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt("1_informatiecheck", stageConfig);
-
-    // System Prompt: De instructie voor de AI
-    const systemPrompt = `${stageConfig.prompt}
-
-### Datum: ${currentDate}`;
-
-    // User Input: De rawText (dit is de ENIGE keer dat we rawText gebruiken!)
-    const rawText = (dossier as any).rawText || JSON.stringify(dossier, null, 2);
-    const userInput = rawText;
-
-    return { systemPrompt, userInput };
+    return this.promptBuilder.build("1_informatiecheck", stageConfig, () =>
+      this.promptBuilder.buildInformatieCheckData(dossier)
+    );
   }
 
   private buildComplexiteitsCheckPrompt(
@@ -584,23 +450,9 @@ Maak een professioneel rapport met:
     previousStageResults?: Record<string, string>
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt("2_complexiteitscheck", stageConfig);
-
-    // System Prompt: De instructie voor de AI
-    const systemPrompt = `${stageConfig.prompt}
-
-### Datum: ${currentDate}`;
-
-    // User Input: ALLEEN de volledige JSON output van stap 1
-    const userInput = previousStageResults?.['1_informatiecheck'] || '{}';
-
-    console.log(`🔍 [2_complexiteitscheck] Building prompt:`, {
-      hasStageConfig: !!stageConfig,
-      hasPreviousResults: !!previousStageResults,
-      step1ResultLength: userInput.length,
-      step1ResultPreview: userInput.substring(0, 200)
-    });
-
-    return { systemPrompt, userInput };
+    return this.promptBuilder.build("2_complexiteitscheck", stageConfig, () =>
+      this.promptBuilder.buildComplexiteitsCheckData(previousStageResults || {})
+    );
   }
 
   private buildGeneratiePrompt(
@@ -611,16 +463,9 @@ Maak een professioneel rapport met:
     previousStageResults?: Record<string, string>
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt("3_generatie", stageConfig);
-
-    // System Prompt: De instructie voor de AI
-    const systemPrompt = `${stageConfig.prompt}
-
-### Datum: ${currentDate}`;
-
-    // User Input: ALLEEN de volledige JSON output van stap 2
-    const userInput = previousStageResults?.['2_complexiteitscheck'] || '{}';
-
-    return { systemPrompt, userInput };
+    return this.promptBuilder.build("3_generatie", stageConfig, () =>
+      this.promptBuilder.buildGeneratieData(previousStageResults || {})
+    );
   }
 
   private buildReviewerPrompt(
@@ -633,33 +478,9 @@ Maak een professioneel rapport met:
     previousStageResults?: Record<string, string>
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt(stageName, stageConfig);
-
-    // System Prompt: De instructie voor de reviewer
-    const systemPrompt = `${stageConfig.prompt}
-
-### Datum: ${currentDate}`;
-
-    // User Input: Het volledige JSON_Stap_3 object (niet alleen de tekst!)
-    // We moeten hier het volledige JSON object uit stap 3 pakken
-    const step3Output = previousStageResults?.['3_generatie'] || '{}';
-
-    // Als het al een JSON object is, gebruik het direct
-    // Anders proberen we het te construeren
-    let jsonStep3;
-    try {
-      jsonStep3 = JSON.parse(step3Output);
-    } catch {
-      // Als het geen JSON is, maak dan een JSON object met de tekst
-      jsonStep3 = {
-        taal: "nl",
-        concept_rapport_tekst: step3Output,
-        origineel_dossier: dossier
-      };
-    }
-
-    const userInput = JSON.stringify(jsonStep3, null, 2);
-
-    return { systemPrompt, userInput };
+    return this.promptBuilder.build(stageName, stageConfig, () =>
+      this.promptBuilder.buildReviewerData(previousStageResults || {}, dossier, bouwplan)
+    );
   }
 
   private buildChangeSummaryPrompt(
@@ -671,32 +492,9 @@ Maak een professioneel rapport met:
     previousStageResults?: Record<string, string>
   ): string {
     this.validateStagePrompt("6_change_summary", stageConfig);
-    
-    const prompt = stageConfig.prompt;
-
-    let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
-    
-    // Add all concept report versions for comparison
-    fullPrompt += `\n\n### Concept Report Versies:`;
-    Object.entries(conceptReportVersions).forEach(([stage, content]) => {
-      if (content && content.trim()) {
-        fullPrompt += `\n\n#### ${stage}:\n${content}`;
-      }
-    });
-    
-    // Add reviewer stage results for context
-    if (previousStageResults && Object.keys(previousStageResults).length > 0) {
-      fullPrompt += `\n\n### Reviewer Feedback:`;
-      Object.entries(previousStageResults)
-        .filter(([key]) => key.startsWith("4"))
-        .forEach(([stage, result]) => {
-          fullPrompt += `\n\n#### ${stage}:\n${result}`;
-        });
-    }
-    
-    fullPrompt += `\n\n### Dossier Context:\n${JSON.stringify(dossier, null, 2)}`;
-    
-    return fullPrompt;
+    return this.promptBuilder.buildCombined("6_change_summary", stageConfig, () =>
+      this.promptBuilder.buildChangeSummaryData(conceptReportVersions)
+    );
   }
 
   private buildEditorPrompt(
@@ -707,34 +505,11 @@ Maak een professioneel rapport met:
   ): string {
     this.validateStagePrompt("editor", stageConfig);
 
-    const prompt = stageConfig.prompt;
+    // Get concept versions for editor context
+    const conceptVersions = {};  // This will be populated by the caller if needed
 
-    // Find the most recent reviewer feedback (last 4x stage)
-    const reviewerStages = Object.keys(previousStageResults)
-      .filter(key => key.startsWith("4"))
-      .sort();
-
-    const lastReviewerStage = reviewerStages[reviewerStages.length - 1];
-    const wijzigingenJSON = lastReviewerStage ? previousStageResults[lastReviewerStage] : "[]";
-
-    return `${prompt}
-
-### Datum: ${currentDate}
-
-### Huidige Rapport Tekst:
-${currentReportText}
-
-### Wijzigingen JSON (van ${lastReviewerStage || "laatste reviewer"}):
-${wijzigingenJSON}
-
-### Instructie:
-Pas de wijzigingen uit het WijzigingenJSON toe op de Huidige Rapport Tekst.
-Voor elke wijziging:
-- Bij "change_type": "REPLACE": Zoek "locatie_origineel" en vervang met "suggestie_tekst"
-- Bij "change_type": "ADD": Voeg "suggestie_tekst" toe bij "locatie_toevoegen"
-
-Als een "locatie_origineel" niet gevonden kan worden, geef dan een DUIDELIJKE ERROR met de bevinding_id.
-
-Geef ALLEEN de volledige, bijgewerkte rapporttekst terug. GEEN uitleg, GEEN JSON, ALLEEN de tekst.`;
+    return this.promptBuilder.buildCombined("5_eindredactie", stageConfig, () =>
+      this.promptBuilder.buildEditorData(previousStageResults, conceptVersions)
+    );
   }
 }

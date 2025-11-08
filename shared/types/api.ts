@@ -13,7 +13,18 @@ import type {
 
 // ===== REQUEST SCHEMAS =====
 
-// Report Generation Request
+// Report Creation Request (NEW - for /api/reports/create)
+export const createReportRequestSchema = z.object({
+  clientName: z.string()
+    .min(1, "Clientnaam is verplicht")
+    .max(200, "Clientnaam mag niet langer zijn dan 200 karakters")
+    .regex(/^[a-zA-Z0-9\s\-\.,']+$/, "Clientnaam bevat ongeldige karakters"),
+  rawText: z.string()
+    .min(10, "Ruwe tekst moet minimaal 10 karakters bevatten")
+    .max(100000, "Ruwe tekst mag niet langer zijn dan 100KB (100.000 karakters)")
+});
+
+// Report Generation Request (LEGACY - kept for backwards compatibility)
 export const generateReportRequestSchema = z.object({
   dossier: z.object({
     klant: z.object({
@@ -155,6 +166,7 @@ export const userProfileResponseSchema = z.object({
 
 // ===== INFERRED TYPES =====
 
+export type CreateReportRequest = z.infer<typeof createReportRequestSchema>;
 export type GenerateReportRequest = z.infer<typeof generateReportRequestSchema>;
 export type UpdateReportRequest = z.infer<typeof updateReportRequestSchema>;
 export type ExecuteStageRequest = z.infer<typeof executeStageRequestSchema>;

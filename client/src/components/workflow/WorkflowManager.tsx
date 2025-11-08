@@ -29,6 +29,7 @@ import {
   handleStageStart,
   handleSubstepStart
 } from "@/lib/mutationHelpers";
+import { ErrorBoundary, WorkflowErrorFallback } from "@/components/ErrorBoundary";
 
 interface WorkflowManagerProps {
   dossier: DossierData;
@@ -455,11 +456,27 @@ function WorkflowManagerContent({
   );
 }
 
-// Main export with provider wrapper
+// Main export with provider wrapper and error boundary
 export default memo(function WorkflowManager(props: WorkflowManagerProps) {
   return (
-    <WorkflowProvider>
-      <WorkflowManagerContent {...props} />
-    </WorkflowProvider>
+    <ErrorBoundary
+      fallback={(error) => (
+        <WorkflowErrorFallback
+          error={error}
+          onReset={() => window.location.reload()}
+        />
+      )}
+      onError={(error, errorInfo) => {
+        console.error("🛡️ Error Boundary caught workflow error:", {
+          error,
+          errorInfo,
+          componentStack: errorInfo.componentStack
+        });
+      }}
+    >
+      <WorkflowProvider>
+        <WorkflowManagerContent {...props} />
+      </WorkflowProvider>
+    </ErrorBoundary>
   );
 });

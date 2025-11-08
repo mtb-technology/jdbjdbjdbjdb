@@ -1,7 +1,7 @@
 import { createContext, useContext, useReducer, ReactNode } from "react";
 import type { Report } from "@shared/schema";
 
-interface WorkflowState {
+export interface WorkflowState {
   currentReport: Report | null;
   currentStageIndex: number;
   stageResults: Record<string, string>;
@@ -22,7 +22,7 @@ interface WorkflowState {
   stagePrompts: Record<string, string>;
 }
 
-type WorkflowAction =
+export type WorkflowAction =
   | { type: "SET_REPORT"; payload: Report | null }
   | { type: "SET_STAGE_INDEX"; payload: number }
   | { type: "SET_CURRENT_STAGE_INDEX"; index: number }

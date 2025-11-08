@@ -11,7 +11,7 @@ import { AIMonitoringService } from "./services/ai-models/monitoring";
 import { checkDatabaseConnection } from "./db";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
 import type { DossierData, BouwplanData, StageId, ConceptReportVersions } from "@shared/schema";
-import { processFeedbackRequestSchema, overrideConceptRequestSchema, promoteSnapshotRequestSchema } from "@shared/types/api";
+import { createReportRequestSchema, processFeedbackRequestSchema, overrideConceptRequestSchema, promoteSnapshotRequestSchema } from "@shared/types/api";
 import { ReportProcessor } from "./services/report-processor";
 import { SSEHandler } from "./services/streaming/sse-handler";
 import { StreamingSessionManager } from "./services/streaming/streaming-session-manager";
@@ -162,16 +162,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Create new report (start workflow)
   app.post("/api/reports/create", asyncHandler(async (req: Request, res: Response) => {
-    const { clientName, rawText } = req.body;
+    // ✅ SECURITY: Validate and sanitize input with Zod
+    const validatedData = createReportRequestSchema.parse(req.body);
+    const { clientName, rawText } = validatedData;
 
-    console.log("📝 Creating new report:", { clientName, hasRawText: !!rawText, rawTextLength: rawText?.length });
-
-    if (!rawText || !clientName) {
-      throw ServerError.validation(
-        'Missing required fields',
-        'Ruwe tekst en klantnaam zijn verplicht'
-      );
-    }
+    console.log("📝 Creating new report:", {
+      clientName,
+      rawTextLength: rawText.length,
+      validated: true
+    });
 
     // Create report in draft state - sla alleen ruwe tekst op
     const report = await storage.createReport({
@@ -600,18 +599,23 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
       throw ServerError.notFound("Report");
     }
 
-      // Use the latest concept report version as the final content
-      const conceptVersions = report.conceptReportVersions as Record<string, string> || {};
-      const latestConceptKeys = Object.keys(conceptVersions);
-      
-      const finalContent = latestConceptKeys.length > 0 
-        ? conceptVersions[latestConceptKeys[latestConceptKeys.length - 1]]
-        : await reportGenerator.finalizeReport(report.stageResults as Record<string, string> || {});
+    // ✅ REFACTORED: Use conceptReportVersions directly (modern approach)
+    const conceptVersions = report.conceptReportVersions as Record<string, string> || {};
+    const latestConceptKeys = Object.keys(conceptVersions).filter(key => key !== 'latest' && key !== 'history');
 
-      const finalizedReport = await storage.updateReport(id, {
-        generatedContent: finalContent,
-        status: "generated",
-      });
+    if (latestConceptKeys.length === 0) {
+      throw ServerError.business(
+        ERROR_CODES.REPORT_NOT_FOUND,
+        'Geen concept rapport versies gevonden - voer minimaal stap 3 (Generatie) uit'
+      );
+    }
+
+    const finalContent = conceptVersions[latestConceptKeys[latestConceptKeys.length - 1]];
+
+    const finalizedReport = await storage.updateReport(id, {
+      generatedContent: finalContent,
+      status: "generated",
+    });
 
     res.json(createApiSuccessResponse(finalizedReport, "Rapport succesvol gefinaliseerd"));
   }));
