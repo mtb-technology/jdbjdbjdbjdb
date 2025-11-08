@@ -207,6 +207,14 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           previousStageResults
         );
         break;
+      case "editor":
+        prompt = this.buildEditorPrompt(
+          conceptReportVersions?.["latest"]?.content || conceptReportVersions?.["3_generatie"]?.content || "",
+          previousStageResults,
+          currentDate,
+          stageConfig
+        );
+        break;
       case "final_check":
         prompt = this.buildFinalCheckPrompt(
           conceptReportVersions?.["latest"] || "",
@@ -665,21 +673,20 @@ ${JSON.stringify(bouwplan, null, 2)}`;
     if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
       throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap 3_generatie — configureer dit in Instellingen.");
     }
-    
+
     const prompt = stageConfig.prompt;
 
     let fullPrompt = `${prompt}\n\n### Datum: ${currentDate}`;
-    
-    // Add previous stage results if available  
-    if (previousStageResults && Object.keys(previousStageResults).length > 0) {
-      fullPrompt += `\n\n### Resultaten uit vorige stappen:`;
-      Object.entries(previousStageResults).forEach(([stage, result]) => {
-        fullPrompt += `\n\n#### ${stage}:\n${result}`;
-      });
+
+    // Only add the most recent stage result (step 2), which already contains step 1
+    // This prevents duplicate information and keeps the prompt concise
+    if (previousStageResults && previousStageResults['2_complexiteitscheck']) {
+      fullPrompt += `\n\n### Resultaat uit stap 2 (bevat al stap 1):`;
+      fullPrompt += `\n\n${previousStageResults['2_complexiteitscheck']}`;
     }
-    
+
     fullPrompt += `\n\n### Dossier:\n${JSON.stringify(dossier, null, 2)}\n\n### Bouwplan:\n${JSON.stringify(bouwplan, null, 2)}`;
-    
+
     return fullPrompt;
   }
 
@@ -824,7 +831,7 @@ ${JSON.stringify(minimalDossier, null, 2)}`;
     if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
       throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor stap final_check — configureer dit in Instellingen.");
     }
-    
+
     const prompt = stageConfig.prompt;
 
     return `${prompt}
@@ -836,5 +843,46 @@ ${latestReport}
 
 ### Dossier:
 ${JSON.stringify(dossier, null, 2)}`;
+  }
+
+  private buildEditorPrompt(
+    currentReportText: string,
+    previousStageResults: Record<string, string>,
+    currentDate: string,
+    stageConfig?: any
+  ): string {
+    if (!stageConfig?.prompt || stageConfig.prompt.trim() === "") {
+      throw new Error("NO_PROMPT_CONFIGURED|Geen prompt ingesteld voor de editor — configureer dit in Instellingen.");
+    }
+
+    const prompt = stageConfig.prompt;
+
+    // Find the most recent reviewer feedback (last 4x stage)
+    const reviewerStages = Object.keys(previousStageResults)
+      .filter(key => key.startsWith("4"))
+      .sort();
+
+    const lastReviewerStage = reviewerStages[reviewerStages.length - 1];
+    const wijzigingenJSON = lastReviewerStage ? previousStageResults[lastReviewerStage] : "[]";
+
+    return `${prompt}
+
+### Datum: ${currentDate}
+
+### Huidige Rapport Tekst:
+${currentReportText}
+
+### Wijzigingen JSON (van ${lastReviewerStage || "laatste reviewer"}):
+${wijzigingenJSON}
+
+### Instructie:
+Pas de wijzigingen uit het WijzigingenJSON toe op de Huidige Rapport Tekst.
+Voor elke wijziging:
+- Bij "change_type": "REPLACE": Zoek "locatie_origineel" en vervang met "suggestie_tekst"
+- Bij "change_type": "ADD": Voeg "suggestie_tekst" toe bij "locatie_toevoegen"
+
+Als een "locatie_origineel" niet gevonden kan worden, geef dan een DUIDELIJKE ERROR met de bevinding_id.
+
+Geef ALLEEN de volledige, bijgewerkte rapporttekst terug. GEEN uitleg, GEEN JSON, ALLEEN de tekst.`;
   }
 }

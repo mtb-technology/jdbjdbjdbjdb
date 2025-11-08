@@ -58,6 +58,8 @@ const PROMPT_STAGES = [
   { key: "4d_DeVertaler", label: "4d. De Vertaler", description: "Review communicatie → JSON feedback", type: "reviewer" },
   { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", type: "reviewer" },
   { key: "4f_DeKlantpsycholoog", label: "4f. De Klantpsycholoog", description: "Review klant focus → JSON feedback", type: "reviewer" },
+  { key: "4g_ChefEindredactie", label: "4g. Chef Eindredactie", description: "Finale review door hoofdredacteur", type: "reviewer" },
+  { key: "editor", label: "Editor (Chirurgische Redacteur)", description: "Past wijzigingen van reviewers toe op rapport", type: "editor" },
   { key: "5_feedback_verwerker", label: "5. Feedback Verwerker", description: "Verwerkt JSON feedback in het rapport", type: "processor" },
   { key: "final_check", label: "Final Check", description: "Laatste controle voor Mathijs", type: "generator" },
 ] as const;
@@ -72,7 +74,7 @@ const Settings = memo(function Settings() {
     temperature: 0.1,
     topP: 0.95,
     topK: 20,
-    maxOutputTokens: 2048,
+    maxOutputTokens: 8192,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const originalConfig = useRef<PromptConfig | null>(null);
@@ -270,7 +272,7 @@ const Settings = memo(function Settings() {
       temperature: 0.1,
       topP: 0.95,
       topK: 20,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 8192,
     };
     
     setActiveConfig({
@@ -296,7 +298,7 @@ const Settings = memo(function Settings() {
       temperature: 0.1,
       topP: 0.95,
       topK: 20,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 8192,
     };
     
     if (paramType === 'reasoning') {
@@ -810,16 +812,16 @@ const Settings = memo(function Settings() {
                         </div>
                       </div>
                       
-                      {/* OpenAI-specific parameters */}
-                      {(stageConfig?.aiConfig?.provider || aiConfig.provider) === "openai" && (
-                        <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                      {/* Google-specific parameters */}
+                      {(stageConfig?.aiConfig?.provider || aiConfig.provider) === "google" && (
+                        <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                           <div className="col-span-2">
-                            <Label className="text-xs font-medium text-orange-900 dark:text-orange-100 mb-2 flex items-center">
-                              <Zap className="h-3 w-3 mr-1" />
-                              OpenAI Specifieke Parameters
+                            <Label className="text-xs font-medium text-blue-900 dark:text-blue-100 mb-2 flex items-center">
+                              <Brain className="h-3 w-3 mr-1" />
+                              Google AI Specifieke Parameters
                             </Label>
                           </div>
-                          
+
                           {/* Temperature */}
                           <div className="space-y-2">
                             <Label className="text-xs font-medium">Temperature</Label>
@@ -846,7 +848,87 @@ const Settings = memo(function Settings() {
                               min="100"
                               max="8192"
                               value={stageConfig?.aiConfig?.maxOutputTokens ?? aiConfig.maxOutputTokens}
-                              onChange={(e) => handleStageAiConfigChange(stage.key, "maxOutputTokens", parseInt(e.target.value) || 2048)}
+                              onChange={(e) => handleStageAiConfigChange(stage.key, "maxOutputTokens", parseInt(e.target.value) || 8192)}
+                              className="h-8 text-xs"
+                              placeholder="100 - 8192"
+                              data-testid={`input-max-tokens-${stage.key}`}
+                            />
+                            <p className="text-xs text-muted-foreground">Maximaal aantal tokens in de response</p>
+                          </div>
+
+                          {/* Top P */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Top P</Label>
+                            <Input
+                              type="number"
+                              step="0.05"
+                              min="0.1"
+                              max="1"
+                              value={stageConfig?.aiConfig?.topP ?? aiConfig.topP}
+                              onChange={(e) => handleStageAiConfigChange(stage.key, "topP", parseFloat(e.target.value) || 0.95)}
+                              className="h-8 text-xs"
+                              placeholder="0.1 - 1.0"
+                              data-testid={`input-topP-${stage.key}`}
+                            />
+                            <p className="text-xs text-muted-foreground">0.1 = gefocust, 1.0 = gevarieerd</p>
+                          </div>
+
+                          {/* Top K */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Top K</Label>
+                            <Input
+                              type="number"
+                              step="1"
+                              min="1"
+                              max="40"
+                              value={stageConfig?.aiConfig?.topK ?? aiConfig.topK}
+                              onChange={(e) => handleStageAiConfigChange(stage.key, "topK", parseInt(e.target.value) || 20)}
+                              className="h-8 text-xs"
+                              placeholder="1 - 40"
+                              data-testid={`input-topK-${stage.key}`}
+                            />
+                            <p className="text-xs text-muted-foreground">Aantal top kandidaten voor sampling</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* OpenAI-specific parameters */}
+                      {(stageConfig?.aiConfig?.provider || aiConfig.provider) === "openai" && (
+                        <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                          <div className="col-span-2">
+                            <Label className="text-xs font-medium text-orange-900 dark:text-orange-100 mb-2 flex items-center">
+                              <Zap className="h-3 w-3 mr-1" />
+                              OpenAI Specifieke Parameters
+                            </Label>
+                          </div>
+
+                          {/* Temperature */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Temperature</Label>
+                            <Input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="2"
+                              value={stageConfig?.aiConfig?.temperature ?? aiConfig.temperature}
+                              onChange={(e) => handleStageAiConfigChange(stage.key, "temperature", parseFloat(e.target.value) || 0)}
+                              className="h-8 text-xs"
+                              placeholder="0.0 - 2.0"
+                              data-testid={`input-temperature-${stage.key}`}
+                            />
+                            <p className="text-xs text-muted-foreground">0 = precies, 1 = gebalanceerd, 2 = creatief</p>
+                          </div>
+
+                          {/* Max Output Tokens */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium">Max Output Tokens</Label>
+                            <Input
+                              type="number"
+                              step="256"
+                              min="100"
+                              max="8192"
+                              value={stageConfig?.aiConfig?.maxOutputTokens ?? aiConfig.maxOutputTokens}
+                              onChange={(e) => handleStageAiConfigChange(stage.key, "maxOutputTokens", parseInt(e.target.value) || 8192)}
                               className="h-8 text-xs"
                               placeholder="100 - 8192"
                               data-testid={`input-max-tokens-${stage.key}`}

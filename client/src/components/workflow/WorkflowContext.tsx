@@ -25,6 +25,7 @@ interface WorkflowState {
 type WorkflowAction =
   | { type: "SET_REPORT"; payload: Report | null }
   | { type: "SET_STAGE_INDEX"; payload: number }
+  | { type: "SET_CURRENT_STAGE_INDEX"; index: number }
   | { type: "SET_STAGE_RESULT"; stage: string; result: string }
   | { type: "SET_SUBSTEP_RESULT"; stage: string; substepType: "review" | "processing"; result: string }
   | { type: "SET_CONCEPT_VERSION"; stage: string; content: string }
@@ -76,7 +77,10 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
     
     case "SET_STAGE_INDEX":
       return { ...state, currentStageIndex: action.payload };
-    
+
+    case "SET_CURRENT_STAGE_INDEX":
+      return { ...state, currentStageIndex: action.index };
+
     case "SET_STAGE_RESULT":
       // Memory-optimized stage result storage
       const newStageResults = { ...state.stageResults, [action.stage]: action.result };

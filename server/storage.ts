@@ -247,13 +247,14 @@ export class DatabaseStorage implements IStorage {
         "4e_DeAdvocaat": { prompt: "", useGrounding: true },
         "4f_DeKlantpsycholoog": { prompt: "", useGrounding: false },
         "4g_ChefEindredactie": { prompt: "", useGrounding: false },
+        "editor": { prompt: "", useGrounding: false },
         "final_check": { prompt: "", useGrounding: false },
         aiConfig: {
           model: "gemini-2.5-pro",
           temperature: 0.1,
           topP: 0.95,
           topK: 20,
-          maxOutputTokens: 4096,
+          maxOutputTokens: 8192,
           provider: "google"
         }
       }
