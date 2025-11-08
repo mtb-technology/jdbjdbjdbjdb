@@ -17,7 +17,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Clock, Workflow, AlertCircle, FileText, CheckCircle } from "lucide-react";
 import { WorkflowProvider, useWorkflow } from "./WorkflowContext";
-import { SimplifiedWorkflowView } from "./SimplifiedWorkflowView";
+import { WorkflowView } from "./WorkflowView";
 import { WORKFLOW_STAGES } from "./constants";
 import { cleanStageResults } from "@/lib/stageResultsHelper";
 import { isInformatieCheckComplete } from "@/lib/workflowParsers";
@@ -443,7 +443,7 @@ function WorkflowManagerContent({
   const isWorkflowComplete = Object.keys(state.stageResults).length === WORKFLOW_STAGES.length;
 
   return (
-    <SimplifiedWorkflowView
+    <WorkflowView
       state={state}
       dispatch={dispatch}
       executeStageM={executeStageM}

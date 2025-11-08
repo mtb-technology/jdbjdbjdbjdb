@@ -72,7 +72,7 @@ export type ExecuteSubstepMutation = UseMutationResult<
 export type GetStageStatus = (index: number) => "completed" | "current" | "pending";
 
 /**
- * Props for SimplifiedWorkflowView component.
+ * Props for WorkflowView component.
  */
 export interface SimplifiedWorkflowViewProps {
   /** Workflow state from WorkflowContext */
