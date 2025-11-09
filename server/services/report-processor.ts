@@ -156,7 +156,12 @@ ${feedback}
     }
 
     const currentVersions = report.conceptReportVersions as ConceptReportVersions || {};
-    const previousVersion = fromStage ? this.getStageVersion(currentVersions, fromStage) : null;
+
+    // FIXED: Check CURRENT stage version first (for re-processing same stage)
+    // If current stage already has a version, increment from that
+    // Otherwise, use predecessor stage version
+    const currentStageVersion = this.getStageVersion(currentVersions, stageId);
+    const previousVersion = currentStageVersion || (fromStage ? this.getStageVersion(currentVersions, fromStage) : null);
     const nextVersion = previousVersion ? previousVersion.v + 1 : 1;
 
     const snapshot: ConceptReportSnapshot = {
@@ -167,7 +172,7 @@ ${feedback}
       processedFeedback
     };
 
-    console.log(`📸 [ReportProcessor] Created snapshot v${nextVersion} for ${stageId} (from: ${fromStage || 'none'})`);
+    console.log(`📸 [ReportProcessor] Created snapshot v${nextVersion} for ${stageId} (from: ${fromStage || 'none'}, currentStageHadV${currentStageVersion?.v || 0})`);
     return snapshot;
   }
 

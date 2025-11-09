@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -77,10 +77,8 @@ export function SimpleFeedbackProcessor({
   );
 
   // Track if any decisions have been made
-  const hasDecisions = useMemo(() => 
-    proposals.some(p => p.userDecision), 
-    [proposals]
-  );
+  // Fixed: Use a more stable dependency check to ensure re-render
+  const hasDecisions = proposals.some(p => p.userDecision);
 
   // Generate instructions from decisions
   const generatedInstructions = useMemo(() => {
@@ -219,6 +217,20 @@ export function SimpleFeedbackProcessor({
       });
     }
   });
+
+  // Debug logging for button state (after mutations are declared)
+  useEffect(() => {
+    console.log('🔍 SimpleFeedbackProcessor Debug:', {
+      hasDecisions,
+      aiStatus,
+      openaiAvailable: aiStatus?.openai?.available,
+      googleAvailable: aiStatus?.google?.available,
+      viewMode,
+      isPending: processFeedbackMutation.isPending,
+      hasProcessed,
+      proposalsWithDecisions: proposals.filter(p => p.userDecision).length
+    });
+  }, [hasDecisions, aiStatus, viewMode, processFeedbackMutation.isPending, hasProcessed, proposals]);
 
   // Handle showing prompt preview
   const handleShowPreview = () => {
@@ -499,24 +511,15 @@ export function SimpleFeedbackProcessor({
             )}
           </Button>
           
-          <Button 
+          <Button
             onClick={handleProcess}
             disabled={
-              !aiStatus || // Geen AI status beschikbaar
-              (!aiStatus?.openai?.available && !aiStatus?.google?.available) || // Beide AI services offline
               (viewMode === 'text' && (!userInstructions.trim() || userInstructions.length > 2000)) ||
               (viewMode === 'structured' && !hasDecisions) ||
-              processFeedbackMutation.isPending || 
+              processFeedbackMutation.isPending ||
               hasProcessed
             }
-            className={cn(
-              "min-w-[160px]",
-              // Verschillende styling op basis van disabled reden
-              {
-                "opacity-50 cursor-not-allowed": !aiStatus || (!aiStatus?.openai?.available && !aiStatus?.google?.available),
-                "opacity-75 cursor-wait": processFeedbackMutation.isPending
-              }
-            )}
+            className="min-w-[160px]"
             variant={hasProcessed ? "outline" : "default"}
             data-testid="button-process-feedback"
           >

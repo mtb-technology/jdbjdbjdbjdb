@@ -11,6 +11,29 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       colors: {
+        /* Jan de Belastingman Brand Colors (direct access) */
+        jdb: {
+          blue: {
+            primary: "var(--jdb-blue-primary)",
+            hover: "var(--jdb-blue-hover)",
+            light: "var(--jdb-blue-light)",
+          },
+          gold: "var(--jdb-gold)",
+          bg: "var(--jdb-bg)",
+          panel: "var(--jdb-panel)",
+          border: "var(--jdb-border)",
+          text: {
+            heading: "var(--jdb-text-heading)",
+            body: "var(--jdb-text-body)",
+            subtle: "var(--jdb-text-subtle)",
+            onBlue: "var(--jdb-text-on-blue)",
+          },
+          success: "var(--jdb-success)",
+          danger: "var(--jdb-danger)",
+          warning: "var(--jdb-warning)",
+        },
+
+        /* Shadcn/UI color mappings */
         background: "var(--background)",
         foreground: "var(--foreground)",
         card: {
@@ -64,7 +87,6 @@ export default {
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
-        serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
       },
       keyframes: {

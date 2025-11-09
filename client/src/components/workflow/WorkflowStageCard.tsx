@@ -27,6 +27,7 @@ import {
   ChevronRight,
   ChevronDown,
   Copy,
+  Check,
   MessageSquare,
   Clock,
   ArrowRight,
@@ -59,6 +60,7 @@ export interface WorkflowStageCardProps {
   stageResult?: string;
   stagePrompt?: string;
   conceptVersion?: string;
+  reportId?: string;
 
   // Controls
   canExecute: boolean;
@@ -83,7 +85,7 @@ export interface WorkflowStageCardProps {
 
   // Optional features
   showFeedbackProcessor?: boolean;
-  onFeedbackProcessed?: () => void;
+  onFeedbackProcessed?: (response: any) => void;
   blockReason?: string;
 }
 
@@ -97,6 +99,7 @@ export function WorkflowStageCard({
   stageResult,
   stagePrompt,
   conceptVersion,
+  reportId,
   canExecute,
   isProcessing,
   onExecute,
@@ -113,19 +116,19 @@ export function WorkflowStageCard({
 }: WorkflowStageCardProps) {
   const [copied, setCopied] = useState(false);
 
-  // Get status badge
+  // Get status badge - Using JdB theme colors
   const getStatusBadge = () => {
     switch (stageStatus) {
       case 'completed':
-        return <Badge className="bg-green-500 text-white"><CheckCircle className="w-3 h-3 mr-1" />Voltooid</Badge>;
+        return <Badge variant="success"><CheckCircle className="w-3 h-3 mr-1" />Voltooid</Badge>;
       case 'processing':
-        return <Badge className="bg-blue-500 text-white animate-pulse"><Activity className="w-3 h-3 mr-1" />Bezig...</Badge>;
+        return <Badge className="bg-jdb-blue-primary text-white animate-pulse"><Activity className="w-3 h-3 mr-1" />Bezig...</Badge>;
       case 'blocked':
-        return <Badge className="bg-orange-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />Geblokkeerd</Badge>;
+        return <Badge variant="warning"><AlertTriangle className="w-3 h-3 mr-1" />Geblokkeerd</Badge>;
       case 'error':
-        return <Badge className="bg-red-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />Fout</Badge>;
+        return <Badge variant="destructive"><AlertTriangle className="w-3 h-3 mr-1" />Fout</Badge>;
       default:
-        return <Badge variant="outline" className="text-gray-500"><Clock className="w-3 h-3 mr-1" />Nog niet gestart</Badge>;
+        return <Badge variant="outline" className="text-jdb-text-subtle"><Clock className="w-3 h-3 mr-1" />Nog niet gestart</Badge>;
     }
   };
 
@@ -138,24 +141,24 @@ export function WorkflowStageCard({
 
   return (
     <Card className={`
-      ${stageStatus === 'completed' ? 'border-green-300 bg-green-50/50' : ''}
-      ${stageStatus === 'processing' ? 'border-blue-300 bg-blue-50/50 shadow-lg' : ''}
-      ${stageStatus === 'blocked' ? 'border-orange-300 bg-orange-50/50' : ''}
-      ${stageStatus === 'error' ? 'border-red-300 bg-red-50/50' : ''}
+      ${stageStatus === 'completed' ? 'border-jdb-success/30 bg-green-50/30 dark:bg-green-950/10' : ''}
+      ${stageStatus === 'processing' ? 'border-jdb-blue-primary/30 bg-jdb-blue-light/30 dark:bg-jdb-blue-primary/10 shadow-lg' : ''}
+      ${stageStatus === 'blocked' ? 'border-jdb-warning/30 bg-amber-50/30 dark:bg-amber-950/10' : ''}
+      ${stageStatus === 'error' ? 'border-jdb-danger/30 bg-red-50/30 dark:bg-red-950/10' : ''}
       transition-all duration-300
     `}>
-      <CardHeader className="cursor-pointer hover:bg-gray-50/50 transition-colors" onClick={onToggleExpand}>
+      <CardHeader className="cursor-pointer hover:bg-jdb-bg/50 dark:hover:bg-jdb-border/10 transition-colors" onClick={onToggleExpand}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {isExpanded ? <ChevronDown className="w-5 h-5 text-gray-500" /> : <ChevronRight className="w-5 h-5 text-gray-500" />}
-            <div className="p-2 bg-primary/10 rounded-lg">
+            {isExpanded ? <ChevronDown className="w-5 h-5 text-jdb-text-subtle" /> : <ChevronRight className="w-5 h-5 text-jdb-text-subtle" />}
+            <div className="p-2 bg-jdb-blue-light dark:bg-jdb-blue-primary/10 rounded-lg">
               {stageIcon}
             </div>
             <div>
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 {stageName}
               </CardTitle>
-              <p className="text-xs text-gray-500 mt-1">{stageKey}</p>
+              <p className="text-xs text-jdb-text-subtle mt-1">{stageKey}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -220,20 +223,20 @@ export function WorkflowStageCard({
               </div>
 
               {/* Input Section */}
-              <div className="border rounded-lg">
+              <div className="border border-jdb-border rounded-lg">
                 <button
                   onClick={onToggleInput}
-                  className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-jdb-bg dark:hover:bg-jdb-border/10 transition-colors focus:outline-none focus:ring-2 focus:ring-jdb-blue-primary focus:ring-offset-2 rounded-lg"
                 >
-                  <span className="font-medium text-sm flex items-center gap-2">
+                  <span className="font-medium text-sm flex items-center gap-2 text-jdb-text-heading">
                     <FileText className="w-4 h-4" />
                     Input
                   </span>
-                  {isInputCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  {isInputCollapsed ? <ChevronRight className="w-4 h-4 text-jdb-text-subtle" /> : <ChevronDown className="w-4 h-4 text-jdb-text-subtle" />}
                 </button>
                 {!isInputCollapsed && (
-                  <div className="px-4 py-3 bg-gray-50 border-t">
-                    <p className="text-sm text-gray-600">
+                  <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border">
+                    <p className="text-sm text-jdb-text-body">
                       Input wordt automatisch gegenereerd uit vorige stappen
                     </p>
                   </div>
@@ -242,12 +245,12 @@ export function WorkflowStageCard({
 
               {/* Output Section */}
               {stageResult && (
-                <div className="border rounded-lg">
+                <div className="border border-jdb-border rounded-lg">
                   <button
                     onClick={onToggleOutput}
-                    className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                    className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-jdb-bg dark:hover:bg-jdb-border/10 transition-colors focus:outline-none focus:ring-2 focus:ring-jdb-blue-primary focus:ring-offset-2 rounded-lg"
                   >
-                    <span className="font-medium text-sm flex items-center gap-2">
+                    <span className="font-medium text-sm flex items-center gap-2 text-jdb-text-heading">
                       <MessageSquare className="w-4 h-4" />
                       Output {stageResult && `(${stageResult.length} karakters)`}
                     </span>
@@ -259,30 +262,33 @@ export function WorkflowStageCard({
                           e.stopPropagation();
                           handleCopy(stageResult);
                         }}
+                        className="min-h-[44px] min-w-[44px]"
                       >
-                        <Copy className="w-3 h-3" />
+                        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                       </Button>
-                      {isOutputCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      {isOutputCollapsed ? <ChevronRight className="w-4 h-4 text-jdb-text-subtle" /> : <ChevronDown className="w-4 h-4 text-jdb-text-subtle" />}
                     </div>
                   </button>
                   {!isOutputCollapsed && (
-                    <div className="px-4 py-3 bg-gray-50 border-t">
+                    <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border overflow-hidden">
                       {/* Special viewers for specific stages */}
-                      {stageKey === '1_informatiecheck' && <InformatieCheckViewer jsonString={stageResult} />}
-                      {stageKey === '2_complexiteitscheck' && <ComplexiteitsCheckViewer jsonString={stageResult} />}
+                      {stageKey === '1_informatiecheck' && <InformatieCheckViewer rawOutput={stageResult} />}
+                      {stageKey === '2_complexiteitscheck' && <ComplexiteitsCheckViewer rawOutput={stageResult} />}
 
                       {/* Default output display */}
                       {!['1_informatiecheck', '2_complexiteitscheck'].includes(stageKey) && (
-                        <div className="bg-white p-3 rounded border font-mono text-xs overflow-auto max-h-96">
-                          <pre className="whitespace-pre-wrap">{stageResult}</pre>
+                        <div className="bg-white p-3 rounded border font-mono text-xs overflow-y-auto max-h-96 w-full">
+                          <pre className="whitespace-pre-wrap break-all" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{stageResult}</pre>
                         </div>
                       )}
 
                       {/* Feedback Processor for reviewer stages */}
-                      {showFeedbackProcessor && (
+                      {showFeedbackProcessor && reportId && (
                         <div className="mt-4">
                           <SimpleFeedbackProcessor
-                            stageKey={stageKey}
+                            reportId={reportId}
+                            stageId={stageKey}
+                            stageName={stageName}
                             rawFeedback={stageResult}
                             onProcessingComplete={onFeedbackProcessed}
                           />
@@ -295,21 +301,21 @@ export function WorkflowStageCard({
 
               {/* Prompt Section */}
               {stagePrompt && (
-                <div className="border rounded-lg">
+                <div className="border border-jdb-border rounded-lg">
                   <button
                     onClick={onTogglePrompt}
-                    className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                    className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-jdb-bg dark:hover:bg-jdb-border/10 transition-colors focus:outline-none focus:ring-2 focus:ring-jdb-blue-primary focus:ring-offset-2 rounded-lg"
                   >
-                    <span className="font-medium text-sm flex items-center gap-2">
+                    <span className="font-medium text-sm flex items-center gap-2 text-jdb-text-heading">
                       <Wand2 className="w-4 h-4" />
                       Gebruikte Prompt
                     </span>
-                    {isPromptCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    {isPromptCollapsed ? <ChevronRight className="w-4 h-4 text-jdb-text-subtle" /> : <ChevronDown className="w-4 h-4 text-jdb-text-subtle" />}
                   </button>
                   {!isPromptCollapsed && (
-                    <div className="px-4 py-3 bg-gray-50 border-t">
-                      <div className="bg-white p-3 rounded border font-mono text-xs overflow-auto max-h-96">
-                        <pre className="whitespace-pre-wrap">{normalizePromptToString(stagePrompt)}</pre>
+                    <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border">
+                      <div className="bg-white dark:bg-jdb-panel p-4 rounded-lg border border-jdb-border font-mono text-xs overflow-auto max-h-96">
+                        <pre className="whitespace-pre-wrap text-jdb-text-body">{normalizePromptToString(stagePrompt)}</pre>
                       </div>
                     </div>
                   )}

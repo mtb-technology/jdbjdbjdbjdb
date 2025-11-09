@@ -1,65 +1,141 @@
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Slab:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
+/* ========================================
+   JAN DE BELASTINGMAN DESIGN SYSTEM
+   ======================================== */
+/* Import Inter font - Modern, clean sans-serif matching website */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: hsl(210, 40%, 98%);
-  --foreground: hsl(210, 40%, 8%);
-  --card: hsl(210, 40%, 98%);
-  --card-foreground: hsl(210, 40%, 15%);
-  --popover: hsl(210, 40%, 98%);
-  --popover-foreground: hsl(210, 40%, 8%);
-  --primary: hsl(221, 83%, 30%);
-  --primary-foreground: hsl(210, 40%, 98%);
-  --secondary: hsl(210, 40%, 96%);
-  --secondary-foreground: hsl(210, 40%, 8%);
-  --muted: hsl(210, 40%, 96%);
-  --muted-foreground: hsl(210, 20%, 45%);
-  --accent: hsl(48, 96%, 53%);
-  --accent-foreground: hsl(210, 40%, 8%);
-  --destructive: hsl(0, 84%, 37%);
-  --destructive-foreground: hsl(210, 40%, 98%);
-  --border: hsl(210, 40%, 90%);
-  --input: hsl(210, 40%, 94%);
-  --ring: hsl(221, 83%, 30%);
-  --radius: 8px;
-  --font-sans: "Roboto", system-ui, sans-serif;
-  --font-serif: "Roboto Slab", serif;
-  --font-mono: "Roboto Mono", monospace;
-  --shadow-2xs: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 1px 2px -1px hsl(221, 83%, 30%, 0.00);
-  --shadow: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 1px 2px -1px hsl(221, 83%, 30%, 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 2px 4px -1px hsl(221, 83%, 30%, 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 4px 6px -1px hsl(221, 83%, 30%, 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00), 0px 8px 10px -1px hsl(221, 83%, 30%, 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(221, 83%, 30%, 0.00);
+  /* ========================================
+     JAN DE BELASTINGMAN BRAND COLORS
+     Based on website huisstijl
+     ======================================== */
+
+  /* Primary Brand Blue - The signature koningsblauw */
+  --jdb-blue-primary: #1D4ED8;      /* blue-700 - Sidebar, buttons, brand */
+  --jdb-blue-hover: #1E40AF;        /* blue-800 - Hover states */
+  --jdb-blue-light: #EFF6FF;        /* blue-50 - Light backgrounds, active states */
+
+  /* Accent Gold - Reviews, highlights, stars */
+  --jdb-gold: #F59E0B;              /* amber-500 - The 4.8/5 star color */
+
+  /* Neutral Tones - Premium feel */
+  --jdb-bg: #F9FAFB;                /* gray-50 - Page background */
+  --jdb-panel: #FFFFFF;             /* White - Panels, cards, inputs */
+  --jdb-border: #E5E7EB;            /* gray-200 - Subtle borders */
+  --jdb-text-heading: #111827;      /* gray-900 - Headings, important text */
+  --jdb-text-body: #374151;         /* gray-700 - Body text */
+  --jdb-text-subtle: #6B7280;       /* gray-500 - Muted text, icons */
+  --jdb-text-on-blue: #FFFFFF;      /* White text on blue backgrounds */
+
+  /* Feedback Colors */
+  --jdb-success: #16A34A;           /* green-600 - Completed, success */
+  --jdb-danger: #DC2626;            /* red-600 - Error, incomplete */
+  --jdb-warning: #F59E0B;           /* amber-500 - Warnings */
+
+  /* Shadows - Subtle, professional */
+  --jdb-shadow-panel: 0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --jdb-shadow-button: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --jdb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --jdb-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --jdb-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+  /* ========================================
+     TAILWIND/SHADCN MAPPINGS
+     Map JdB colors to shadcn conventions
+     ======================================== */
+
+  /* Backgrounds */
+  --background: var(--jdb-bg);
+  --foreground: var(--jdb-text-heading);
+
+  /* Cards & Panels */
+  --card: var(--jdb-panel);
+  --card-foreground: var(--jdb-text-body);
+
+  /* Popovers */
+  --popover: var(--jdb-panel);
+  --popover-foreground: var(--jdb-text-heading);
+
+  /* Primary (Brand Blue) */
+  --primary: var(--jdb-blue-primary);
+  --primary-foreground: var(--jdb-text-on-blue);
+
+  /* Secondary (Light gray for secondary buttons) */
+  --secondary: #F3F4F6;             /* gray-100 - slightly darker than bg */
+  --secondary-foreground: var(--jdb-blue-primary);
+
+  /* Muted */
+  --muted: #F3F4F6;                 /* gray-100 */
+  --muted-foreground: var(--jdb-text-subtle);
+
+  /* Accent (Gold) */
+  --accent: var(--jdb-gold);
+  --accent-foreground: var(--jdb-text-heading);
+
+  /* Destructive (Red) */
+  --destructive: var(--jdb-danger);
+  --destructive-foreground: var(--jdb-text-on-blue);
+
+  /* Borders & Inputs */
+  --border: var(--jdb-border);
+  --input: var(--jdb-panel);        /* White input backgrounds */
+  --ring: var(--jdb-blue-primary);  /* Focus ring */
+
+  /* Border Radius */
+  --radius: 8px;                    /* The signature rounded corners */
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+
+  /* Legacy shadow variables (for backwards compatibility) */
+  --shadow-2xs: var(--jdb-shadow-sm);
+  --shadow-xs: var(--jdb-shadow-sm);
+  --shadow-sm: var(--jdb-shadow-sm);
+  --shadow: var(--jdb-shadow-sm);
+  --shadow-md: var(--jdb-shadow-md);
+  --shadow-lg: var(--jdb-shadow-lg);
+  --shadow-xl: var(--jdb-shadow-lg);
+  --shadow-2xl: var(--jdb-shadow-lg);
+
+  /* Spacing */
+  --spacing: 0.5rem;                /* 8px base unit (JdB 8px scale) */
   --tracking-normal: 0em;
-  --spacing: 0.25rem;
 }
 
 .dark {
-  --background: hsl(0, 0%, 0%);
-  --foreground: hsl(200, 6.6667%, 91.1765%);
-  --card: hsl(228, 9.8039%, 10%);
-  --card-foreground: hsl(0, 0%, 85.0980%);
-  --popover: hsl(0, 0%, 0%);
-  --popover-foreground: hsl(200, 6.6667%, 91.1765%);
-  --primary: hsl(221, 83%, 30%);
-  --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(195.0000, 15.3846%, 94.9020%);
-  --secondary-foreground: hsl(210, 25%, 7.8431%);
-  --muted: hsl(0, 0%, 9.4118%);
-  --muted-foreground: hsl(210, 3.3898%, 46.2745%);
-  --accent: hsl(48, 96%, 53%);
-  --accent-foreground: hsl(210, 40%, 8%);
-  --destructive: hsl(0, 84%, 37%);
-  --destructive-foreground: hsl(0, 0%, 100%);
-  --border: hsl(210, 5.2632%, 14.9020%);
-  --input: hsl(207.6923, 27.6596%, 18.4314%);
-  --ring: hsl(221, 83%, 30%);
+  /* Dark mode overrides - subtle, professional */
+  --jdb-bg: #0F172A;                /* slate-900 - Dark background */
+  --jdb-panel: #1E293B;             /* slate-800 - Dark panels */
+  --jdb-border: #334155;            /* slate-700 - Dark borders */
+  --jdb-text-heading: #F1F5F9;      /* slate-100 - Light headings */
+  --jdb-text-body: #CBD5E1;         /* slate-300 - Light body text */
+  --jdb-text-subtle: #94A3B8;       /* slate-400 - Muted text */
+
+  /* Mapped variables */
+  --background: var(--jdb-bg);
+  --foreground: var(--jdb-text-heading);
+  --card: var(--jdb-panel);
+  --card-foreground: var(--jdb-text-body);
+  --popover: var(--jdb-panel);
+  --popover-foreground: var(--jdb-text-heading);
+  --primary: var(--jdb-blue-primary);
+  --primary-foreground: var(--jdb-text-on-blue);
+  --secondary: #334155;             /* slate-700 - Darker secondary in dark mode */
+  --secondary-foreground: #93C5FD;  /* blue-300 - Lighter blue text */
+  --muted: #1E293B;                 /* slate-800 */
+  --muted-foreground: var(--jdb-text-subtle);
+  --accent: var(--jdb-gold);
+  --accent-foreground: var(--jdb-text-heading);
+  --destructive: #EF4444;           /* red-500 - Slightly brighter in dark */
+  --destructive-foreground: var(--jdb-text-on-blue);
+  --border: var(--jdb-border);
+  --input: var(--jdb-panel);
+  --ring: #3B82F6;                  /* blue-500 - Brighter focus ring in dark */
 }
 
 @layer base {
@@ -68,65 +144,97 @@
   }
 
   body {
-    @apply font-sans antialiased text-foreground;
-    background: linear-gradient(135deg,
-      hsl(210, 40%, 98%) 0%,
-      hsl(220, 60%, 98%) 25%,
-      hsl(230, 50%, 99%) 50%,
-      hsl(220, 60%, 98%) 75%,
-      hsl(210, 40%, 98%) 100%
-    );
+    @apply font-sans antialiased;
+    background: var(--jdb-bg);
+    color: var(--jdb-text-body);
     min-height: 100vh;
+    line-height: 1.6;
   }
 
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--jdb-text-heading);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  /* Clean, professional background - no gradients */
   .dark body {
-    background: linear-gradient(135deg,
-      hsl(220, 20%, 8%) 0%,
-      hsl(230, 25%, 10%) 25%,
-      hsl(235, 20%, 12%) 50%,
-      hsl(230, 25%, 10%) 75%,
-      hsl(220, 20%, 8%) 100%
-    );
+    background: var(--jdb-bg);
   }
 }
 
 @layer utilities {
-  /* Glassmorphism utilities */
+  /* ========================================
+     JAN DE BELASTINGMAN UTILITY CLASSES
+     ======================================== */
+
+  /* Status States - For consistent feedback UI */
+  .status-success {
+    @apply bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg;
+  }
+
+  .status-danger {
+    @apply bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg;
+  }
+
+  .status-warning {
+    @apply bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg;
+  }
+
+  .status-info {
+    @apply bg-jdb-blue-light dark:bg-jdb-blue-primary/10 border border-blue-200 dark:border-blue-800 rounded-lg;
+  }
+
+  /* Status Icon Colors */
+  .icon-success {
+    @apply text-jdb-success;
+  }
+
+  .icon-danger {
+    @apply text-jdb-danger;
+  }
+
+  .icon-warning {
+    @apply text-jdb-warning;
+  }
+
+  .icon-info {
+    @apply text-jdb-blue-primary;
+  }
+
+  /* Glassmorphism utilities (JdB style) */
   .glass {
-    @apply backdrop-blur-xl bg-white/80 dark:bg-gray-900/80;
+    @apply backdrop-blur-xl bg-white/90 dark:bg-jdb-panel/90;
   }
 
   .glass-border {
-    @apply border border-white/20 dark:border-gray-800/50;
+    @apply border border-jdb-border/30 dark:border-jdb-border/20;
   }
 
-  /* Gradient text */
+  /* Gradient text (JdB brand) */
   .gradient-text {
-    @apply bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-jdb-blue-primary to-indigo-600 bg-clip-text text-transparent;
   }
 
   /* Smooth transitions */
   .transition-smooth {
-    @apply transition-all duration-300 ease-out;
+    @apply transition-all duration-200 ease-out;
   }
 
-  /* Shadow utilities */
-  .shadow-glow {
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
+  /* Shadow utilities (JdB subtle shadows) */
+  .shadow-panel {
+    box-shadow: var(--jdb-shadow-panel);
+  }
+
+  .shadow-button {
+    box-shadow: var(--jdb-shadow-button);
+  }
+
+  .shadow-glow-blue {
+    box-shadow: 0 0 20px rgba(29, 78, 216, 0.15);
   }
 
   .shadow-glow-green {
-    box-shadow: 0 0 20px rgba(34, 197, 94, 0.2);
-  }
-
-  /* Animated gradient backgrounds */
-  @keyframes gradient-shift {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-  }
-
-  .animate-gradient {
-    background-size: 200% 200%;
-    animation: gradient-shift 8s ease infinite;
+    box-shadow: 0 0 20px rgba(22, 163, 74, 0.15);
   }
 }

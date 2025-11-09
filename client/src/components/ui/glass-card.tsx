@@ -9,12 +9,13 @@ interface GlassCardProps extends HTMLAttributes<HTMLDivElement> {
   animated?: boolean;
 }
 
+// JdB Brand-aligned glassmorphism variants
 const variantStyles = {
-  default: "bg-white/80 dark:bg-gray-900/80 border-white/20 dark:border-gray-800/50",
-  primary: "bg-blue-50/80 dark:bg-blue-950/80 border-blue-200/50 dark:border-blue-800/50",
-  success: "bg-green-50/80 dark:bg-green-950/80 border-green-200/50 dark:border-green-800/50",
-  warning: "bg-amber-50/80 dark:bg-amber-950/80 border-amber-200/50 dark:border-amber-800/50",
-  danger: "bg-red-50/80 dark:bg-red-950/80 border-red-200/50 dark:border-red-800/50",
+  default: "bg-white/90 dark:bg-jdb-panel/90 border-jdb-border/30 dark:border-jdb-border/20",
+  primary: "bg-jdb-blue-light/80 dark:bg-jdb-blue-primary/10 border-jdb-blue-primary/30 dark:border-jdb-blue-primary/20",
+  success: "bg-green-50/80 dark:bg-green-950/10 border-jdb-success/30 dark:border-jdb-success/20",
+  warning: "bg-amber-50/80 dark:bg-amber-950/10 border-jdb-warning/30 dark:border-jdb-warning/20",
+  danger: "bg-red-50/80 dark:bg-red-950/10 border-jdb-danger/30 dark:border-jdb-danger/20",
 };
 
 export const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
@@ -53,11 +54,12 @@ interface GradientCardProps extends HTMLAttributes<HTMLDivElement> {
   animated?: boolean;
 }
 
+// JdB Brand-aligned gradients (subtle, professional)
 const gradientStyles = {
-  primary: "bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700",
-  success: "bg-gradient-to-br from-green-500 via-emerald-600 to-teal-700",
+  primary: "bg-gradient-to-br from-jdb-blue-primary via-blue-600 to-indigo-700",
+  success: "bg-gradient-to-br from-jdb-success via-green-600 to-emerald-700",
   purple: "bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-700",
-  orange: "bg-gradient-to-br from-orange-500 via-amber-600 to-red-700",
+  orange: "bg-gradient-to-br from-jdb-gold via-amber-600 to-orange-700",
 };
 
 export const GradientCard = forwardRef<HTMLDivElement, GradientCardProps>(

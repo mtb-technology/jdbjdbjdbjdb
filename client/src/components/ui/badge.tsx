@@ -4,17 +4,27 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
   {
     variants: {
       variant: {
+        // Primary: Koningsblauw
         default:
-          "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
+          "border-transparent bg-primary text-primary-foreground shadow-sm hover:bg-jdb-blue-hover",
+        // Secondary: Lichtgrijs
         secondary:
-          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "border-transparent bg-secondary text-secondary-foreground hover:bg-muted",
+        // Destructive/Danger: Rood
         destructive:
-          "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
-        outline: "text-foreground",
+          "border-transparent bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+        // Success: Groen
+        success:
+          "border-transparent bg-jdb-success text-white shadow-sm hover:bg-jdb-success/90",
+        // Warning: Amber/Goud
+        warning:
+          "border-transparent bg-jdb-warning text-white shadow-sm hover:bg-jdb-warning/90",
+        // Outline: Border only
+        outline: "text-foreground border-border hover:bg-muted",
       },
     },
     defaultVariants: {

@@ -43,21 +43,21 @@ import { isInformatieCheckComplete, getStage2BlockReason } from "@/lib/workflowP
 import { useCollapsibleSections } from "@/hooks/useCollapsibleSections";
 import type { SimplifiedWorkflowViewProps } from "./types";
 
-// Stage icon mapping
+// Stage icon mapping - Using JdB brand colors
 const getStageIcon = (stageKey: string) => {
   const icons: Record<string, JSX.Element> = {
-    '1_informatiecheck': <FileText className="h-5 w-5 text-blue-600" />,
+    '1_informatiecheck': <FileText className="h-5 w-5 text-jdb-blue-primary" />,
     '2_complexiteitscheck': <Activity className="h-5 w-5 text-purple-600" />,
-    '3_generatie': <Wand2 className="h-5 w-5 text-green-600" />,
-    '4a_BronnenSpecialist': <Users className="h-5 w-5 text-orange-600" />,
-    '4b_FiscaalTechnischSpecialist': <Zap className="h-5 w-5 text-red-600" />,
+    '3_generatie': <Wand2 className="h-5 w-5 text-jdb-success" />,
+    '4a_BronnenSpecialist': <Users className="h-5 w-5 text-jdb-gold" />,
+    '4b_FiscaalTechnischSpecialist': <Zap className="h-5 w-5 text-jdb-danger" />,
     '4c_ScenarioGatenAnalist': <Activity className="h-5 w-5 text-indigo-600" />,
     '4d_DeVertaler': <PenTool className="h-5 w-5 text-pink-600" />,
-    '4e_DeAdvocaat': <Users className="h-5 w-5 text-yellow-600" />,
+    '4e_DeAdvocaat': <Users className="h-5 w-5 text-jdb-gold" />,
     '4f_DeKlantpsycholoog': <Users className="h-5 w-5 text-teal-600" />,
-    '6_change_summary': <GitCompare className="h-5 w-5 text-gray-600" />
+    '6_change_summary': <GitCompare className="h-5 w-5 text-jdb-text-subtle" />
   };
-  return icons[stageKey] || <Play className="h-5 w-5" />;
+  return icons[stageKey] || <Play className="h-5 w-5 text-jdb-blue-primary" />;
 };
 
 export function WorkflowView({
@@ -106,10 +106,25 @@ export function WorkflowView({
   };
 
   // Feedback processed handler
-  const handleFeedbackProcessed = (stageKey: string) => {
+  const handleFeedbackProcessed = (stageKey: string, response: any) => {
+    console.log(`🔄 WorkflowView: Feedback processed for ${stageKey}`, {
+      newVersion: response?.newVersion,
+      hasConceptContent: !!response?.conceptContent,
+      conceptContentLength: response?.conceptContent?.length
+    });
+
+    // Update the concept version in state with the new content
+    if (response?.conceptContent) {
+      dispatch({
+        type: "SET_CONCEPT_VERSION",
+        stage: stageKey,
+        content: response.conceptContent
+      });
+    }
+
     toast({
       title: "Feedback verwerkt",
-      description: `Feedback voor ${stageKey} is succesvol verwerkt`,
+      description: `Feedback voor ${stageKey} is succesvol verwerkt - versie ${response?.newVersion || 'onbekend'}`,
     });
     queryClient.invalidateQueries({ queryKey: ['report', state.currentReport?.id] });
   };
@@ -130,30 +145,28 @@ export function WorkflowView({
       </AnimatePresence>
 
       <div className="space-y-6 max-w-full overflow-hidden">
-        {/* Modern Progress Header */}
+        {/* Modern Progress Header - JdB Professional Style */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <Card className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-blue-900/20 dark:to-purple-900/20 border-0 shadow-xl">
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10" />
-            <div className="absolute inset-0 backdrop-blur-3xl bg-white/40 dark:bg-gray-900/40" />
-            <CardContent className="relative p-6 md:p-8">
+          <Card className="bg-white dark:bg-jdb-panel border-jdb-border">
+            <CardContent className="p-6 md:p-8">
               <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
                 <motion.div
                   className="flex items-center gap-4"
                   whileHover={{ scale: 1.02 }}
                   transition={{ type: "spring", stiffness: 400, damping: 17 }}
                 >
-                  <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
+                  <div className="p-4 rounded-xl bg-jdb-blue-primary shadow-sm">
                     <Workflow className="h-6 w-6 md:h-7 md:w-7 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
+                    <h2 className="text-xl md:text-2xl font-semibold text-jdb-text-heading">
                       Fiscale Rapport Workflow
                     </h2>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                    <p className="text-sm text-jdb-text-subtle font-medium">
                       AI-gedreven fiscale analyse systeem
                     </p>
                   </div>
@@ -162,21 +175,21 @@ export function WorkflowView({
                   <motion.div whileHover={{ scale: 1.05 }} className="inline-flex">
                     <Badge
                       variant="outline"
-                      className="text-sm font-semibold px-4 py-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-gray-200/50 dark:border-gray-700/50 shadow-sm"
+                      className="text-sm font-semibold px-4 py-2 bg-white dark:bg-jdb-panel"
                     >
-                      <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                      <CheckCircle className="h-4 w-4 mr-2 text-jdb-success" />
                       {Object.keys(state.stageResults).length}/{WORKFLOW_STAGES.length} Stappen
                     </Badge>
                   </motion.div>
                   {totalProcessingTime > 0 && (
                     <motion.div
-                      className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 font-medium"
+                      className="flex items-center gap-2 text-sm text-jdb-text-body font-medium"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.3 }}
                     >
-                      <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                        <Clock className="h-4 w-4 text-blue-600" />
+                      <div className="p-2 rounded-lg bg-jdb-blue-light dark:bg-jdb-blue-primary/20">
+                        <Clock className="h-4 w-4 text-jdb-blue-primary" />
                       </div>
                       {totalProcessingTime}s totale tijd
                     </motion.div>
@@ -191,22 +204,20 @@ export function WorkflowView({
                 transition={{ delay: 0.2 }}
               >
                 <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <span className="text-sm font-medium text-jdb-text-heading">
                     Voortgang: {progressPercentage}%
                   </span>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                  <span className="text-sm text-jdb-text-subtle">
                     {currentStage.label}
                   </span>
                 </div>
                 <div className="relative">
-                  <Progress
-                    value={progressPercentage}
-                    className="h-3 bg-gray-200/50 dark:bg-gray-700/50 rounded-full overflow-hidden"
-                  />
-                  <div
-                    className="absolute top-0 left-0 h-3 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000 ease-out shadow-lg"
-                    style={{ width: `${progressPercentage}%` }}
-                  />
+                  <div className="h-3 bg-jdb-border dark:bg-jdb-border/30 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-jdb-blue-primary rounded-full transition-all duration-1000 ease-out"
+                      style={{ width: `${progressPercentage}%` }}
+                    />
+                  </div>
                 </div>
               </motion.div>
             </CardContent>
@@ -219,17 +230,17 @@ export function WorkflowView({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <Card className="bg-white/60 dark:bg-gray-900/60 backdrop-blur-xl border border-white/20 dark:border-gray-700/30 shadow-2xl">
+          <Card className="bg-white dark:bg-jdb-panel">
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                <div className="p-3 rounded-xl bg-jdb-blue-primary shadow-sm">
                   <Eye className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <span className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
+                  <span className="text-xl font-semibold text-jdb-text-heading">
                     AI Workflow - Volledige Transparantie
                   </span>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 font-normal mt-1">
+                  <p className="text-sm text-jdb-text-subtle font-normal mt-1">
                     Bekijk en bewerk exact wat naar de AI wordt gestuurd en wat terugkomt
                   </p>
                 </div>
@@ -278,6 +289,7 @@ export function WorkflowView({
                     stageResult={stageResult}
                     stagePrompt={stagePrompt}
                     conceptVersion={conceptVersion}
+                    reportId={state.currentReport?.id}
                     canExecute={canExecute}
                     isProcessing={isProcessing}
                     onExecute={() => handleExecuteStage(stage.key)}
@@ -288,7 +300,7 @@ export function WorkflowView({
                     onToggleOutput={() => toggleSectionCollapse(stage.key, 'output')}
                     onTogglePrompt={() => toggleSectionCollapse(stage.key, 'prompt')}
                     showFeedbackProcessor={showFeedbackProcessor}
-                    onFeedbackProcessed={() => handleFeedbackProcessed(stage.key)}
+                    onFeedbackProcessed={(response) => handleFeedbackProcessed(stage.key, response)}
                     blockReason={blockReason}
                   />
                 );
