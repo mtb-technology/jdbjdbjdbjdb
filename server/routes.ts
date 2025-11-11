@@ -9,12 +9,13 @@ import { PDFGenerator } from "./services/pdf-generator";
 import { AIHealthService } from "./services/ai-models/health-service";
 import { AIMonitoringService } from "./services/ai-models/monitoring";
 import { checkDatabaseConnection } from "./db";
-import { dossierSchema, bouwplanSchema, insertPromptConfigSchema } from "@shared/schema";
-import type { DossierData, BouwplanData, StageId, ConceptReportVersions } from "@shared/schema";
+import { dossierSchema, bouwplanSchema, insertPromptConfigSchema, insertFollowUpSessionSchema, insertFollowUpThreadSchema } from "@shared/schema";
+import type { DossierData, BouwplanData, StageId, ConceptReportVersions, PromptConfig } from "@shared/schema";
 import { createReportRequestSchema, processFeedbackRequestSchema, overrideConceptRequestSchema, promoteSnapshotRequestSchema } from "@shared/types/api";
 import { ReportProcessor } from "./services/report-processor";
 import { SSEHandler } from "./services/streaming/sse-handler";
 import { StreamingSessionManager } from "./services/streaming/streaming-session-manager";
+import { PromptBuilder } from "./services/prompt-builder";
 import { registerStreamingRoutes } from "./routes/streaming-routes";
 import { documentRouter } from "./routes/document-routes";
 import { z } from "zod";
@@ -221,6 +222,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Generate prompt for a stage (without executing AI)
+  app.get("/api/reports/:id/stage/:stage/prompt", asyncHandler(async (req, res) => {
+    const { id, stage } = req.params;
+
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw new Error("Rapport niet gevonden");
+    }
+
+    // Generate the prompt without executing
+    const prompt = await reportGenerator.generatePromptOnly(
+      stage,
+      report.dossierData as DossierData,
+      report.bouwplanData as BouwplanData,
+      report.stageResults as Record<string, string> || {},
+      report.conceptReportVersions as Record<string, string> || {}
+    );
+
+    // Store the prompt
+    const updatedStagePrompts = {
+      ...(report.stagePrompts as Record<string, string> || {}),
+      [stage]: prompt
+    };
+
+    await storage.updateReport(id, {
+      stagePrompts: updatedStagePrompts
+    });
+
+    res.json(createApiSuccessResponse({ prompt }, "Prompt gegenereerd"));
+  }));
+
   // Execute specific stage of report generation
   app.post("/api/reports/:id/stage/:stage",
     deduplicateRequests({
@@ -267,7 +299,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         [stage]: stageExecution.stageOutput
       };
 
-      const updatedConceptVersions = stageExecution.conceptReport 
+      const updatedConceptVersions = stageExecution.conceptReport
         ? {
             ...(report.conceptReportVersions as Record<string, string> || {}),
             [stage]: stageExecution.conceptReport
@@ -293,8 +325,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.generatedContent = stageExecution.conceptReport;
         updateData.status = 'generated'; // Mark as having first version
       }
-      
-      // *** REVIEW STAGES (4a-4g): NO AUTOMATIC CONCEPT PROCESSING ***  
+
+      // *** STAGE 1 CLEANUP: Strip rawText after successful completion ***
+      if (stage === '1_informatiecheck' && stageExecution.stageOutput) {
+        try {
+          const parsed = JSON.parse(stageExecution.stageOutput);
+          if (parsed.status === 'COMPLEET' && parsed.dossier) {
+            console.log(`🧹 [${id}] Stage 1 COMPLEET - stripping rawText from dossierData`);
+            // Replace dossierData with structured data from AI (no rawText)
+            updateData.dossierData = {
+              klant: {
+                naam: report.clientName,
+                situatie: parsed.dossier.samenvatting_onderwerp || ''
+              },
+              gestructureerde_data: parsed.dossier.gestructureerde_data,
+              samenvatting_onderwerp: parsed.dossier.samenvatting_onderwerp
+            };
+          }
+        } catch (parseError) {
+          console.warn(`⚠️ [${id}] Could not parse Stage 1 output for rawText cleanup:`, parseError);
+          // Don't fail the request - just log warning
+        }
+      }
+
+      // *** REVIEW STAGES (4a-4g): NO AUTOMATIC CONCEPT PROCESSING ***
       // These stages now require user feedback selection - only store raw feedback
       if (stage.startsWith('4')) {
         console.log(`📋 [${id}-${stage}] Review stage completed - storing raw feedback for user review (NO auto-processing)`);
@@ -385,6 +439,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete/clear a specific stage result to allow re-running
+  app.delete("/api/reports/:id/stage/:stage", asyncHandler(async (req: Request, res: Response) => {
+    const { id, stage } = req.params;
+
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Remove the stage from stageResults
+    const currentStageResults = (report.stageResults as Record<string, string>) || {};
+    delete currentStageResults[stage];
+
+    // Also remove from conceptReportVersions if it's a generation stage
+    const currentConceptVersions = (report.conceptReportVersions as Record<string, string>) || {};
+    if (["3_generatie"].includes(stage)) {
+      delete currentConceptVersions[stage];
+      // Also remove timestamped versions
+      Object.keys(currentConceptVersions).forEach(key => {
+        if (key.startsWith(`${stage}_`)) {
+          delete currentConceptVersions[key];
+        }
+      });
+    }
+
+    const updatedReport = await storage.updateReport(id, {
+      stageResults: currentStageResults,
+      conceptReportVersions: currentConceptVersions,
+    });
+
+    if (!updatedReport) {
+      throw ServerError.notFound("Updated report not found");
+    }
+
+    res.json(createApiSuccessResponse({
+      report: updatedReport,
+      clearedStage: stage
+    }, `Stage ${stage} resultaat verwijderd - kan nu opnieuw worden uitgevoerd`));
+  }));
+
   // Preview the exact prompt that would be sent for feedback processing
   app.get("/api/reports/:id/stage/:stageId/prompt-preview", asyncHandler(async (req: Request, res: Response) => {
     const { id: reportId, stageId } = req.params;
@@ -423,7 +517,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get the raw feedback from stageResults
       const stageResults = (report.stageResults as Record<string, string>) || {};
       const rawFeedback = stageResults[stageId];
-      
+
       if (!rawFeedback) {
         return res.status(400).json(createApiErrorResponse(
           'NO_FEEDBACK_FOUND',
@@ -433,19 +527,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ));
       }
 
-      // Generate the same combined prompt that would be used for processing
-      const combinedPrompt = `
-OORSPRONKELIJKE FEEDBACK VAN ${stageId.toUpperCase()}:
-${rawFeedback}
+      // Get the latest concept report (same as process-feedback endpoint)
+      const conceptReportVersions = (report.conceptReportVersions as Record<string, any>) || {};
 
-GEBRUIKER INSTRUCTIES:
-${userInstructions}
+      // The 'latest' field is a pointer { pointer: stageId, v: version }
+      // We need to resolve it to get the actual content
+      let latestConceptText = '';
+      const latest = conceptReportVersions?.['latest'];
 
-Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
-`;
+      if (latest && latest.pointer) {
+        // Resolve the pointer to get the actual snapshot
+        const snapshot = conceptReportVersions[latest.pointer];
+        if (snapshot && snapshot.content) {
+          latestConceptText = snapshot.content;
+        }
+      }
 
-      // For now, use the combined prompt as preview
-      // TODO: Later we could integrate with actual prompt generation logic
+      // Fallback: Try direct stage snapshots
+      if (!latestConceptText) {
+        const snapshot = conceptReportVersions?.['4a_BronnenSpecialist']
+          || conceptReportVersions?.['3_generatie']
+          || Object.values(conceptReportVersions).find((v: any) => v && v.content);
+
+        if (snapshot && snapshot.content) {
+          latestConceptText = snapshot.content;
+        }
+      }
+
+      if (!latestConceptText) {
+        return res.status(400).json(createApiErrorResponse(
+          'NO_CONCEPT_FOUND',
+          'VALIDATION_FAILED',
+          'Geen concept rapport gevonden',
+          'Er is geen concept rapport beschikbaar om feedback op te verwerken'
+        ));
+      }
+
+      // Get the Editor prompt from active config (same as process-feedback endpoint)
+      const activeConfig = await storage.getActivePromptConfig();
+      if (!activeConfig || !activeConfig.config) {
+        return res.status(400).json(createApiErrorResponse(
+          'NO_EDITOR_CONFIG',
+          'INTERNAL_SERVER_ERROR',
+          'Editor configuratie ontbreekt',
+          'Er is geen actieve Editor prompt configuratie gevonden'
+        ));
+      }
+
+      // Parse the config JSON to get the stages
+      const parsedConfig = activeConfig.config as PromptConfig;
+      const editorPromptConfig = parsedConfig.editor;
+
+      // Parse the raw feedback as JSON
+      let feedbackJSON;
+      try {
+        feedbackJSON = JSON.parse(rawFeedback);
+      } catch (e) {
+        feedbackJSON = rawFeedback;
+      }
+
+      // Build the Editor prompt using PromptBuilder (same as process-feedback endpoint)
+      const promptBuilder = new PromptBuilder();
+      const editorInput = JSON.stringify({
+        BASISTEKST: latestConceptText,
+        WIJZIGINGEN_JSON: feedbackJSON,
+        INSTRUCTIES: userInstructions
+      }, null, 2);
+
+      const { systemPrompt, userInput } = promptBuilder.build(
+        'editor',
+        editorPromptConfig,
+        () => editorInput
+      );
+
+      const combinedPrompt = `${systemPrompt}\n\n### USER INPUT:\n${userInput}`;
       const fullPrompt = combinedPrompt;
       const promptLength = fullPrompt.length;
 
@@ -521,36 +676,108 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
         ));
       }
 
-      // *** SIMPLE APPROACH: Combine raw feedback + user instructions ***
-      const combinedPrompt = `
-OORSPRONKELIJKE FEEDBACK VAN ${stageId.toUpperCase()}:
-${rawFeedback}
+      // Get the latest concept report to send to the editor
+      const conceptReportVersions = (report.conceptReportVersions as Record<string, any>) || {};
 
-GEBRUIKER INSTRUCTIES:
-${userInstructions}
+      // The 'latest' field is a pointer { pointer: stageId, v: version }
+      // We need to resolve it to get the actual content
+      let latestConceptText = '';
+      const latest = conceptReportVersions?.['latest'];
 
-Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
-`;
-      
-      console.log(`📝 [${reportId}-${stageId}] Processing feedback with user instructions: "${userInstructions}"`);
+      if (latest && latest.pointer) {
+        // Resolve the pointer to get the actual snapshot
+        const snapshot = conceptReportVersions[latest.pointer];
+        if (snapshot && snapshot.content) {
+          latestConceptText = snapshot.content;
+        }
+      }
 
-      // Process with ReportProcessor
+      // Fallback: Try direct stage snapshots
+      if (!latestConceptText) {
+        const snapshot = conceptReportVersions?.['4a_BronnenSpecialist']
+          || conceptReportVersions?.['3_generatie']
+          || Object.values(conceptReportVersions).find((v: any) => v && v.content);
+
+        if (snapshot && snapshot.content) {
+          latestConceptText = snapshot.content;
+        }
+      }
+
+      if (!latestConceptText) {
+        return res.status(400).json(createApiErrorResponse(
+          'NO_CONCEPT_FOUND',
+          'VALIDATION_FAILED',
+          'Geen concept rapport gevonden',
+          'Er is geen concept rapport beschikbaar om feedback op te verwerken'
+        ));
+      }
+
+      // Get the Editor prompt from active config
+      const activeConfig = await storage.getActivePromptConfig();
+      if (!activeConfig || !activeConfig.config) {
+        return res.status(400).json(createApiErrorResponse(
+          'NO_EDITOR_CONFIG',
+          'INTERNAL_SERVER_ERROR',
+          'Editor configuratie ontbreekt',
+          'Er is geen actieve Editor prompt configuratie gevonden'
+        ));
+      }
+
+      // Parse the config JSON to get the stages
+      const parsedConfig = activeConfig.config as PromptConfig;
+      const editorPromptConfig = parsedConfig.editor;
+
+      // Parse the raw feedback as JSON (it should already be JSON from the specialist)
+      let feedbackJSON;
+      try {
+        feedbackJSON = JSON.parse(rawFeedback);
+      } catch (e) {
+        // If it's not valid JSON, wrap it in an array
+        feedbackJSON = rawFeedback;
+      }
+
+      // Build the Editor prompt using PromptBuilder
+      // The Editor expects: BASISTEKST + WIJZIGINGEN_JSON
+      // The user instructions tell us WHICH changes to apply (accept/reject decisions)
+      const promptBuilder = new PromptBuilder();
+      const editorInput = JSON.stringify({
+        BASISTEKST: latestConceptText,
+        WIJZIGINGEN_JSON: feedbackJSON,
+        INSTRUCTIES: userInstructions // User's accept/reject decisions
+      }, null, 2);
+
+      const { systemPrompt, userInput } = promptBuilder.build(
+        'editor',
+        editorPromptConfig,
+        () => editorInput
+      );
+
+      const combinedPrompt = `${systemPrompt}\n\n### USER INPUT:\n${userInput}`;
+
+      console.log(`📝 [${reportId}-${stageId}] Editor Input:`, {
+        basistekstLength: latestConceptText.length,
+        wijzigingenCount: Array.isArray(feedbackJSON) ? feedbackJSON.length : 'not an array',
+        instructiesPreview: userInstructions.substring(0, 100) + '...'
+      });
+
+      // Process with ReportProcessor (use editor as the processing stage)
+      // Note: We're borrowing the editor stage ID, but this is actually processing feedback for stageId
       const processingResult = await reportProcessor.processStage(
         reportId,
-        stageId as StageId,
+        stageId as StageId, // Use the original stageId for versioning purposes
         combinedPrompt,
         processingStrategy
       );
 
-      console.log(`✅ [${reportId}-${stageId}] Simple feedback processing completed - v${processingResult.snapshot.v}`);
+      console.log(`✅ [${reportId}-${stageId}] Feedback processing completed using Editor prompt - v${processingResult.snapshot.v}`);
 
-      // Emit SSE event for real-time feedback
+      // Emit SSE event for feedback processing complete
       sseHandler.broadcast(reportId, stageId, {
         type: 'step_complete',
         stageId: stageId,
         substepId: 'manual_feedback_processing',
         percentage: 100,
-        message: `Feedback verwerkt volgens gebruiker instructies - concept v${processingResult.snapshot.v}`,
+        message: `Feedback verwerkt met Editor prompt - nieuw concept v${processingResult.snapshot.v} gegenereerd`,
         data: {
           version: processingResult.snapshot.v,
           conceptContent: processingResult.newConcept,
@@ -559,12 +786,13 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
         timestamp: new Date().toISOString()
       });
 
+      // Return success - ReportProcessor has already done all the work!
       return res.json(createApiSuccessResponse({
         success: true,
         newVersion: processingResult.snapshot.v,
         conceptContent: processingResult.newConcept,
         userInstructions: userInstructions,
-        message: `Feedback succesvol verwerkt volgens jouw instructies - concept bijgewerkt naar versie ${processingResult.snapshot.v}`
+        message: `Feedback succesvol verwerkt - nieuw concept v${processingResult.snapshot.v} gegenereerd`
       }, 'Feedback processing succesvol voltooid'));
 
     } catch (error: any) {
@@ -641,6 +869,23 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
         res.status(404).json({ message: "Rapport niet gevonden" });
         return;
       }
+
+      // ✅ FIX #4: Add caching headers with ETag for conditional requests
+      const lastModified = report.updatedAt || report.createdAt || new Date();
+      const etag = `"report-${report.id}-${lastModified.getTime()}"`;
+
+      // Check if client has fresh copy (conditional request)
+      const clientETag = req.headers['if-none-match'];
+      if (clientETag === etag) {
+        res.status(304).end(); // Not Modified - client can use cached version
+        return;
+      }
+
+      // Set caching headers - short cache for active reports (5s max, 15s stale-while-revalidate)
+      res.set('Cache-Control', 'public, max-age=5, stale-while-revalidate=15');
+      res.set('ETag', etag);
+      res.set('Last-Modified', lastModified.toUTCString());
+
       res.json(createApiSuccessResponse(report));
     } catch (error) {
       console.error("Error fetching report:", error);
@@ -1123,12 +1368,12 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
     try {
       const { id, format } = req.params;
       const report = await storage.getReport(id);
-      
+
       if (!report) {
         res.status(404).json({ message: "Case niet gevonden" });
         return;
       }
-      
+
       if (format === "html") {
         res.setHeader('Content-Type', 'text/html');
         res.setHeader('Content-Disposition', `attachment; filename="case-${id}.html"`);
@@ -1151,6 +1396,139 @@ Verwerk de oorspronkelijke feedback volgens de gebruiker instructies.
     }
   });
 
+  // Follow-up Assistant - Generate AI response for customer follow-up questions
+  app.post("/api/assistant/generate", asyncHandler(async (req: Request, res: Response) => {
+    const { systemPrompt, userInput, model } = req.body;
+
+    // Validate inputs
+    if (!systemPrompt || !userInput || !model) {
+      throw new ServerError(
+        "Ontbrekende verplichte velden: systemPrompt, userInput, en model zijn vereist",
+        400,
+        ERROR_CODES.VALIDATION_FAILED
+      );
+    }
+
+    // Validate input lengths
+    if (userInput.length > 200000) {
+      throw new ServerError(
+        "User input is te lang (max 200KB)",
+        400,
+        ERROR_CODES.VALIDATION_FAILED
+      );
+    }
+
+    // Call AI with the system prompt and user input
+    const aiResult = await reportGenerator.generateWithCustomPrompt({
+      systemPrompt,
+      userPrompt: userInput,
+      model,
+    });
+
+    // Parse the JSON response from AI
+    let parsedResult;
+    try {
+      // The AI should return JSON - try multiple extraction strategies
+      // Strategy 1: Look for JSON code block
+      let jsonText = aiResult.match(/```json\s*([\s\S]*?)\s*```/)?.[1];
+
+      // Strategy 2: Look for first complete JSON object
+      if (!jsonText) {
+        jsonText = aiResult.match(/\{[\s\S]*\}/)?.[0];
+      }
+
+      // Strategy 3: Try the whole response if it looks like JSON
+      if (!jsonText && aiResult.trim().startsWith('{')) {
+        jsonText = aiResult.trim();
+      }
+
+      if (!jsonText) {
+        console.error("AI response does not contain JSON. Raw response:", aiResult);
+        throw new Error("AI response does not contain valid JSON");
+      }
+
+      parsedResult = JSON.parse(jsonText);
+    } catch (parseError: any) {
+      console.error("Failed to parse AI response:", parseError);
+      console.error("Raw AI response:", aiResult.substring(0, 500));
+      throw new ServerError(
+        `AI antwoord kon niet worden geparseerd als JSON: ${parseError.message}`,
+        500,
+        ERROR_CODES.AI_PROCESSING_FAILED
+      );
+    }
+
+    // Validate the structure
+    if (!parsedResult.analyse || !parsedResult.concept_email) {
+      throw new ServerError(
+        "AI antwoord heeft niet de verwachte structuur (ontbrekende 'analyse' of 'concept_email')",
+        500,
+        ERROR_CODES.AI_PROCESSING_FAILED
+      );
+    }
+
+    res.json(createApiSuccessResponse(parsedResult, "Concept antwoord succesvol gegenereerd"));
+  }));
+
+  // Follow-up session management endpoints
+
+  // Get all sessions
+  app.get("/api/follow-up/sessions", asyncHandler(async (req: Request, res: Response) => {
+    const sessions = await storage.getAllFollowUpSessions();
+    res.json(createApiSuccessResponse(sessions, "Sessies succesvol opgehaald"));
+  }));
+
+  // Get single session with all threads
+  app.get("/api/follow-up/sessions/:id", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const sessionWithThreads = await storage.getFollowUpSessionWithThreads(id);
+
+    if (!sessionWithThreads) {
+      throw ServerError.notFound("Follow-up session");
+    }
+
+    res.json(createApiSuccessResponse(sessionWithThreads, "Sessie succesvol opgehaald"));
+  }));
+
+  // Create new session
+  app.post("/api/follow-up/sessions", asyncHandler(async (req: Request, res: Response) => {
+    const validatedData = insertFollowUpSessionSchema.parse(req.body);
+    const session = await storage.createFollowUpSession(validatedData);
+    res.json(createApiSuccessResponse(session, "Sessie succesvol aangemaakt"));
+  }));
+
+  // Delete session (cascade deletes threads)
+  app.delete("/api/follow-up/sessions/:id", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    // Check if session exists
+    const session = await storage.getFollowUpSession(id);
+    if (!session) {
+      throw ServerError.notFound("Follow-up session");
+    }
+
+    await storage.deleteFollowUpSession(id);
+    res.json(createApiSuccessResponse(null, "Sessie succesvol verwijderd"));
+  }));
+
+  // Add thread to existing session
+  app.post("/api/follow-up/sessions/:id/threads", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    // Check if session exists
+    const session = await storage.getFollowUpSession(id);
+    if (!session) {
+      throw ServerError.notFound("Follow-up session");
+    }
+
+    const validatedData = insertFollowUpThreadSchema.parse({
+      ...req.body,
+      sessionId: id,
+    });
+
+    const thread = await storage.createFollowUpThread(validatedData);
+    res.json(createApiSuccessResponse(thread, "Thread succesvol toegevoegd"));
+  }));
 
 
   // Register streaming routes
