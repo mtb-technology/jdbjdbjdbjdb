@@ -1,5 +1,5 @@
-import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig } from "@shared/schema";
-import { users, reports, sources, promptConfigs } from "@shared/schema";
+import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread } from "@shared/schema";
+import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql } from "drizzle-orm";
 import * as fs from "fs";
@@ -9,7 +9,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+
   getReport(id: string): Promise<Report | undefined>;
   getAllReports(options?: {
     page?: number;
@@ -21,16 +21,27 @@ export interface IStorage {
   updateReport(id: string, report: Partial<Report>): Promise<Report | undefined>;
   updateReportStatus(id: string, status: string): Promise<void>;
   deleteReport(id: string): Promise<void>;
-  
+
   getSource(id: string): Promise<Source | undefined>;
   getAllSources(): Promise<Source[]>;
   createSource(source: InsertSource): Promise<Source>;
-  
+
   getPromptConfig(id: string): Promise<PromptConfigRecord | undefined>;
   getActivePromptConfig(): Promise<PromptConfigRecord | undefined>;
   getAllPromptConfigs(): Promise<PromptConfigRecord[]>;
   createPromptConfig(config: InsertPromptConfig): Promise<PromptConfigRecord>;
   updatePromptConfig(id: string, config: Partial<PromptConfigRecord>): Promise<PromptConfigRecord | undefined>;
+
+  // Follow-up sessions
+  getFollowUpSession(id: string): Promise<FollowUpSession | undefined>;
+  getAllFollowUpSessions(): Promise<FollowUpSession[]>;
+  getFollowUpSessionWithThreads(id: string): Promise<(FollowUpSession & { threads: FollowUpThread[] }) | undefined>;
+  createFollowUpSession(session: InsertFollowUpSession): Promise<FollowUpSession>;
+  deleteFollowUpSession(id: string): Promise<void>;
+
+  // Follow-up threads
+  createFollowUpThread(thread: InsertFollowUpThread): Promise<FollowUpThread>;
+  getThreadsForSession(sessionId: string): Promise<FollowUpThread[]>;
 }
 
 // DatabaseStorage - permanente opslag in PostgreSQL
@@ -169,7 +180,62 @@ export class DatabaseStorage implements IStorage {
 
   async getActivePromptConfig(): Promise<PromptConfigRecord | undefined> {
     const [config] = await db.select().from(promptConfigs).where(eq(promptConfigs.isActive, true));
+
+    if (config) {
+      // Validate that there are no placeholder prompts
+      this.validatePromptConfig(config);
+    }
+
     return config || undefined;
+  }
+
+  /**
+   * Validate that prompt config has no placeholder prompts
+   * THROWS errors for missing/placeholder prompts - NO SOFT WARNINGS!
+   * Quality depends on proper configuration, so we fail hard.
+   */
+  private validatePromptConfig(config: PromptConfigRecord): void {
+    const configData = config.config as any;
+    const criticalStages = [
+      '1_informatiecheck',
+      '2_complexiteitscheck',
+      '3_generatie',
+      'editor'  // Editor is CRITICAL for feedback processing
+    ];
+
+    const errors: string[] = [];
+
+    for (const stage of criticalStages) {
+      const stageConfig = configData[stage];
+
+      if (!stageConfig || !stageConfig.prompt) {
+        errors.push(`Stage "${stage}" heeft geen prompt geconfigureerd`);
+        continue;
+      }
+
+      const prompt = stageConfig.prompt.trim();
+
+      if (prompt.length === 0) {
+        errors.push(`Stage "${stage}" heeft een lege prompt`);
+        continue;
+      }
+
+      // Check for placeholder text - FAIL HARD
+      if (prompt.includes('PLACEHOLDER') || prompt.toLowerCase().includes('voer hier')) {
+        errors.push(`Stage "${stage}" bevat nog PLACEHOLDER tekst - moet worden vervangen met een echte prompt`);
+      }
+    }
+
+    // If there are errors, throw with clear instructions
+    if (errors.length > 0) {
+      throw new Error(
+        `❌ PROMPT CONFIGURATIE INCOMPLETE:\n\n` +
+        errors.map(e => `  • ${e}`).join('\n') +
+        `\n\n` +
+        `Ga naar Settings en configureer alle ontbrekende prompts. ` +
+        `Het systeem kan niet draaien met incomplete prompt configuratie.`
+      );
+    }
   }
 
   async getAllPromptConfigs(): Promise<PromptConfigRecord[]> {
@@ -323,6 +389,61 @@ export class DatabaseStorage implements IStorage {
       };
     }
   }
+
+  // Follow-up session methods
+  async getFollowUpSession(id: string): Promise<FollowUpSession | undefined> {
+    const [session] = await db.select().from(followUpSessions).where(eq(followUpSessions.id, id));
+    return session || undefined;
+  }
+
+  async getAllFollowUpSessions(): Promise<FollowUpSession[]> {
+    return await db.select().from(followUpSessions).orderBy(desc(followUpSessions.createdAt));
+  }
+
+  async getFollowUpSessionWithThreads(id: string): Promise<(FollowUpSession & { threads: FollowUpThread[] }) | undefined> {
+    const session = await this.getFollowUpSession(id);
+    if (!session) return undefined;
+
+    const threads = await this.getThreadsForSession(id);
+    return {
+      ...session,
+      threads
+    };
+  }
+
+  async createFollowUpSession(insertSession: InsertFollowUpSession): Promise<FollowUpSession> {
+    const [session] = await db.insert(followUpSessions).values(insertSession).returning();
+    return session;
+  }
+
+  async deleteFollowUpSession(id: string): Promise<void> {
+    // Cascade delete will handle threads automatically
+    await db.delete(followUpSessions).where(eq(followUpSessions.id, id));
+  }
+
+  // Follow-up thread methods
+  async createFollowUpThread(insertThread: InsertFollowUpThread): Promise<FollowUpThread> {
+    const [thread] = await db.insert(followUpThreads).values(insertThread).returning();
+    return thread;
+  }
+
+  async getThreadsForSession(sessionId: string): Promise<FollowUpThread[]> {
+    return await db.select().from(followUpThreads)
+      .where(eq(followUpThreads.sessionId, sessionId))
+      .orderBy(followUpThreads.createdAt);
+  }
 }
 
 export const storage = new DatabaseStorage();
+
+/**
+ * Helper function to get active prompt config
+ * Convenience export for use in other modules
+ */
+export async function getActivePromptConfig() {
+  const config = await storage.getActivePromptConfig();
+  if (!config) {
+    throw new Error('No active prompt configuration found');
+  }
+  return config.config as any; // Cast to PromptConfig type
+}

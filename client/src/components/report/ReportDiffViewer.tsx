@@ -1,24 +1,28 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  Maximize2, 
+import {
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
   Minimize2,
   Eye,
   Download,
-  GitCompare
+  GitCompare,
+  Loader2
 } from "lucide-react";
-import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
+
+// Lazy load the heavy diff viewer library (150 KB) - only loads when user opens Timeline tab
+const ReactDiffViewer = lazy(() => import('react-diff-viewer-continued').then(module => ({ default: module.default })));
+const DiffMethod = { WORDS: 'WORDS' as const };
 
 interface ReportVersion {
   version: number;
@@ -263,50 +267,57 @@ export function ReportDiffViewer({
 
       <CardContent>
         <div className="border rounded-lg overflow-hidden">
-          <ReactDiffViewer
-            oldValue={oldContent}
-            newValue={newContent}
-            splitView={viewMode === 'split'}
-            compareMethod={DiffMethod.WORDS}
-            leftTitle={`Versie ${oldVersion} - ${oldVersionInfo?.stageName}`}
-            rightTitle={`Versie ${newVersion} - ${newVersionInfo?.stageName}`}
-            styles={{
-              variables: {
-                light: {
-                  diffViewerBackground: '#ffffff',
-                  diffViewerColor: '#000000',
-                  addedBackground: '#e6ffed',
-                  addedColor: '#24292e',
-                  removedBackground: '#ffeef0',
-                  removedColor: '#24292e',
-                  wordAddedBackground: '#acf2bd',
-                  wordRemovedBackground: '#fdb8c0',
-                  addedGutterBackground: '#cdffd8',
-                  removedGutterBackground: '#ffdce0',
-                  gutterBackground: '#f6f8fa',
-                  gutterBackgroundDark: '#f0f0f0',
-                  highlightBackground: '#fffbdd',
-                  highlightGutterBackground: '#fff5b1',
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="ml-3 text-sm text-muted-foreground">Diff viewer laden...</span>
+            </div>
+          }>
+            <ReactDiffViewer
+              oldValue={oldContent}
+              newValue={newContent}
+              splitView={viewMode === 'split'}
+              compareMethod={DiffMethod.WORDS}
+              leftTitle={`Versie ${oldVersion} - ${oldVersionInfo?.stageName}`}
+              rightTitle={`Versie ${newVersion} - ${newVersionInfo?.stageName}`}
+              styles={{
+                variables: {
+                  light: {
+                    diffViewerBackground: '#ffffff',
+                    diffViewerColor: '#000000',
+                    addedBackground: '#e6ffed',
+                    addedColor: '#24292e',
+                    removedBackground: '#ffeef0',
+                    removedColor: '#24292e',
+                    wordAddedBackground: '#acf2bd',
+                    wordRemovedBackground: '#fdb8c0',
+                    addedGutterBackground: '#cdffd8',
+                    removedGutterBackground: '#ffdce0',
+                    gutterBackground: '#f6f8fa',
+                    gutterBackgroundDark: '#f0f0f0',
+                    highlightBackground: '#fffbdd',
+                    highlightGutterBackground: '#fff5b1',
+                  },
+                  dark: {
+                    diffViewerBackground: '#1e1e1e',
+                    diffViewerColor: '#e8e8e8',
+                    addedBackground: '#044B53',
+                    addedColor: '#e8e8e8',
+                    removedBackground: '#632F34',
+                    removedColor: '#e8e8e8',
+                    wordAddedBackground: '#055d67',
+                    wordRemovedBackground: '#7d383f',
+                    addedGutterBackground: '#034148',
+                    removedGutterBackground: '#632b30',
+                    gutterBackground: '#2c2c2c',
+                    gutterBackgroundDark: '#262626',
+                    highlightBackground: '#4a4a4a',
+                    highlightGutterBackground: '#3d3d3d',
+                  },
                 },
-                dark: {
-                  diffViewerBackground: '#1e1e1e',
-                  diffViewerColor: '#e8e8e8',
-                  addedBackground: '#044B53',
-                  addedColor: '#e8e8e8',
-                  removedBackground: '#632F34',
-                  removedColor: '#e8e8e8',
-                  wordAddedBackground: '#055d67',
-                  wordRemovedBackground: '#7d383f',
-                  addedGutterBackground: '#034148',
-                  removedGutterBackground: '#632b30',
-                  gutterBackground: '#2c2c2c',
-                  gutterBackgroundDark: '#262626',
-                  highlightBackground: '#4a4a4a',
-                  highlightGutterBackground: '#3d3d3d',
-                },
-              },
-            }}
-          />
+              }}
+            />
+          </Suspense>
         </div>
 
         {/* Quick Actions */}

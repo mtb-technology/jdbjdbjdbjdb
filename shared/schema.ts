@@ -3,12 +3,87 @@ import { pgTable, text, varchar, json, jsonb, timestamp, boolean } from "drizzle
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+/**
+ * ===== DATABASE SCHEMA =====
+ *
+ * Dit bestand definieert de volledige database structuur voor het AI Pipeline Orchestrator systeem.
+ * Het systeem gebruikt Drizzle ORM met PostgreSQL voor type-safe database interacties.
+ *
+ * ## Architectuur Overzicht
+ *
+ * De database ondersteunt een **multi-stage AI workflow** die een fiscaal advies rapport genereert:
+ *
+ * 1. **Reports**: Het 'reizende data-object' - doorloopt alle stages en verzamelt resultaten
+ * 2. **Concept Versioning**: Elk stage kan het concept rapport transformeren (versie tracking)
+ * 3. **Stage Results**: Output van elke specialist (bronnen, fiscaal, vertaling, etc.)
+ * 4. **Prompt Configs**: Configureerbare AI prompts per stage (swap tussen configuraties)
+ * 5. **Jobs**: Asynchrone task tracking voor langlopende AI operaties
+ */
+
+/**
+ * ## USERS TABLE
+ *
+ * **Verantwoordelijkheid**: Authenticatie en gebruikersbeheer
+ *
+ * **Data Flow**:
+ * - Passwords worden gehashed met bcrypt voordat ze worden opgeslagen (zie auth middleware)
+ * - Gebruikt voor session-based authentication
+ *
+ * **Security**:
+ * - Wachtwoorden NOOIT in plaintext opslaan
+ * - Username is uniek (database constraint)
+ */
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
 });
 
+/**
+ * ## REPORTS TABLE - Het "Reizende Data-Object"
+ *
+ * **Verantwoordelijkheid**: Central nervous system van de AI pipeline
+ *
+ * Dit is het **kerntabel** van het hele systeem. Elk rapport is een "dossier"
+ * dat door de lopende band (AI pipeline) reist en bij elke stage wordt verrijkt.
+ *
+ * ### Data Flow (De "Lopende Band"):
+ *
+ * ```
+ * START → Stage 1 (Info Check) → Stage 2 (Complexiteit) → Stage 3 (Generatie)
+ *   ↓
+ * Stage 4a (Bronnen) → 4b (Fiscaal) → 4c (Scenario) → 4d (Vertaler)
+ *   ↓
+ * Stage 4e (Advocaat) → 4f (Psycholoog) → Stage 6 (Summary) → KLAAR
+ * ```
+ *
+ * ### Belangrijke Velden:
+ *
+ * **Input Data** (verzameld bij start):
+ * - `dossierData`: Klant info, fiscale gegevens (de "order" die binnenkomt)
+ * - `bouwplanData`: Rapport structuur configuratie
+ *
+ * **Stage Outputs** (verzameld tijdens flow):
+ * - `stageResults`: AI output per stage (bv. "4a_BronnenSpecialist" → feedback)
+ * - `stagePrompts`: Exacte prompts die naar AI gestuurd zijn (audit trail)
+ * - `substepResults`: Reviewer feedback + processing results
+ *
+ * **Concept Versioning** (het evoluerende rapport):
+ * - `conceptReportVersions`: Versie geschiedenis per stage (voor step-back)
+ * - `generatedContent`: Legacy veld (werd gebruikt voor finaal rapport)
+ *
+ * **Future: Rich Document System** (TipTap-based):
+ * - `documentState`: TipTap JSON voor WYSIWYG editing
+ * - `pendingChanges`: Change proposals van specialists
+ * - `documentSnapshots`: Audit trail van document wijzigingen
+ *
+ * **Status Tracking**:
+ * - `currentStage`: Waar staat het rapport nu? (bv. "4a_BronnenSpecialist")
+ * - `status`: Lifecycle state (draft → processing → generated → exported)
+ *
+ * @see {@link ConceptReportVersions} voor versie tracking structuur
+ * @see {@link StageResults} voor stage output formaat
+ */
 export const reports = pgTable("reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
@@ -17,21 +92,52 @@ export const reports = pgTable("reports", {
   bouwplanData: json("bouwplan_data").notNull(),
   generatedContent: text("generated_content"),
   stageResults: json("stage_results"), // Store stage-specific outputs from each specialist
-  conceptReportVersions: json("concept_report_versions"), // Store evolving concept report through stages (legacy)
+  conceptReportVersions: json("concept_report_versions"), // Store evolving concept report through stages
   substepResults: json("substep_results"), // Store substep results for reviewers (review + processing)
   stagePrompts: json("stage_prompts"), // Store the exact prompts sent to AI for each stage - for input tracking
-  
-  // New document system - structured living document
+
+  // New document system - structured living document (TipTap-based)
   documentState: jsonb("document_state"), // TipTap JSON document state
   pendingChanges: jsonb("pending_changes"), // Structured change proposals from specialists
   documentSnapshots: jsonb("document_snapshots"), // Snapshots per stage for audit trail
-  
+
   currentStage: text("current_stage").default("1_informatiecheck"),
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+/**
+ * ## PROMPT CONFIGS TABLE
+ *
+ * **Verantwoordelijkheid**: Swappable AI prompts - de "programma" voor elke specialist
+ *
+ * Dit systeem maakt A/B testing mogelijk: je kunt meerdere prompt configuraties maken
+ * en switchen tussen ze zonder code te wijzigen.
+ *
+ * ### Gebruik:
+ * 1. Maak een nieuwe config met prompts voor alle stages (1-6, 4a-4f, editor)
+ * 2. Activeer de config → deze wordt gebruikt voor ALLE nieuwe rapporten
+ * 3. Test de resultaten, tweak de prompts, herhaal
+ *
+ * ### Structuur van `config` veld:
+ * ```typescript
+ * {
+ *   "1_informatiecheck": { prompt: "...", useGrounding: false },
+ *   "2_complexiteitscheck": { prompt: "...", useGrounding: false },
+ *   "4a_BronnenSpecialist": { prompt: "...", useGrounding: true },
+ *   // ... etc voor alle stages
+ *   aiConfig: { provider: "google", model: "gemini-2.5-pro", ... }
+ * }
+ * ```
+ *
+ * **Voordelen**:
+ * - Versie controle van prompts (elk rapport weet welke config gebruikt is)
+ * - Rollback mogelijk (switch terug naar oude config)
+ * - Experimentatie zonder downtime
+ *
+ * @see {@link PromptConfig} voor het complete schema
+ */
 export const promptConfigs = pgTable("prompt_configs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull().unique(),
@@ -41,6 +147,21 @@ export const promptConfigs = pgTable("prompt_configs", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+/**
+ * ## SOURCES TABLE
+ *
+ * **Verantwoordelijkheid**: Bronnen database voor AI grounding en verificatie
+ *
+ * Wanneer AI stages "grounding" gebruiken (vooral Stage 4a - BronnenSpecialist),
+ * zoeken ze in deze database naar relevante juridische/fiscale bronnen.
+ *
+ * ### Gebruik in AI Pipeline:
+ * - Stage 4a (BronnenSpecialist) gebruikt deze bronnen voor fact-checking
+ * - Verificatie van fiscale claims en juridische statements
+ * - Toevoegen van bronverwijzingen aan het rapport
+ *
+ * **Future Enhancement**: Automatische crawling en verificatie van bronnen
+ */
 export const sources = pgTable("sources", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
@@ -50,6 +171,34 @@ export const sources = pgTable("sources", {
   lastChecked: timestamp("last_checked").defaultNow(),
 });
 
+/**
+ * ## JOBS TABLE
+ *
+ * **Verantwoordelijkheid**: Async task tracking voor langlopende AI operaties
+ *
+ * AI stages kunnen minuten (of langer) duren. Jobs maken het mogelijk om:
+ * - Progress tracking (welke stage wordt nu uitgevoerd?)
+ * - Error handling (wat ging er mis en waarom?)
+ * - Retry logic (opnieuw proberen bij failures)
+ * - User feedback (real-time updates in de UI)
+ *
+ * ### Lifecycle:
+ * ```
+ * queued → processing → completed (success)
+ *                    ↓
+ *                   failed (error) → retry → queued
+ * ```
+ *
+ * ### Progress Tracking:
+ * Het `progress` veld bevat JSON zoals:
+ * ```json
+ * {
+ *   "currentStage": "4b_FiscaalTechnischSpecialist",
+ *   "completedStages": ["1_informatiecheck", "2_complexiteitscheck", "3_generatie", "4a_BronnenSpecialist"],
+ *   "percentage": 65
+ * }
+ * ```
+ */
 export const jobs = pgTable("jobs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   type: text("type").notNull(), // "report_generation"
@@ -60,6 +209,28 @@ export const jobs = pgTable("jobs", {
   error: text("error"), // Error message if failed
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Follow-up Assistant Sessions
+export const followUpSessions = pgTable("follow_up_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").references(() => reports.id), // Optional: link to original report
+  clientName: text("client_name").notNull(),
+  dossierData: jsonb("dossier_data").notNull(), // Stored once per session
+  rapportContent: text("rapport_content").notNull(), // Stored once per session
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Follow-up Email Threads (multiple per session)
+export const followUpThreads = pgTable("follow_up_threads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => followUpSessions.id, { onDelete: 'cascade' }),
+  emailThread: text("email_thread").notNull(), // The customer's email(s)
+  aiAnalysis: jsonb("ai_analysis").notNull(), // { vraag_van_klant, scope_status, inhoudelijke_samenvatting_antwoord }
+  conceptEmail: jsonb("concept_email").notNull(), // { onderwerp, body }
+  threadNumber: text("thread_number"), // e.g., "1", "2", "3" for ordering
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -90,6 +261,9 @@ export const dossierSchema = z.object({
     .datetime("Datum moet een geldige ISO datetime zijn")
     .optional()
     .or(z.literal("")),
+  // ✅ rawText: Alleen nodig in Stage 1 (informatiecheck), daarna niet meer
+  // Wordt gefilterd in buildReviewerData() om niet in Stage 4+ validatie te komen
+  rawText: z.string().optional(),
 }).strict();
 
 export const bouwplanSchema = z.object({
@@ -298,26 +472,109 @@ export const insertJobSchema = createInsertSchema(jobs).omit({
   completedAt: true,
 });
 
+/**
+ * ===== CORE TYPE EXPORTS =====
+ *
+ * Deze types worden afgeleid van de Zod schemas en Drizzle tables hierboven.
+ * Ze zorgen voor type-safety door de hele applicatie (client + server).
+ */
+
+/** User types - voor authenticatie en sessies */
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+/** Report types - het 'reizende data-object' in de pipeline */
 export type Report = typeof reports.$inferSelect;
 export type InsertReport = z.infer<typeof insertReportSchema>;
+
+/** Source types - bronnen voor grounding/verificatie */
 export type Source = typeof sources.$inferSelect;
 export type InsertSource = z.infer<typeof insertSourceSchema>;
+
+/** Prompt configuration types - swappable AI prompts per stage */
 export type InsertPromptConfig = z.infer<typeof insertPromptConfigSchema>;
+export type PromptConfigRecord = typeof promptConfigs.$inferSelect;
+export type PromptConfig = z.infer<typeof promptConfigSchema>;
+
+/** Job types - async task tracking */
 export type Job = typeof jobs.$inferSelect;
 export type InsertJob = z.infer<typeof insertJobSchema>;
+
+/**
+ * Dossier input schema - de initiële klant data die het systeem ontvangt
+ * BELANGRIJK: Dit is NIET hetzelfde als BouwplanData (dat is Stage 2 output)
+ */
 export type DossierData = z.infer<typeof dossierSchema>;
-export type BouwplanData = z.infer<typeof bouwplanSchema>;
-export type PromptConfig = z.infer<typeof promptConfigSchema>;
+
+/** AI configuration types */
 export type AiConfig = z.infer<typeof aiConfigSchema>;
 export type StageConfig = z.infer<typeof stageConfigSchema>;
+
+/** Stage execution tracking */
 export type ReportStage = z.infer<typeof reportStageSchema>;
-export type PromptConfigRecord = typeof promptConfigs.$inferSelect;
 
-// ===== STRUCTURED CONCEPT REPORT VERSIONING SYSTEM =====
+// NOTE: BouwplanData type is exported later (line ~510) from bouwplanDataSchema
+// (the AI-generated output from Stage 2), distinct from bouwplanSchema (user input)
 
-// Stage identifier for the workflow - matching promptConfig names
+/**
+ * ===== STRUCTURED CONCEPT REPORT VERSIONING SYSTEM =====
+ *
+ * ## KRITIEKE ARCHITECTUUR COMPONENT
+ *
+ * Dit systeem is de **sleutel tot onderhoudbaarheid** van de AI pipeline.
+ * Het lost een fundamenteel probleem op: "Hoe weet ik wat elke AI specialist heeft veranderd?"
+ *
+ * ### Het Probleem (Zonder Versioning):
+ * ```
+ * Stage 3 genereert rapport v1 (5000 woorden)
+ *   ↓
+ * Stage 4a voegt bronnen toe → rapport v2 (5200 woorden)
+ *   ↓
+ * Stage 4b verbetert fiscaal → rapport v3 (5300 woorden)
+ *   ↓
+ * Probleem: Wat is het verschil tussen v2 en v3? Wat deed 4b precies?
+ * Probleem: Kan ik terug naar v2? (Step-back functionality)
+ * ```
+ *
+ * ### De Oplossing (Met Versioning):
+ * Elk stage slaat een **snapshot** op van het concept rapport OP DAT MOMENT:
+ *
+ * ```typescript
+ * conceptReportVersions: {
+ *   "3_generatie": { v: 1, content: "...", createdAt: "..." },
+ *   "4a_BronnenSpecialist": { v: 2, content: "...", from: "3_generatie", processedFeedback: "..." },
+ *   "4b_FiscaalTechnischSpecialist": { v: 3, content: "...", from: "4a_BronnenSpecialist", processedFeedback: "..." },
+ *   latest: { pointer: "4b_FiscaalTechnischSpecialist", v: 3 }
+ * }
+ * ```
+ *
+ * ### Voordelen:
+ * 1. **Audit Trail**: Zie exact wat elke specialist heeft veranderd
+ * 2. **Step-Back**: Keer terug naar een eerdere versie als een specialist iets verpest
+ * 3. **Debugging**: Begrijp waarom het finale rapport er zo uitziet
+ * 4. **Re-processing**: Run een stage opnieuw met nieuwe prompts (version increment)
+ *
+ * ### Data Flow Voorbeeld:
+ * ```
+ * Gebruiker drukt "Execute Stage 4a"
+ *   ↓
+ * 1. Haal base concept op (van "3_generatie" snapshot)
+ * 2. AI voert 4a uit → feedback
+ * 3. ReportProcessor merget feedback met base concept → nieuwe versie
+ * 4. Sla snapshot op: conceptReportVersions["4a_BronnenSpecialist"] = { v: 2, content: "...", from: "3_generatie" }
+ * 5. Update latest pointer: latest = { pointer: "4a_BronnenSpecialist", v: 2 }
+ * ```
+ *
+ * @see {@link ReportProcessor} voor de merge logica
+ * @see {@link ConceptReportSnapshot} voor snapshot structuur
+ */
+
+/**
+ * Stage identifiers - komt overeen met promptConfig namen
+ *
+ * Deze enum definieert ALLE mogelijke stages in de workflow.
+ * Elke stage kan een snapshot van het concept rapport opslaan.
+ */
 export const stageIdSchema = z.enum([
   "1_informatiecheck",
   "2_bouwplananalyse",
@@ -396,19 +653,63 @@ export type StageResults = z.infer<typeof stageResultsSchema>;
 export type ReportProcessorInput = z.infer<typeof reportProcessorInputSchema>;
 export type ReportProcessorOutput = z.infer<typeof reportProcessorOutputSchema>;
 
-// ===== STAGE 1: INFORMATIECHECK STRUCTURED OUTPUT =====
+/**
+ * ===== STAGE 1: INFORMATIECHECK STRUCTURED OUTPUT =====
+ *
+ * ## De "Poortwachter" van de Pipeline
+ *
+ * Stage 1 is de EERSTE controle: heeft de klant alle benodigde informatie verstrekt?
+ *
+ * ### Gedrag:
+ *
+ * **Scenario A: INCOMPLEET** (ontbrekende informatie)
+ * ```json
+ * {
+ *   "status": "INCOMPLEET",
+ *   "email_subject": "Aanvullende informatie nodig voor uw advies",
+ *   "email_body": "<p>Beste klant, we missen de volgende informatie: ...</p>"
+ * }
+ * ```
+ * → De pipeline **STOPT** hier. Gebruiker moet de e-mail versturen en wachten op antwoord.
+ * → Stage 2-6 zijn GEBLOKKEERD tot Stage 1 opnieuw wordt uitgevoerd met complete info.
+ *
+ * **Scenario B: COMPLEET** (alle informatie aanwezig)
+ * ```json
+ * {
+ *   "status": "COMPLEET",
+ *   "dossier": {
+ *     "samenvatting_onderwerp": "Klant heeft vraag over box 3 heffing na emigratie",
+ *     "klantvraag_verbatim": ["Wat zijn de fiscale gevolgen als ik naar Spanje verhuis?"],
+ *     "gestructureerde_data": { ... }
+ *   }
+ * }
+ * ```
+ * → De pipeline mag DOORGAAN naar Stage 2 (Complexiteitscheck).
+ *
+ * ### Waarom deze structuur?
+ * - **Automatische kwaliteitscontrole**: Voorkomt incomplete rapporten
+ * - **Client interactie**: Genereert kant-en-klare e-mail voor ontbrekende info
+ * - **Data extractie**: AI haalt gestructureerde data uit ruwe tekst
+ *
+ * @see {@link parseInformatieCheckOutput} in workflowParsers.ts voor parsing logic
+ * @see {@link isInformatieCheckComplete} voor blokkeer logica
+ */
 
-// Schema for Stage 1 (Informatiecheck) structured JSON output
+/**
+ * Schema voor Stage 1 (Informatiecheck) JSON output
+ *
+ * De AI MOET deze exacte structuur teruggeven (geen vrije tekst).
+ */
 export const informatieCheckOutputSchema = z.object({
   status: z.enum(["COMPLEET", "INCOMPLEET"], {
     errorMap: () => ({ message: "Status moet 'COMPLEET' of 'INCOMPLEET' zijn" })
   }),
 
-  // For INCOMPLEET status - email to client
+  // Voor INCOMPLEET status - e-mail naar klant
   email_subject: z.string().optional(),
   email_body: z.string().optional(), // HTML formatted email body
 
-  // For COMPLEET status - generated dossier
+  // Voor COMPLEET status - gegenereerd dossier
   dossier: z.object({
     samenvatting_onderwerp: z.string(),
     klantvraag_verbatim: z.array(z.string()),
@@ -456,3 +757,26 @@ export const bouwplanDataSchema = z.object({
 }).strict();
 
 export type BouwplanData = z.infer<typeof bouwplanDataSchema>;
+
+// ===== FOLLOW-UP ASSISTANT TYPES =====
+
+// TypeScript types for Follow-up Sessions
+export type FollowUpSession = typeof followUpSessions.$inferSelect;
+export type InsertFollowUpSession = typeof followUpSessions.$inferInsert;
+
+export type FollowUpThread = typeof followUpThreads.$inferSelect;
+export type InsertFollowUpThread = typeof followUpThreads.$inferInsert;
+
+// Zod schemas for validation
+export const insertFollowUpSessionSchema = createInsertSchema(followUpSessions, {
+  clientName: z.string().min(1, "Client naam is verplicht"),
+  dossierData: z.any(), // Will be validated as JSON
+  rapportContent: z.string().min(1, "Rapport content is verplicht"),
+});
+
+export const insertFollowUpThreadSchema = createInsertSchema(followUpThreads, {
+  sessionId: z.string().uuid("Ongeldige session ID"),
+  emailThread: z.string().min(1, "E-mail thread is verplicht"),
+  aiAnalysis: z.any(), // Will be validated as JSON
+  conceptEmail: z.any(), // Will be validated as JSON
+});

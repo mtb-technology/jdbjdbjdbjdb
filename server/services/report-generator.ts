@@ -85,6 +85,44 @@ export class ReportGenerator {
     }
   }
 
+  // Generate content with custom prompt (for Follow-up Assistant)
+  async generateWithCustomPrompt(params: {
+    systemPrompt: string;
+    userPrompt: string;
+    model: string;
+  }): Promise<string> {
+    const { systemPrompt, userPrompt, model } = params;
+
+    // Determine provider from model name
+    const provider = model.startsWith("gpt") || model.startsWith("o3") ? "openai" : "google";
+
+    const aiConfig: AiConfig = {
+      provider,
+      model,
+      temperature: 0.1,
+      topP: 0.95,
+      topK: 20,
+      maxOutputTokens: 8192
+    };
+
+    try {
+      // Build the full prompt (system + user)
+      const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+
+      const response = await this.modelFactory.callModel(aiConfig, fullPrompt, {
+        jobId: "follow-up-assistant"
+      });
+
+      return response.content;
+    } catch (error: any) {
+      console.error('Custom prompt generation error:', error);
+      throw ServerError.ai(
+        'AI kon geen antwoord genereren. Controleer de configuratie en probeer het opnieuw.',
+        { model, error: error.message }
+      );
+    }
+  }
+
   // Extract dossier data from raw text using AI
   async extractDossierData(rawText: string): Promise<any> {
     if (!rawText || rawText.trim().length === 0) {
@@ -258,6 +296,32 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     }
 
     return prompt;
+  }
+
+  /**
+   * Generate prompt for a stage without executing AI
+   */
+  async generatePromptOnly(
+    stageName: string,
+    dossier: DossierData,
+    bouwplan: BouwplanData,
+    previousStageResults: Record<string, string>,
+    conceptReportVersions: Record<string, any>
+  ): Promise<string> {
+    const promptResult = await this.generatePromptForStage(
+      stageName,
+      dossier,
+      bouwplan,
+      previousStageResults,
+      conceptReportVersions
+    );
+
+    // Convert prompt to string
+    const promptString = typeof promptResult === 'string'
+      ? promptResult
+      : `${promptResult.systemPrompt}\n\n### USER INPUT:\n${promptResult.userInput}`;
+
+    return promptString;
   }
 
   async executeStage(
@@ -479,7 +543,7 @@ ${errorGuidance}
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt(stageName, stageConfig);
     return this.promptBuilder.build(stageName, stageConfig, () =>
-      this.promptBuilder.buildReviewerData(previousStageResults || {}, dossier, bouwplan)
+      this.promptBuilder.buildReviewerData(conceptReport, dossier, bouwplan)
     );
   }
 
@@ -505,8 +569,11 @@ ${errorGuidance}
   ): string {
     this.validateStagePrompt("editor", stageConfig);
 
-    // Get concept versions for editor context
-    const conceptVersions = {};  // This will be populated by the caller if needed
+    // Build concept versions object with the current report text
+    const conceptVersions = {
+      '3_generatie': currentReportText,
+      latest: currentReportText
+    };
 
     return this.promptBuilder.buildCombined("5_eindredactie", stageConfig, () =>
       this.promptBuilder.buildEditorData(previousStageResults, conceptVersions)

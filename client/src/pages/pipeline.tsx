@@ -1,10 +1,11 @@
-import { useState, useCallback, memo } from "react";
+import { useState, useCallback, memo, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Play, Zap, FolderOpen, Menu, Loader2, CheckCircle, Target } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Play, Zap, FolderOpen, Menu, Loader2, CheckCircle, Target, Upload, X, FileText } from "lucide-react";
 import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import WorkflowInterface from "@/components/workflow-interface";
@@ -19,8 +20,11 @@ const Pipeline = memo(function Pipeline() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [createdReport, setCreatedReport] = useState<Report | null>(null);
   const [isCreatingCase, setIsCreatingCase] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{name: string, size: number}>>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
-  const { toast } = useToast();
+  const { toast} = useToast();
 
   
   // Direct workflow data
@@ -37,9 +41,79 @@ const Pipeline = memo(function Pipeline() {
     setFinalReport(report.generatedContent || "");
   }, []);
 
+  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+
+    // Add all files to FormData
+    Array.from(files).forEach(file => {
+      formData.append('files', file);
+    });
+
+    try {
+      const response = await fetch('/api/upload/extract-text-batch', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Upload mislukt');
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.data.results) {
+        // Combine all extracted texts
+        const combinedText = data.data.results
+          .map((result: any) => result.extractedText)
+          .join('\n\n');
+
+        // Append to existing text or set new text
+        setRawText(prev => {
+          if (prev.trim()) {
+            return prev + '\n\n' + combinedText;
+          }
+          return combinedText;
+        });
+
+        // Track uploaded files
+        setUploadedFiles(data.data.results.map((r: any) => ({
+          name: r.filename,
+          size: r.characterCount
+        })));
+
+        toast({
+          title: "Bestanden verwerkt",
+          description: `${data.data.successful} bestand(en) succesvol ingelezen`,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Upload mislukt",
+        description: error.message || "Er ging iets mis bij het uploaden",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [toast]);
+
+  const handleRemoveFile = useCallback((fileName: string) => {
+    setUploadedFiles(prev => prev.filter(f => f.name !== fileName));
+    // Note: We don't remove the text from rawText as user might have edited it
+  }, []);
+
   const startWorkflow = useCallback(async () => {
     if (!rawText.trim()) return;
-    
+
     setIsCreatingCase(true);
     try {
       // Create the case immediately when "Start Case" is clicked
@@ -57,12 +131,12 @@ const Pipeline = memo(function Pipeline() {
 
       setCreatedReport(report);
       setShowWorkflow(true);
-      
+
       toast({
         title: "Case aangemaakt",
         description: `Nieuwe case "${report.title}" is succesvol opgeslagen`,
       });
-      
+
     } catch (error: any) {
       console.error('Failed to create case:', error);
       toast({
@@ -96,6 +170,9 @@ const Pipeline = memo(function Pipeline() {
                 <Link href="/cases" className="text-muted-foreground hover:text-foreground" data-testid="nav-cases">
                   Cases
                 </Link>
+                <Link href="/assistant" className="text-muted-foreground hover:text-foreground" data-testid="nav-assistant">
+                  Assistent
+                </Link>
                 <Link href="/settings" className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
                   Instellingen
                 </Link>
@@ -118,6 +195,9 @@ const Pipeline = memo(function Pipeline() {
                     </Link>
                     <Link href="/cases" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-cases">
                       Cases
+                    </Link>
+                    <Link href="/assistant" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-assistant">
+                      Assistent
                     </Link>
                     <Link href="/settings" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-settings">
                       Instellingen
@@ -197,11 +277,63 @@ const Pipeline = memo(function Pipeline() {
             </CardHeader>
             <CardContent className="space-y-6 p-8">
               <div className="space-y-3">
-                <label className="text-sm font-medium text-foreground">Fiscale Input</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-foreground">Fiscale Input</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.txt"
+                      multiple
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploading}
+                      className="gap-2"
+                    >
+                      {isUploading ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Verwerken...</>
+                      ) : (
+                        <><Upload className="h-4 w-4" /> Upload PDF/TXT</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Uploaded files badges */}
+                {uploadedFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {uploadedFiles.map((file) => (
+                      <Badge key={file.name} variant="secondary" className="gap-2 pr-1">
+                        <FileText className="h-3 w-3" />
+                        <span className="text-xs">{file.name}</span>
+                        <button
+                          onClick={() => handleRemoveFile(file.name)}
+                          className="ml-1 hover:bg-muted rounded-sm p-0.5"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
                 <Textarea
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
-                  placeholder="Voer hier uw fiscale vraagstuk in:\n\n• Klantsituatie en concrete vraag\n• Relevante feiten en bedragen\n• Specifieke fiscale overwegingen\n\nVoorbeeld: 'Mijn klant (DGA) wil zijn BV omzetten naar een holding...'"
+                  placeholder="Plak hier de klant conversatie en/of relevante documenten, of upload PDF/TXT bestanden...
+
+• Klantsituatie en concrete vraag
+• Email correspondentie
+• Relevante feiten en bedragen
+• Specifieke fiscale overwegingen
+
+De AI herkent automatisch alle relevante informatie uit je input."
                   className="min-h-40 resize-none border-primary/20 focus:border-primary/40 bg-background/50"
                   data-testid="textarea-raw-input"
                 />

@@ -10,7 +10,8 @@ import {
   PenTool,
   CheckCircle,
   FileText,
-  GitCompare
+  GitCompare,
+  Edit3
 } from "lucide-react";
 
 export interface WorkflowStage {

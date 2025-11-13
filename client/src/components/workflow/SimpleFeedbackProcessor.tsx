@@ -25,7 +25,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import type { ProcessFeedbackRequest, ProcessFeedbackResponse } from '@shared/types/api';
 import { ChangeProposalCard, ChangeProposalBulkActions, type ChangeProposal } from './ChangeProposalCard';
-import { parseFeedbackToProposals, serializeProposals } from '@/lib/parse-feedback';
+import { parseFeedbackToProposals, serializeProposals, serializeProposalsToJSON } from '@/lib/parse-feedback';
 
 interface SimpleFeedbackProcessorProps {
   reportId: string;
@@ -86,7 +86,7 @@ export function SimpleFeedbackProcessor({
     return serializeProposals(proposals);
   }, [proposals, hasDecisions]);
 
-  // Retry function with exponential backoff
+  // ✅ FIX #6: Retry function with exponential backoff + jitter (prevent thundering herd)
   const retryWithBackoff = async <T,>(
     fn: () => Promise<T>,
     maxAttempts: number = 3,
@@ -106,14 +106,20 @@ export function SimpleFeedbackProcessor({
           if (attempt === maxAttempts) {
             throw error; // Last attempt failed
           }
-          
+
           // Calculate delay with exponential backoff: 1s, 2s, 4s
           const delay = baseDelay * Math.pow(2, attempt - 1);
-          console.log(`🔄 Retry attempt ${attempt}/${maxAttempts} after ${delay}ms delay`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+
+          // Add jitter (0-30% random variation) to prevent thundering herd problem
+          // If multiple users retry at the same time, jitter spreads out the retries
+          const jitter = Math.random() * delay * 0.3; // 0-30% of delay
+          const finalDelay = Math.round(delay + jitter);
+
+          console.log(`🔄 Retry attempt ${attempt}/${maxAttempts} after ${finalDelay}ms delay (base: ${delay}ms + jitter: ${Math.round(jitter)}ms)`);
+          await new Promise(resolve => setTimeout(resolve, finalDelay));
           continue;
         }
-        
+
         throw error; // Don't retry other types of errors
       }
     }
@@ -199,10 +205,18 @@ export function SimpleFeedbackProcessor({
       if (instructions.trim()) {
         params.append('userInstructions', instructions);
       }
-      
+
       const response = await fetch(`/api/reports/${reportId}/stage/${stageId}/prompt-preview?${params.toString()}`);
       if (!response.ok) {
-        throw new Error('Failed to fetch prompt preview');
+        // Try to extract error details from response
+        let errorMessage = 'Failed to fetch prompt preview';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error?.userMessage || errorData.error?.message || errorMessage;
+        } catch (e) {
+          // If parsing fails, use default message
+        }
+        throw new Error(errorMessage);
       }
       const data = await response.json();
       return data.data; // Assuming the API returns { success: true, data: PromptPreviewResponse }
@@ -234,7 +248,12 @@ export function SimpleFeedbackProcessor({
 
   // Handle showing prompt preview
   const handleShowPreview = () => {
-    const instructions = userInstructions.trim() || "Pas alle feedback toe om het concept rapport te verbeteren. Neem alle suggesties over die de kwaliteit, accuratesse en leesbaarheid van het rapport verbeteren.";
+    // Use the SAME logic as handleProcess to determine instructions
+    const instructionsToUse = viewMode === 'structured' && hasDecisions
+      ? generatedInstructions
+      : userInstructions.trim();
+
+    const instructions = instructionsToUse || "Pas alle feedback toe om het concept rapport te verbeteren. Neem alle suggesties over die de kwaliteit, accuratesse en leesbaarheid van het rapport verbeteren.";
     promptPreviewMutation.mutate(instructions);
     setShowPromptPreview(true);
   };
@@ -284,28 +303,54 @@ export function SimpleFeedbackProcessor({
   };
 
   const handleProcess = () => {
-    const instructionsToUse = viewMode === 'structured' && hasDecisions 
-      ? generatedInstructions 
-      : userInstructions.trim();
+    // In structured mode with decisions, send filtered JSON
+    // In text mode, send user instructions
+    if (viewMode === 'structured') {
+      if (!hasDecisions) {
+        toast({
+          title: "Instructies vereist",
+          description: "Neem beslissingen over de voorstellen of schakel over naar tekst modus",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
 
-    if (!instructionsToUse) {
-      toast({
-        title: "Instructies vereist",
-        description: viewMode === 'structured' 
-          ? "Neem beslissingen over de voorstellen of schakel over naar tekst modus"
-          : "Geef aan welke feedback je wilt verwerken en welke niet",
-        variant: "destructive",
-        duration: 3000,
+      const filteredJSON = serializeProposalsToJSON(proposals);
+
+      console.log(`🔧 Processing feedback for ${stageId} with filtered JSON:`, {
+        acceptedCount: proposals.filter(p => p.userDecision === 'accept').length,
+        modifiedCount: proposals.filter(p => p.userDecision === 'modify').length,
+        rejectedCount: proposals.filter(p => p.userDecision === 'reject').length
       });
-      return;
-    }
 
-    console.log(`🔧 Processing feedback for ${stageId} with instructions:`, instructionsToUse);
-    
-    processFeedbackMutation.mutate({
-      userInstructions: instructionsToUse,
-      processingStrategy: 'merge'
-    });
+      processFeedbackMutation.mutate({
+        userInstructions: "Verwerk wijzigingen", // Minimal - Editor prompt has the real instructions
+        processingStrategy: 'merge',
+        filteredChanges: filteredJSON
+      });
+    } else {
+      // Text mode - use user's free-form instructions
+      const instructionsToUse = userInstructions.trim();
+
+      if (!instructionsToUse) {
+        toast({
+          title: "Instructies vereist",
+          description: "Geef aan welke feedback je wilt verwerken en welke niet",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
+      console.log(`🔧 Processing feedback for ${stageId} with text instructions:`, instructionsToUse);
+
+      processFeedbackMutation.mutate({
+        userInstructions: instructionsToUse,
+        processingStrategy: 'merge'
+        // No filteredChanges - will use raw feedback from backend
+      });
+    }
   };
 
   const copyFeedback = () => {
@@ -475,9 +520,9 @@ export function SimpleFeedbackProcessor({
               
               <div className="flex justify-between items-center mt-2">
                 <p className="text-xs text-muted-foreground">
-                  {userInstructions.length}/2000 karakters
+                  {userInstructions.length}/50000 karakters
                 </p>
-                {userInstructions.length > 2000 && (
+                {userInstructions.length > 50000 && (
                   <p className="text-xs text-red-500">Te veel karakters</p>
                 )}
               </div>
@@ -491,7 +536,7 @@ export function SimpleFeedbackProcessor({
             variant="outline"
             onClick={handleShowPreview}
             disabled={
-              (viewMode === 'text' && (userInstructions.length > 2000 || !userInstructions.trim())) ||
+              (viewMode === 'text' && (userInstructions.length > 50000 || !userInstructions.trim())) ||
               (viewMode === 'structured' && !hasDecisions) ||
               promptPreviewMutation.isPending
             }
@@ -514,7 +559,7 @@ export function SimpleFeedbackProcessor({
           <Button
             onClick={handleProcess}
             disabled={
-              (viewMode === 'text' && (!userInstructions.trim() || userInstructions.length > 2000)) ||
+              (viewMode === 'text' && (!userInstructions.trim() || userInstructions.length > 50000)) ||
               (viewMode === 'structured' && !hasDecisions) ||
               processFeedbackMutation.isPending ||
               hasProcessed

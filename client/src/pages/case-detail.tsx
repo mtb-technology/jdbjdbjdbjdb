@@ -1,11 +1,12 @@
 import { useParams, Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, FileText, Calendar, User, Download, FileDown, GitBranch, Eye, Activity } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, FileText, Calendar, User, Download, FileDown, GitBranch, Eye, Activity, Edit2, Save, X } from "lucide-react";
 import WorkflowInterface from "@/components/workflow-interface";
 import { VersionTimeline } from "@/components/report/VersionTimeline";
 import { ReportDiffViewer } from "@/components/report/ReportDiffViewer";
@@ -20,15 +21,116 @@ export default function CaseDetail() {
   const reportId = params.id;
   const [showFullScreen, setShowFullScreen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("workflow");
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editedTitle, setEditedTitle] = useState("");
+  const [isEditingClient, setIsEditingClient] = useState(false);
+  const [editedClient, setEditedClient] = useState("");
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: report, isLoading, error } = useQuery<Report>({
     queryKey: [`/api/reports/${reportId}`],
     enabled: !!reportId,
-    refetchInterval: 5000, // Auto-refresh every 5 seconds for real-time updates
+    refetchInterval: 2000, // Auto-refresh every 2 seconds for real-time updates
   });
 
+  // Mutation for updating case metadata
+  const updateCaseMutation = useMutation({
+    mutationFn: async (updates: { title?: string; clientName?: string }) => {
+      const response = await fetch(`/api/cases/${reportId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Fout bij updaten');
+      }
+
+      const data = await response.json();
+      return data.data || data;
+    },
+    onMutate: async (updates) => {
+      // Cancel any outgoing refetches to avoid optimistic update being overwritten
+      await queryClient.cancelQueries({ queryKey: [`/api/reports/${reportId}`] });
+
+      // Snapshot the previous value
+      const previousReport = queryClient.getQueryData([`/api/reports/${reportId}`]);
+
+      // Optimistically update to the new value
+      queryClient.setQueryData([`/api/reports/${reportId}`], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          ...updates,
+          updatedAt: new Date().toISOString()
+        };
+      });
+
+      // Return context with the snapshotted value
+      return { previousReport };
+    },
+    onError: (error: Error, variables, context) => {
+      // Rollback to previous value on error
+      if (context?.previousReport) {
+        queryClient.setQueryData([`/api/reports/${reportId}`], context.previousReport);
+      }
+      toast({
+        title: "Fout bij opslaan",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+    onSuccess: async () => {
+      // Refetch immediately to get the updated data from server
+      await queryClient.refetchQueries({ queryKey: [`/api/reports/${reportId}`] });
+
+      // Invalidate all related queries to ensure UI updates everywhere
+      queryClient.invalidateQueries({ queryKey: [`/api/cases/${reportId}`] });
+      // Also invalidate the cases list query (with all filter combinations)
+      queryClient.invalidateQueries({
+        queryKey: ["/api/cases"],
+        exact: false
+      });
+      toast({
+        title: "Succesvol bijgewerkt",
+        description: "De wijzigingen zijn opgeslagen.",
+      });
+      setIsEditingTitle(false);
+      setIsEditingClient(false);
+    },
+  });
+
+  const handleSaveTitle = () => {
+    if (editedTitle.trim() && editedTitle !== report?.title) {
+      updateCaseMutation.mutate({ title: editedTitle.trim() });
+    } else {
+      setIsEditingTitle(false);
+    }
+  };
+
+  const handleSaveClient = () => {
+    if (editedClient.trim() && editedClient !== report?.clientName) {
+      updateCaseMutation.mutate({ clientName: editedClient.trim() });
+    } else {
+      setIsEditingClient(false);
+    }
+  };
+
+  const handleCancelEdit = (type: 'title' | 'client') => {
+    if (type === 'title') {
+      setIsEditingTitle(false);
+      setEditedTitle(report?.title || "");
+    } else {
+      setIsEditingClient(false);
+      setEditedClient(report?.clientName || "");
+    }
+  };
+
   // Transform conceptReportVersions into version timeline format
+  // Uses the history array for accurate chronological versioning
   const versionCheckpoints = useMemo(() => {
     if (!report?.conceptReportVersions) return [];
 
@@ -45,57 +147,88 @@ export default function CaseDetail() {
       '6_change_summary': 'Wijzigingen Samenvatting'
     };
 
-    const versions = Object.keys(report.conceptReportVersions || {})
-      .filter(key => key !== 'latest' && key !== 'history')
-      .map((stageKey, index) => {
-        const versionData = report.conceptReportVersions?.[stageKey];
+    const versions = report.conceptReportVersions as any;
+
+    // Use history array if available (most accurate)
+    const history = versions?.history || [];
+    if (history.length > 0) {
+      const latestPointer = versions?.latest?.pointer;
+      const latestVersion = versions?.latest?.v;
+
+      return history.map((entry: any) => {
+        const isLatest = entry.stageId === latestPointer && entry.v === latestVersion;
         return {
-          version: index + 1,
+          version: entry.v,
+          stageKey: entry.stageId,
+          stageName: `${stageNames[entry.stageId] || entry.stageId} v${entry.v}`,
+          changeCount: undefined, // Not tracked in history
+          timestamp: entry.timestamp,
+          isCurrent: isLatest
+        };
+      });
+    }
+
+    // Fallback: use stage keys (legacy behavior)
+    const versionsList = Object.keys(versions || {})
+      .filter(key => key !== 'latest' && key !== 'history')
+      .map((stageKey) => {
+        const versionData = versions?.[stageKey];
+        const v = versionData?.v || 1;
+        return {
+          version: v,
           stageKey,
-          stageName: stageNames[stageKey] || stageKey,
-          changeCount: (versionData as any)?.changeCount,
-          timestamp: (versionData as any)?.createdAt || (versionData as any)?.timestamp,
-          isCurrent: report.conceptReportVersions?.latest?.pointer === stageKey
+          stageName: `${stageNames[stageKey] || stageKey} v${v}`,
+          changeCount: versionData?.changeCount,
+          timestamp: versionData?.createdAt || versionData?.timestamp,
+          isCurrent: versions?.latest?.pointer === stageKey
         };
       })
-      .sort((a, b) => a.version - b.version);
+      .sort((a, b) => {
+        // Sort by timestamp if available
+        if (a.timestamp && b.timestamp) {
+          return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        }
+        return a.version - b.version;
+      });
 
-    return versions;
+    return versionsList;
   }, [report?.conceptReportVersions]);
 
   const currentVersion = useMemo(() => {
-    if (!report?.conceptReportVersions?.latest) return versionCheckpoints.length;
-    const latestPointer = report.conceptReportVersions.latest.pointer;
-    const checkpoint = versionCheckpoints.find(v => v.stageKey === latestPointer);
+    const versions = report?.conceptReportVersions as any;
+    if (!versions?.latest) return versionCheckpoints.length;
+    const latestPointer = versions.latest.pointer;
+    const checkpoint = versionCheckpoints.find((v: any) => v.stageKey === latestPointer);
     return checkpoint?.version || versionCheckpoints.length;
   }, [report?.conceptReportVersions, versionCheckpoints]);
 
   const currentContent = useMemo(() => {
     if (!report?.conceptReportVersions) return report?.generatedContent || "";
 
-    // PRIORITEIT 1: Kijk altijd eerst naar het gegenereerde rapport (3_generatie)
-    // Dit is het eigenlijke rapport, niet de reviewer feedback
-    if (report.conceptReportVersions['3_generatie']) {
-      const generationData = report.conceptReportVersions['3_generatie'];
-      if (typeof generationData === 'string') return generationData;
-      if (typeof generationData === 'object' && (generationData as any).content) {
-        return (generationData as any).content;
-      }
-    }
+    const versions = report.conceptReportVersions as any;
 
-    // PRIORITEIT 2 removed: 5_feedback_verwerker is deprecated
-
-    // FALLBACK 3: Latest pointer (alleen als geen rapport beschikbaar)
-    const latestPointer = report.conceptReportVersions.latest?.pointer;
-    if (latestPointer && report.conceptReportVersions[latestPointer]) {
-      const versionData = report.conceptReportVersions[latestPointer];
+    // PRIORITEIT 1: Latest pointer - dit is de meest recente versie
+    // Na feedback processing wijst dit naar de bijgewerkte versie (4a, 4b, etc)
+    const latestPointer = versions?.latest?.pointer;
+    if (latestPointer && versions[latestPointer]) {
+      const versionData = versions[latestPointer];
       if (typeof versionData === 'string') return versionData;
-      if (typeof versionData === 'object' && (versionData as any).content) {
-        return (versionData as any).content;
+      if (typeof versionData === 'object' && versionData.content) {
+        return versionData.content;
       }
     }
 
-    // FALLBACK 4: generatedContent field
+    // FALLBACK 2: Kijk naar het gegenereerde rapport (3_generatie)
+    // Dit wordt alleen gebruikt als er nog geen latest pointer is
+    if (versions['3_generatie']) {
+      const generationData = versions['3_generatie'];
+      if (typeof generationData === 'string') return generationData;
+      if (typeof generationData === 'object' && generationData.content) {
+        return generationData.content;
+      }
+    }
+
+    // FALLBACK 3: generatedContent field
     return report?.generatedContent || "";
   }, [report?.conceptReportVersions, report?.generatedContent]);
 
@@ -218,15 +351,115 @@ export default function CaseDetail() {
       <Card className="mb-6">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div>
+            <div className="flex-1">
               <CardTitle className="flex items-center space-x-2 text-2xl mb-2">
                 <FileText className="h-6 w-6" />
-                <span>{report.title}</span>
+                {isEditingTitle ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <Input
+                      value={editedTitle}
+                      onChange={(e) => setEditedTitle(e.target.value)}
+                      className="text-2xl font-semibold h-10"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveTitle();
+                        if (e.key === 'Escape') handleCancelEdit('title');
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleSaveTitle}
+                      disabled={updateCaseMutation.isPending}
+                    >
+                      <Save className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleCancelEdit('title')}
+                      disabled={updateCaseMutation.isPending}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <span className="flex items-center gap-2 group">
+                    <span>{report.title}</span>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded cursor-pointer"
+                      onClick={() => {
+                        setEditedTitle(report.title);
+                        setIsEditingTitle(true);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          setEditedTitle(report.title);
+                          setIsEditingTitle(true);
+                        }
+                      }}
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </div>
+                  </span>
+                )}
               </CardTitle>
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">
                   <User className="h-4 w-4" />
-                  <span>{report.clientName}</span>
+                  {isEditingClient ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={editedClient}
+                        onChange={(e) => setEditedClient(e.target.value)}
+                        className="h-7 text-sm w-48"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveClient();
+                          if (e.key === 'Escape') handleCancelEdit('client');
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleSaveClient}
+                        disabled={updateCaseMutation.isPending}
+                        className="h-7 px-2"
+                      >
+                        <Save className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleCancelEdit('client')}
+                        disabled={updateCaseMutation.isPending}
+                        className="h-7 px-2"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="flex items-center gap-2 group">
+                      <span>{report.clientName}</span>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded cursor-pointer"
+                        onClick={() => {
+                          setEditedClient(report.clientName);
+                          setIsEditingClient(true);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            setEditedClient(report.clientName);
+                            setIsEditingClient(true);
+                          }
+                        }}
+                      >
+                        <Edit2 className="h-3 w-3" />
+                      </div>
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   <Calendar className="h-4 w-4" />
@@ -309,10 +542,10 @@ export default function CaseDetail() {
             </TabsContent>
 
             <TabsContent value="diff" className="mt-6">
-              {report.conceptReportVersions && Object.keys(report.conceptReportVersions).filter(k => k !== 'latest' && k !== 'history').length > 1 ? (
+              {report.conceptReportVersions && Object.keys(report.conceptReportVersions as any).filter(k => k !== 'latest' && k !== 'history').length > 1 ? (
                 <ReportDiffViewer
-                  versions={report.conceptReportVersions}
-                  currentStageKey={report.conceptReportVersions?.latest?.pointer}
+                  versions={report.conceptReportVersions as Record<string, string>}
+                  currentStageKey={(report.conceptReportVersions as any)?.latest?.pointer}
                   stageNames={{
                     '1_informatiecheck': 'Informatie Check',
                     '2_complexiteitscheck': 'Complexiteits Check',

@@ -105,12 +105,8 @@ export class AIModelFactory {
     if (openaiApiKey) {
       // Validate OpenAI key format
       if (!openaiApiKey.startsWith('sk-') || openaiApiKey.length < 32) {
-        console.error('❌ Invalid OpenAI API key format');
-        throw ServerError.business(
-          ERROR_CODES.AI_AUTHENTICATION_FAILED,
-          'OpenAI API key heeft een ongeldig formaat. Key moet beginnen met "sk-" en minimaal 32 karakters lang zijn.',
-          { provider: 'openai' }
-        );
+        console.warn('⚠️ Invalid OpenAI API key format - OpenAI handlers will not be initialized');
+        return; // Skip OpenAI initialization instead of throwing
       }
 
       // Initialize all OpenAI handlers

@@ -38,6 +38,10 @@
         "prompt": "PLACEHOLDER: Voer hier de DeKlantpsycholoog prompt in",
         "useGrounding": false
       },
+      "editor": {
+        "prompt": "Je bent een expert rapportverwerker die feedback van specialisten verwerkt in fiscale adviezen.\n\n**HUIDIGE CONCEPT RAPPORT:**\n{baseConcept}\n\n**FEEDBACK VAN {stageId}:**\n{feedback}\n\n**INSTRUCTIE:**\nVerwerk de feedback hierboven in het concept rapport volgens deze strategie: {strategy}\n\n**VERWERKINGSREGELS:**\n1. Behoud de professionele toon en structuur van het rapport\n2. Integreer feedback naadloos zonder duplicatie\n3. Zorg voor logische flow en consistentie\n4. Behoud alle bestaande bronverwijzingen en voeg nieuwe toe waar nodig\n5. Gebruik exacte cijfers en data uit het huidige rapport tenzij de feedback deze corrigeert\n\n**UITVOER:**\nGeef alleen het volledige, bijgewerkte concept rapport terug - geen uitleg of meta-tekst.",
+        "useGrounding": false
+      },
       "final_check": {
         "prompt": "PLACEHOLDER: Voer hier de final check prompt in",
         "useGrounding": false

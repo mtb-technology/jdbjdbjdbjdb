@@ -13,7 +13,7 @@ export interface WorkflowState {
   customInput: string;
   viewMode: "stage" | "concept";
   editingStage: string | null;
-  expandedSteps: Set<string>;
+  expandedSteps: string[];
   manualMode: "ai" | "manual";
   manualContent: string;
   showManualDialog: boolean;
@@ -46,8 +46,11 @@ export type WorkflowAction =
   | { type: "LOAD_EXISTING_REPORT"; report: Report };
 
 // Memory-optimized configuration
-const MAX_STAGE_RESULTS = 30; // Maximum stage results to keep in memory
-const MAX_CONCEPT_VERSIONS = 15; // Maximum concept versions to store
+// ✅ FIX #5: Increased limits to support step-back functionality
+// Previous: 30 stage results, 15 concept versions (too aggressive)
+// New: 100 stage results (6 stages * 10+ iterations), 50 concept versions (6 specialists * 5+ versions each)
+const MAX_STAGE_RESULTS = 100; // Maximum stage results to keep in memory
+const MAX_CONCEPT_VERSIONS = 50; // Maximum concept versions to store
 
 const initialState: WorkflowState = {
   currentReport: null,
@@ -61,7 +64,7 @@ const initialState: WorkflowState = {
   customInput: "",
   viewMode: "stage",
   editingStage: null,
-  expandedSteps: new Set(["1_informatiecheck", "2_complexiteitscheck", "3_generatie"]),
+  expandedSteps: ["1_informatiecheck", "2_complexiteitscheck", "3_generatie"],
   manualMode: "ai",
   manualContent: "",
   showManualDialog: false,
@@ -82,17 +85,46 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
       return { ...state, currentStageIndex: action.index };
 
     case "SET_STAGE_RESULT":
-      // Memory-optimized stage result storage
+      // ✅ FIX #5: Smarter memory-optimized stage result storage
       const newStageResults = { ...state.stageResults, [action.stage]: action.result };
-      
-      // Prune oldest results if exceeding limit
+
+      // Prune oldest results if exceeding limit (smart pruning)
       const stageKeys = Object.keys(newStageResults);
       if (stageKeys.length > MAX_STAGE_RESULTS) {
-        const keysToDelete = stageKeys.slice(0, stageKeys.length - MAX_STAGE_RESULTS);
+        // Group results by stage type (e.g., "4a_BronnenSpecialist", "4b_FiscaalTechnischSpecialist")
+        const stageGroups = new Map<string, string[]>();
+        stageKeys.forEach(key => {
+          // Extract base stage name (remove version/iteration suffix if present)
+          const baseStage = key.split('_v')[0].split('_iter')[0];
+          if (!stageGroups.has(baseStage)) {
+            stageGroups.set(baseStage, []);
+          }
+          stageGroups.get(baseStage)!.push(key);
+        });
+
+        // Keep only the latest version per stage type + last 20 overall
+        const keysToKeep = new Set<string>();
+
+        // Keep latest per stage type
+        stageGroups.forEach((versions) => {
+          // Sort by key (assumes chronological naming) and keep latest
+          const sortedVersions = versions.sort();
+          const latest = sortedVersions[sortedVersions.length - 1];
+          if (latest) keysToKeep.add(latest);
+        });
+
+        // Also keep last 20 results overall (chronological order)
+        stageKeys.slice(-20).forEach(k => keysToKeep.add(k));
+
+        // Delete everything else
+        const keysToDelete = stageKeys.filter(k => !keysToKeep.has(k));
         keysToDelete.forEach(key => delete newStageResults[key]);
-        console.log(`Pruned ${keysToDelete.length} old stage results for memory optimization`);
+
+        if (keysToDelete.length > 0) {
+          console.log(`🧹 Pruned ${keysToDelete.length} old stage results (kept latest per stage + last 20 overall)`);
+        }
       }
-      
+
       return {
         ...state,
         stageResults: newStageResults
@@ -111,20 +143,60 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
       };
     
     case "SET_CONCEPT_VERSION":
-      // Memory-optimized concept version storage
+      // ✅ FIX #5: Smarter memory-optimized concept version storage
       const newConceptVersions = {
         ...state.conceptReportVersions,
         [action.stage]: action.content
       };
-      
-      // Prune oldest versions if exceeding limit
+
+      // Prune oldest versions if exceeding limit (smart pruning)
       const versionKeys = Object.keys(newConceptVersions);
       if (versionKeys.length > MAX_CONCEPT_VERSIONS) {
-        const keysToDelete = versionKeys.slice(0, versionKeys.length - MAX_CONCEPT_VERSIONS);
+        // Group versions by stage type
+        const versionGroups = new Map<string, string[]>();
+        versionKeys.forEach(key => {
+          // Skip special keys
+          if (['latest', 'history'].includes(key)) {
+            return;
+          }
+
+          // Extract base stage name
+          const baseStage = key.split('_v')[0].split('_iter')[0];
+          if (!versionGroups.has(baseStage)) {
+            versionGroups.set(baseStage, []);
+          }
+          versionGroups.get(baseStage)!.push(key);
+        });
+
+        // Keep only the latest version per stage type + last 15 overall + special keys
+        const keysToKeep = new Set<string>();
+
+        // Always keep special keys
+        ['latest', 'history'].forEach(k => {
+          if (versionKeys.includes(k)) keysToKeep.add(k);
+        });
+
+        // Keep latest per stage type
+        versionGroups.forEach((versions) => {
+          const sortedVersions = versions.sort();
+          const latest = sortedVersions[sortedVersions.length - 1];
+          if (latest) keysToKeep.add(latest);
+        });
+
+        // Also keep last 15 versions overall
+        versionKeys.filter(k => !['latest', 'history'].includes(k))
+          .slice(-15)
+          .forEach(k => keysToKeep.add(k));
+
+        // Delete everything else
+        const keysToDelete = versionKeys.filter(k => !keysToKeep.has(k));
         keysToDelete.forEach(key => delete newConceptVersions[key]);
-        console.log(`Pruned ${keysToDelete.length} old concept versions for memory optimization`);
+
+        if (keysToDelete.length > 0) {
+          console.log(`🧹 Pruned ${keysToDelete.length} old concept versions (kept latest per stage + last 15 overall)`);
+        }
       }
-      
+
       return {
         ...state,
         conceptReportVersions: newConceptVersions
@@ -158,11 +230,12 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
       return { ...state, editingStage: action.stage };
     
     case "TOGGLE_STEP_EXPANSION":
-      const newExpanded = new Set(state.expandedSteps);
-      if (newExpanded.has(action.stage)) {
-        newExpanded.delete(action.stage);
+      const newExpanded = [...state.expandedSteps];
+      const index = newExpanded.indexOf(action.stage);
+      if (index > -1) {
+        newExpanded.splice(index, 1);
       } else {
-        newExpanded.add(action.stage);
+        newExpanded.push(action.stage);
       }
       return { ...state, expandedSteps: newExpanded };
     

@@ -1,6 +1,7 @@
 import type { AiConfig } from "@shared/schema";
 import { AIError } from "@shared/errors";
 import { AIMonitoringService, RequestMetrics } from "./monitoring";
+import { TIMEOUTS, RETRY, CIRCUIT_BREAKER } from "../../config/constants";
 
 export interface AIModelResponse {
   content: string;
@@ -34,18 +35,18 @@ export interface CircuitBreakerState {
 export abstract class BaseAIHandler {
   protected modelName: string;
   protected apiKey: string | undefined;
-  protected maxRetries: number = 3;
-  protected baseRetryDelay: number = 1000; // 1 second
-  protected defaultTimeout: number = 120000; // 2 minutes default timeout
-  
+  protected maxRetries: number = RETRY.MAX_ATTEMPTS;
+  protected baseRetryDelay: number = RETRY.BASE_DELAY_MS;
+  protected defaultTimeout: number = TIMEOUTS.AI_REQUEST;
+
   // Circuit breaker properties
   private circuitBreaker: CircuitBreakerState = {
     failures: 0,
     state: 'closed'
   };
-  private readonly failureThreshold: number = 5;
-  private readonly recoveryTimeout: number = 60000; // 1 minute
-  private readonly halfOpenMaxRequests: number = 3;
+  private readonly failureThreshold: number = CIRCUIT_BREAKER.FAILURE_THRESHOLD;
+  private readonly recoveryTimeout: number = CIRCUIT_BREAKER.RECOVERY_TIMEOUT_MS;
+  private readonly halfOpenMaxRequests: number = CIRCUIT_BREAKER.HALF_OPEN_MAX_REQUESTS;
 
   constructor(modelName: string, apiKey?: string) {
     this.modelName = modelName;

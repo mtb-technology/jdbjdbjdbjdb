@@ -1,31 +1,111 @@
 import type { DossierData, BouwplanData } from "@shared/schema";
 
 /**
- * StagePromptConfig interface
+ * StagePromptConfig interface - configuratie per stage
+ *
+ * Dit definieert WAT een stage moet doen (de prompt) en HOE (grounding, web search).
  */
 export interface StagePromptConfig {
+  /** De AI instructies voor deze stage (bv. "Je bent een BronnenSpecialist...") */
   prompt: string;
+  /** Gebruik Google Search Grounding voor fact-checking (alleen Google/Gemini) */
   useGrounding?: boolean;
+  /** Gebruik web search voor real-time informatie (alleen OpenAI) */
   useWebSearch?: boolean;
 }
 
 /**
- * PromptBuilder - Template Method Pattern voor Stage Prompts
+ * ## PromptBuilder - De "Instructie Fabriek" voor AI Specialists
  *
- * Centraliseert de duplicated prompt-building logica door een uniforme
- * structuur te bieden voor alle stages:
- * - systemPrompt = stageConfig.prompt + datum
- * - userInput = stage-specifieke data extractie
+ * **Design Pattern**: Template Method Pattern
  *
- * Voordelen:
- * - DRY: Geen gedupliceerde datum-formatting
- * - Consistentie: Elke stage volgt hetzelfde patroon
- * - Testbaarheid: Geïsoleerde functies per stage
- * - Onderhoudbaarheid: Wijzig de template op 1 plek
+ * **Probleem**: Elke AI stage heeft een unieke prompt EN unieke data nodig.
+ * Dit leidde tot gedupliceerde code in ReportGenerator met copy-paste prompts.
+ *
+ * **Oplossing**: Centraliseer de prompt-building logica in één class.
+ *
+ * ### Hoe het werkt:
+ *
+ * ```typescript
+ * // Oud (gedupliceerde code):
+ * const stage1Prompt = `${stageConfig.prompt}\n\n### Datum: ${currentDate}\n\n${dossierDataJSON}`;
+ * const stage2Prompt = `${stageConfig.prompt}\n\n### Datum: ${currentDate}\n\n${stage1Results}`;
+ * // ... herhaalt voor elke stage
+ *
+ * // Nieuw (DRY):
+ * const stage1Prompt = promptBuilder.build("1_informatiecheck", stageConfig, () =>
+ *   promptBuilder.buildInformatieCheckData(dossier)
+ * );
+ * ```
+ *
+ * ### Structuur van een Prompt:
+ *
+ * Elke prompt bestaat uit **twee delen**:
+ *
+ * 1. **System Prompt** (de instructies):
+ *    ```
+ *    Je bent een Bronnen Specialist. Jouw taak is...
+ *    [Uit stageConfig.prompt]
+ *
+ *    ### Datum: dinsdag 10 november 2025
+ *    ```
+ *
+ * 2. **User Input** (de data):
+ *    ```json
+ *    {
+ *      "taal": "nl",
+ *      "concept_rapport_tekst": "...",
+ *      "dossier_context": { ... }
+ *    }
+ *    ```
+ *
+ * ### Voordelen:
+ * - **DRY**: Geen gedupliceerde datum-formatting
+ * - **Consistentie**: Elke stage volgt hetzelfde patroon
+ * - **Testbaarheid**: Data extractors zijn geïsoleerde pure functions
+ * - **Onderhoudbaarheid**: Wijzig de template op 1 plek
+ * - **Type Safety**: TypeScript zorgt dat je de juiste data meegeeft
+ *
+ * @example
+ * ```typescript
+ * const promptBuilder = new PromptBuilder();
+ *
+ * // Voor Stage 1 (Informatiecheck)
+ * const stage1Prompt = promptBuilder.build("1_informatiecheck", stageConfig, () =>
+ *   promptBuilder.buildInformatieCheckData(dossier)
+ * );
+ *
+ * // Voor reviewer stages (4a-4f)
+ * const reviewerPrompt = promptBuilder.build("4a_BronnenSpecialist", stageConfig, () =>
+ *   promptBuilder.buildReviewerData(conceptReport, dossier, bouwplan)
+ * );
+ * ```
  */
 export class PromptBuilder {
   /**
-   * Build a prompt for any stage using the Template Method Pattern
+   * **Template Method**: Bouw een prompt voor elke stage
+   *
+   * Dit is de KERN van de PromptBuilder. Het combineert:
+   * 1. Stage configuratie (de instructies vanuit database)
+   * 2. Data extractor (stage-specifieke data formatting)
+   * 3. Datum (voor context)
+   *
+   * @param stageName - Voor logging (niet gebruikt in output)
+   * @param stageConfig - De stage configuratie vanuit promptConfigs tabel
+   * @param dataExtractor - Een functie die de relevante data voor deze stage extraheert
+   * @returns Object met `systemPrompt` (instructies) en `userInput` (data)
+   *
+   * @example
+   * ```typescript
+   * const prompt = builder.build("4a_BronnenSpecialist", stageConfig, () =>
+   *   builder.buildReviewerData(conceptReport, dossier, bouwplan)
+   * );
+   * // Returns:
+   * // {
+   * //   systemPrompt: "Je bent een Bronnen Specialist...\n\n### Datum: ...",
+   * //   userInput: '{"taal":"nl","concept_rapport_tekst":"..."}'
+   * // }
+   * ```
    */
   build<TData>(
     stageName: string,
@@ -40,8 +120,15 @@ export class PromptBuilder {
   }
 
   /**
-   * Build a combined prompt (system + user in one string)
-   * Used for stages like 6_change_summary and editor
+   * **Convenience Method**: Bouw een gecombineerde prompt (system + user in één string)
+   *
+   * Sommige legacy stages (6_change_summary, editor) verwachten één string
+   * in plaats van gescheiden system/user prompts.
+   *
+   * @param stageName - Voor logging
+   * @param stageConfig - De stage configuratie
+   * @param dataExtractor - Data extractor functie
+   * @returns Single string met system prompt + user input
    */
   buildCombined<TData>(
     stageName: string,
@@ -113,29 +200,78 @@ export class PromptBuilder {
   }
 
   /**
-   * Extract data for Reviewer Stages (4a-4f)
+   * **KRITIEK**: Extract data voor Reviewer Stages (4a-4f)
+   *
+   * Dit is een van de BELANGRIJKSTE functies in het hele systeem.
+   * Het bepaalt wat elke specialist ZI ET tijdens hun review.
+   *
+   * ### Wat krijgt een reviewer te zien?
+   *
+   * 1. **Het concept rapport** (de tekst die moet worden gereviewd)
+   * 2. **Dossier context** (wie is de klant, wat is de vraag?)
+   * 3. **Bouwplan context** (welke structuur moet het rapport hebben?)
+   *
+   * ### Waarom is dit kritiek?
+   *
+   * **FOUT** (oud systeem):
+   * ```typescript
+   * // Gaf de STAGE RESULTS door (JSON data over het rapport)
+   * // Specialist zag NIET de actual tekst!
+   * reviewerInput = previousStageResults['3_generatie']
+   * ```
+   *
+   * **CORRECT** (huidig systeem):
+   * ```typescript
+   * // Geeft het CONCEPT RAPPORT door (de daadwerkelijke tekst)
+   * reviewerInput = conceptReportVersions['3_generatie'].content
+   * ```
+   *
+   * ### Format:
+   *
+   * Reviewers krijgen JSON met drie secties:
+   * ```json
+   * {
+   *   "taal": "nl",
+   *   "concept_rapport_tekst": "# Fiscaal Advies\n\n[De daadwerkelijke rapport tekst van 5000+ woorden]",
+   *   "dossier_context": {
+   *     "klant": { "naam": "...", "situatie": "..." },
+   *     "fiscale_gegevens": { ... }
+   *   },
+   *   "bouwplan_context": {
+   *     "taal": "nl",
+   *     "structuur": { ... }
+   *   }
+   * }
+   * ```
+   *
+   * @param conceptReport - Het concept rapport tekst (van Stage 3 of vorige specialist)
+   * @param dossier - De klant data (voor context)
+   * @param bouwplan - De rapport structuur (voor conformance checking)
+   * @returns JSON string met concept + context
    */
   buildReviewerData(
-    previousStageResults: Record<string, string>,
+    conceptReport: string,
     dossier: DossierData,
     bouwplan: BouwplanData
   ): string {
-    const step3Output = previousStageResults?.['3_generatie'] || '{}';
+    // ✅ KRITIEK: Verwijder rawText uit dossier context
+    // rawText is alleen nodig in Stage 1, daarna niet meer
+    const { rawText, ...cleanDossier } = dossier;
 
     try {
-      // Try to parse as JSON first
-      const jsonStep3 = JSON.parse(step3Output);
+      // Try to parse concept report as JSON first
+      const jsonConcept = JSON.parse(conceptReport);
       return JSON.stringify({
-        ...jsonStep3,
-        dossier_context: dossier,
+        ...jsonConcept,
+        dossier_context: cleanDossier,
         bouwplan_context: bouwplan
       }, null, 2);
     } catch {
-      // Fallback: create structured JSON
+      // Fallback: treat as plain text report
       return JSON.stringify({
         taal: "nl",
-        concept_rapport_tekst: step3Output,
-        dossier_context: dossier,
+        concept_rapport_tekst: conceptReport,
+        dossier_context: cleanDossier,
         bouwplan_context: bouwplan
       }, null, 2);
     }
@@ -175,14 +311,14 @@ export class PromptBuilder {
       '4f_DeKlantpsycholoog': previousStageResults?.['4f_DeKlantpsycholoog']
     };
 
-    // Get latest concept version
-    const latestConceptKey = Object.keys(conceptReportVersions)
-      .filter(key => !['latest', 'history'].includes(key))
-      .pop();
+    // Get latest concept report - prioritize 'latest', then '3_generatie', then any other key
+    const latestConcept = conceptReportVersions?.['latest']
+      || conceptReportVersions?.['3_generatie']
+      || Object.values(conceptReportVersions).find(v => v)
+      || '';
 
-    const latestConcept = latestConceptKey
-      ? conceptReportVersions[latestConceptKey]
-      : '';
+    console.log('[Editor Data] Concept report length:', latestConcept.length);
+    console.log('[Editor Data] Reviewer feedback keys:', Object.keys(reviewerFeedback).filter(k => reviewerFeedback[k as keyof typeof reviewerFeedback]));
 
     return JSON.stringify({
       reviewer_feedback: reviewerFeedback,

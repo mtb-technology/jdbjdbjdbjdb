@@ -1,11 +1,14 @@
-import { 
-  StageId, 
+import {
+  StageId,
   ConceptReportSnapshot,
   ConceptReportVersions,
   ReportProcessorInput,
-  ReportProcessorOutput 
+  ReportProcessorOutput,
+  PromptConfig,
+  AiConfig
 } from '@shared/schema';
 import { storage } from '../storage';
+import { getActivePromptConfig } from '../storage';
 
 // Temporary AI handler interface - will integrate with existing AI system
 interface AIHandler {
@@ -18,16 +21,84 @@ interface AIHandler {
 }
 
 /**
- * ReportProcessor Service
- * 
- * Core service responsible for transforming specialist feedback into new concept report versions.
- * This ensures consistent processing across both streaming and normal workflows.
- * 
- * Key responsibilities:
- * - Process feedback from review stages (4a-4g) into concept report updates
- * - Maintain version history with proper snapshots per stage
- * - Enable step-back functionality by preserving exact state at each stage
- * - Provide AI-powered intelligent merging of feedback with existing content
+ * ## ReportProcessor - De "Chirurgische Redacteur"
+ *
+ * **Verantwoordelijkheid**: Transform specialist feedback into updated concept report versions
+ *
+ * Dit is het **HART van de versioning system**. Het lost het centrale probleem op:
+ * "Hoe merge ik feedback van een specialist met het bestaande rapport?"
+ *
+ * ### Het Probleem:
+ *
+ * ```
+ * Concept Rapport v1 (5000 woorden) + Feedback Specialist (200 woorden)
+ *   ↓
+ * Hoe krijg ik Concept Rapport v2?
+ * ```
+ *
+ * **Naïeve oplossing** (FOUT):
+ * ```typescript
+ * newConcept = oldConcept + "\n\n" + feedback  // Append aan einde
+ * ```
+ * → Resultaat: Rommelig rapport met feedback onderaan (niet geïntegreerd)
+ *
+ * **Intelligente oplossing** (CORRECT - wat deze class doet):
+ * ```typescript
+ * newConcept = await AI.merge(oldConcept, feedback, mergeStrategy)
+ * ```
+ * → Resultaat: Feedback is GEÏNTEGREERD in de juiste secties
+ *
+ * ### Hoe het werkt:
+ *
+ * #### Stap 1: Haal Base Concept Op
+ * ```typescript
+ * const baseConcept = conceptReportVersions["3_generatie"].content;
+ * // Of: conceptReportVersions["4a_BronnenSpecialist"].content (voor re-processing)
+ * ```
+ *
+ * #### Stap 2: AI Merge
+ * ```typescript
+ * const mergePrompt = `
+ * HUIDIGE RAPPORT: ${baseConcept}
+ * FEEDBACK: ${feedback}
+ * INSTRUCTIE: Integreer de feedback in het rapport (strategy: merge)
+ * `;
+ * const newConcept = await AI.generateContent(mergePrompt);
+ * ```
+ *
+ * #### Stap 3: Save Snapshot
+ * ```typescript
+ * conceptReportVersions["4a_BronnenSpecialist"] = {
+ *   v: 2,
+ *   content: newConcept,
+ *   from: "3_generatie",
+ *   processedFeedback: feedback
+ * };
+ * ```
+ *
+ * ### Merge Strategies:
+ *
+ * - **merge** (default): Intelligente integratie door hele rapport
+ * - **sectional**: Vervang alleen relevante secties
+ * - **append**: Voeg toe aan einde van secties
+ * - **replace**: Vervang volledig (gebruik voorzichtig!)
+ *
+ * ### Kritieke Features:
+ *
+ * 1. **Re-processing Support**:
+ *    - Als een stage al een versie heeft, gebruik DIE als base (niet de predecessor)
+ *    - Bijvoorbeeld: 4a al gedaan → re-run 4a → base = 4a v1 (niet 3_generatie)
+ *
+ * 2. **Version Chaining**:
+ *    - Elke versie weet waar het vandaan komt (`from` veld)
+ *    - Dit maakt step-back mogelijk
+ *
+ * 3. **Fallback Handling**:
+ *    - Als AI merge faalt → gebruik simple append strategie
+ *    - Rapport blijft altijd bruikbaar (nooit data loss)
+ *
+ * @see {@link ConceptReportVersions} voor version structure
+ * @see {@link PromptBuilder.buildReviewerData} voor wat reviewers zien
  */
 export class ReportProcessor {
   constructor(private aiHandler: AIHandler) {}
@@ -57,13 +128,20 @@ export class ReportProcessor {
    * AI-powered intelligent merging of feedback with existing concept report
    */
   private async mergeWithAI(input: ReportProcessorInput): Promise<string> {
-    const prompt = this.buildMergePrompt(input);
-    
+    // Get active prompt config for editor prompt and AI settings
+    const promptConfig = await getActivePromptConfig();
+    const editorConfig = promptConfig.editor;
+    const aiConfig = editorConfig?.aiConfig || promptConfig.aiConfig;
+
+    // Build prompt using editor prompt from config
+    const prompt = await this.buildMergePrompt(input, editorConfig?.prompt);
+
+    // Use AI config from editor or fallback to global config
     const response = await this.aiHandler.generateContent({
       prompt,
-      temperature: 0.1,
-      topP: 0.9,
-      maxOutputTokens: 8192
+      temperature: aiConfig?.temperature ?? 0.1,
+      topP: aiConfig?.topP ?? 0.9,
+      maxOutputTokens: aiConfig?.maxOutputTokens ?? 32768
     });
 
     if (!response.content) {
@@ -75,30 +153,35 @@ export class ReportProcessor {
 
   /**
    * Build the AI prompt for merging feedback into concept report
+   * Uses the "editor" prompt from config - THROWS if not configured (NO FALLBACKS!)
    */
-  private buildMergePrompt(input: ReportProcessorInput): string {
+  private async buildMergePrompt(input: ReportProcessorInput, editorPrompt?: string): Promise<string> {
     const { baseConcept, feedback, stageId, strategy } = input;
 
-    return `Je bent een expert rapportverwerker die feedback van specialisten verwerkt in fiscale adviezen.
+    // CRITICAL: NO FALLBACK PROMPTS - Quality depends on proper configuration
+    if (!editorPrompt || editorPrompt.trim().length === 0) {
+      throw new Error(
+        `❌ FATAL: Editor prompt not configured in Settings. ` +
+        `Ga naar Settings en configureer de "Editor (Chirurgische Redacteur)" prompt. ` +
+        `Feedback processing is geblokkeerd tot dit is opgelost.`
+      );
+    }
 
-**HUIDIGE CONCEPT RAPPORT:**
-${baseConcept}
+    // Check for placeholder text
+    if (editorPrompt.includes('PLACEHOLDER') || editorPrompt.toLowerCase().includes('voer hier')) {
+      throw new Error(
+        `❌ FATAL: Editor prompt bevat nog placeholder tekst. ` +
+        `Ga naar Settings en vervang de placeholder in "Editor (Chirurgische Redacteur)" met een echte prompt. ` +
+        `Feedback processing is geblokkeerd tot dit is opgelost.`
+      );
+    }
 
-**FEEDBACK VAN ${stageId.toUpperCase()}:**
-${feedback}
-
-**INSTRUCTIE:**
-Verwerk de feedback hierboven in het concept rapport volgens deze strategie: ${strategy}
-
-**VERWERKINGSREGELS:**
-1. ${this.getStrategyRules(strategy)}
-2. Behoud de professionele toon en structuur van het rapport
-3. Integreer feedback naadloos zonder duplicatie
-4. Zorg voor logische flow en consistentie
-5. Behoud alle bestaande bronverwijzingen en voeg nieuwe toe waar nodig
-
-**UITVOER:**
-Geef alleen het volledige, bijgewerkte concept rapport terug - geen uitleg of meta-tekst.`;
+    // Replace placeholders in editor prompt
+    return editorPrompt
+      .replace(/\{baseConcept\}/g, baseConcept)
+      .replace(/\{feedback\}/g, feedback)
+      .replace(/\{stageId\}/g, stageId)
+      .replace(/\{strategy\}/g, strategy);
   }
 
   /**
@@ -240,7 +323,62 @@ ${feedback}
   }
 
   /**
-   * Complete end-to-end processing: feedback -> AI merge -> snapshot -> persist
+   * **MAIN ENTRY POINT**: Complete end-to-end processing workflow
+   *
+   * Dit is de "all-in-one" functie die alle stappen van feedback processing doet.
+   * Gebruik deze wanneer je een reviewer stage (4a-4f) hebt afgerond en de feedback wilt mergen.
+   *
+   * ### De Complete Flow:
+   *
+   * ```
+   * 1. Bepaal base concept (predecessor of huidige versie voor re-processing)
+   *    ↓
+   * 2. AI merge: feedback + base → nieuwe versie
+   *    ↓
+   * 3. Maak snapshot met versie nummer
+   *    ↓
+   * 4. Update conceptReportVersions in database
+   *    ↓
+   * 5. Return nieuwe concept + metadata
+   * ```
+   *
+   * ### Re-processing Logic (KRITIEK):
+   *
+   * **Scenario 1: Eerste keer stage uitvoeren**
+   * ```typescript
+   * // 4a wordt voor het eerst uitgevoerd
+   * base = conceptReportVersions["3_generatie"].content  // Predecessor
+   * newVersion = 2
+   * ```
+   *
+   * **Scenario 2: Stage opnieuw uitvoeren** (bv. betere prompt)
+   * ```typescript
+   * // 4a wordt opnieuw uitgevoerd (v1 bestaat al)
+   * base = conceptReportVersions["4a_BronnenSpecialist"].content  // Huidige versie!
+   * newVersion = 3  // Increment vanaf huidige versie (was v2)
+   * ```
+   *
+   * Dit voorkomt data loss en zorgt dat elke run builds op de vorige.
+   *
+   * @param reportId - Het rapport dat geupdate moet worden
+   * @param stageId - Welke stage heeft de feedback gegenereerd (bv. "4a_BronnenSpecialist")
+   * @param feedback - De AI output van de reviewer stage
+   * @param strategy - Hoe de feedback te mergen (default: "merge" - intelligente integratie)
+   * @returns Object met nieuwe concept, snapshot metadata, en updated versions
+   *
+   * @example
+   * ```typescript
+   * // Na Stage 4a (BronnenSpecialist) uitvoering:
+   * const result = await reportProcessor.processStage(
+   *   reportId,
+   *   "4a_BronnenSpecialist",
+   *   aiGeneratedFeedback,
+   *   "merge"
+   * );
+   *
+   * console.log(`Nieuwe versie: v${result.snapshot.v}`);
+   * console.log(`Concept lengte: ${result.newConcept.length} chars`);
+   * ```
    */
   async processStage(
     reportId: string,
@@ -261,21 +399,37 @@ ${feedback}
     }
 
     const currentVersions = report.conceptReportVersions as ConceptReportVersions || {};
-    const predecessorStage = this.getPredecessorStage(stageId);
-    
+
     let baseConcept: string;
-    if (predecessorStage) {
-      // Type-safe access to concept versions
-      const predecessorVersion = this.getStageVersion(currentVersions, predecessorStage);
-      if (predecessorVersion) {
-        baseConcept = predecessorVersion.content;
-      } else {
-        throw new Error(`Predecessor stage ${predecessorStage} not found or has no content`);
-      }
-    } else if (stageId === '3_generatie') {
-      baseConcept = report.generatedContent || '';
+    let predecessorStage: StageId | null = null; // Declare outside if-else for use in snapshot creation
+
+    // CRITICAL FIX: Check if THIS stage already has a version (re-processing)
+    // If so, use that version as base. Otherwise, use predecessor.
+    const currentStageVersion = this.getStageVersion(currentVersions, stageId);
+
+    if (currentStageVersion) {
+      // Re-processing same stage - use current stage's latest version
+      baseConcept = currentStageVersion.content;
+      // Even when re-processing, we still need to know the predecessor for snapshot metadata
+      predecessorStage = this.getPredecessorStage(stageId);
+      console.log(`📌 [ReportProcessor] Re-processing ${stageId} - using existing v${currentStageVersion.v} as base`);
     } else {
-      throw new Error(`Cannot find base concept for stage ${stageId} - predecessor ${predecessorStage} not found`);
+      // First time processing this stage - use predecessor
+      predecessorStage = this.getPredecessorStage(stageId);
+
+      if (predecessorStage) {
+        const predecessorVersion = this.getStageVersion(currentVersions, predecessorStage);
+        if (predecessorVersion) {
+          baseConcept = predecessorVersion.content;
+          console.log(`📌 [ReportProcessor] First-time processing ${stageId} - using predecessor ${predecessorStage} v${predecessorVersion.v} as base`);
+        } else {
+          throw new Error(`Predecessor stage ${predecessorStage} not found or has no content`);
+        }
+      } else if (stageId === '3_generatie') {
+        baseConcept = report.generatedContent || '';
+      } else {
+        throw new Error(`Cannot find base concept for stage ${stageId} - no predecessor found`);
+      }
     }
 
     // 2. Process feedback with AI

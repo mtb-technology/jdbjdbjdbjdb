@@ -3,13 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Copy, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, CheckCircle2, XCircle, ChevronDown, ChevronUp, Lock, AlertTriangle, ChevronRight } from "lucide-react";
 import type { InformatieCheckOutput } from "@shared/schema";
 import { parseInformatieCheckOutput } from "@/lib/workflowParsers";
 
 interface InformatieCheckViewerProps {
   /** Raw AI output from Stage 1 (Informatiecheck) */
   rawOutput: string;
+  /** Callback to force continue even if incomplete */
+  onForceContinue?: () => void;
 }
 
 /**
@@ -18,7 +20,7 @@ interface InformatieCheckViewerProps {
  * - Email interface for INCOMPLEET status (missing information)
  * - Dossier summary for COMPLEET status (complete information)
  */
-export function InformatieCheckViewer({ rawOutput }: InformatieCheckViewerProps) {
+export function InformatieCheckViewer({ rawOutput, onForceContinue }: InformatieCheckViewerProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showRawJson, setShowRawJson] = useState(false);
 
@@ -166,9 +168,28 @@ export function InformatieCheckViewer({ rawOutput }: InformatieCheckViewerProps)
         {/* Navigation Blocked */}
         <Alert>
           <Lock className="h-4 w-4" />
-          <AlertDescription>
-            De volgende stap (2. Complexiteitscheck) is geblokkeerd totdat de klant de ontbrekende informatie aanlevert.
-            Voer deze stap opnieuw uit nadat je de informatie hebt ontvangen.
+          <AlertDescription className="space-y-3">
+            <p>
+              De volgende stap (2. Complexiteitscheck) is geblokkeerd totdat de klant de ontbrekende informatie aanlevert.
+              Voer deze stap opnieuw uit nadat je de informatie hebt ontvangen.
+            </p>
+            {onForceContinue && (
+              <div className="flex items-center gap-2 pt-2 border-t">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <p className="text-xs flex-1">
+                  Als je toch wilt doorgaan zonder de ontbrekende informatie:
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onForceContinue}
+                  className="ml-auto"
+                >
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Forceer Doorgaan
+                </Button>
+              </div>
+            )}
           </AlertDescription>
         </Alert>
 
@@ -189,8 +210,8 @@ export function InformatieCheckViewer({ rawOutput }: InformatieCheckViewerProps)
 
             {showRawJson && (
               <div className="mt-3">
-                <pre className="p-4 bg-muted rounded-lg text-xs overflow-x-auto max-h-[400px] overflow-y-auto">
-                  <code>{JSON.stringify(parsedOutput, null, 2)}</code>
+                <pre className="p-4 bg-muted rounded-lg text-xs overflow-x-auto max-h-[400px] overflow-y-auto break-all whitespace-pre-wrap">
+                  <code className="break-all">{JSON.stringify(parsedOutput, null, 2)}</code>
                 </pre>
               </div>
             )}
@@ -250,7 +271,7 @@ export function InformatieCheckViewer({ rawOutput }: InformatieCheckViewerProps)
                       key={idx}
                       className="border-l-4 border-primary pl-4 py-2 italic text-sm bg-muted/30"
                     >
-                      "{vraag}"
+                      "{typeof vraag === 'object' ? JSON.stringify(vraag) : String(vraag)}"
                     </blockquote>
                   ))}
                 </div>
@@ -262,19 +283,21 @@ export function InformatieCheckViewer({ rawOutput }: InformatieCheckViewerProps)
               <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                 Gestructureerde Dossiergegevens
               </h4>
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="border rounded-lg overflow-hidden overflow-x-auto">
+                <table className="w-full text-sm table-auto">
                   <tbody className="divide-y">
                     {/* Partijen */}
                     {dossier.gestructureerde_data.partijen && dossier.gestructureerde_data.partijen.length > 0 && (
                       <tr className="hover:bg-muted/50">
-                        <td className="px-4 py-3 font-medium bg-muted/30 w-1/3">
+                        <td className="px-4 py-3 font-medium bg-muted/30 w-1/3 min-w-[120px]">
                           Partijen
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 break-words">
                           <div className="flex flex-wrap gap-1">
                             {dossier.gestructureerde_data.partijen.map((partij, idx) => (
-                              <Badge key={idx} variant="outline">{partij}</Badge>
+                              <Badge key={idx} variant="outline" className="break-all max-w-full">
+                                {typeof partij === 'object' ? JSON.stringify(partij) : String(partij)}
+                              </Badge>
                             ))}
                           </div>
                         </td>
@@ -283,10 +306,10 @@ export function InformatieCheckViewer({ rawOutput }: InformatieCheckViewerProps)
 
                     {/* Fiscale Partner */}
                     <tr className="hover:bg-muted/50">
-                      <td className="px-4 py-3 font-medium bg-muted/30">
+                      <td className="px-4 py-3 font-medium bg-muted/30 min-w-[120px]">
                         Fiscale Partner
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 break-words">
                         <Badge variant={dossier.gestructureerde_data.fiscale_partner ? "default" : "secondary"}>
                           {dossier.gestructureerde_data.fiscale_partner ? "Ja" : "Nee"}
                         </Badge>
@@ -296,17 +319,36 @@ export function InformatieCheckViewer({ rawOutput }: InformatieCheckViewerProps)
                     {/* Relevante Bedragen */}
                     {dossier.gestructureerde_data.relevante_bedragen && Object.keys(dossier.gestructureerde_data.relevante_bedragen).length > 0 && (
                       <tr className="hover:bg-muted/50">
-                        <td className="px-4 py-3 font-medium bg-muted/30">
+                        <td className="px-4 py-3 font-medium bg-muted/30 align-top min-w-[120px]">
                           Relevante Bedragen
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="space-y-1 text-xs font-mono">
-                            {Object.entries(dossier.gestructureerde_data.relevante_bedragen).map(([key, value]) => (
-                              <div key={key} className="flex justify-between">
-                                <span className="text-muted-foreground">{key}:</span>
-                                <span className="font-semibold">{value}</span>
-                              </div>
-                            ))}
+                        <td className="px-4 py-3 break-words max-w-0">
+                          <div className="space-y-2 text-xs">
+                            {Object.entries(dossier.gestructureerde_data.relevante_bedragen).map(([key, value]) => {
+                              // Handle nested objects by expanding them
+                              if (typeof value === 'object' && value !== null) {
+                                return (
+                                  <div key={key} className="space-y-1">
+                                    <div className="font-semibold text-muted-foreground">{key}:</div>
+                                    <div className="pl-4 space-y-1 bg-muted/30 p-2 rounded">
+                                      {Object.entries(value as Record<string, any>).map(([subKey, subValue]) => (
+                                        <div key={subKey} className="flex justify-between gap-2 text-xs">
+                                          <span className="text-muted-foreground break-all">{subKey}:</span>
+                                          <span className="font-semibold text-right break-all">{String(subValue)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              // Simple value
+                              return (
+                                <div key={key} className="flex justify-between gap-2">
+                                  <span className="text-muted-foreground break-all">{key}:</span>
+                                  <span className="font-semibold font-mono text-right break-all">{String(value)}</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </td>
                       </tr>
@@ -315,18 +357,45 @@ export function InformatieCheckViewer({ rawOutput }: InformatieCheckViewerProps)
                     {/* Overige Info */}
                     {dossier.gestructureerde_data.overige_info && dossier.gestructureerde_data.overige_info.length > 0 && (
                       <tr className="hover:bg-muted/50">
-                        <td className="px-4 py-3 font-medium bg-muted/30 align-top">
+                        <td className="px-4 py-3 font-medium bg-muted/30 align-top min-w-[120px]">
                           Overige Informatie
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 break-words max-w-0">
                           <ul className="space-y-1 text-xs list-disc list-inside">
                             {dossier.gestructureerde_data.overige_info.map((info, idx) => (
-                              <li key={idx}>{info}</li>
+                              <li key={idx}>{typeof info === 'object' ? JSON.stringify(info) : String(info)}</li>
                             ))}
                           </ul>
                         </td>
                       </tr>
                     )}
+
+                    {/* Dynamic rendering of all other fields not explicitly handled above */}
+                    {Object.entries(dossier.gestructureerde_data || {})
+                      .filter(([key]) => !['partijen', 'fiscale_partner', 'relevante_bedragen', 'overige_info'].includes(key))
+                      .map(([key, value]) => {
+                        // Format the key name
+                        const formattedKey = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
+                        return (
+                          <tr key={key} className="hover:bg-muted/50">
+                            <td className="px-4 py-3 font-medium bg-muted/30 align-top min-w-[120px]">
+                              {formattedKey}
+                            </td>
+                            <td className="px-4 py-3 break-words max-w-0">
+                              <div className="space-y-2 text-xs">
+                                {typeof value === 'object' && value !== null ? (
+                                  <pre className="whitespace-pre-wrap break-all bg-muted/30 p-2 rounded font-mono">
+                                    {JSON.stringify(value, null, 2)}
+                                  </pre>
+                                ) : (
+                                  <span className="font-mono">{String(value)}</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
@@ -360,8 +429,8 @@ export function InformatieCheckViewer({ rawOutput }: InformatieCheckViewerProps)
 
             {showRawJson && (
               <div className="mt-3">
-                <pre className="p-4 bg-muted rounded-lg text-xs overflow-x-auto max-h-[400px] overflow-y-auto">
-                  <code>{JSON.stringify(parsedOutput, null, 2)}</code>
+                <pre className="p-4 bg-muted rounded-lg text-xs overflow-x-auto max-h-[400px] overflow-y-auto break-all whitespace-pre-wrap">
+                  <code className="break-all">{JSON.stringify(parsedOutput, null, 2)}</code>
                 </pre>
               </div>
             )}

@@ -227,7 +227,30 @@ function finalizeProposal(
 }
 
 /**
+ * Convert change proposals with user decisions to filtered JSON for Editor
+ * Only returns accepted and modified proposals (rejects are filtered out)
+ */
+export function serializeProposalsToJSON(proposals: ChangeProposal[]): string {
+  // Filter to only accepted and modified proposals
+  const filteredProposals = proposals
+    .filter(p => p.userDecision === 'accept' || p.userDecision === 'modify')
+    .map(p => ({
+      id: p.id,
+      type: p.changeType,
+      section: p.section,
+      oude_tekst: p.original || '',
+      nieuwe_tekst: p.userDecision === 'modify' && p.userNote ? p.userNote : p.proposed,
+      rationale: p.reasoning,
+      severity: p.severity,
+      userModified: p.userDecision === 'modify' ? p.userNote : undefined
+    }));
+
+  return JSON.stringify(filteredProposals, null, 2);
+}
+
+/**
  * Convert change proposals with user decisions back to text format for API
+ * LEGACY: Used for text mode or debugging
  */
 export function serializeProposals(proposals: ChangeProposal[]): string {
   const accepted = proposals.filter(p => p.userDecision === 'accept');

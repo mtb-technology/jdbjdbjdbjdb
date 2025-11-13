@@ -21,7 +21,7 @@ export const createReportRequestSchema = z.object({
     .regex(/^[a-zA-Z0-9\s\-\.,']+$/, "Clientnaam bevat ongeldige karakters"),
   rawText: z.string()
     .min(10, "Ruwe tekst moet minimaal 10 karakters bevatten")
-    .max(100000, "Ruwe tekst mag niet langer zijn dan 100KB (100.000 karakters)")
+    .max(5000000, "Ruwe tekst mag niet langer zijn dan 5MB (5.000.000 karakters)") // ✅ FIX: Verhoogd voor grote PDF uploads
 });
 
 // Report Generation Request (LEGACY - kept for backwards compatibility)
@@ -79,8 +79,11 @@ export const executeStageRequestSchema = z.object({
 export const processFeedbackRequestSchema = z.object({
   userInstructions: z.string()
     .min(1, "Geef instructies over welke feedback je wilt verwerken")
-    .max(2000, "Instructies mogen niet langer zijn dan 2000 karakters"),
-  processingStrategy: z.enum(["merge", "append", "sectional", "replace"]).default("merge")
+    .max(50000, "Instructies mogen niet langer zijn dan 50000 karakters"),
+  processingStrategy: z.enum(["merge", "append", "sectional", "replace"]).default("merge"),
+  // Optional: Pre-filtered changes JSON (only accepted/modified proposals)
+  // If provided, this overrides the raw feedback from stageResults
+  filteredChanges: z.string().optional()
 });
 
 // User Registration Request

@@ -7,14 +7,15 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { EnhancedErrorBoundary as ErrorBoundary } from "@/components/enhanced-error-boundary";
 
-// Regular imports for stability - lazy loading can be re-enabled after testing
-import Dashboard from "@/pages/dashboard";
-import Settings from "@/pages/settings";
-import Pipeline from "@/pages/pipeline";
-import Cases from "@/pages/cases";
-import CaseDetail from "@/pages/case-detail";
-import BatchProcessing from "@/pages/batch-processing";
-import NotFound from "@/pages/not-found";
+// Lazy loading enabled for optimal bundle splitting and performance
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const Settings = lazy(() => import("@/pages/settings"));
+const Pipeline = lazy(() => import("@/pages/pipeline"));
+const Cases = lazy(() => import("@/pages/cases"));
+const CaseDetail = lazy(() => import("@/pages/case-detail"));
+const BatchProcessing = lazy(() => import("@/pages/batch-processing"));
+const FollowUpAssistant = lazy(() => import("@/pages/follow-up-assistant"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 // Loading fallback component for better UX during code splitting
 function LoadingFallback() {
@@ -44,13 +45,30 @@ function Router() {
         <Route path="/">
           <Redirect to="/cases" />
         </Route>
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/pipeline" component={Pipeline} />
-        <Route path="/cases" component={Cases} />
-        <Route path="/cases/:id" component={CaseDetail} />
-        <Route path="/batch" component={BatchProcessing} />
-        <Route path="/settings" component={Settings} />
-        <Route component={NotFound} />
+        <Route path="/dashboard">
+          <LazyRoute Component={Dashboard} />
+        </Route>
+        <Route path="/pipeline">
+          <LazyRoute Component={Pipeline} />
+        </Route>
+        <Route path="/cases">
+          <LazyRoute Component={Cases} />
+        </Route>
+        <Route path="/cases/:id">
+          <LazyRoute Component={CaseDetail} />
+        </Route>
+        <Route path="/batch">
+          <LazyRoute Component={BatchProcessing} />
+        </Route>
+        <Route path="/assistant">
+          <LazyRoute Component={FollowUpAssistant} />
+        </Route>
+        <Route path="/settings">
+          <LazyRoute Component={Settings} />
+        </Route>
+        <Route>
+          <LazyRoute Component={NotFound} />
+        </Route>
       </Switch>
     </ErrorBoundary>
   );

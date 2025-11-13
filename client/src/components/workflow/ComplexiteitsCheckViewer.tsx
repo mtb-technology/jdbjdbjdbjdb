@@ -13,6 +13,8 @@ interface ComplexiteitsCheckViewerProps {
   rawOutput: string;
   /** Callback when user edits the bouwplan JSON */
   onEditedBouwplan?: (editedBouwplan: BouwplanData) => void;
+  /** Summary from Stage 1 (samenvatting_onderwerp) */
+  samenvatting?: string;
 }
 
 /**
@@ -25,7 +27,8 @@ interface ComplexiteitsCheckViewerProps {
  */
 export function ComplexiteitsCheckViewer({
   rawOutput,
-  onEditedBouwplan
+  onEditedBouwplan,
+  samenvatting
 }: ComplexiteitsCheckViewerProps) {
   const [showRawJson, setShowRawJson] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -105,6 +108,18 @@ export function ComplexiteitsCheckViewer({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Samenvatting Onderwerp (from Stage 1) */}
+          {samenvatting && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Hoofdvraag / Onderwerp
+              </h4>
+              <blockquote className="border-l-4 border-primary pl-4 py-2 italic text-sm bg-muted/30">
+                "{samenvatting}"
+              </blockquote>
+            </div>
+          )}
+
           {/* Fiscale Kernthema's */}
           {displayData.fiscale_kernthemas && displayData.fiscale_kernthemas.length > 0 && (
             <div className="space-y-2">

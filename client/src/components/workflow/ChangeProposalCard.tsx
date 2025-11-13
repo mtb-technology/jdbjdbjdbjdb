@@ -1,19 +1,23 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { 
-  CheckCircle2, 
-  XCircle, 
-  Edit3, 
+import {
+  CheckCircle2,
+  XCircle,
+  Edit3,
   AlertTriangle,
   Info,
   Lightbulb,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Loader2
 } from "lucide-react";
-import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued';
+
+// Lazy load diff viewer - only loads when proposal card is expanded with diff view
+const ReactDiffViewer = lazy(() => import('react-diff-viewer-continued').then(module => ({ default: module.default })));
+const DiffMethod = { WORDS: 'WORDS' as const };
 
 export interface ChangeProposal {
   id: string;
@@ -162,25 +166,32 @@ export function ChangeProposalCard({
           {/* Diff View */}
           {showDiff && proposal.changeType !== 'add' && (
             <div className="border rounded-lg overflow-hidden bg-background">
-              <ReactDiffViewer
-                oldValue={proposal.original}
-                newValue={proposal.proposed}
-                splitView={false}
-                compareMethod={DiffMethod.WORDS}
-                hideLineNumbers={true}
-                showDiffOnly={true}
-                styles={{
-                  variables: {
-                    light: {
-                      diffViewerBackground: '#ffffff',
-                      addedBackground: '#e6ffed',
-                      removedBackground: '#ffeef0',
-                      wordAddedBackground: '#acf2bd',
-                      wordRemovedBackground: '#fdb8c0',
+              <Suspense fallback={
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  <span className="ml-2 text-sm text-muted-foreground">Diff laden...</span>
+                </div>
+              }>
+                <ReactDiffViewer
+                  oldValue={proposal.original}
+                  newValue={proposal.proposed}
+                  splitView={false}
+                  compareMethod={DiffMethod.WORDS}
+                  hideLineNumbers={true}
+                  showDiffOnly={true}
+                  styles={{
+                    variables: {
+                      light: {
+                        diffViewerBackground: '#ffffff',
+                        addedBackground: '#e6ffed',
+                        removedBackground: '#ffeef0',
+                        wordAddedBackground: '#acf2bd',
+                        wordRemovedBackground: '#fdb8c0',
+                      },
                     },
-                  },
-                }}
-              />
+                  }}
+                />
+              </Suspense>
             </div>
           )}
 

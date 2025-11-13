@@ -117,7 +117,7 @@ export function VersionTimeline({
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-semibold text-sm">
-                              Versie {checkpoint.version}
+                              {checkpoint.stageName}
                             </span>
                             {isCurrent && (
                               <Badge variant="default" className="text-xs">
@@ -130,8 +130,8 @@ export function VersionTimeline({
                               </Badge>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground">
-                            {checkpoint.stageName}
+                          <p className="text-xs text-muted-foreground">
+                            Stage: {checkpoint.stageKey}
                           </p>
                         </div>
                         {checkpoint.changeCount !== undefined && checkpoint.changeCount > 0 && (
@@ -235,17 +235,17 @@ export function CompactVersionTimeline({ versions, currentVersion }: CompactTime
                 isCurrent ? 'scale-110' : ''
               }`}
             >
-              <div 
+              <div
                 className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
-                  isCurrent 
-                    ? 'bg-primary border-primary text-primary-foreground font-bold' 
+                  isCurrent
+                    ? 'bg-primary border-primary text-primary-foreground font-bold'
                     : 'bg-background border-border text-muted-foreground'
                 }`}
               >
-                <span className="text-xs">v{checkpoint.version}</span>
+                <span className="text-[10px] font-semibold">{checkpoint.stageKey.split('_')[0]}</span>
               </div>
-              <p className="text-xs text-center mt-1 text-muted-foreground truncate max-w-[80px]">
-                {checkpoint.stageName.split(' ').slice(0, 2).join(' ')}
+              <p className="text-xs text-center mt-1 text-muted-foreground truncate max-w-[80px]" title={checkpoint.stageName}>
+                {checkpoint.stageName.split(' v')[0].split(' ').slice(-2).join(' ')}
               </p>
               {checkpoint.changeCount !== undefined && checkpoint.changeCount > 0 && (
                 <Badge variant="secondary" className="text-xs mt-1">

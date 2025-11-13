@@ -18,6 +18,10 @@ import { StreamingSessionManager } from "./services/streaming/streaming-session-
 import { PromptBuilder } from "./services/prompt-builder";
 import { registerStreamingRoutes } from "./routes/streaming-routes";
 import { documentRouter } from "./routes/document-routes";
+import { fileUploadRouter } from "./routes/file-upload-routes";
+import { registerHealthRoutes } from "./routes/health-routes";
+import { registerPromptRoutes } from "./routes/prompt-routes";
+import { registerCaseRoutes } from "./routes/case-routes";
 import { z } from "zod";
 import { ServerError, asyncHandler } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
@@ -51,10 +55,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
   const reportProcessor = new ReportProcessor(aiHandler);
-  
+
+  // ====== REGISTER EXTRACTED ROUTE MODULES ======
+  // Phase 1: Health, Prompt, and Case routes moved to separate files
+  registerHealthRoutes(app);
+  registerPromptRoutes(app);
+  registerCaseRoutes(app, pdfGenerator);
+  // ==============================================
+
   // Start periodic health checks and run immediate warm-up
   healthService.startPeriodicHealthChecks();
-  
+
   // Warm up health cache immediately
   healthService.getSystemHealth().catch(error => {
     console.warn('Initial health check failed:', error);
@@ -66,77 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(createApiSuccessResponse({ response: result }, "AI test succesvol uitgevoerd"));
   }));
 
-  // Health check endpoints - use cached results for efficiency
-  app.get("/api/health", asyncHandler(async (req: Request, res: Response) => {
-    const health = healthService.getCachedHealth();
-    const statusCode = health.overall === 'healthy' ? 200 : 503;
-    
-    // Redact sensitive details for public health check
-    const publicHealth = {
-      status: health.overall,
-      timestamp: health.timestamp,
-      services: health.services.map(s => ({
-        service: s.service,
-        status: s.status,
-        lastChecked: s.lastChecked
-      }))
-    };
-    
-    res.status(statusCode).json(createApiSuccessResponse(publicHealth, `System is ${health.overall}`));
-  }));
-
-  app.get("/api/health/detailed", asyncHandler(async (req: Request, res: Response) => {
-    // Strict admin authentication - require exact API key match
-    const adminKey = req.headers['x-admin-key'] as string;
-    const authHeader = req.headers['authorization'] as string;
-    
-    const isValidKey = adminKey === process.env.ADMIN_API_KEY;
-    const isValidBearer = authHeader?.startsWith('Bearer ') && 
-                         authHeader.substring(7) === process.env.ADMIN_API_KEY;
-    
-    if (!isValidKey && !isValidBearer) {
-      res.status(401).json(createApiErrorResponse(
-        'AUTHENTICATION_ERROR', 
-        ERROR_CODES.AI_AUTHENTICATION_FAILED,
-        'Valid admin authentication required for detailed health status',
-        'Access denied - invalid credentials'
-      ));
-      return;
-    }
-    
-    // Detailed health check with full metrics
-    const health = await healthService.getSystemHealth();
-    const statusCode = health.overall === 'healthy' ? 200 : 503;
-    res.status(statusCode).json(createApiSuccessResponse(health, "Detailed health status retrieved"));
-  }));
-
-  app.get("/api/health/database", asyncHandler(async (req: Request, res: Response) => {
-    const isHealthy = await checkDatabaseConnection();
-    const statusCode = isHealthy ? 200 : 503;
-    res.status(statusCode).json(createApiSuccessResponse({ 
-      status: isHealthy ? 'healthy' : 'unhealthy',
-      timestamp: new Date().toISOString()
-    }, `Database is ${isHealthy ? 'healthy' : 'unhealthy'}`));
-  }));
-
-  app.get("/api/health/ai", asyncHandler(async (req: Request, res: Response) => {
-    // Use cached health data to avoid cost and rate limits
-    const health = healthService.getCachedHealth();
-    const statusCode = health.overall === 'healthy' ? 200 : 503;
-    
-    // Return only AI service status without sensitive details
-    const aiHealth = {
-      overall: health.overall,
-      services: health.services.map(s => ({
-        service: s.service,
-        status: s.status,
-        lastChecked: s.lastChecked
-      })),
-      timestamp: health.timestamp
-    };
-
-    res.status(statusCode).json(createApiSuccessResponse(aiHealth, "AI services health status retrieved"));
-  }));
+  // NOTE: Health routes moved to server/routes/health-routes.ts
 
   // Extract dossier data from raw text using AI
   app.post("/api/extract-dossier", asyncHandler(async (req: Request, res: Response) => {
@@ -483,18 +424,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/:id/stage/:stageId/prompt-preview", asyncHandler(async (req: Request, res: Response) => {
     const { id: reportId, stageId } = req.params;
     const { userInstructions = "Pas alle feedback toe om het concept rapport te verbeteren. Neem alle suggesties over die de kwaliteit, accuratesse en leesbaarheid van het rapport verbeteren." } = req.query;
-    
+
     console.log(`👁️ [${reportId}-${stageId}] Prompt preview requested`);
+    console.log(`👁️ Query params:`, req.query);
+    console.log(`👁️ userInstructions type:`, typeof userInstructions, userInstructions);
 
     // Check if report exists
     const report = await storage.getReport(reportId);
     if (!report) {
-      return res.status(404).json(createApiErrorResponse(
+      res.status(404).json(createApiErrorResponse(
         'REPORT_NOT_FOUND',
         'VALIDATION_FAILED',
         'Rapport niet gevonden',
         'Het rapport kon niet worden gevonden voor prompt preview'
       ));
+      return;
     }
 
     // Validate stage ID for review stages only
@@ -505,12 +449,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ];
 
     if (!validReviewStages.includes(stageId)) {
-      return res.status(400).json(createApiErrorResponse(
+      res.status(400).json(createApiErrorResponse(
         'INVALID_STAGE',
         'VALIDATION_FAILED',
         'Ongeldige stap voor prompt preview',
         `Stage ${stageId} ondersteunt geen prompt preview`
       ));
+      return;
     }
 
     try {
@@ -519,12 +464,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rawFeedback = stageResults[stageId];
 
       if (!rawFeedback) {
-        return res.status(400).json(createApiErrorResponse(
+        res.status(400).json(createApiErrorResponse(
           'NO_FEEDBACK_FOUND',
           'VALIDATION_FAILED',
           'Geen feedback gevonden',
           `Geen feedback beschikbaar voor stage ${stageId}`
         ));
+        return;
       }
 
       // Get the latest concept report (same as process-feedback endpoint)
@@ -555,23 +501,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (!latestConceptText) {
-        return res.status(400).json(createApiErrorResponse(
+        res.status(400).json(createApiErrorResponse(
           'NO_CONCEPT_FOUND',
           'VALIDATION_FAILED',
           'Geen concept rapport gevonden',
           'Er is geen concept rapport beschikbaar om feedback op te verwerken'
         ));
+        return;
       }
 
       // Get the Editor prompt from active config (same as process-feedback endpoint)
       const activeConfig = await storage.getActivePromptConfig();
       if (!activeConfig || !activeConfig.config) {
-        return res.status(400).json(createApiErrorResponse(
+        res.status(400).json(createApiErrorResponse(
           'NO_EDITOR_CONFIG',
           'INTERNAL_SERVER_ERROR',
           'Editor configuratie ontbreekt',
           'Er is geen actieve Editor prompt configuratie gevonden'
         ));
+        return;
       }
 
       // Parse the config JSON to get the stages
@@ -587,11 +535,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Build the Editor prompt using PromptBuilder (same as process-feedback endpoint)
+      // The Editor prompt itself contains the instructions - we only provide data
       const promptBuilder = new PromptBuilder();
       const editorInput = JSON.stringify({
         BASISTEKST: latestConceptText,
-        WIJZIGINGEN_JSON: feedbackJSON,
-        INSTRUCTIES: userInstructions
+        WIJZIGINGEN_JSON: feedbackJSON
       }, null, 2);
 
       const { systemPrompt, userInput } = promptBuilder.build(
@@ -604,7 +552,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fullPrompt = combinedPrompt;
       const promptLength = fullPrompt.length;
 
-      return res.json(createApiSuccessResponse({
+      res.json(createApiSuccessResponse({
         stageId,
         userInstructions,
         combinedPrompt: combinedPrompt.trim(),
@@ -615,8 +563,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error: any) {
       console.error(`❌ [${reportId}-${stageId}] Prompt preview failed:`, error);
-      
-      return res.status(500).json(createApiErrorResponse(
+      console.error(`❌ Error details:`, {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+
+      res.status(500).json(createApiErrorResponse(
         'PREVIEW_FAILED',
         'INTERNAL_SERVER_ERROR',
         'Prompt preview gefaald',
@@ -628,12 +581,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Manual feedback processing endpoint - user-controlled feedback selection and processing
   app.post("/api/reports/:id/stage/:stageId/process-feedback", asyncHandler(async (req: Request, res: Response) => {
     const { id: reportId, stageId } = req.params;
-    
+
     console.log(`🔧 [${reportId}-${stageId}] Manual feedback processing requested`);
 
     // Validate request body - SIMPLIFIED approach
     const validatedData = processFeedbackRequestSchema.parse(req.body);
-    const { userInstructions, processingStrategy } = validatedData;
+    const { userInstructions, processingStrategy, filteredChanges } = validatedData;
 
     // Check if report exists
     const report = await storage.getReport(reportId);
@@ -663,17 +616,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // Get the raw feedback from stageResults
-      const stageResults = (report.stageResults as Record<string, string>) || {};
-      const rawFeedback = stageResults[stageId];
-      
-      if (!rawFeedback) {
-        return res.status(400).json(createApiErrorResponse(
-          'NO_FEEDBACK_FOUND',
-          'VALIDATION_FAILED',
-          'Geen feedback gevonden',
-          `Geen feedback beschikbaar voor stage ${stageId}`
-        ));
+      // Use filtered changes if provided, otherwise fall back to raw feedback
+      let feedbackJSON;
+
+      if (filteredChanges) {
+        // Client sent pre-filtered changes (only accepted/modified proposals)
+        console.log(`📝 [${reportId}-${stageId}] Using filtered changes from client`);
+        try {
+          feedbackJSON = JSON.parse(filteredChanges);
+        } catch (e) {
+          return res.status(400).json(createApiErrorResponse(
+            'INVALID_FILTERED_CHANGES',
+            'VALIDATION_FAILED',
+            'Ongeldige filtered changes JSON',
+            'De gefilterde wijzigingen konden niet worden geparseerd als JSON'
+          ));
+        }
+      } else {
+        // Legacy fallback: Get the raw feedback from stageResults
+        console.log(`📝 [${reportId}-${stageId}] Using raw feedback from stageResults (legacy mode)`);
+        const stageResults = (report.stageResults as Record<string, string>) || {};
+        const rawFeedback = stageResults[stageId];
+
+        if (!rawFeedback) {
+          return res.status(400).json(createApiErrorResponse(
+            'NO_FEEDBACK_FOUND',
+            'VALIDATION_FAILED',
+            'Geen feedback gevonden',
+            `Geen feedback beschikbaar voor stage ${stageId}`
+          ));
+        }
+
+        // Parse the raw feedback as JSON (it should already be JSON from the specialist)
+        try {
+          feedbackJSON = JSON.parse(rawFeedback);
+        } catch (e) {
+          // If it's not valid JSON, use it as-is
+          feedbackJSON = rawFeedback;
+        }
       }
 
       // Get the latest concept report to send to the editor
@@ -727,23 +707,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const parsedConfig = activeConfig.config as PromptConfig;
       const editorPromptConfig = parsedConfig.editor;
 
-      // Parse the raw feedback as JSON (it should already be JSON from the specialist)
-      let feedbackJSON;
-      try {
-        feedbackJSON = JSON.parse(rawFeedback);
-      } catch (e) {
-        // If it's not valid JSON, wrap it in an array
-        feedbackJSON = rawFeedback;
-      }
-
       // Build the Editor prompt using PromptBuilder
-      // The Editor expects: BASISTEKST + WIJZIGINGEN_JSON
-      // The user instructions tell us WHICH changes to apply (accept/reject decisions)
+      // The Editor prompt itself contains the instructions on what to do
+      // We only need to provide: BASISTEKST + WIJZIGINGEN_JSON
+      // Note: filteredChanges already contains only accepted/modified proposals
       const promptBuilder = new PromptBuilder();
       const editorInput = JSON.stringify({
         BASISTEKST: latestConceptText,
-        WIJZIGINGEN_JSON: feedbackJSON,
-        INSTRUCTIES: userInstructions // User's accept/reject decisions
+        WIJZIGINGEN_JSON: feedbackJSON
       }, null, 2);
 
       const { systemPrompt, userInput } = promptBuilder.build(
@@ -959,16 +930,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Prompt configuration endpoints
-  app.get("/api/prompts", async (req, res) => {
-    try {
-      const prompts = await storage.getAllPromptConfigs();
-      res.json(createApiSuccessResponse(prompts));
-    } catch (error) {
-      console.error("Error fetching prompt configs:", error);
-      res.status(500).json({ message: "Fout bij ophalen prompt configuraties" });
-    }
-  });
+  // NOTE: Prompt configuration endpoints moved to server/routes/prompt-routes.ts
+  // Includes: GET /api/prompts, GET /api/prompts/active, POST /api/prompts, PUT /api/prompts/:id,
+  //           GET /api/prompts/backup, POST /api/prompts/restore, POST /api/prompts/ingest-from-json,
+  //           GET /api/prompt-templates/:stageKey
 
   app.get("/api/prompts/active", async (req, res) => {
     try {
@@ -1332,17 +1297,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update case metadata (title and clientName)
+  app.patch("/api/cases/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { title, clientName } = req.body;
+
+      // Validate input
+      const updates: any = {};
+
+      if (title !== undefined) {
+        if (typeof title !== 'string' || title.trim().length === 0) {
+          res.status(400).json({ message: "Titel mag niet leeg zijn" });
+          return;
+        }
+        updates.title = title.trim();
+      }
+
+      if (clientName !== undefined) {
+        if (typeof clientName !== 'string' || clientName.trim().length === 0) {
+          res.status(400).json({ message: "Clientnaam mag niet leeg zijn" });
+          return;
+        }
+        updates.clientName = clientName.trim();
+      }
+
+      if (Object.keys(updates).length === 0) {
+        res.status(400).json({ message: "Geen velden om bij te werken" });
+        return;
+      }
+
+      const updatedReport = await storage.updateReport(id, updates);
+
+      if (!updatedReport) {
+        res.status(404).json({ message: "Case niet gevonden" });
+        return;
+      }
+
+      res.json(createApiSuccessResponse(updatedReport, "Case succesvol bijgewerkt"));
+    } catch (error: any) {
+      console.error("Error updating case:", error);
+      res.status(500).json({ message: "Fout bij updaten case" });
+    }
+  });
+
   // Update case status
   app.patch("/api/cases/:id/status", async (req, res) => {
     try {
       const { id } = req.params;
       const { status } = req.body;
-      
+
       if (!["draft", "processing", "generated", "exported", "archived"].includes(status)) {
         res.status(400).json({ message: "Ongeldige status" });
         return;
       }
-      
+
       await storage.updateReportStatus(id, status);
       res.json(createApiSuccessResponse({ success: true }, "Status succesvol bijgewerkt"));
     } catch (error: any) {
@@ -1533,9 +1542,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register streaming routes
   registerStreamingRoutes(app, sseHandler, sessionManager);
-  
+
   // Register document management routes
   app.use("/api/documents", documentRouter);
+
+  // Register file upload routes
+  app.use("/api/upload", fileUploadRouter);
 
   const httpServer = createServer(app);
   return httpServer;
