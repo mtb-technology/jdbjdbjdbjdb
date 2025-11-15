@@ -2,16 +2,20 @@
  * Health Check Service voor system monitoring
  */
 
-import type { 
-  IHealthCheckService, 
-  HealthCheckResult 
-} from '@shared/types/services';
 import { checkDatabaseConnection } from '../db';
 import { AIModelFactory } from './ai-models/ai-model-factory';
 import { SourceValidator } from './source-validator';
 import { config } from '../config';
 
-export class HealthCheckService implements IHealthCheckService {
+export interface HealthCheckResult {
+  service: string;
+  healthy: boolean;
+  responseTime: number;
+  details?: Record<string, any>;
+  lastChecked: Date;
+}
+
+export class HealthCheckService {
   private readonly sourceValidator: SourceValidator;
   private readonly aiModelFactory: AIModelFactory;
 
@@ -73,7 +77,14 @@ export class HealthCheckService implements IHealthCheckService {
         const handler = this.aiModelFactory.getHandler('gemini-2.5-flash');
         if (handler) {
           // Simple test prompt
-          await handler.generateContent('Test connectie', { maxOutputTokens: 10 });
+          await handler.call('Test connectie', {
+            provider: 'google',
+            model: 'gemini-2.5-flash',
+            temperature: 0.7,
+            topP: 1.0,
+            topK: 40,
+            maxOutputTokens: 10
+          });
           
           results.push({
             service: 'google-ai',
@@ -115,7 +126,14 @@ export class HealthCheckService implements IHealthCheckService {
         const handler = this.aiModelFactory.getHandler('gpt-4o-mini');
         if (handler) {
           // Simple test prompt
-          await handler.generateContent('Test connectie', { maxOutputTokens: 10 });
+          await handler.call('Test connectie', {
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            temperature: 0.7,
+            topP: 1.0,
+            topK: 40,
+            maxOutputTokens: 10
+          });
           
           results.push({
             service: 'openai',

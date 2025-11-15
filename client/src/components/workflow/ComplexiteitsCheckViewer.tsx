@@ -44,7 +44,7 @@ export function ComplexiteitsCheckViewer({
         <AlertDescription>
           <p className="font-semibold mb-2">Fout bij het parsen van de complexiteitscheck output</p>
           <p className="text-xs mb-3">De AI heeft geen geldig JSON formaat geretourneerd. Hieronder de ruwe output:</p>
-          <pre className="whitespace-pre-wrap text-xs bg-black/10 p-3 rounded mt-2 max-h-[400px] overflow-y-auto">
+          <pre className="whitespace-pre-wrap break-all text-xs bg-black/10 p-3 rounded mt-2 max-h-[400px] overflow-y-auto" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
             {rawOutput}
           </pre>
         </AlertDescription>

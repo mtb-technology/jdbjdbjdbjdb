@@ -23,7 +23,7 @@ documentRouter.get(
 
     const report = await storage.getReport(reportId);
     if (!report) {
-      throw ServerError.notFound("Report niet gevonden", "Het rapport bestaat niet");
+      throw ServerError.notFound("Report");
     }
 
     const pendingChanges = (report.pendingChanges as PendingChanges) || {};
@@ -120,7 +120,7 @@ documentRouter.post(
 
     const report = await storage.getReport(reportId);
     if (!report) {
-      throw ServerError.notFound("Report niet gevonden", "Het rapport bestaat niet");
+      throw ServerError.notFound("Report");
     }
 
     const pendingChanges = (report.pendingChanges as PendingChanges) || {};
@@ -179,7 +179,7 @@ documentRouter.post(
 
     const report = await storage.getReport(reportId);
     if (!report) {
-      throw ServerError.notFound("Report niet gevonden", "Het rapport bestaat niet");
+      throw ServerError.notFound("Report");
     }
 
     const pendingChanges = (report.pendingChanges as PendingChanges) || {};

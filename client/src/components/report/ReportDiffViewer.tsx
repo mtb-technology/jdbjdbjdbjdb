@@ -277,7 +277,7 @@ export function ReportDiffViewer({
               oldValue={oldContent}
               newValue={newContent}
               splitView={viewMode === 'split'}
-              compareMethod={DiffMethod.WORDS}
+              compareMethod={DiffMethod.WORDS as any}
               leftTitle={`Versie ${oldVersion} - ${oldVersionInfo?.stageName}`}
               rightTitle={`Versie ${newVersion} - ${newVersionInfo?.stageName}`}
               styles={{

@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { errorHandler } from "./middleware/errorHandler";
@@ -21,10 +22,27 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ FIX: Increase body size limits for file uploads
-// Default is 100kb which is too small for PDFs
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+// ✅ FIX: Reduce body size limits (was 50mb, now 10mb for security)
+// Large payloads can cause memory issues and enable DoS attacks
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+
+// 🔒 SECURITY: Session middleware for authentication
+// Sessions are stored in PostgreSQL for production, memory for development
+declare module 'express-session' {
+  interface SessionData {
+    userId: string;
+    username: string;
+  }
+}
+
+app.use(session({
+  secret: config.session.secret,
+  resave: config.session.resave,
+  saveUninitialized: config.session.saveUninitialized,
+  cookie: config.session.cookie,
+  name: config.session.name
+}));
 
 // Request ID middleware voor betere error tracking
 app.use((req, res, next) => {

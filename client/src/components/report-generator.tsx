@@ -72,7 +72,7 @@ const ReportGenerator = memo(function ReportGenerator() {
     try {
       const parsedDossier = JSON.parse(dossierData) as DossierData;
       const parsedBouwplan = JSON.parse(bouwplanData) as BouwplanData;
-      return parsedDossier.klant?.naam && parsedBouwplan.taal;
+      return parsedDossier.klant?.naam && parsedBouwplan.fiscale_kernthemas?.length > 0;
     } catch {
       return false;
     }

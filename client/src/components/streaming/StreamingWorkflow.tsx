@@ -5,37 +5,41 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Play, Square, RotateCcw, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { SimpleFeedbackProcessor } from "@/components/workflow/SimpleFeedbackProcessor";
-import type { 
-  StreamingSession, 
-  StreamingEvent, 
-  SubstepProgress 
+import { logger } from "@/lib/logger";
+import { getErrorMessage } from "@/types/api";
+import type {
+  StreamingSession,
+  StreamingEvent,
+  SubstepProgress
 } from "@shared/streaming-types";
 
 interface StreamingWorkflowProps {
   reportId: string;
   stageId: string;
   stageName: string;
-  onComplete?: (result: any) => void;
+  onComplete?: (result: StreamingEvent) => void;
   onError?: (error: string) => void;
 }
 
-export function StreamingWorkflow({ 
-  reportId, 
-  stageId, 
+export function StreamingWorkflow({
+  reportId,
+  stageId,
   stageName,
   onComplete,
-  onError 
+  onError
 }: StreamingWorkflowProps) {
   const [session, setSession] = useState<StreamingSession | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
   const [streamingContent, setStreamingContent] = useState<string>("");
+  const [retryCount, setRetryCount] = useState(0);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Start streaming execution
   const startExecution = useCallback(async () => {
     try {
-      console.log(`🌊 [${reportId}-${stageId}] Starting streaming execution`);
-      
+      logger.streaming(reportId, stageId, 'Starting streaming execution');
+
       const response = await fetch(`/api/reports/${reportId}/stage/${stageId}/stream`, {
         method: 'POST',
         headers: {
@@ -49,63 +53,88 @@ export function StreamingWorkflow({
       }
 
       const result = await response.json();
-      console.log(`✅ [${reportId}-${stageId}] Streaming started:`, result);
+      logger.streaming(reportId, stageId, 'Streaming started', result);
 
       // Connect to SSE stream
       connectToStream();
-    } catch (error: any) {
-      console.error(`❌ [${reportId}-${stageId}] Failed to start streaming:`, error);
-      onError?.(error.message);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      logger.error('Failed to start streaming', error, { context: `${reportId}-${stageId}` });
+      onError?.(message);
     }
   }, [reportId, stageId, onError]);
 
-  // Connect to Server-Sent Events stream
+  // Connect to Server-Sent Events stream with exponential backoff
   const connectToStream = useCallback(() => {
+    // Prevent concurrent connection attempts
+    if (isConnecting) {
+      logger.debug('Connection already in progress, skipping', { context: `${reportId}-${stageId}` });
+      return;
+    }
+
+    setIsConnecting(true);
+
+    // Close existing connection if any
     if (eventSource) {
+      logger.debug('Closing existing connection', { context: `${reportId}-${stageId}` });
       eventSource.close();
+      setEventSource(null);
     }
 
     const url = `/api/reports/${reportId}/stage/${stageId}/stream`;
-    console.log(`📡 [${reportId}-${stageId}] Connecting to SSE: ${url}`);
-    
+    logger.streaming(reportId, stageId, `Connecting to SSE: ${url}`);
+
     const source = new EventSource(url);
-    
+
     source.onopen = () => {
-      console.log(`🔗 [${reportId}-${stageId}] SSE connection opened`);
+      logger.streaming(reportId, stageId, 'SSE connection opened');
       setIsConnected(true);
+      setIsConnecting(false);
+      setRetryCount(0); // Reset retry count on successful connection
     };
 
     source.onmessage = (event) => {
       try {
         const streamingEvent: StreamingEvent = JSON.parse(event.data);
-        console.log(`📨 [${reportId}-${stageId}] SSE event:`, streamingEvent.type);
+        logger.streaming(reportId, stageId, `SSE event: ${streamingEvent.type}`);
         handleStreamingEvent(streamingEvent);
       } catch (error) {
-        console.warn(`⚠️ [${reportId}-${stageId}] Failed to parse SSE event:`, error);
+        logger.warn('Failed to parse SSE event', { context: `${reportId}-${stageId}`, data: error });
       }
     };
 
     source.onerror = (error) => {
-      console.error(`💥 [${reportId}-${stageId}] SSE connection error:`, error);
+      logger.error('SSE connection error', error, { context: `${reportId}-${stageId}` });
       setIsConnected(false);
-      
-      // Retry connection after 5 seconds
-      setTimeout(() => {
-        if (!source.CLOSED) {
-          console.log(`🔄 [${reportId}-${stageId}] Retrying SSE connection`);
+      setIsConnecting(false);
+
+      // Exponential backoff with max retries
+      const MAX_RETRIES = 5;
+      if (retryCount < MAX_RETRIES) {
+        // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 16000);
+        logger.debug(`Retrying SSE connection in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`, {
+          context: `${reportId}-${stageId}`
+        });
+
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
           connectToStream();
-        }
-      }, 5000);
+        }, delay);
+      } else {
+        logger.error('Max retries reached, giving up', null, { context: `${reportId}-${stageId}` });
+        onError?.('Connection failed after maximum retries');
+      }
     };
 
     setEventSource(source);
-  }, [reportId, stageId]);
+  }, [reportId, stageId, retryCount, eventSource, isConnecting, onError]);
 
   // Handle streaming events
   const handleStreamingEvent = useCallback((event: StreamingEvent) => {
     switch (event.type) {
       case 'progress':
-        console.log(`📊 [${reportId}-${stageId}] Progress event`);
+        logger.streaming(reportId, stageId, 'Progress event');
         // Create session from progress event
         const progressSession: StreamingSession = {
           reportId,
@@ -124,7 +153,7 @@ export function StreamingWorkflow({
         break;
 
       case 'step_start':
-        console.log(`▶️ [${reportId}-${stageId}] Step started: ${event.substepId}`);
+        logger.streaming(reportId, stageId, `Step started: ${event.substepId}`);
         setSession(prev => prev ? { 
           ...prev, 
           progress: { ...prev.progress, currentSubstep: event.substepId }
@@ -132,7 +161,7 @@ export function StreamingWorkflow({
         break;
 
       case 'step_progress':
-        console.log(`📈 [${reportId}-${stageId}] Step progress: ${event.substepId}`);
+        logger.streaming(reportId, stageId, `Step progress: ${event.substepId}`);
         setSession(prev => {
           if (!prev) return null;
           const updatedSubsteps = prev.progress.substeps.map(substep =>
@@ -148,7 +177,7 @@ export function StreamingWorkflow({
         break;
 
       case 'step_complete':
-        console.log(`✅ [${reportId}-${stageId}] Step completed: ${event.substepId}`);
+        logger.streaming(reportId, stageId, `Step completed: ${event.substepId}`);
         setSession(prev => {
           if (!prev) return null;
           const updatedSubsteps = prev.progress.substeps.map(substep =>
@@ -164,7 +193,7 @@ export function StreamingWorkflow({
         break;
 
       case 'step_error':
-        console.error(`❌ [${reportId}-${stageId}] Step error: ${event.substepId}`);
+        logger.error(`Step error: ${event.substepId}`, null, { context: `${reportId}-${stageId}` });
         setSession(prev => {
           if (!prev) return null;
           const updatedSubsteps = prev.progress.substeps.map(substep =>
@@ -185,11 +214,11 @@ export function StreamingWorkflow({
         break;
 
       case 'stage_complete':
-        console.log(`🎉 [${reportId}-${stageId}] Stage completed`);
-        
+        logger.streaming(reportId, stageId, 'Stage completed');
+
         // Check for user action required (feedback instructions)
         if (event.data?.requiresUserAction && event.data?.actionType === 'feedback_instructions') {
-          console.log(`📋 [${reportId}-${stageId}] Feedback ready for user instructions`);
+          logger.streaming(reportId, stageId, 'Feedback ready for user instructions');
           setSession(prev => prev ? { 
             ...prev, 
             status: 'awaiting_user_action',
@@ -213,7 +242,7 @@ export function StreamingWorkflow({
         break;
 
       case 'stage_error':
-        console.error(`💥 [${reportId}-${stageId}] Stage error:`, event.error);
+        logger.error('Stage error', event.error, { context: `${reportId}-${stageId}` });
         setSession(prev => prev ? { 
           ...prev, 
           status: 'error',
@@ -223,7 +252,7 @@ export function StreamingWorkflow({
         break;
 
       case 'cancelled':
-        console.log(`🛑 [${reportId}-${stageId}] Stage cancelled`);
+        logger.streaming(reportId, stageId, 'Stage cancelled');
         setSession(prev => prev ? { 
           ...prev, 
           status: 'cancelled',
@@ -232,7 +261,9 @@ export function StreamingWorkflow({
         break;
 
       default:
-        console.warn(`❓ [${reportId}-${stageId}] Unknown event type:`, (event as any).type);
+        logger.warn(`Unknown event type: ${(event as StreamingEvent & { type: string }).type}`, {
+          context: `${reportId}-${stageId}`
+        });
     }
   }, [reportId, stageId, onComplete, onError]);
 
@@ -247,9 +278,9 @@ export function StreamingWorkflow({
         throw new Error(`Cancel failed: ${response.statusText}`);
       }
 
-      console.log(`🛑 [${reportId}-${stageId}] Execution cancelled`);
-    } catch (error: any) {
-      console.error(`❌ [${reportId}-${stageId}] Failed to cancel:`, error);
+      logger.streaming(reportId, stageId, 'Execution cancelled');
+    } catch (error: unknown) {
+      logger.error('Failed to cancel execution', error, { context: `${reportId}-${stageId}` });
     }
   }, [reportId, stageId]);
 
@@ -264,18 +295,19 @@ export function StreamingWorkflow({
         throw new Error(`Retry failed: ${response.statusText}`);
       }
 
-      console.log(`🔄 [${reportId}-${stageId}] Substep ${substepId} retry initiated`);
-    } catch (error: any) {
-      console.error(`❌ [${reportId}-${stageId}] Failed to retry substep:`, error);
+      logger.streaming(reportId, stageId, `Substep ${substepId} retry initiated`);
+    } catch (error: unknown) {
+      logger.error('Failed to retry substep', error, { context: `${reportId}-${stageId}`, data: { substepId } });
     }
   }, [reportId, stageId]);
 
-  // Cleanup on unmount
+  // 🔒 SECURITY FIX: Cleanup EventSource on unmount to prevent memory leaks
   useEffect(() => {
     return () => {
       if (eventSource) {
         eventSource.close();
-        console.log(`🔌 [${reportId}-${stageId}] SSE connection closed`);
+        setEventSource(null); // Clear the reference to prevent memory leaks
+        logger.streaming(reportId, stageId, 'SSE connection closed on unmount');
       }
     };
   }, [eventSource, reportId, stageId]);
@@ -433,7 +465,7 @@ export function StreamingWorkflow({
               stageName={stageId}
               rawFeedback={session.userActionData.rawFeedback || 'Geen feedback beschikbaar'}
               onProcessingComplete={() => {
-                console.log(`🎉 Feedback processing completed for ${stageId}`);
+                logger.info(`Feedback processing completed for ${stageId}`);
                 // Session will update automatically via SSE events
               }}
             />

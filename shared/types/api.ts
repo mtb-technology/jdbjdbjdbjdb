@@ -38,7 +38,6 @@ export const generateReportRequestSchema = z.object({
     datum: z.string().datetime().optional(),
   }),
   bouwplan: z.object({
-    taal: z.enum(["nl", "en"]).default("nl"),
     structuur: z.object({
       inleiding: z.boolean().default(true),
       knelpunten: z.array(z.string().min(1).max(500)).min(1, "Minimaal één knelpunt vereist").max(10, "Maximaal 10 knelpunten"),

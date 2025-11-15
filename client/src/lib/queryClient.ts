@@ -6,7 +6,7 @@ import { QUERY_CONFIG, API_CONFIG } from "@/lib/config";
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     let errorData;
-    
+
     try {
       const responseText = await res.text();
       errorData = responseText ? JSON.parse(responseText) : null;
@@ -60,9 +60,16 @@ export async function apiRequest(
   data?: unknown | undefined,
 ): Promise<Response> {
   try {
+    const headers: Record<string, string> = {};
+
+    // Add Content-Type header if there's data
+    if (data) {
+      headers["Content-Type"] = "application/json";
+    }
+
     const res = await fetch(url, {
       method,
-      headers: data ? { "Content-Type": "application/json" } : {},
+      headers,
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
     });
@@ -101,7 +108,7 @@ export const getQueryFn: <T>(options: {
 
       await throwIfResNotOk(res);
       const data = await res.json();
-      
+
       // Extract data from API response if it follows our standard format
       if (data && typeof data === 'object' && 'success' in data && data.success === true) {
         if ('data' in data) {
@@ -109,19 +116,19 @@ export const getQueryFn: <T>(options: {
         }
         throw new Error('API response missing data field despite success: true');
       }
-      
+
       // Return data for legacy API responses, but validate it's not null/undefined
       if (data !== null && data !== undefined) {
         return data;
       }
-      
+
       throw new Error('API returned null or undefined data');
     } catch (error) {
       // Convert to AppError if needed and log
-      const appError = error instanceof AppError 
-        ? error 
+      const appError = error instanceof AppError
+        ? error
         : AppError.fromUnknown(error, { queryKey });
-      
+
       ErrorLogger.log(appError);
       throw appError;
     }

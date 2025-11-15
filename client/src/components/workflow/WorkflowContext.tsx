@@ -14,8 +14,10 @@ export interface WorkflowState {
   viewMode: "stage" | "concept";
   editingStage: string | null;
   expandedSteps: string[];
-  manualMode: "ai" | "manual";
-  manualContent: string;
+  manualMode: "ai" | "manual"; // For stage 3
+  manualContent: string; // For stage 3
+  manualModes: Record<string, "ai" | "manual">; // Per-stage manual mode (for 4A, 4B)
+  manualContents: Record<string, string>; // Per-stage manual content (for 4A, 4B)
   showManualDialog: boolean;
   copiedPrompt: boolean;
   stageStartTime: Date | null;
@@ -36,12 +38,15 @@ export type WorkflowAction =
   | { type: "SET_VIEW_MODE"; mode: "stage" | "concept" }
   | { type: "SET_EDITING_STAGE"; stage: string | null }
   | { type: "TOGGLE_STEP_EXPANSION"; stage: string }
-  | { type: "SET_MANUAL_MODE"; mode: "ai" | "manual" }
-  | { type: "SET_MANUAL_CONTENT"; content: string }
+  | { type: "SET_MANUAL_MODE"; mode: "ai" | "manual" } // For stage 3
+  | { type: "SET_MANUAL_CONTENT"; content: string } // For stage 3
+  | { type: "SET_STAGE_MANUAL_MODE"; stage: string; mode: "ai" | "manual" } // For 4A, 4B
+  | { type: "SET_STAGE_MANUAL_CONTENT"; stage: string; content: string } // For 4A, 4B
   | { type: "SET_SHOW_MANUAL_DIALOG"; show: boolean }
   | { type: "SET_COPIED_PROMPT"; copied: boolean }
   | { type: "SET_STAGE_START_TIME"; time: Date | null }
   | { type: "SET_STAGE_PROMPT"; stage: string; prompt: string }
+  | { type: "CLEAR_STAGE_PROMPTS" }
   | { type: "RESET_WORKFLOW" }
   | { type: "LOAD_EXISTING_REPORT"; report: Report };
 
@@ -67,6 +72,8 @@ const initialState: WorkflowState = {
   expandedSteps: ["1_informatiecheck", "2_complexiteitscheck", "3_generatie"],
   manualMode: "ai",
   manualContent: "",
+  manualModes: {},
+  manualContents: {},
   showManualDialog: false,
   copiedPrompt: false,
   stageStartTime: null,
@@ -241,10 +248,22 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
     
     case "SET_MANUAL_MODE":
       return { ...state, manualMode: action.mode };
-    
+
     case "SET_MANUAL_CONTENT":
       return { ...state, manualContent: action.content };
-    
+
+    case "SET_STAGE_MANUAL_MODE":
+      return {
+        ...state,
+        manualModes: { ...state.manualModes, [action.stage]: action.mode }
+      };
+
+    case "SET_STAGE_MANUAL_CONTENT":
+      return {
+        ...state,
+        manualContents: { ...state.manualContents, [action.stage]: action.content }
+      };
+
     case "SET_SHOW_MANUAL_DIALOG":
       return { ...state, showManualDialog: action.show };
     
@@ -259,7 +278,13 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         ...state,
         stagePrompts: { ...state.stagePrompts, [action.stage]: action.prompt }
       };
-    
+
+    case "CLEAR_STAGE_PROMPTS":
+      return {
+        ...state,
+        stagePrompts: {}
+      };
+
     case "RESET_WORKFLOW":
       return initialState;
     

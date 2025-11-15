@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface BatchItem {
   id: string;
@@ -495,11 +496,11 @@ export default function BatchProcessing() {
           </CardHeader>
           <CardContent>
             {batchItems.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Nog geen cases toegevoegd</p>
-                <p className="text-sm mt-2">Voeg cases toe via handmatige invoer of bestand upload</p>
-              </div>
+              <EmptyState
+                icon={Package}
+                title="Nog geen cases toegevoegd"
+                description="Voeg cases toe via handmatige invoer of bestand upload. Je kunt meerdere cases tegelijk verwerken."
+              />
             ) : (
               <div className="space-y-3">
                 {batchItems.map((item) => (

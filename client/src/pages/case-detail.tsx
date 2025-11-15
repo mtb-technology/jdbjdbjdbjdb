@@ -13,8 +13,9 @@ import { ReportDiffViewer } from "@/components/report/ReportDiffViewer";
 import { StickyReportPreview, FullScreenReportPreview } from "@/components/report/StickyReportPreview";
 import { ExportDialog } from "@/components/export/ExportDialog";
 import type { Report } from "@shared/schema";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { RefreshBanner } from "@/components/ui/refresh-banner";
 
 export default function CaseDetail() {
   const params = useParams();
@@ -25,14 +26,68 @@ export default function CaseDetail() {
   const [editedTitle, setEditedTitle] = useState("");
   const [isEditingClient, setIsEditingClient] = useState(false);
   const [editedClient, setEditedClient] = useState("");
+  const [showRefreshBanner, setShowRefreshBanner] = useState(false);
+  const lastVersionRef = useRef<number>(0);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: report, isLoading, error } = useQuery<Report>({
     queryKey: [`/api/reports/${reportId}`],
     enabled: !!reportId,
-    refetchInterval: 2000, // Auto-refresh every 2 seconds for real-time updates
   });
+
+  // Check for updates periodically without auto-refreshing
+  useEffect(() => {
+    if (!reportId || !report) return;
+
+    // Initialize the version ref with current report's timestamp
+    if (lastVersionRef.current === 0 && report.updatedAt) {
+      lastVersionRef.current = new Date(report.updatedAt).getTime();
+    }
+
+    const checkForUpdates = async () => {
+      try {
+        const response = await fetch(`/api/reports/${reportId}`, {
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const serverReport = data.data || data;
+
+          // Check if updatedAt has changed (version indicator)
+          const serverTimestamp = serverReport.updatedAt ? new Date(serverReport.updatedAt).getTime() : 0;
+
+          // Only show banner if there's actually a newer version
+          if (serverTimestamp > 0 && lastVersionRef.current > 0 && serverTimestamp > lastVersionRef.current) {
+            console.log('🔔 New version detected:', {
+              current: new Date(lastVersionRef.current).toISOString(),
+              server: new Date(serverTimestamp).toISOString()
+            });
+            setShowRefreshBanner(true);
+          }
+        }
+      } catch (err) {
+        // Silently fail - don't disrupt user experience
+        console.debug('Version check failed:', err);
+      }
+    };
+
+    // Check every 10 seconds (less aggressive)
+    const interval = setInterval(checkForUpdates, 10000);
+
+    return () => clearInterval(interval);
+  }, [reportId, report]);
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
+    setShowRefreshBanner(false);
+    if (report) {
+      // Use updatedAt as version indicator
+      const timestamp = report.updatedAt ? new Date(report.updatedAt).getTime() : Date.now();
+      lastVersionRef.current = timestamp;
+    }
+  };
 
   // Mutation for updating case metadata
   const updateCaseMutation = useMutation({
@@ -203,9 +258,20 @@ export default function CaseDetail() {
   }, [report?.conceptReportVersions, versionCheckpoints]);
 
   const currentContent = useMemo(() => {
-    if (!report?.conceptReportVersions) return report?.generatedContent || "";
+    if (!report?.conceptReportVersions) return "";
 
     const versions = report.conceptReportVersions as any;
+
+    // Check if we have any version history at all
+    const hasHistory = versions?.history && versions.history.length > 0;
+    const hasStageSnapshots = Object.keys(versions).some(key =>
+      key !== 'latest' && key !== 'history'
+    );
+
+    // If no versions exist, return empty string (no preview)
+    if (!hasHistory && !hasStageSnapshots) {
+      return "";
+    }
 
     // PRIORITEIT 1: Latest pointer - dit is de meest recente versie
     // Na feedback processing wijst dit naar de bijgewerkte versie (4a, 4b, etc)
@@ -228,9 +294,9 @@ export default function CaseDetail() {
       }
     }
 
-    // FALLBACK 3: generatedContent field
-    return report?.generatedContent || "";
-  }, [report?.conceptReportVersions, report?.generatedContent]);
+    // No valid content found - return empty if no versions exist
+    return "";
+  }, [report?.conceptReportVersions]);
 
   const latestChanges = useMemo(() => {
     if (!versionCheckpoints.length) return 0;
@@ -308,23 +374,118 @@ export default function CaseDetail() {
   };
 
   const handleVersionRestore = async (version: number) => {
-    const checkpoint = versionCheckpoints.find(v => v.version === version);
+    if (!reportId) return;
+
+    const checkpoint = versionCheckpoints.find((v: any) => v.version === version);
     if (!checkpoint) return;
 
-    toast({
-      title: "Versie Herstellen",
-      description: `Versie ${version} (${checkpoint.stageName}) wordt hersteld...`,
-    });
+    try {
+      const response = await apiRequest(
+        'POST',
+        `/api/reports/${reportId}/restore-version`,
+        { stageKey: checkpoint.stageKey }
+      );
 
-    // TODO: Implement version restore API call
-    // await apiRequest(`/api/reports/${reportId}/restore-version`, {
-    //   method: 'POST',
-    //   body: JSON.stringify({ stageKey: checkpoint.stageKey })
-    // });
+      if (!response.ok) {
+        throw new Error('Failed to restore version');
+      }
+
+      const result = await response.json();
+      const data = result.success ? result.data : result;
+
+      toast({
+        title: "Versie Hersteld",
+        description: `Versie ${version} (${checkpoint.stageName}) is nu de actieve versie`,
+        duration: 3000,
+      });
+
+      // Update the report data in cache
+      if (data.report) {
+        queryClient.setQueryData([`/api/reports/${reportId}`], data.report);
+      }
+
+      // Invalidate cases list to ensure all views show updated data
+      queryClient.invalidateQueries({ queryKey: ["/api/cases"], exact: false });
+
+      // Force refetch to get latest version data
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Failed to restore version:', error);
+      toast({
+        title: "Fout bij herstellen",
+        description: "Er ging iets mis bij het herstellen van de versie",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  };
+
+  const handleVersionDelete = async (stageKey: string) => {
+    if (!reportId) return;
+
+    try {
+      const response = await apiRequest(
+        'DELETE',
+        `/api/reports/${reportId}/stage/${stageKey}`
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to delete stage');
+      }
+
+      const result = await response.json();
+      const data = result.success ? result.data : result;
+      const cascadeDeleted = data.cascadeDeleted || [];
+
+      // Get the new active version info
+      const newLatest = data.report?.conceptReportVersions?.latest;
+      const newActiveStage = newLatest?.pointer || 'vorige versie';
+
+      const cascadeMessage = cascadeDeleted.length > 0
+        ? ` en ${cascadeDeleted.length} volgende stage${cascadeDeleted.length > 1 ? 's' : ''}`
+        : '';
+
+      toast({
+        title: "Versie Verwijderd",
+        description: `${stageKey}${cascadeMessage} verwijderd. Actieve versie: ${newActiveStage}`,
+        duration: 4000,
+      });
+
+      // DIRECT UPDATE: Set the returned report data immediately in the cache
+      // This bypasses HTTP caching (304) and immediately updates the UI
+      if (data.report) {
+        queryClient.setQueryData([`/api/reports/${reportId}`], data.report);
+      }
+
+      // Invalidate cases list to ensure all views show updated data
+      queryClient.invalidateQueries({ queryKey: ["/api/cases"], exact: false });
+
+      // Force refetch to get latest version data
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Failed to delete version:', error);
+      toast({
+        title: "Fout bij verwijderen",
+        description: "Er ging iets mis bij het verwijderen van de versie",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
   };
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Refresh Banner */}
+      <RefreshBanner
+        visible={showRefreshBanner}
+        message="Er is een nieuwe versie van deze case beschikbaar"
+        onRefresh={handleRefresh}
+        onDismiss={() => setShowRefreshBanner(false)}
+        variant="info"
+      />
+
       {/* Header with back button */}
       <div className="flex items-center justify-between mb-8">
         <Link href="/cases">
@@ -529,6 +690,7 @@ export default function CaseDetail() {
                     console.log('Version selected:', version);
                   }}
                   onRestore={handleVersionRestore}
+                  onDelete={handleVersionDelete}
                 />
               ) : (
                 <Card>
@@ -577,7 +739,7 @@ export default function CaseDetail() {
           <StickyReportPreview
             content={currentContent}
             version={currentVersion}
-            stageName={versionCheckpoints.find(v => v.version === currentVersion)?.stageName || "Concept"}
+            stageName={versionCheckpoints.find((v: any) => v.version === currentVersion)?.stageName || "Concept"}
             changeCount={latestChanges}
             versions={versionCheckpoints}
             onFullView={() => setShowFullScreen(true)}
@@ -590,7 +752,7 @@ export default function CaseDetail() {
         <FullScreenReportPreview
           content={currentContent}
           version={currentVersion}
-          stageName={versionCheckpoints.find(v => v.version === currentVersion)?.stageName || "Concept"}
+          stageName={versionCheckpoints.find((v: any) => v.version === currentVersion)?.stageName || "Concept"}
           onClose={() => setShowFullScreen(false)}
         />
       )}

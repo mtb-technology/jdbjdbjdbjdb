@@ -29,9 +29,10 @@ import {
   Wand2,
   PenTool,
   Users,
-  GitCompare
+  GitCompare,
+  RefreshCw
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import { WORKFLOW_STAGES } from "./constants";
 import { WorkflowStageCard } from "./WorkflowStageCard";
 import { OverrideConceptDialog } from "./OverrideConceptDialog";
@@ -60,7 +61,7 @@ const getStageIcon = (stageKey: string) => {
   return icons[stageKey] || <Play className="h-5 w-5 text-jdb-blue-primary" />;
 };
 
-export function WorkflowView({
+export const WorkflowView = memo(function WorkflowView({
   state,
   dispatch,
   executeStageM,
@@ -86,8 +87,21 @@ export function WorkflowView({
   const progressPercentage = Math.round((Object.keys(state.stageResults).length / WORKFLOW_STAGES.length) * 100);
   const totalProcessingTime = Object.values(state.stageTimes).reduce((sum, time) => sum + (time || 0), 0);
 
+  // Auto-collapse stage 3 when completed and moved to next stage
+  useEffect(() => {
+    const stage3Result = state.stageResults["3_generatie"];
+    if (stage3Result && expandedStages.has("3_generatie") && currentStage.key !== "3_generatie") {
+      // Collapse stage 3 when we move away from it
+      setExpandedStages(prev => {
+        const newExpanded = new Set(prev);
+        newExpanded.delete("3_generatie");
+        return newExpanded;
+      });
+    }
+  }, [currentStage.key, state.stageResults["3_generatie"]]);
+
   // Toggle stage expansion
-  const toggleStageExpansion = (stageKey: string) => {
+  const toggleStageExpansion = useCallback((stageKey: string) => {
     const newExpanded = new Set(expandedStages);
     if (newExpanded.has(stageKey)) {
       newExpanded.delete(stageKey);
@@ -95,10 +109,10 @@ export function WorkflowView({
       newExpanded.add(stageKey);
     }
     setExpandedStages(newExpanded);
-  };
+  }, [expandedStages]);
 
   // Execute stage handler
-  const handleExecuteStage = (stageKey: string, customContext?: string) => {
+  const handleExecuteStage = useCallback((stageKey: string, customContext?: string) => {
     if (!state.currentReport) return;
 
     executeStageM.mutate({
@@ -106,10 +120,10 @@ export function WorkflowView({
       stage: stageKey,
       customInput: customContext || state.customInput || undefined,
     });
-  };
+  }, [state.currentReport, state.customInput, executeStageM]);
 
   // Reset/clear stage handler
-  const handleResetStage = async (stageKey: string) => {
+  const handleResetStage = useCallback(async (stageKey: string) => {
     if (!state.currentReport) return;
 
     const confirmed = window.confirm(
@@ -119,25 +133,33 @@ export function WorkflowView({
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`/api/reports/${state.currentReport.id}/stage/${stageKey}`, {
-        method: 'DELETE',
-      });
+      const response = await apiRequest(
+        'DELETE',
+        `/api/reports/${state.currentReport.id}/stage/${stageKey}`
+      );
 
       if (!response.ok) {
         throw new Error('Failed to reset stage');
       }
 
-      await response.json();
+      const result = await response.json();
+      const data = result.success ? result.data : result;
+      const cascadeDeleted = data.cascadeDeleted || [];
+
+      const cascadeMessage = cascadeDeleted.length > 0
+        ? ` (+ ${cascadeDeleted.length} volgende stages)`
+        : '';
 
       toast({
         title: "Stage gewist",
-        description: `Stage ${stageKey} is gewist en kan nu opnieuw worden uitgevoerd`,
+        description: `Stage ${stageKey}${cascadeMessage} is gewist en kan nu opnieuw worden uitgevoerd`,
         duration: 3000,
       });
 
       // Refresh the report to update the UI
       window.location.reload();
-    } catch (error) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to reset stage:', error);
       toast({
         title: "Fout bij wissen",
@@ -146,10 +168,10 @@ export function WorkflowView({
         duration: 5000,
       });
     }
-  };
+  }, [state.currentReport, toast]);
 
   // Manual mode toggle handler (for stage 3)
-  const handleToggleManualMode = async (mode: 'ai' | 'manual') => {
+  const handleToggleManualMode = useCallback(async (mode: 'ai' | 'manual') => {
     dispatch({ type: "SET_MANUAL_MODE", mode });
 
     // If switching to manual mode and no prompt exists, fetch it from backend
@@ -180,12 +202,51 @@ export function WorkflowView({
         });
       }
     }
-  };
+  }, [dispatch, state.stagePrompts, state.currentReport, toast]);
+
+  // Per-stage manual mode toggle handler (for 4A, 4B, etc.)
+  const handleToggleStageManualMode = useCallback((stageKey: string) => async (mode: 'ai' | 'manual') => {
+    dispatch({ type: "SET_STAGE_MANUAL_MODE", stage: stageKey, mode });
+
+    // If switching to manual mode and no prompt exists, fetch it from backend
+    if (mode === 'manual' && !state.stagePrompts[stageKey] && state.currentReport) {
+      try {
+        // Use the same endpoint that executeStage would use to get the prompt
+        const response = await apiRequest("GET", `/api/reports/${state.currentReport.id}/stage/${stageKey}/prompt`);
+
+        if (!response.ok) {
+          throw new Error('Failed to generate prompt');
+        }
+
+        const data = await response.json();
+
+        if (data.data?.prompt) {
+          dispatch({
+            type: "SET_STAGE_PROMPT",
+            stage: stageKey,
+            prompt: data.data.prompt
+          });
+        }
+      } catch (error) {
+        console.error('Failed to generate prompt:', error);
+        toast({
+          title: "Fout bij prompt genereren",
+          description: "De prompt kon niet worden gegenereerd. Probeer het opnieuw.",
+          variant: "destructive"
+        });
+      }
+    }
+  }, [dispatch, state.stagePrompts, state.currentReport, toast]);
 
   // Manual content change handler
-  const handleManualContentChange = (content: string) => {
+  const handleManualContentChange = useCallback((content: string) => {
     dispatch({ type: "SET_MANUAL_CONTENT", content });
-  };
+  }, [dispatch]);
+
+  // Per-stage manual content change handler (for 4A, 4B, etc.)
+  const handleStageManualContentChange = useCallback((stageKey: string) => (content: string) => {
+    dispatch({ type: "SET_STAGE_MANUAL_CONTENT", stage: stageKey, content });
+  }, [dispatch]);
 
   // Manual execute handler (use manual content as result)
   const handleManualExecute = async () => {
@@ -241,6 +302,55 @@ export function WorkflowView({
     }
   };
 
+  // Per-stage manual execute handler (for 4A, 4B, etc.)
+  const handleStageManualExecute = (stageKey: string) => async () => {
+    if (!state.currentReport) return;
+
+    const manualContent = state.manualContents[stageKey];
+    if (!manualContent?.trim()) return;
+
+    try {
+      // Save to server using manual-stage endpoint
+      const response = await apiRequest("POST", `/api/reports/${state.currentReport.id}/manual-stage`, {
+        stage: stageKey,
+        content: manualContent,
+        isManual: true
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save manual content');
+      }
+
+      const data = await response.json();
+
+      // Store the manual content as the stage result
+      dispatch({
+        type: "SET_STAGE_RESULT",
+        stage: stageKey,
+        result: manualContent
+      });
+
+      // Clear manual content for this stage
+      dispatch({ type: "SET_STAGE_MANUAL_CONTENT", stage: stageKey, content: "" });
+
+      toast({
+        title: `${stageKey} voltooid`,
+        description: "Het handmatige resultaat is opgeslagen. De feedback processor is nu beschikbaar.",
+      });
+
+      // Invalidate query to trigger reload
+      queryClient.invalidateQueries({ queryKey: ['report', state.currentReport.id] });
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
+    } catch (error) {
+      console.error('Failed to save manual content:', error);
+      toast({
+        title: "Fout bij opslaan",
+        description: "Het handmatige resultaat kon niet worden opgeslagen. Probeer het opnieuw.",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Feedback processed handler
   const handleFeedbackProcessed = (stageKey: string, response: any) => {
     console.log(`🔄 WorkflowView: Feedback processed for ${stageKey}`, {
@@ -263,6 +373,37 @@ export function WorkflowView({
       description: `Feedback voor ${stageKey} is succesvol verwerkt - versie ${response?.newVersion || 'onbekend'}`,
     });
     queryClient.invalidateQueries({ queryKey: ['report', state.currentReport?.id] });
+  };
+
+  // Reload prompts handler - Fetches fresh prompts from database
+  const [isReloadingPrompts, setIsReloadingPrompts] = useState(false);
+
+  const handleReloadPrompts = async () => {
+    if (!state.currentReport) return;
+
+    setIsReloadingPrompts(true);
+    try {
+      // Clear all cached prompts in state
+      dispatch({ type: "CLEAR_STAGE_PROMPTS" });
+
+      // Invalidate prompt settings cache
+      queryClient.invalidateQueries({ queryKey: ['prompt-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/settings/prompts'] });
+
+      toast({
+        title: "Prompts herladen",
+        description: "Alle prompts zijn ververst vanuit de database. Bij de volgende uitvoering worden de nieuwe prompts gebruikt.",
+      });
+    } catch (error) {
+      console.error('Failed to reload prompts:', error);
+      toast({
+        title: "Fout bij herladen",
+        description: "De prompts konden niet worden herladen. Probeer het opnieuw.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsReloadingPrompts(false);
+    }
   };
 
   return (
@@ -330,6 +471,18 @@ export function WorkflowView({
                       {totalProcessingTime}s totale tijd
                     </motion.div>
                   )}
+                  <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
+                    <Button
+                      onClick={handleReloadPrompts}
+                      disabled={isReloadingPrompts}
+                      variant="outline"
+                      size="sm"
+                      className="text-sm font-medium"
+                    >
+                      <RefreshCw className={`h-4 w-4 mr-2 ${isReloadingPrompts ? 'animate-spin' : ''}`} />
+                      Herlaad Prompts
+                    </Button>
+                  </motion.div>
                 </div>
               </div>
 
@@ -390,12 +543,19 @@ export function WorkflowView({
                 const conceptVersion = state.conceptReportVersions[stage.key];
 
                 const isActive = index === state.currentStageIndex;
-                const stageStatus = getStageStatus(index);
-                const isCompleted = stageStatus === "completed";
+                const rawStageStatus = getStageStatus(index);
+                const isCompleted = rawStageStatus === "completed";
                 const isProcessing = state.stageProcessing[stage.key];
 
+                // Map status to WorkflowStageCard expected type
+                const stageStatus: "error" | "processing" | "completed" | "idle" | "blocked" =
+                  rawStageStatus === "completed" ? "completed" :
+                  isProcessing ? "processing" :
+                  rawStageStatus === "current" ? "idle" :
+                  "idle";
+
                 // Warning logic for Stage 2
-                let blockReason: string | undefined;
+                let blockReason: string | undefined | null;
                 if (stage.key === "2_complexiteitscheck") {
                   const stage1Result = state.stageResults["1_informatiecheck"];
                   if (!isInformatieCheckComplete(stage1Result)) {
@@ -426,7 +586,8 @@ export function WorkflowView({
                 const substepResults = state.substepResults[stage.key] || {};
                 const hasRawFeedback = !!substepResults.review || !!stageResult;
                 const hasProcessing = !!substepResults.processing;
-                const showFeedbackProcessor = isReviewer && hasRawFeedback && !hasProcessing;
+                // Always show processor if there's raw feedback, even if already processed (allow re-processing)
+                const showFeedbackProcessor = isReviewer && hasRawFeedback;
 
                 return (
                   <WorkflowStageCard
@@ -454,19 +615,27 @@ export function WorkflowView({
                     onTogglePrompt={() => toggleSectionCollapse(stage.key, 'prompt')}
                     showFeedbackProcessor={showFeedbackProcessor}
                     onFeedbackProcessed={(response) => handleFeedbackProcessed(stage.key, response)}
-                    blockReason={blockReason}
+                    blockReason={blockReason || undefined}
                     onForceContinue={stage.key === '1_informatiecheck' ? () => {
                       // Force continue by advancing to next stage despite incomplete status
                       dispatch({ type: "SET_CURRENT_STAGE_INDEX", index: index + 1 });
                       toggleStageExpansion('2_complexiteitscheck');
                     } : undefined}
-                    // Manual mode props (only for stage 3)
+                    // Manual mode props for stage 3
                     {...(stage.key === '3_generatie' ? {
                       manualMode: state.manualMode,
                       onToggleManualMode: handleToggleManualMode,
                       manualContent: state.manualContent,
                       onManualContentChange: handleManualContentChange,
                       onManualExecute: handleManualExecute
+                    } : {})}
+                    // Manual mode props for reviewer stages (4A, 4B, etc.)
+                    {...(isReviewer ? {
+                      manualMode: state.manualModes[stage.key] || 'ai',
+                      onToggleManualMode: handleToggleStageManualMode(stage.key),
+                      manualContent: state.manualContents[stage.key] || '',
+                      onManualContentChange: handleStageManualContentChange(stage.key),
+                      onManualExecute: handleStageManualExecute(stage.key)
                     } : {})}
                   />
                 );
@@ -477,4 +646,4 @@ export function WorkflowView({
       </div>
     </>
   );
-}
+});

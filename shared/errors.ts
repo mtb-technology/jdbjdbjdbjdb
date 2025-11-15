@@ -1,6 +1,6 @@
 /**
- * Shared error types tussen frontend en backend
- * Zorgt voor consistente error handling door de gehele stack
+ * Simplified shared error types tussen frontend en backend
+ * Voor 2-3 gebruikers - houden we het simpel
  */
 
 export interface ApiErrorResponse {
@@ -23,36 +23,30 @@ export interface ApiSuccessResponse<T = any> {
 
 export type ApiResponse<T = any> = ApiSuccessResponse<T> | ApiErrorResponse;
 
+// Simplified error codes - only what we actually need
 export const ERROR_CODES = {
-  // Validation Errors
+  // Input validation
   VALIDATION_FAILED: 'VALIDATION_FAILED',
-  INVALID_INPUT: 'INVALID_INPUT',
-  MISSING_REQUIRED_FIELD: 'MISSING_REQUIRED_FIELD',
-  
-  // Business Logic Errors  
+
+  // Resource errors
   REPORT_NOT_FOUND: 'REPORT_NOT_FOUND',
-  INVALID_DOSSIER_DATA: 'INVALID_DOSSIER_DATA',
-  INVALID_BOUWPLAN_DATA: 'INVALID_BOUWPLAN_DATA',
-  
-  // AI Service Errors
+
+  // AI errors (kept minimal set that's actually used)
   AI_SERVICE_UNAVAILABLE: 'AI_SERVICE_UNAVAILABLE',
-  AI_QUOTA_EXCEEDED: 'AI_QUOTA_EXCEEDED',
-  AI_INVALID_RESPONSE: 'AI_INVALID_RESPONSE',
-  AI_TIMEOUT: 'AI_TIMEOUT',
   AI_RATE_LIMITED: 'AI_RATE_LIMITED',
+  AI_INVALID_RESPONSE: 'AI_INVALID_RESPONSE',
+  AI_PROCESSING_FAILED: 'AI_PROCESSING_FAILED',
+  AI_RESPONSE_INVALID: 'AI_RESPONSE_INVALID',
   AI_AUTHENTICATION_FAILED: 'AI_AUTHENTICATION_FAILED',
-  AI_MODEL_NOT_FOUND: 'AI_MODEL_NOT_FOUND',
-  AI_CONTENT_FILTERED: 'AI_CONTENT_FILTERED',
-  AI_NETWORK_ERROR: 'AI_NETWORK_ERROR',
-  
-  // External Service Errors
+
+  // External/Source validation
   SOURCE_VALIDATION_FAILED: 'SOURCE_VALIDATION_FAILED',
   EXTERNAL_API_ERROR: 'EXTERNAL_API_ERROR',
-  
-  // System Errors
+
+  // System errors
   DATABASE_ERROR: 'DATABASE_ERROR',
   INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',
-  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE'
+  NETWORK_ERROR: 'NETWORK_ERROR'
 } as const;
 
 export type ErrorCode = typeof ERROR_CODES[keyof typeof ERROR_CODES];
@@ -92,150 +86,37 @@ export function createApiSuccessResponse<T>(
   };
 }
 
-/**
- * AI-specific error classes for better error handling
- */
+// Simple error class for AI handlers
 export class AIError extends Error {
-  public readonly errorCode: ErrorCode;
-  public readonly isRetryable: boolean;
-  public readonly retryAfter?: number;
-  public readonly details?: Record<string, any>;
+  public errorCode: ErrorCode;
+  public isRetryable: boolean;
+  public details?: Record<string, any>;
+  public retryAfter?: number;
 
   constructor(
     message: string,
-    errorCode: ErrorCode,
-    isRetryable = false,
-    retryAfter?: number,
-    details?: Record<string, any>
+    public code: ErrorCode = ERROR_CODES.AI_SERVICE_UNAVAILABLE,
+    public statusCode: number = 500,
+    options?: { isRetryable?: boolean; details?: Record<string, any>; retryAfter?: number }
   ) {
     super(message);
     this.name = 'AIError';
-    this.errorCode = errorCode;
-    this.isRetryable = isRetryable;
-    this.retryAfter = retryAfter;
-    this.details = details;
+    this.errorCode = code; // Alias for backward compatibility
+    this.isRetryable = options?.isRetryable ?? false;
+    this.details = options?.details;
+    this.retryAfter = options?.retryAfter;
   }
 
-  static fromHttpError(
-    statusCode: number,
-    responseText: string,
-    provider: string
-  ): AIError {
-    const details = { statusCode, responseText, provider };
-    
-    switch (statusCode) {
-      case 401:
-        return new AIError(
-          `Authentication failed for ${provider}`,
-          ERROR_CODES.AI_AUTHENTICATION_FAILED,
-          false,
-          undefined,
-          details
-        );
-      case 429:
-        return new AIError(
-          `Rate limit exceeded for ${provider}`,
-          ERROR_CODES.AI_RATE_LIMITED,
-          false, // NOT retryable - fail immediately
-          undefined,
-          details
-        );
-      case 503:
-      case 502:
-      case 504:
-        return new AIError(
-          `${provider} service temporarily unavailable`,
-          ERROR_CODES.AI_SERVICE_UNAVAILABLE,
-          true,
-          30000, // Retry after 30 seconds
-          details
-        );
-      case 404:
-        return new AIError(
-          `Model not found on ${provider}`,
-          ERROR_CODES.AI_MODEL_NOT_FOUND,
-          false,
-          undefined,
-          details
-        );
-      default:
-        return new AIError(
-          `API error from ${provider}: ${statusCode} - ${responseText}`,
-          ERROR_CODES.EXTERNAL_API_ERROR,
-          statusCode >= 500, // 5xx errors are retryable
-          statusCode >= 500 ? 30000 : undefined,
-          details
-        );
-    }
+  // Static factory methods for common error types
+  static invalidInput(message: string, details?: Record<string, any>) {
+    return new AIError(message, ERROR_CODES.VALIDATION_FAILED, 400, { details });
   }
 
-  static timeout(provider: string, timeoutMs: number): AIError {
-    return new AIError(
-      `${provider} request timed out after ${timeoutMs}ms`,
-      ERROR_CODES.AI_TIMEOUT,
-      true,
-      10000, // Retry after 10 seconds
-      { timeoutMs, provider }
-    );
+  static timeout(message: string = 'Request timeout') {
+    return new AIError(message, ERROR_CODES.AI_SERVICE_UNAVAILABLE, 504, { isRetryable: true });
   }
 
-  static invalidResponse(provider: string, reason: string): AIError {
-    return new AIError(
-      `Invalid response from ${provider}: ${reason}`,
-      ERROR_CODES.AI_INVALID_RESPONSE,
-      false,
-      undefined,
-      { provider, reason }
-    );
-  }
-
-  static networkError(provider: string, originalError: Error): AIError {
-    return new AIError(
-      `Network error connecting to ${provider}: ${originalError.message}`,
-      ERROR_CODES.AI_NETWORK_ERROR,
-      true,
-      5000, // Retry after 5 seconds
-      { provider, originalError: originalError.message }
-    );
-  }
-
-  static validationFailed(message: string, details?: Record<string, any>): AIError {
-    return new AIError(
-      message,
-      ERROR_CODES.VALIDATION_FAILED,
-      false,
-      undefined,
-      details
-    );
-  }
-
-  static invalidInput(message: string, details?: Record<string, any>): AIError {
-    return new AIError(
-      message,
-      ERROR_CODES.INVALID_INPUT,
-      false,
-      undefined,
-      details
-    );
-  }
-
-  static circuitBreakerOpen(provider: string, reason: string): AIError {
-    return new AIError(
-      `Circuit breaker is open for ${provider}: ${reason}`,
-      ERROR_CODES.AI_SERVICE_UNAVAILABLE,
-      true,
-      30000, // Retry after 30 seconds
-      { provider, reason }
-    );
-  }
-
-  static rateLimited(provider: string): AIError {
-    return new AIError(
-      `Rate limit exceeded for ${provider}`,
-      ERROR_CODES.AI_RATE_LIMITED,
-      false, // NOT retryable - fail fast with clear error
-      undefined,
-      { provider }
-    );
+  static circuitBreakerOpen(message: string = 'Circuit breaker open') {
+    return new AIError(message, ERROR_CODES.AI_SERVICE_UNAVAILABLE, 503, { isRetryable: true });
   }
 }

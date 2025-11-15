@@ -2,12 +2,28 @@ import type { Request, Response, NextFunction } from 'express';
 import { createApiErrorResponse, ERROR_CODES, type ErrorCode } from '@shared/errors';
 import { ZodError } from 'zod';
 
+/**
+ * Helper to safely extract error message from unknown error
+ */
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'Unknown error occurred';
+}
+
+/**
+ * Helper to check if error is an Error instance
+ */
+export function isErrorWithMessage(error: unknown): error is Error {
+  return error instanceof Error;
+}
+
 export class ServerError extends Error {
   constructor(
     public code: ErrorCode,
     public userMessage: string,
     public statusCode: number = 500,
-    public details?: Record<string, any>
+    public details?: Record<string, unknown>
   ) {
     super(`[${code}] ${userMessage}`);
     this.name = 'ServerError';
@@ -42,7 +58,7 @@ export class ServerError extends Error {
  * Centraal error handling middleware
  */
 export function errorHandler(
-  err: any,
+  err: unknown,
   req: Request,
   res: Response,
   next: NextFunction
@@ -50,8 +66,8 @@ export function errorHandler(
   // Log de error voor debugging
   const timestamp = new Date().toISOString();
   console.error(`[${timestamp}] Error in ${req.method} ${req.path}:`, {
-    error: err.message,
-    stack: err.stack,
+    error: getErrorMessage(err),
+    stack: isErrorWithMessage(err) ? err.stack : undefined,
     requestId: req.headers['x-request-id'] || 'unknown'
   });
 
@@ -90,7 +106,7 @@ export function errorHandler(
   }
 
   // Handle database errors (Drizzle/PostgreSQL)
-  if (err.code === '23505') { // Unique constraint violation
+  if (typeof err === 'object' && err !== null && 'code' in err && err.code === '23505') {
     return res.status(409).json(
       createApiErrorResponse(
         'DATABASE_ERROR',
@@ -103,7 +119,18 @@ export function errorHandler(
   }
 
   // Handle andere database errors
-  if (err.code?.startsWith('23') || err.name === 'DatabaseError') {
+  if (typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string' && err.code.startsWith('23')) {
+    return res.status(500).json(
+      createApiErrorResponse(
+        'DATABASE_ERROR',
+        ERROR_CODES.DATABASE_ERROR,
+        'Database operation failed',
+        'Er is een probleem met de database. Probeer het later opnieuw.'
+      )
+    );
+  }
+
+  if (typeof err === 'object' && err !== null && 'name' in err && err.name === 'DatabaseError') {
     return res.status(500).json(
       createApiErrorResponse(
         'DATABASE_ERROR',
@@ -115,7 +142,19 @@ export function errorHandler(
   }
 
   // Handle network/fetch errors
-  if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED' || err.name === 'FetchError') {
+  const networkErrorCodes = ['ENOTFOUND', 'ECONNREFUSED'];
+  if (typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string' && networkErrorCodes.includes(err.code)) {
+    return res.status(503).json(
+      createApiErrorResponse(
+        'NETWORK_ERROR',
+        ERROR_CODES.EXTERNAL_API_ERROR,
+        'External service unavailable',
+        'Een externe service is momenteel niet beschikbaar. Probeer het later opnieuw.'
+      )
+    );
+  }
+
+  if (typeof err === 'object' && err !== null && 'name' in err && err.name === 'FetchError') {
     return res.status(503).json(
       createApiErrorResponse(
         'NETWORK_ERROR',
@@ -127,27 +166,33 @@ export function errorHandler(
   }
 
   // Handle AI service specific errors
-  if (err.message?.includes('AI') || err.message?.includes('OpenAI') || err.message?.includes('Gemini')) {
+  const errMessage = getErrorMessage(err);
+  if (errMessage.includes('AI') || errMessage.includes('OpenAI') || errMessage.includes('Gemini')) {
     return res.status(503).json(
       createApiErrorResponse(
         'AI_ERROR',
         ERROR_CODES.AI_SERVICE_UNAVAILABLE,
-        err.message,
+        errMessage,
         'De AI service is momenteel niet beschikbaar. Probeer het later opnieuw.'
       )
     );
   }
 
   // Fallback voor alle andere errors
-  const statusCode = err.statusCode || err.status || 500;
+  const statusCode = (typeof err === 'object' && err !== null && 'statusCode' in err && typeof err.statusCode === 'number')
+    ? err.statusCode
+    : (typeof err === 'object' && err !== null && 'status' in err && typeof err.status === 'number')
+    ? err.status
+    : 500;
+
   const isClientError = statusCode >= 400 && statusCode < 500;
 
   return res.status(statusCode).json(
     createApiErrorResponse(
       'UNKNOWN_ERROR',
       ERROR_CODES.INTERNAL_SERVER_ERROR,
-      err.message || 'Unknown error occurred',
-      isClientError 
+      errMessage,
+      isClientError
         ? 'Er is een fout opgetreden bij het verwerken van uw verzoek.'
         : 'Er is een interne serverfout opgetreden. Probeer het later opnieuw.'
     )
@@ -166,15 +211,17 @@ export function asyncHandler(fn: Function) {
 /**
  * Helper functie om errors te loggen met context
  */
-export function logError(error: any, context: Record<string, any> = {}) {
+export function logError(error: unknown, context: Record<string, unknown> = {}) {
   const timestamp = new Date().toISOString();
-  
+  const errorMessage = getErrorMessage(error);
+  const errorStack = isErrorWithMessage(error) ? error.stack : undefined;
+
   if (process.env.NODE_ENV === 'development') {
     console.group(`🚨 Server Error: ${timestamp}`);
-    console.error('Error:', error.message);
+    console.error('Error:', errorMessage);
     console.error('Context:', context);
-    if (error.stack) {
-      console.error('Stack:', error.stack);
+    if (errorStack) {
+      console.error('Stack:', errorStack);
     }
     console.groupEnd();
   } else {
@@ -182,8 +229,8 @@ export function logError(error: any, context: Record<string, any> = {}) {
     console.error(JSON.stringify({
       timestamp,
       level: 'error',
-      message: error.message,
-      stack: error.stack,
+      message: errorMessage,
+      stack: errorStack,
       context
     }));
   }

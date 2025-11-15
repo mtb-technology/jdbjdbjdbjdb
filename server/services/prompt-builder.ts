@@ -269,7 +269,6 @@ export class PromptBuilder {
     } catch {
       // Fallback: treat as plain text report
       return JSON.stringify({
-        taal: "nl",
         concept_rapport_tekst: conceptReport,
         dossier_context: cleanDossier,
         bouwplan_context: bouwplan

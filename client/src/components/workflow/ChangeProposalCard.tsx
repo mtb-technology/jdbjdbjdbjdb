@@ -176,7 +176,7 @@ export function ChangeProposalCard({
                   oldValue={proposal.original}
                   newValue={proposal.proposed}
                   splitView={false}
-                  compareMethod={DiffMethod.WORDS}
+                  compareMethod={DiffMethod.WORDS as any}
                   hideLineNumbers={true}
                   showDiffOnly={true}
                   styles={{

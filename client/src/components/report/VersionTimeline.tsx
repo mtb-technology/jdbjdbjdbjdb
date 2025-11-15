@@ -1,14 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { 
-  GitBranch, 
-  CheckCircle2, 
+import {
+  GitBranch,
+  CheckCircle2,
   Circle,
   Clock,
   TrendingUp,
   FileText,
-  RotateCcw
+  RotateCcw,
+  Trash2
 } from "lucide-react";
 
 interface VersionCheckpoint {
@@ -25,13 +26,15 @@ interface VersionTimelineProps {
   currentVersion?: number;
   onVersionSelect?: (version: number) => void;
   onRestore?: (version: number) => void;
+  onDelete?: (stageKey: string) => void;
 }
 
-export function VersionTimeline({ 
-  versions, 
+export function VersionTimeline({
+  versions,
   currentVersion,
   onVersionSelect,
-  onRestore 
+  onRestore,
+  onDelete
 }: VersionTimelineProps) {
   const sortedVersions = [...versions].sort((a, b) => a.version - b.version);
 
@@ -86,7 +89,7 @@ export function VersionTimeline({
                 const isCurrent = checkpoint.version === currentVersion || checkpoint.isCurrent;
 
                 return (
-                  <div key={checkpoint.version} className="relative pl-12">
+                  <div key={`${checkpoint.stageKey}-${checkpoint.version}-${index}`} className="relative pl-12">
                     {/* Checkpoint marker */}
                     <div className={`absolute left-0 top-1 flex items-center justify-center w-8 h-8 rounded-full border-2 ${
                       isCurrent 
@@ -149,20 +152,46 @@ export function VersionTimeline({
                       )}
 
                       {/* Action buttons */}
-                      {!isCurrent && onRestore && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="mt-2 h-7 text-xs"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRestore(checkpoint.version);
-                          }}
-                        >
-                          <RotateCcw className="h-3 w-3 mr-1" />
-                          Herstel naar deze versie
-                        </Button>
-                      )}
+                      <div className="mt-2 flex gap-2">
+                        {!isCurrent && onRestore && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRestore(checkpoint.version);
+                            }}
+                          >
+                            <RotateCcw className="h-3 w-3 mr-1" />
+                            Herstel
+                          </Button>
+                        )}
+                        {onDelete && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const warningMessage = isCurrent
+                                ? `⚠️ WAARSCHUWING: Je staat op het punt de HUIDIGE versie te verwijderen!\n\n` +
+                                  `${checkpoint.stageName} (${checkpoint.stageKey}) + alle latere stages worden verwijderd.\n\n` +
+                                  `Weet je het ZEKER?`
+                                : `Weet je zeker dat je ${checkpoint.stageName} (${checkpoint.stageKey}) wilt verwijderen?\n\n` +
+                                  `Dit verwijdert ook alle latere stages.`;
+
+                              const confirmed = window.confirm(warningMessage);
+                              if (confirmed) {
+                                onDelete(checkpoint.stageKey);
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Verwijder
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -228,7 +257,7 @@ export function CompactVersionTimeline({ versions, currentVersion }: CompactTime
         const isLast = index === sortedVersions.length - 1;
 
         return (
-          <div key={checkpoint.version} className="flex items-center">
+          <div key={`${checkpoint.stageKey}-${checkpoint.version}-${index}`} className="flex items-center">
             {/* Version bubble */}
             <div 
               className={`flex flex-col items-center min-w-[80px] ${

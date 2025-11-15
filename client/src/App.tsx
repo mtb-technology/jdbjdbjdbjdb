@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { Suspense, lazy } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -6,6 +6,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { EnhancedErrorBoundary as ErrorBoundary } from "@/components/enhanced-error-boundary";
+import { useCommandPalette, type Command } from "@/components/ui/command-palette";
+import { Home, FileText, Plus, Settings as SettingsIcon, Package, MessageSquare } from "lucide-react";
 
 // Lazy loading enabled for optimal bundle splitting and performance
 const Dashboard = lazy(() => import("@/pages/dashboard"));
@@ -39,8 +41,70 @@ function LazyRoute({ Component, ...props }: { Component: React.ComponentType<any
 }
 
 function Router() {
+  const [, setLocation] = useLocation();
+
+  // Define global commands
+  const commands: Command[] = [
+    {
+      id: 'go-cases',
+      label: 'Go to Cases',
+      description: 'View all your cases',
+      icon: FileText,
+      action: () => setLocation('/cases'),
+      keywords: ['cases', 'list', 'overview'],
+    },
+    {
+      id: 'new-case',
+      label: 'New Case',
+      description: 'Create a new case',
+      icon: Plus,
+      action: () => setLocation('/pipeline'),
+      shortcut: {
+        key: 'n',
+        ctrlOrCmd: true,
+        description: 'Create new case',
+      },
+      keywords: ['create', 'new', 'add'],
+    },
+    {
+      id: 'go-pipeline',
+      label: 'Go to Pipeline',
+      description: 'Access the processing pipeline',
+      icon: Home,
+      action: () => setLocation('/pipeline'),
+      keywords: ['pipeline', 'process'],
+    },
+    {
+      id: 'go-batch',
+      label: 'Go to Batch Processing',
+      description: 'Process multiple cases at once',
+      icon: Package,
+      action: () => setLocation('/batch'),
+      keywords: ['batch', 'bulk', 'multiple'],
+    },
+    {
+      id: 'go-assistant',
+      label: 'Go to Assistant',
+      description: 'Open the follow-up assistant',
+      icon: MessageSquare,
+      action: () => setLocation('/assistant'),
+      keywords: ['assistant', 'chat', 'help'],
+    },
+    {
+      id: 'go-settings',
+      label: 'Go to Settings',
+      description: 'Configure application settings',
+      icon: SettingsIcon,
+      action: () => setLocation('/settings'),
+      keywords: ['settings', 'config', 'preferences'],
+    },
+  ];
+
+  const { CommandPaletteComponent } = useCommandPalette(commands);
+
   return (
     <ErrorBoundary>
+      <CommandPaletteComponent />
       <Switch>
         <Route path="/">
           <Redirect to="/cases" />

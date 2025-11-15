@@ -380,20 +380,23 @@ function WorkflowManagerContent({
 
   // Initialize with existing report
   useEffect(() => {
-    if (existingReport && !state.currentReport) {
+    // Only load if we don't have a current report OR if the report ID changed
+    const shouldLoad = existingReport && (!state.currentReport || state.currentReport.id !== existingReport.id);
+
+    if (shouldLoad) {
       // Clean stage results to ensure we only have the latest for each stage
       const cleanedStageResults = cleanStageResults(existingReport.stageResults as Record<string, string> || {});
       const reportWithCleanedResults = {
         ...existingReport,
         stageResults: cleanedStageResults
       };
-      
-      console.log(`🔄 Loading existing report:`, { 
-        reportId: existingReport.id, 
+
+      console.log(`🔄 Loading existing report:`, {
+        reportId: existingReport.id,
         hasStageResults: !!existingReport.stageResults,
         stageResultKeys: Object.keys(existingReport.stageResults as Record<string, string> || {})
       });
-      
+
       dispatch({ type: "LOAD_EXISTING_REPORT", report: reportWithCleanedResults });
       
       // Set current stage index based on completed stages
@@ -446,7 +449,7 @@ function WorkflowManagerContent({
     <WorkflowView
       state={state}
       dispatch={dispatch}
-      executeStageM={executeStageM}
+      executeStageM={executeStageM as any}
       executeSubstepM={executeSubstepM}
       isCreatingCase={createReportMutation.isPending}
       rawText={rawText}

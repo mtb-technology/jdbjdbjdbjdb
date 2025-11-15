@@ -23,7 +23,7 @@ import { registerHealthRoutes } from "./routes/health-routes";
 import { registerPromptRoutes } from "./routes/prompt-routes";
 import { registerCaseRoutes } from "./routes/case-routes";
 import { z } from "zod";
-import { ServerError, asyncHandler } from "./middleware/errorHandler";
+import { ServerError, asyncHandler, getErrorMessage, isErrorWithMessage } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { deduplicateRequests } from "./middleware/deduplicate";
 
@@ -58,7 +58,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ====== REGISTER EXTRACTED ROUTE MODULES ======
   // Phase 1: Health, Prompt, and Case routes moved to separate files
-  registerHealthRoutes(app);
+
+  // Simple routes - no auth needed for 2-3 internal users
+  registerHealthRoutes(app); // Health checks
   registerPromptRoutes(app);
   registerCaseRoutes(app, pdfGenerator);
   // ==============================================
@@ -72,6 +74,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Test route voor AI - simpele test om te verifieren dat API werkt
+  // 🔒 PROTECTED: Requires authentication (via global middleware)
   app.get("/api/test-ai", asyncHandler(async (req: Request, res: Response) => {
     const result = await reportGenerator.testAI("Say hello in Dutch in 5 words");
     res.json(createApiSuccessResponse({ response: result }, "AI test succesvol uitgevoerd"));
@@ -80,6 +83,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // NOTE: Health routes moved to server/routes/health-routes.ts
 
   // Extract dossier data from raw text using AI
+  // 🔒 PROTECTED: Requires authentication (via global middleware)
   app.post("/api/extract-dossier", asyncHandler(async (req: Request, res: Response) => {
     const { rawText } = req.body;
     
@@ -103,6 +107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Create new report (start workflow)
+  // 🔒 PROTECTED: Requires authentication (via global middleware)
   app.post("/api/reports/create", asyncHandler(async (req: Request, res: Response) => {
     // ✅ SECURITY: Validate and sanitize input with Zod
     const validatedData = createReportRequestSchema.parse(req.body);
@@ -152,19 +157,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       res.json(createApiSuccessResponse({ prompt }, "Prompt preview succesvol opgehaald"));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error generating prompt preview:", error);
       res.status(500).json(createApiErrorResponse(
         'PREVIEW_GENERATION_FAILED',
         ERROR_CODES.INTERNAL_SERVER_ERROR,
         'Fout bij het genereren van prompt preview',
-        error.message
+        getErrorMessage(error)
       ));
     }
   });
 
   // Generate prompt for a stage (without executing AI)
-  app.get("/api/reports/:id/stage/:stage/prompt", asyncHandler(async (req, res) => {
+  app.get("/api/reports/:id/stage/:stage/prompt", asyncHandler(async (req: Request, res: Response) => {
     const { id, stage } = req.params;
 
     const report = await storage.getReport(id);
@@ -200,7 +205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       keyFn: (req) => `${req.params.id}-${req.params.stage}`,
       timeout: 300000 // 5 minutes for long AI operations
     }),
-    asyncHandler(async (req, res) => {
+    asyncHandler(async (req: Request, res: Response) => {
       const { id, stage } = req.params;
       const { customInput } = req.body;
 
@@ -221,14 +226,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customInput,
           id // Pass reportId as jobId for logging
         );
-      } catch (stageError: any) {
-        console.error(`🚨 Stage execution failed but recovering gracefully:`, stageError.message);
-        // Return a recoverable error response instead of crashing
-        res.status(200).json(createApiSuccessResponse({
-          ...report,
-          error: `Stage ${stage} kon niet volledig worden uitgevoerd: ${stageError.message}`,
-          partialResult: true
-        }));
+      } catch (stageError: unknown) {
+        console.error(`🚨 Stage execution failed but recovering gracefully:`, getErrorMessage(stageError));
+        // Return a 500 error response for stage execution failure
+        res.status(500).json(createApiErrorResponse(
+          'ServerError',
+          ERROR_CODES.AI_PROCESSING_FAILED,
+          `Stage ${stage} kon niet volledig worden uitgevoerd`,
+          getErrorMessage(stageError),
+          { stage, reportId: id, originalError: getErrorMessage(stageError) }
+        ));
         return;
       }
 
@@ -389,20 +396,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
       throw ServerError.notFound("Report");
     }
 
+    // Define stage order for cascading deletes
+    const stageOrder = [
+      '1_informatiecheck',
+      '2_complexiteitscheck',
+      '3_generatie',
+      '4a_BronnenSpecialist',
+      '4b_FiscaalTechnischSpecialist',
+      '4c_ScenarioGatenAnalist',
+      '4d_DeVertaler',
+      '4e_DeAdvocaat',
+      '4f_DeKlantpsycholoog'
+    ];
+
+    const deletedStageIndex = stageOrder.indexOf(stage);
+
     // Remove the stage from stageResults
     const currentStageResults = (report.stageResults as Record<string, string>) || {};
     delete currentStageResults[stage];
 
-    // Also remove from conceptReportVersions if it's a generation stage
-    const currentConceptVersions = (report.conceptReportVersions as Record<string, string>) || {};
-    if (["3_generatie"].includes(stage)) {
-      delete currentConceptVersions[stage];
-      // Also remove timestamped versions
-      Object.keys(currentConceptVersions).forEach(key => {
-        if (key.startsWith(`${stage}_`)) {
-          delete currentConceptVersions[key];
+    // Cascade delete: remove all stages that come after this one
+    if (deletedStageIndex >= 0) {
+      for (let i = deletedStageIndex + 1; i < stageOrder.length; i++) {
+        const laterStage = stageOrder[i];
+        delete currentStageResults[laterStage];
+      }
+    }
+
+    // Also remove from conceptReportVersions
+    const currentConceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
+
+    // Delete the stage's snapshot
+    delete currentConceptVersions[stage];
+
+    // Delete all later stages' snapshots
+    if (deletedStageIndex >= 0) {
+      for (let i = deletedStageIndex + 1; i < stageOrder.length; i++) {
+        const laterStage = stageOrder[i];
+        delete currentConceptVersions[laterStage];
+      }
+    }
+
+    // Also remove from history array
+    if (currentConceptVersions.history && Array.isArray(currentConceptVersions.history)) {
+      currentConceptVersions.history = currentConceptVersions.history.filter((entry: any) => {
+        // Keep only entries that are NOT the deleted stage or later stages
+        if (entry.stageId === stage) return false;
+        if (deletedStageIndex >= 0) {
+          const entryStageIndex = stageOrder.indexOf(entry.stageId);
+          if (entryStageIndex > deletedStageIndex) return false;
         }
+        return true;
       });
+    }
+
+    // Update or remove the 'latest' pointer
+    // Find the most recent remaining stage from history array
+    let newLatestStage: string | null = null;
+    let newLatestVersion: number = 1;
+
+    if (currentConceptVersions.history && Array.isArray(currentConceptVersions.history) && currentConceptVersions.history.length > 0) {
+      // Find the most recent entry in history (last item after filtering)
+      const sortedHistory = [...currentConceptVersions.history].sort((a: any, b: any) => {
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      });
+
+      if (sortedHistory.length > 0) {
+        newLatestStage = sortedHistory[0].stageId;
+        newLatestVersion = sortedHistory[0].v || 1;
+      }
+    } else {
+      // Fallback: search in stage keys (legacy behavior)
+      for (let i = deletedStageIndex - 1; i >= 0; i--) {
+        const earlierStage = stageOrder[i];
+        if (currentConceptVersions[earlierStage]) {
+          newLatestStage = earlierStage;
+          newLatestVersion = currentConceptVersions[earlierStage].v || 1;
+          break;
+        }
+      }
+    }
+
+    if (newLatestStage) {
+      // Update latest pointer to previous stage
+      currentConceptVersions.latest = {
+        pointer: newLatestStage as StageId,
+        v: newLatestVersion
+      };
+    } else {
+      // No valid stages left, remove latest pointer
+      delete currentConceptVersions.latest;
     }
 
     const updatedReport = await storage.updateReport(id, {
@@ -414,10 +497,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
       throw ServerError.notFound("Updated report not found");
     }
 
+    console.log(`🗑️ Deleted stage ${stage} and all subsequent stages for report ${id}`);
+
     res.json(createApiSuccessResponse({
       report: updatedReport,
-      clearedStage: stage
-    }, `Stage ${stage} resultaat verwijderd - kan nu opnieuw worden uitgevoerd`));
+      clearedStage: stage,
+      cascadeDeleted: deletedStageIndex >= 0 ? stageOrder.slice(deletedStageIndex + 1) : []
+    }, `Stage ${stage} en alle volgende stages zijn verwijderd - workflow kan opnieuw vanaf hier worden uitgevoerd`));
+  }));
+
+  // Restore to a previous version by making it the "latest"
+  app.post("/api/reports/:id/restore-version", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { stageKey } = req.body;
+
+    if (!stageKey) {
+      throw ServerError.validation("stageKey is required", "stageKey is verplicht");
+    }
+
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    const currentConceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
+
+    // Find the stage in history array
+    const history = currentConceptVersions.history || [];
+    const versionEntry = history.find((entry: any) => entry.stageId === stageKey);
+
+    if (!versionEntry) {
+      throw ServerError.validation(`Stage ${stageKey} not found in version history`, `Versie ${stageKey} niet gevonden in de geschiedenis`);
+    }
+
+    // Update the 'latest' pointer to point to this stage
+    currentConceptVersions.latest = {
+      pointer: stageKey as StageId,
+      v: versionEntry.v || 1
+    };
+
+    const updatedReport = await storage.updateReport(id, {
+      conceptReportVersions: currentConceptVersions,
+    });
+
+    if (!updatedReport) {
+      throw ServerError.notFound("Updated report not found");
+    }
+
+    console.log(`🔄 Restored report ${id} to version ${stageKey}`);
+
+    res.json(createApiSuccessResponse({
+      report: updatedReport,
+      restoredStage: stageKey
+    }, `Versie ${stageKey} is nu de actieve versie`));
   }));
 
   // Preview the exact prompt that would be sent for feedback processing
@@ -561,19 +693,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rawFeedback: rawFeedback
       }, 'Prompt preview gegenereerd'));
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`❌ [${reportId}-${stageId}] Prompt preview failed:`, error);
       console.error(`❌ Error details:`, {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
+        message: getErrorMessage(error),
+        stack: isErrorWithMessage(error) ? error.stack : undefined,
+        name: isErrorWithMessage(error) ? error.name : 'Unknown'
       });
 
       res.status(500).json(createApiErrorResponse(
         'PREVIEW_FAILED',
         'INTERNAL_SERVER_ERROR',
         'Prompt preview gefaald',
-        error.message || 'Onbekende fout tijdens prompt preview'
+        getErrorMessage(error) || 'Onbekende fout tijdens prompt preview'
       ));
     }
   }));
@@ -766,7 +898,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: `Feedback succesvol verwerkt - nieuw concept v${processingResult.snapshot.v} gegenereerd`
       }, 'Feedback processing succesvol voltooid'));
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`❌ [${reportId}-${stageId}] Simple feedback processing failed:`, error);
       
       // Emit SSE error event
@@ -776,7 +908,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         substepId: 'manual_feedback_processing',
         percentage: 0,
         message: 'Feedback processing gefaald',
-        data: { error: error.message },
+        data: { error: getErrorMessage(error) },
         timestamp: new Date().toISOString()
       });
 
@@ -784,13 +916,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'PROCESSING_FAILED',
         'INTERNAL_SERVER_ERROR',
         'Feedback processing gefaald',
-        error.message || 'Onbekende fout tijdens feedback processing'
+        getErrorMessage(error) || 'Onbekende fout tijdens feedback processing'
       ));
     }
   }));
 
   // Generate final report from all stages
-  app.post("/api/reports/:id/finalize", asyncHandler(async (req, res) => {
+  app.post("/api/reports/:id/finalize", asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const report = await storage.getReport(id);
@@ -1104,9 +1236,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         restored,
         created
       }, "Backup restore succesvol voltooid"));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error restoring backup:", error);
-      res.status(500).json({ message: "Restore failed: " + error.message });
+      res.status(500).json({ message: "Restore failed: " + getErrorMessage(error) });
     }
   });
 
@@ -1273,7 +1405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Add caching headers for case list
       res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
       res.json(createApiSuccessResponse(cases));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error fetching cases:", error);
       res.status(500).json({ message: "Fout bij ophalen cases" });
     }
@@ -1291,7 +1423,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       res.json(createApiSuccessResponse(report));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error fetching case:", error);
       res.status(500).json({ message: "Fout bij ophalen case" });
     }
@@ -1335,7 +1467,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json(createApiSuccessResponse(updatedReport, "Case succesvol bijgewerkt"));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error updating case:", error);
       res.status(500).json({ message: "Fout bij updaten case" });
     }
@@ -1354,7 +1486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await storage.updateReportStatus(id, status);
       res.json(createApiSuccessResponse({ success: true }, "Status succesvol bijgewerkt"));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error updating case status:", error);
       res.status(500).json({ message: "Fout bij updaten status" });
     }
@@ -1366,7 +1498,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id } = req.params;
       await storage.deleteReport(id);
       res.json(createApiSuccessResponse({ success: true }, "Case succesvol verwijderd"));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error deleting case:", error);
       res.status(500).json({ message: "Fout bij verwijderen case" });
     }
@@ -1399,7 +1531,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.status(400).json({ message: "Ongeldige export format" });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error exporting case:", error);
       res.status(500).json({ message: "Fout bij exporteren case" });
     }
@@ -1412,18 +1544,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Validate inputs
     if (!systemPrompt || !userInput || !model) {
       throw new ServerError(
+        ERROR_CODES.VALIDATION_FAILED,
         "Ontbrekende verplichte velden: systemPrompt, userInput, en model zijn vereist",
-        400,
-        ERROR_CODES.VALIDATION_FAILED
+        400
       );
     }
 
     // Validate input lengths
     if (userInput.length > 200000) {
       throw new ServerError(
+        ERROR_CODES.VALIDATION_FAILED,
         "User input is te lang (max 200KB)",
-        400,
-        ERROR_CODES.VALIDATION_FAILED
+        400
       );
     }
 
@@ -1457,22 +1589,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       parsedResult = JSON.parse(jsonText);
-    } catch (parseError: any) {
+    } catch (parseError: unknown) {
       console.error("Failed to parse AI response:", parseError);
       console.error("Raw AI response:", aiResult.substring(0, 500));
       throw new ServerError(
-        `AI antwoord kon niet worden geparseerd als JSON: ${parseError.message}`,
-        500,
-        ERROR_CODES.AI_PROCESSING_FAILED
+        ERROR_CODES.AI_PROCESSING_FAILED,
+        `AI antwoord kon niet worden geparseerd als JSON: ${getErrorMessage(parseError)}`,
+        500
       );
     }
 
     // Validate the structure
     if (!parsedResult.analyse || !parsedResult.concept_email) {
       throw new ServerError(
+        ERROR_CODES.AI_RESPONSE_INVALID,
         "AI antwoord heeft niet de verwachte structuur (ontbrekende 'analyse' of 'concept_email')",
-        500,
-        ERROR_CODES.AI_PROCESSING_FAILED
+        500
       );
     }
 
@@ -1502,7 +1634,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new session
   app.post("/api/follow-up/sessions", asyncHandler(async (req: Request, res: Response) => {
     const validatedData = insertFollowUpSessionSchema.parse(req.body);
-    const session = await storage.createFollowUpSession(validatedData);
+    const session = await storage.createFollowUpSession({
+      ...validatedData,
+      dossierData: validatedData.dossierData! // Zod ensures this is present
+    });
     res.json(createApiSuccessResponse(session, "Sessie succesvol aangemaakt"));
   }));
 
@@ -1535,7 +1670,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       sessionId: id,
     });
 
-    const thread = await storage.createFollowUpThread(validatedData);
+    const thread = await storage.createFollowUpThread({
+      ...validatedData,
+      aiAnalysis: validatedData.aiAnalysis!, // Zod ensures this is present
+      conceptEmail: validatedData.conceptEmail! // Zod ensures this is present
+    });
     res.json(createApiSuccessResponse(thread, "Thread succesvol toegevoegd"));
   }));
 

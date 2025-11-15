@@ -344,7 +344,7 @@ export abstract class BaseAIHandler {
     if (!options) return;
 
     if (typeof options !== 'object') {
-      throw new AIError('Options must be an object', 'INVALID_INPUT' as any, false);
+      throw AIError.invalidInput('Options must be an object');
     }
 
     // Validate boolean parameters

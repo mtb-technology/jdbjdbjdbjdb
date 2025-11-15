@@ -5,7 +5,7 @@
  * and prompt template generation.
  */
 
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
@@ -257,7 +257,7 @@ export function registerPromptRoutes(app: Express): void {
    *
    * Response: Ingestion result statistics
    */
-  app.post("/api/prompts/ingest-from-json", asyncHandler(async (req, res) => {
+  app.post("/api/prompts/ingest-from-json", asyncHandler(async (req: Request, res: Response) => {
     // Strict admin authentication - require exact API key match
     const adminKey = req.headers['x-admin-key'] as string;
     const authHeader = req.headers['authorization'] as string;

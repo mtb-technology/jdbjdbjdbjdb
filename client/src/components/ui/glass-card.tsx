@@ -20,11 +20,11 @@ const variantStyles = {
 
 export const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
   ({ children, className, variant = "default", hover = false, animated = true, ...props }, ref) => {
-    const CardComponent = animated ? motion.div : "div";
+    const CardComponent = (animated ? motion.div : "div") as any;
 
     return (
       <CardComponent
-        ref={ref}
+        ref={ref as any}
         className={cn(
           // Base styles with glassmorphism
           "rounded-xl border backdrop-blur-xl shadow-lg",
@@ -64,11 +64,11 @@ const gradientStyles = {
 
 export const GradientCard = forwardRef<HTMLDivElement, GradientCardProps>(
   ({ children, className, gradient = "primary", animated = true, ...props }, ref) => {
-    const CardComponent = animated ? motion.div : "div";
+    const CardComponent = (animated ? motion.div : "div") as any;
 
     return (
       <CardComponent
-        ref={ref}
+        ref={ref as any}
         className={cn(
           "rounded-xl shadow-2xl text-white overflow-hidden",
           "transition-all duration-300",

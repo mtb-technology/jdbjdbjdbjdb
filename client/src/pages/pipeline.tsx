@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Play, Zap, FolderOpen, Menu, Loader2, CheckCircle, Target, Upload, X, FileText } from "lucide-react";
 import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -12,6 +13,7 @@ import WorkflowInterface from "@/components/workflow-interface";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
 import { apiRequest } from "@/lib/queryClient";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
+import DOMPurify from "isomorphic-dompurify";
 
 const Pipeline = memo(function Pipeline() {
   const [rawText, setRawText] = useState("");
@@ -22,6 +24,7 @@ const Pipeline = memo(function Pipeline() {
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{name: string, size: number}>>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
   const { toast} = useToast();
@@ -33,8 +36,12 @@ const Pipeline = memo(function Pipeline() {
     fiscale_gegevens: { vermogen: 0, inkomsten: 0 }
   };
   const bouwplanData: BouwplanData = {
-    taal: "nl",
-    structuur: { inleiding: true, knelpunten: [], scenario_analyse: true, vervolgstappen: true }
+    fiscale_kernthemas: ["Test kernthema"],
+    geidentificeerde_risicos: ["Test risico"],
+    bouwplan_voor_rapport: {
+      "1_inleiding": { koptekst: "Inleiding", subdoelen: [] },
+      "2_analyse": { koptekst: "Analyse", subdoelen: [] }
+    }
   };
 
   const handleWorkflowComplete = useCallback((report: Report) => {
@@ -46,6 +53,7 @@ const Pipeline = memo(function Pipeline() {
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
+    setUploadProgress(0);
     const formData = new FormData();
 
     // Add all files to FormData
@@ -54,17 +62,37 @@ const Pipeline = memo(function Pipeline() {
     });
 
     try {
-      const response = await fetch('/api/upload/extract-text-batch', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
+      // Use XMLHttpRequest for progress tracking
+      const data: any = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        // Track upload progress
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const percentComplete = Math.round((e.loaded / e.total) * 100);
+            setUploadProgress(percentComplete);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch (e) {
+              reject(new Error('Invalid response format'));
+            }
+          } else {
+            reject(new Error('Upload mislukt'));
+          }
+        });
+
+        xhr.addEventListener('error', () => reject(new Error('Network error')));
+        xhr.addEventListener('abort', () => reject(new Error('Upload geannuleerd')));
+
+        xhr.open('POST', '/api/upload/extract-text-batch');
+        xhr.withCredentials = true;
+        xhr.send(formData);
       });
-
-      if (!response.ok) {
-        throw new Error('Upload mislukt');
-      }
-
-      const data = await response.json();
 
       if (data.success && data.data.results) {
         // Combine all extracted texts
@@ -99,6 +127,7 @@ const Pipeline = memo(function Pipeline() {
       });
     } finally {
       setIsUploading(false);
+      setUploadProgress(0);
       // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -305,6 +334,16 @@ const Pipeline = memo(function Pipeline() {
                   </div>
                 </div>
 
+                {/* Upload Progress */}
+                {isUploading && uploadProgress > 0 && (
+                  <div className="space-y-2">
+                    <Progress value={uploadProgress} className="h-2" />
+                    <p className="text-xs text-muted-foreground text-center">
+                      {uploadProgress}% geüpload
+                    </p>
+                  </div>
+                )}
+
                 {/* Uploaded files badges */}
                 {uploadedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2">
@@ -336,6 +375,7 @@ const Pipeline = memo(function Pipeline() {
 De AI herkent automatisch alle relevante informatie uit je input."
                   className="min-h-40 resize-none border-primary/20 focus:border-primary/40 bg-background/50"
                   data-testid="textarea-raw-input"
+                  aria-label="Fiscale input voor analyse - Voer klantsituatie, email correspondentie en relevante documenten in"
                 />
               </div>
               
@@ -388,9 +428,14 @@ De AI herkent automatisch alle relevante informatie uit je input."
               <CardTitle>Rapport Voltooid</CardTitle>
             </CardHeader>
             <CardContent>
-              <div 
-                dangerouslySetInnerHTML={{ __html: finalReport }}
+              <div
                 className="prose prose-sm max-w-none"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(finalReport, {
+                    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'code', 'pre', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+                    ALLOWED_ATTR: ['href', 'class', 'id']
+                  })
+                }}
               />
             </CardContent>
           </Card>

@@ -273,7 +273,36 @@ ${feedback}
     }
 
     const currentVersions = report.conceptReportVersions as ConceptReportVersions || {};
-    
+
+    // Check if this exact stageId+version combination already exists in history
+    const existingHistory = currentVersions.history || [];
+    const existingEntryIndex = existingHistory.findIndex(
+      (entry: any) => entry.stageId === stageId && entry.v === snapshot.v
+    );
+
+    let updatedHistory;
+    if (existingEntryIndex >= 0) {
+      // Update existing entry's timestamp instead of creating duplicate
+      updatedHistory = [...existingHistory];
+      updatedHistory[existingEntryIndex] = {
+        stageId,
+        v: snapshot.v,
+        timestamp: new Date().toISOString()
+      };
+      console.log(`🔄 [ReportProcessor] Updated existing history entry for ${stageId} v${snapshot.v}`);
+    } else {
+      // Add new entry
+      updatedHistory = [
+        ...existingHistory,
+        {
+          stageId,
+          v: snapshot.v,
+          timestamp: new Date().toISOString()
+        }
+      ];
+      console.log(`➕ [ReportProcessor] Added new history entry for ${stageId} v${snapshot.v}`);
+    }
+
     // Create updated versions with the snapshot properly assigned per stage
     const updatedVersions: ConceptReportVersions = {
       ...currentVersions,
@@ -281,14 +310,7 @@ ${feedback}
         pointer: stageId,
         v: snapshot.v
       },
-      history: [
-        ...(currentVersions.history || []),
-        {
-          stageId,
-          v: snapshot.v,
-          timestamp: new Date().toISOString()
-        }
-      ]
+      history: updatedHistory
     };
     
     // *** CRITICAL FIX: Actually persist the snapshot per stage ***

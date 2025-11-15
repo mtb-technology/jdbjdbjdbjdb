@@ -37,7 +37,7 @@ import {
   ExternalLink,
   Trash2
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback, useMemo, memo } from "react";
 import { InformatieCheckViewer } from "./InformatieCheckViewer";
 import { ComplexiteitsCheckViewer } from "./ComplexiteitsCheckViewer";
 import { SimpleFeedbackProcessor } from "./SimpleFeedbackProcessor";
@@ -95,7 +95,7 @@ export interface WorkflowStageCardProps {
   onManualExecute?: () => void;
 }
 
-export function WorkflowStageCard({
+export const WorkflowStageCard = memo(function WorkflowStageCard({
   stageKey,
   stageName,
   stageIcon,
@@ -133,21 +133,25 @@ export function WorkflowStageCard({
   const [customContext, setCustomContext] = useState('');
   const [showCustomContext, setShowCustomContext] = useState(false);
 
-  // Check if this stage supports manual mode (only stage 3)
-  const supportsManualMode = stageKey === '3_generatie';
+  // Check if this stage supports manual mode (stage 3, 4a, 4b)
+  const supportsManualMode = useMemo(() => [
+    '3_generatie',
+    '4a_BronnenSpecialist',
+    '4b_FiscaalTechnischSpecialist'
+  ].includes(stageKey), [stageKey]);
 
   // Handler for executing stage with optional custom context
-  const handleExecuteClick = () => {
+  const handleExecuteClick = useCallback(() => {
     onExecute(customContext.trim() || undefined);
-  };
+  }, [onExecute, customContext]);
 
   // Get status badge - Using JdB theme colors
-  const getStatusBadge = () => {
+  const getStatusBadge = useCallback(() => {
     switch (stageStatus) {
       case 'completed':
         return <Badge variant="success"><CheckCircle className="w-3 h-3 mr-1" />Voltooid</Badge>;
       case 'processing':
-        return <Badge className="bg-jdb-blue-primary text-white animate-pulse"><Activity className="w-3 h-3 mr-1" />Bezig...</Badge>;
+        return <Badge className="bg-jdb-blue-primary text-white"><Activity className="w-3 h-3 mr-1 animate-spin" />Bezig...</Badge>;
       case 'blocked':
         return <Badge variant="warning"><AlertTriangle className="w-3 h-3 mr-1" />Geblokkeerd</Badge>;
       case 'error':
@@ -155,14 +159,14 @@ export function WorkflowStageCard({
       default:
         return <Badge variant="outline" className="text-jdb-text-subtle"><Clock className="w-3 h-3 mr-1" />Nog niet gestart</Badge>;
     }
-  };
+  }, [stageStatus]);
 
   // Copy to clipboard
-  const handleCopy = (text: string) => {
+  const handleCopy = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
+  }, []);
 
   return (
     <Card className={`
@@ -172,7 +176,20 @@ export function WorkflowStageCard({
       ${stageStatus === 'error' ? 'border-jdb-danger/30 bg-red-50/30 dark:bg-red-950/10' : ''}
       transition-all duration-300
     `}>
-      <CardHeader className="cursor-pointer hover:bg-jdb-bg/50 dark:hover:bg-jdb-border/10 transition-colors" onClick={onToggleExpand}>
+      <CardHeader
+        className="cursor-pointer hover:bg-jdb-bg/50 dark:hover:bg-jdb-border/10 transition-colors"
+        onClick={onToggleExpand}
+        role="button"
+        aria-expanded={isExpanded}
+        aria-label={`${stageName} - ${isExpanded ? 'Inklappen' : 'Uitklappen'}`}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggleExpand();
+          }
+        }}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             {isExpanded ? <ChevronDown className="w-5 h-5 text-jdb-text-subtle" /> : <ChevronRight className="w-5 h-5 text-jdb-text-subtle" />}
@@ -272,14 +289,14 @@ export function WorkflowStageCard({
                         </div>
                       </div>
 
-                      <div className="bg-white dark:bg-gray-900 rounded-lg border-2 border-blue-300 dark:border-blue-700">
+                      <div className="bg-white dark:bg-gray-900 rounded-lg border-2 border-blue-300 dark:border-blue-700 overflow-hidden w-full">
                         <div className="p-3 border-b border-blue-200 dark:border-blue-800 flex items-center justify-between">
                           <span className="text-xs font-medium text-blue-900 dark:text-blue-100">Prompt voor Gemini Deep Research</span>
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleCopy(normalizePromptToString(stagePrompt))}
-                            className="h-8"
+                            className="h-8 flex-shrink-0"
                           >
                             {copied ? (
                               <>
@@ -294,8 +311,8 @@ export function WorkflowStageCard({
                             )}
                           </Button>
                         </div>
-                        <div className="p-4 max-h-[400px] overflow-auto">
-                          <pre className="text-xs font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                        <div className="p-4 max-h-[400px] overflow-y-auto w-full">
+                          <pre className="text-xs font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-all w-full min-w-0" style={{wordBreak: 'break-all', overflowWrap: 'anywhere'}}>
                             {normalizePromptToString(stagePrompt)}
                           </pre>
                         </div>
@@ -332,7 +349,7 @@ export function WorkflowStageCard({
                         ) : (
                           <>
                             <CheckCircle className="w-4 h-4 mr-2" />
-                            Stap 3 Voltooien met Dit Resultaat
+                            {stageName} Voltooien met Dit Resultaat
                           </>
                         )}
                       </Button>
@@ -460,7 +477,7 @@ export function WorkflowStageCard({
                         </Button>
                       </div>
                       <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-300 dark:border-gray-700 font-mono text-xs overflow-auto max-h-[500px]">
-                        <pre className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{normalizePromptToString(stagePrompt)}</pre>
+                        <pre className="whitespace-pre-wrap break-all text-gray-800 dark:text-gray-200" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{normalizePromptToString(stagePrompt)}</pre>
                       </div>
                     </div>
                   )}
@@ -546,6 +563,11 @@ export function WorkflowStageCard({
                             stageName={stageName}
                             rawFeedback={stageResult}
                             onProcessingComplete={onFeedbackProcessed}
+                            manualMode={manualMode}
+                            onToggleManualMode={onToggleManualMode}
+                            manualContent={manualContent}
+                            onManualContentChange={onManualContentChange}
+                            onManualExecute={onManualExecute}
                           />
                         </div>
                       )}
@@ -570,7 +592,7 @@ export function WorkflowStageCard({
                   {!isPromptCollapsed && (
                     <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border">
                       <div className="bg-white dark:bg-jdb-panel p-4 rounded-lg border border-jdb-border font-mono text-xs overflow-auto max-h-96">
-                        <pre className="whitespace-pre-wrap text-jdb-text-body">{normalizePromptToString(stagePrompt)}</pre>
+                        <pre className="whitespace-pre-wrap break-all text-jdb-text-body" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{normalizePromptToString(stagePrompt)}</pre>
                       </div>
                     </div>
                   )}
@@ -582,4 +604,4 @@ export function WorkflowStageCard({
       </AnimatePresence>
     </Card>
   );
-}
+});

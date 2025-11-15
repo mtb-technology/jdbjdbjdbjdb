@@ -731,7 +731,7 @@ const Settings = memo(function Settings() {
                         <Badge variant="outline" className="text-xs">Overschrijft global default</Badge>
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Provider Selection per Stage */}
                         <div className="space-y-2">
                           <Label className="text-xs font-medium">AI Provider</Label>
@@ -811,7 +811,7 @@ const Settings = memo(function Settings() {
                       
                       {/* Google-specific parameters */}
                       {(stageConfig?.aiConfig?.provider || aiConfig.provider) === "google" && (
-                        <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                           <div className="col-span-2">
                             <Label className="text-xs font-medium text-blue-900 dark:text-blue-100 mb-2 flex items-center">
                               <Brain className="h-3 w-3 mr-1" />
@@ -891,7 +891,7 @@ const Settings = memo(function Settings() {
 
                       {/* OpenAI-specific parameters */}
                       {(stageConfig?.aiConfig?.provider || aiConfig.provider) === "openai" && (
-                        <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 p-3 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
                           <div className="col-span-2">
                             <Label className="text-xs font-medium text-orange-900 dark:text-orange-100 mb-2 flex items-center">
                               <Zap className="h-3 w-3 mr-1" />

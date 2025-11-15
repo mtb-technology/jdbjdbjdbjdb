@@ -1,12 +1,4 @@
 import type { DossierData, BouwplanData, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
-
-// Internal type for stage configuration
-interface StagePromptConfig {
-  prompt: string;
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-}
 import { SourceValidator } from "./source-validator";
 import { AIModelFactory, AIModelParameters } from "./ai-models/ai-model-factory";
 import { AIConfigResolver } from "./ai-config-resolver";
@@ -163,7 +155,6 @@ Geef het resultaat terug als JSON in dit exacte formaat:
     }
   },
   "bouwplan": {
-    "taal": "nl",
     "structuur": {
       "inleiding": true,
       "knelpunten": ["knelpunt 1", "knelpunt 2"],
@@ -501,7 +492,8 @@ ${errorGuidance}
     stageConfig?: StagePromptConfig
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt("1_informatiecheck", stageConfig);
-    return this.promptBuilder.build("1_informatiecheck", stageConfig, () =>
+    // After validation, stageConfig is guaranteed to exist
+    return this.promptBuilder.build("1_informatiecheck", stageConfig!, () =>
       this.promptBuilder.buildInformatieCheckData(dossier)
     );
   }
@@ -514,7 +506,7 @@ ${errorGuidance}
     previousStageResults?: Record<string, string>
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt("2_complexiteitscheck", stageConfig);
-    return this.promptBuilder.build("2_complexiteitscheck", stageConfig, () =>
+    return this.promptBuilder.build("2_complexiteitscheck", stageConfig!, () =>
       this.promptBuilder.buildComplexiteitsCheckData(previousStageResults || {})
     );
   }
@@ -527,7 +519,7 @@ ${errorGuidance}
     previousStageResults?: Record<string, string>
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt("3_generatie", stageConfig);
-    return this.promptBuilder.build("3_generatie", stageConfig, () =>
+    return this.promptBuilder.build("3_generatie", stageConfig!, () =>
       this.promptBuilder.buildGeneratieData(previousStageResults || {})
     );
   }
@@ -542,7 +534,7 @@ ${errorGuidance}
     previousStageResults?: Record<string, string>
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt(stageName, stageConfig);
-    return this.promptBuilder.build(stageName, stageConfig, () =>
+    return this.promptBuilder.build(stageName, stageConfig!, () =>
       this.promptBuilder.buildReviewerData(conceptReport, dossier, bouwplan)
     );
   }
@@ -556,7 +548,7 @@ ${errorGuidance}
     previousStageResults?: Record<string, string>
   ): string {
     this.validateStagePrompt("6_change_summary", stageConfig);
-    return this.promptBuilder.buildCombined("6_change_summary", stageConfig, () =>
+    return this.promptBuilder.buildCombined("6_change_summary", stageConfig!, () =>
       this.promptBuilder.buildChangeSummaryData(conceptReportVersions)
     );
   }
@@ -575,7 +567,7 @@ ${errorGuidance}
       latest: currentReportText
     };
 
-    return this.promptBuilder.buildCombined("5_eindredactie", stageConfig, () =>
+    return this.promptBuilder.buildCombined("5_eindredactie", stageConfig!, () =>
       this.promptBuilder.buildEditorData(previousStageResults, conceptVersions)
     );
   }

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, json, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, json, jsonb, timestamp, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -105,7 +105,12 @@ export const reports = pgTable("reports", {
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  statusIdx: index("reports_status_idx").on(table.status),
+  createdAtIdx: index("reports_created_at_idx").on(table.createdAt),
+  clientNameIdx: index("reports_client_name_idx").on(table.clientName),
+  currentStageIdx: index("reports_current_stage_idx").on(table.currentStage),
+}));
 
 /**
  * ## PROMPT CONFIGS TABLE
@@ -145,7 +150,9 @@ export const promptConfigs = pgTable("prompt_configs", {
   isActive: boolean("is_active").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  isActiveIdx: index("prompt_configs_is_active_idx").on(table.isActive),
+}));
 
 /**
  * ## SOURCES TABLE
@@ -169,7 +176,10 @@ export const sources = pgTable("sources", {
   domain: text("domain").notNull(),
   isVerified: boolean("is_verified").notNull().default(false),
   lastChecked: timestamp("last_checked").defaultNow(),
-});
+}, (table) => ({
+  domainIdx: index("sources_domain_idx").on(table.domain),
+  isVerifiedIdx: index("sources_is_verified_idx").on(table.isVerified),
+}));
 
 /**
  * ## JOBS TABLE
@@ -267,9 +277,6 @@ export const dossierSchema = z.object({
 }).strict();
 
 export const bouwplanSchema = z.object({
-  taal: z.enum(["nl", "en"], {
-    errorMap: () => ({ message: "Taal moet 'nl' of 'en' zijn" })
-  }).default("nl"),
   structuur: z.object({
     inleiding: z.boolean().default(true),
     knelpunten: z.array(
@@ -770,13 +777,13 @@ export type InsertFollowUpThread = typeof followUpThreads.$inferInsert;
 // Zod schemas for validation
 export const insertFollowUpSessionSchema = createInsertSchema(followUpSessions, {
   clientName: z.string().min(1, "Client naam is verplicht"),
-  dossierData: z.any(), // Will be validated as JSON
+  dossierData: z.unknown(), // Will be validated as JSON - required field
   rapportContent: z.string().min(1, "Rapport content is verplicht"),
-});
+}).required({ dossierData: true });
 
 export const insertFollowUpThreadSchema = createInsertSchema(followUpThreads, {
   sessionId: z.string().uuid("Ongeldige session ID"),
   emailThread: z.string().min(1, "E-mail thread is verplicht"),
-  aiAnalysis: z.any(), // Will be validated as JSON
-  conceptEmail: z.any(), // Will be validated as JSON
-});
+  aiAnalysis: z.unknown(), // Will be validated as JSON - required field
+  conceptEmail: z.unknown(), // Will be validated as JSON - required field
+}).required({ aiAnalysis: true, conceptEmail: true });

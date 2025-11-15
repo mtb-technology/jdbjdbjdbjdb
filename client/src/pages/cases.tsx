@@ -5,13 +5,17 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { ToastAction } from "@/components/ui/toast";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, RefreshCw, Menu, Package } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
+import { celebrateExport } from "@/lib/confetti";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface Case {
   id: string;
@@ -31,13 +35,13 @@ interface CasesResponse {
 }
 
 // Memoized Case Item Component for better performance
-const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, handleExport, updateStatusMutation, deleteCaseMutation }: {
+const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, handleExport, updateStatusMutation, handleDelete }: {
   case_: Case;
   getStatusColor: (status: string) => "secondary" | "default" | "outline" | "destructive" | undefined;
   getStatusText: (status: string, report?: any) => string;
   handleExport: (caseId: string, format: string) => void;
   updateStatusMutation: any;
-  deleteCaseMutation: any;
+  handleDelete: (caseId: string, caseName: string) => void;
 }) {
   return (
     <Card className="group hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 border-l-4 border-l-transparent hover:border-l-primary/50 bg-gradient-to-r from-card to-card/50">
@@ -115,17 +119,16 @@ const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, 
                 <AlertDialogHeader>
                   <AlertDialogTitle>Case verwijderen</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Weet je zeker dat je deze case wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.
+                    Weet je zeker dat je deze case wilt verwijderen? Je hebt 5 seconden om dit ongedaan te maken.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Annuleren</AlertDialogCancel>
-                  <AlertDialogAction 
-                    onClick={() => deleteCaseMutation.mutate(case_.id)}
-                    disabled={deleteCaseMutation.isPending}
+                  <AlertDialogAction
+                    onClick={() => handleDelete(case_.id, case_.title)}
                     data-testid={`button-confirm-delete-${case_.id}`}
                   >
-                    {deleteCaseMutation.isPending ? "Verwijderen..." : "Verwijderen"}
+                    Verwijderen
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -142,8 +145,10 @@ function Cases() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pendingDeletion, setPendingDeletion] = useState<{ id: string; timeoutId: NodeJS.Timeout } | null>(null);
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const { toast } = useToast();
 
   const { data: casesData, isLoading } = useQuery<CasesResponse>({
     queryKey: ["/api/cases", { page, search, status: statusFilter }],
@@ -238,12 +243,59 @@ function Cases() {
     },
   });
 
+  // Cleanup pending deletion on unmount
+  useEffect(() => {
+    return () => {
+      if (pendingDeletion) {
+        clearTimeout(pendingDeletion.timeoutId);
+      }
+    };
+  }, [pendingDeletion]);
+
   // Auto-adjust page if current page exceeds total pages after deletion
   useEffect(() => {
     if (casesData && casesData.totalPages > 0 && page > casesData.totalPages) {
       setPage(casesData.totalPages);
     }
   }, [casesData, page]);
+
+  const handleDelete = useCallback((caseId: string, caseName: string) => {
+    // If there's already a pending deletion, cancel it
+    if (pendingDeletion) {
+      clearTimeout(pendingDeletion.timeoutId);
+    }
+
+    // Set up delayed deletion with undo option
+    const timeoutId = setTimeout(() => {
+      deleteCaseMutation.mutate(caseId);
+      setPendingDeletion(null);
+    }, 5000); // 5 second delay
+
+    setPendingDeletion({ id: caseId, timeoutId });
+
+    // Show toast with undo button
+    const toastInstance = toast({
+      title: "Case verwijderd",
+      description: `"${caseName}" wordt over 5 seconden permanent verwijderd`,
+      duration: 5000,
+      action: (
+        <ToastAction
+          altText="Ongedaan maken"
+          onClick={() => {
+            clearTimeout(timeoutId);
+            setPendingDeletion(null);
+            toast({
+              title: "Verwijdering geannuleerd",
+              description: `"${caseName}" is behouden`,
+              duration: 3000,
+            });
+          }}
+        >
+          Ongedaan maken
+        </ToastAction>
+      ),
+    });
+  }, [pendingDeletion, deleteCaseMutation, toast]);
 
   const getStatusColor = useCallback((status: string): "secondary" | "default" | "outline" | "destructive" | undefined => {
     switch (status) {
@@ -284,7 +336,16 @@ function Cases() {
 
   const handleExport = useCallback((caseId: string, format: string) => {
     window.open(`/api/cases/${caseId}/export/${format}`, '_blank');
-  }, []);
+
+    // Celebrate successful export
+    celebrateExport(format as 'html' | 'json');
+
+    toast({
+      title: "Export gestart",
+      description: `Case wordt geëxporteerd als ${format.toUpperCase()}`,
+      duration: 3000,
+    });
+  }, [toast]);
 
   const cases = useMemo(() => casesData?.reports || [], [casesData?.reports]);
   const totalPages = useMemo(() => casesData?.totalPages || 1, [casesData?.totalPages]);
@@ -384,6 +445,7 @@ function Cases() {
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-10"
                   data-testid="input-search-cases"
+                  aria-label="Zoek cases op klantnaam of titel"
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -431,17 +493,16 @@ function Cases() {
           </div>
         ) : cases.length === 0 ? (
           <Card>
-            <CardContent className="py-12 text-center">
-              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Geen cases gevonden</h3>
-              <p className="text-muted-foreground mb-6">
-                {search || statusFilter ? "Geen cases gevonden die voldoen aan je filters" : "Je hebt nog geen cases aangemaakt"}
-              </p>
-              <Link href="/" asChild>
-                <Button data-testid="button-create-first-case">
-                  Eerste Case Aanmaken
-                </Button>
-              </Link>
+            <CardContent>
+              <EmptyState
+                icon={search || statusFilter ? Search : FileText}
+                title={search || statusFilter ? "Geen cases gevonden" : "Nog geen cases"}
+                description={search || statusFilter ? "Geen cases gevonden die voldoen aan je filters. Probeer een andere zoekopdracht of filter." : "Je hebt nog geen cases aangemaakt. Maak je eerste case aan om te beginnen."}
+                action={{
+                  label: "Nieuwe Case Aanmaken",
+                  onClick: () => window.location.href = "/pipeline"
+                }}
+              />
             </CardContent>
           </Card>
         ) : (
@@ -468,7 +529,7 @@ function Cases() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Link href={`/cases/${case_.id}`} asChild>
                         <Button variant="outline" size="sm" data-testid={`button-view-case-${case_.id}`}>
                           <Eye className="h-4 w-4 mr-2" />
@@ -519,13 +580,13 @@ function Cases() {
                           <AlertDialogHeader>
                             <AlertDialogTitle>Case verwijderen</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Weet je zeker dat je deze case wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.
+                              Weet je zeker dat je deze case wilt verwijderen? Je hebt 5 seconden om dit ongedaan te maken.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Annuleren</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={() => deleteCaseMutation.mutate(case_.id)}
+                            <AlertDialogAction
+                              onClick={() => handleDelete(case_.id, case_.title)}
                               disabled={deleteCaseMutation.isPending}
                               data-testid={`button-confirm-delete-${case_.id}`}
                             >
