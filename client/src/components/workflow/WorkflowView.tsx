@@ -335,12 +335,24 @@ export const WorkflowView = memo(function WorkflowView({
 
       toast({
         title: `${stageKey} voltooid`,
-        description: "Het handmatige resultaat is opgeslagen. De feedback processor is nu beschikbaar.",
+        description: "✅ Stap 1 voltooid. Nu: Verwerk de feedback om het concept bij te werken.",
       });
 
       // Invalidate query to trigger reload
       queryClient.invalidateQueries({ queryKey: ['report', state.currentReport.id] });
       queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
+
+      // Auto-scroll to feedback processor after a short delay (let UI update first)
+      setTimeout(() => {
+        const feedbackSection = document.querySelector(`[data-stage="${stageKey}"] [data-feedback-processor]`);
+        if (feedbackSection) {
+          feedbackSection.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+            inline: 'nearest'
+          });
+        }
+      }, 500);
     } catch (error) {
       console.error('Failed to save manual content:', error);
       toast({

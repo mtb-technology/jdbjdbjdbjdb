@@ -453,14 +453,18 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
   };
 
   return (
-    <Card className="w-full" data-testid="feedback-processor">
-      <CardHeader>
+    <Card className="w-full border-2 border-blue-500/30 shadow-lg" data-testid="feedback-processor" data-feedback-processor>
+      <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20">
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            Feedback Review - {stageName}
-          </CardTitle>
-          
+          <div className="space-y-1">
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              Feedback Review - {stageName}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Stap 2: Verwerk de feedback en werk het concept bij
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             <AIStatusIndicator />
             {hasProcessed ? (
