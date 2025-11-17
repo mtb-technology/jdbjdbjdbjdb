@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { EnhancedErrorBoundary as ErrorBoundary } from "@/components/enhanced-error-boundary";
 import { useCommandPalette, type Command } from "@/components/ui/command-palette";
-import { Home, FileText, Plus, Settings as SettingsIcon, Package, MessageSquare } from "lucide-react";
+import { Home, FileText, Plus, Settings as SettingsIcon, Package, MessageSquare, Sparkles } from "lucide-react";
 
 // Lazy loading enabled for optimal bundle splitting and performance
 const Dashboard = lazy(() => import("@/pages/dashboard"));
@@ -17,6 +17,7 @@ const Cases = lazy(() => import("@/pages/cases"));
 const CaseDetail = lazy(() => import("@/pages/case-detail"));
 const BatchProcessing = lazy(() => import("@/pages/batch-processing"));
 const FollowUpAssistant = lazy(() => import("@/pages/follow-up-assistant"));
+const TextStyler = lazy(() => import("@/pages/text-styler"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 // Loading fallback component for better UX during code splitting
@@ -91,6 +92,14 @@ function Router() {
       keywords: ['assistant', 'chat', 'help'],
     },
     {
+      id: 'go-text-styler',
+      label: 'Go to Text Styler',
+      description: 'Style text and export to PDF',
+      icon: Sparkles,
+      action: () => setLocation('/text-styler'),
+      keywords: ['text', 'style', 'format', 'pdf', 'export'],
+    },
+    {
       id: 'go-settings',
       label: 'Go to Settings',
       description: 'Configure application settings',
@@ -126,6 +135,9 @@ function Router() {
         </Route>
         <Route path="/assistant">
           <LazyRoute Component={FollowUpAssistant} />
+        </Route>
+        <Route path="/text-styler">
+          <LazyRoute Component={TextStyler} />
         </Route>
         <Route path="/settings">
           <LazyRoute Component={Settings} />

@@ -68,7 +68,7 @@ export const AI_MODELS = {
       maxOutputTokens: 8192
     },
     limits: {
-      maxTokensPerRequest: 32768,
+      maxTokensPerRequest: 65535, // Gemini 2.5 Pro supports up to 65,535 output tokens
       maxRequestsPerMinute: 60
     }
   },
@@ -85,7 +85,7 @@ export const AI_MODELS = {
       maxOutputTokens: 8192
     },
     limits: {
-      maxTokensPerRequest: 32768,
+      maxTokensPerRequest: 65535, // Gemini 2.5 Flash also supports up to 65,535 output tokens
       maxRequestsPerMinute: 1000
     }
   },
@@ -102,7 +102,7 @@ export const AI_MODELS = {
       maxOutputTokens: 8192
     },
     limits: {
-      maxTokensPerRequest: 32768,
+      maxTokensPerRequest: 65535,
       maxRequestsPerMinute: 1000
     }
   },
@@ -119,7 +119,7 @@ export const AI_MODELS = {
       maxOutputTokens: 32768 // Higher default for research outputs
     },
     limits: {
-      maxTokensPerRequest: 65536,
+      maxTokensPerRequest: 65535, // Aligned with Gemini 2.5 Pro limit
       maxRequestsPerMinute: 30
     }
   },

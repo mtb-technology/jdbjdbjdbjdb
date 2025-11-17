@@ -112,6 +112,33 @@ export class AIError extends Error {
     return new AIError(message, ERROR_CODES.VALIDATION_FAILED, 400, { details });
   }
 
+  static invalidResponse(message: string, details?: Record<string, any>) {
+    return new AIError(message, ERROR_CODES.EXTERNAL_API_ERROR, 502, { details, isRetryable: true });
+  }
+
+  static networkError(provider: string, error: any) {
+    return new AIError(
+      `Network error connecting to ${provider}: ${error.message}`,
+      ERROR_CODES.EXTERNAL_API_ERROR,
+      503,
+      { details: { provider, originalError: error.code }, isRetryable: true }
+    );
+  }
+
+  static fromHttpError(status: number, provider: string, message?: string) {
+    const isRetryable = status >= 500 || status === 429;
+    return new AIError(
+      message || `HTTP ${status} from ${provider}`,
+      ERROR_CODES.EXTERNAL_API_ERROR,
+      status,
+      { details: { provider, httpStatus: status }, isRetryable }
+    );
+  }
+
+  static validationFailed(message: string) {
+    return new AIError(message, ERROR_CODES.VALIDATION_FAILED, 400);
+  }
+
   static timeout(message: string = 'Request timeout') {
     return new AIError(message, ERROR_CODES.AI_SERVICE_UNAVAILABLE, 504, { isRetryable: true });
   }

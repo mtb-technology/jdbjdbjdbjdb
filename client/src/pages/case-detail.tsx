@@ -210,7 +210,7 @@ export default function CaseDetail() {
       const latestPointer = versions?.latest?.pointer;
       const latestVersion = versions?.latest?.v;
 
-      return history.map((entry: any) => {
+      const checkpoints = history.map((entry: any) => {
         const isLatest = entry.stageId === latestPointer && entry.v === latestVersion;
         return {
           version: entry.v,
@@ -221,9 +221,13 @@ export default function CaseDetail() {
           isCurrent: isLatest
         };
       });
+
+      console.log('🔍 [versionCheckpoints] Final checkpoints from history:', checkpoints);
+      return checkpoints;
     }
 
     // Fallback: use stage keys (legacy behavior)
+    console.log('🔍 [versionCheckpoints] Using fallback (stage keys), no history array found');
     const versionsList = Object.keys(versions || {})
       .filter(key => key !== 'latest' && key !== 'history')
       .map((stageKey) => {
@@ -246,6 +250,7 @@ export default function CaseDetail() {
         return a.version - b.version;
       });
 
+    console.log('🔍 [versionCheckpoints] Final checkpoints from fallback:', versionsList);
     return versionsList;
   }, [report?.conceptReportVersions]);
 

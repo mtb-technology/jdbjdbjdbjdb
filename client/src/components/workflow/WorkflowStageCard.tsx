@@ -48,7 +48,7 @@ export interface WorkflowStageCardProps {
   stageKey: string;
   stageName: string;
   stageIcon: React.ReactNode;
-  stageStatus: 'idle' | 'processing' | 'completed' | 'blocked' | 'error';
+  stageStatus: 'idle' | 'processing' | 'completed' | 'blocked' | 'error' | 'feedback_ready';
   isExpanded: boolean;
   onToggleExpand: () => void;
 
@@ -150,6 +150,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
     switch (stageStatus) {
       case 'completed':
         return <Badge variant="success"><CheckCircle className="w-3 h-3 mr-1" />Voltooid</Badge>;
+      case 'feedback_ready':
+        return <Badge className="bg-orange-500 text-white"><Sparkles className="w-3 h-3 mr-1" />Review Beschikbaar</Badge>;
       case 'processing':
         return <Badge className="bg-jdb-blue-primary text-white"><Activity className="w-3 h-3 mr-1 animate-spin" />Bezig...</Badge>;
       case 'blocked':
@@ -171,6 +173,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   return (
     <Card className={`
       ${stageStatus === 'completed' ? 'border-jdb-success/30 bg-green-50/30 dark:bg-green-950/10' : ''}
+      ${stageStatus === 'feedback_ready' ? 'border-orange-400/50 bg-orange-50/40 dark:bg-orange-950/20 shadow-md' : ''}
       ${stageStatus === 'processing' ? 'border-jdb-blue-primary/30 bg-jdb-blue-light/30 dark:bg-jdb-blue-primary/10 shadow-lg' : ''}
       ${stageStatus === 'blocked' ? 'border-jdb-warning/30 bg-amber-50/30 dark:bg-amber-950/10' : ''}
       ${stageStatus === 'error' ? 'border-jdb-danger/30 bg-red-50/30 dark:bg-red-950/10' : ''}
@@ -445,7 +448,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
               {/* Raw LLM Input Preview - Only show if prompt exists */}
               {stagePrompt && (
-                <div className="border-2 border-jdb-blue-primary/30 rounded-lg bg-blue-50/50 dark:bg-blue-950/20">
+                <div className="border-2 border-jdb-blue-primary/30 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 overflow-hidden max-w-full">
                   <button
                     onClick={() => setIsRawInputCollapsed(!isRawInputCollapsed)}
                     className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-blue-100/50 dark:hover:bg-blue-950/30 transition-colors focus:outline-none focus:ring-2 focus:ring-jdb-blue-primary focus:ring-offset-2 rounded-lg"
@@ -462,7 +465,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                     </div>
                   </button>
                   {!isRawInputCollapsed && (
-                    <div className="px-4 py-4 bg-white dark:bg-jdb-panel border-t-2 border-jdb-blue-primary/30">
+                    <div className="px-4 py-4 bg-white dark:bg-jdb-panel border-t-2 border-jdb-blue-primary/30 max-w-full">
                       <div className="mb-2 flex items-center justify-between">
                         <p className="text-xs text-jdb-text-subtle font-medium">
                           Dit is exact wat naar de LLM wordt gestuurd - controleer of concept rapport + feedback beide aanwezig zijn
@@ -476,8 +479,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                           {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         </Button>
                       </div>
-                      <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-300 dark:border-gray-700 font-mono text-xs overflow-auto max-h-[500px]">
-                        <pre className="whitespace-pre-wrap break-all text-gray-800 dark:text-gray-200" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{normalizePromptToString(stagePrompt)}</pre>
+                      <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-300 dark:border-gray-700 font-mono text-xs overflow-x-auto overflow-y-auto max-h-[500px] max-w-full">
+                        <pre className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>{normalizePromptToString(stagePrompt)}</pre>
                       </div>
                     </div>
                   )}
@@ -485,7 +488,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
               )}
 
               {/* Input Section */}
-              <div className="border border-jdb-border rounded-lg">
+              <div className="border border-jdb-border rounded-lg overflow-hidden max-w-full">
                 <button
                   onClick={onToggleInput}
                   className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-jdb-bg dark:hover:bg-jdb-border/10 transition-colors focus:outline-none focus:ring-2 focus:ring-jdb-blue-primary focus:ring-offset-2 rounded-lg"
@@ -497,7 +500,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   {isInputCollapsed ? <ChevronRight className="w-4 h-4 text-jdb-text-subtle" /> : <ChevronDown className="w-4 h-4 text-jdb-text-subtle" />}
                 </button>
                 {!isInputCollapsed && (
-                  <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border">
+                  <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border max-w-full">
                     <p className="text-sm text-jdb-text-body">
                       Input wordt automatisch gegenereerd uit vorige stappen
                     </p>
@@ -507,7 +510,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
               {/* Output Section */}
               {stageResult && (
-                <div className="border border-jdb-border rounded-lg">
+                <div className="border border-jdb-border rounded-lg overflow-hidden max-w-full">
                   <div className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between">
                     <button
                       onClick={onToggleOutput}
@@ -532,7 +535,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                     </Button>
                   </div>
                   {!isOutputCollapsed && (
-                    <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border overflow-hidden">
+                    <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border overflow-hidden max-w-full">
                       {/* Special viewers for specific stages */}
                       {stageKey === '1_informatiecheck' && (
                         <InformatieCheckViewer
@@ -549,8 +552,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
                       {/* Default output display */}
                       {!['1_informatiecheck', '2_complexiteitscheck'].includes(stageKey) && (
-                        <div className="bg-white p-3 rounded border font-mono text-xs overflow-y-auto max-h-96 w-full">
-                          <pre className="whitespace-pre-wrap break-all" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{stageResult}</pre>
+                        <div className="bg-white p-3 rounded border font-mono text-xs overflow-x-auto overflow-y-auto max-h-96 w-full max-w-full">
+                          <pre className="whitespace-pre-wrap break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>{stageResult}</pre>
                         </div>
                       )}
 

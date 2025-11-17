@@ -165,9 +165,17 @@ export class DatabaseStorage implements IStorage {
     } catch (error: any) {
       // Handle unique constraint violation (race condition scenario)
       if (error?.code === '23505' || error?.constraint?.includes('url')) {
+        console.log('ℹ️ [Storage] Source URL already exists (race condition), fetching existing:', insertSource.url);
         // Another process likely inserted the same URL, try to fetch it
         const [existing] = await db.select().from(sources).where(eq(sources.url, insertSource.url));
-        if (existing) return existing;
+        if (existing) {
+          return existing;
+        }
+        // ✅ FIX: If still not found, this is an error that should be logged
+        console.error('❌ [Storage] Race condition: constraint violation but source not found!', {
+          url: insertSource.url,
+          error: error.message
+        });
       }
       throw error;
     }
@@ -253,52 +261,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async initializeDefaultPrompts(): Promise<void> {
-    // Check for production sync mode - if enabled, always sync from JSON regardless of existing configs
-    const syncMode = process.env.PROMPTS_SYNC_MODE;
-    if (process.env.NODE_ENV === 'production' && syncMode === 'upsert') {
-      console.log('Production mode: Force syncing prompts from storage/prompts.json...');
-      const result = await this.forceIngestPromptsFromJson();
-      if (result.success) {
-        console.log(`✅ Production sync completed: ${result.message}`);
-        return;
-      } else {
-        console.error(`❌ Production sync failed: ${result.message}, falling back to default initialization`);
-      }
-    }
-
-    // Check if any configs exist
+    // Check if any configs exist - if so, use what's in database (managed via Settings UI)
     const existing = await this.getAllPromptConfigs();
     if (existing.length > 0) {
+      console.log(`Using existing prompt configs from database (${existing.length} configs found)`);
       return;
     }
-    
-    try {
-      // Try to load prompts from storage/prompts.json file
-      const promptsFilePath = path.join(process.cwd(), 'storage', 'prompts.json');
-      
-      if (fs.existsSync(promptsFilePath)) {
-        console.log('Loading prompts from storage/prompts.json...');
-        const promptsFileContent = fs.readFileSync(promptsFilePath, 'utf8');
-        const promptsData = JSON.parse(promptsFileContent);
-        
-        // Load all prompt configurations from the JSON file
-        if (Array.isArray(promptsData)) {
-          for (const promptConfig of promptsData) {
-            // Remove id, createdAt, updatedAt from JSON if they exist to avoid conflicts
-            const { id, createdAt, updatedAt, ...configToInsert } = promptConfig;
-            await this.createPromptConfig(configToInsert);
-            console.log(`Loaded prompt config: ${configToInsert.name}`);
-          }
-          console.log(`Successfully loaded ${promptsData.length} prompt configurations from JSON file`);
-          return;
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load prompts from JSON file, falling back to defaults:', error);
-    }
-    
-    // Fallback: Create empty default config if JSON loading failed
-    console.log('Creating fallback default prompt configuration...');
+
+    // Only create default config if database is completely empty (first run)
+    console.log('No prompt configs found - creating empty default configuration...');
+    console.log('Configure your prompts via Settings UI');
+
     const defaultConfig = {
       name: "Default Fiscal Analysis",
       isActive: true,
@@ -336,59 +309,6 @@ export class DatabaseStorage implements IStorage {
     return updated || undefined;
   }
 
-  async forceIngestPromptsFromJson(): Promise<{ success: boolean; message: string; configsLoaded: number }> {
-    try {
-      // Try to load prompts from storage/prompts.json file
-      const promptsFilePath = path.join(process.cwd(), 'storage', 'prompts.json');
-      
-      if (!fs.existsSync(promptsFilePath)) {
-        return { success: false, message: 'storage/prompts.json file not found', configsLoaded: 0 };
-      }
-
-      console.log('Force loading prompts from storage/prompts.json...');
-      const promptsFileContent = fs.readFileSync(promptsFilePath, 'utf8');
-      const promptsData = JSON.parse(promptsFileContent);
-      
-      // Load all prompt configurations from the JSON file
-      if (Array.isArray(promptsData)) {
-        // Deactivate existing configs first
-        await db.update(promptConfigs).set({ isActive: false });
-        
-        let loadedCount = 0;
-        for (const promptConfig of promptsData) {
-          // Remove id, createdAt, updatedAt from JSON if they exist to avoid conflicts
-          const { id, createdAt, updatedAt, ...configToInsert } = promptConfig;
-          
-          // Create new config with timestamp suffix to avoid name conflicts
-          const configName = `${configToInsert.name} (Ingested ${new Date().toISOString().slice(0, 16).replace('T', ' ')})`;
-          const configToCreate = {
-            ...configToInsert,
-            name: configName,
-            isActive: loadedCount === 0 // Make first one active
-          };
-          
-          await this.createPromptConfig(configToCreate);
-          console.log(`Force loaded prompt config: ${configName}`);
-          loadedCount++;
-        }
-        
-        return { 
-          success: true, 
-          message: `Successfully force-loaded ${loadedCount} prompt configurations from JSON file`, 
-          configsLoaded: loadedCount 
-        };
-      } else {
-        return { success: false, message: 'JSON file does not contain valid prompt array', configsLoaded: 0 };
-      }
-    } catch (error) {
-      console.error('Failed to force-load prompts from JSON file:', error);
-      return { 
-        success: false, 
-        message: `Failed to load prompts: ${error instanceof Error ? error.message : 'Unknown error'}`, 
-        configsLoaded: 0 
-      };
-    }
-  }
 
   // Follow-up session methods
   async getFollowUpSession(id: string): Promise<FollowUpSession | undefined> {

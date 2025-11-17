@@ -160,9 +160,25 @@ export class PromptBuilder {
 
   /**
    * Stringify data for userInput (handles strings, objects, etc.)
+   *
+   * ⚠️ DOUBLE-WRAPPING DETECTION: This method detects if data is already JSON-stringified
+   * to prevent the same bug pattern that caused issues in feedback processing.
    */
   private stringifyData<T>(data: T): string {
     if (typeof data === 'string') {
+      // ✅ FIX: Detect if string is already JSON to prevent double-wrapping
+      const trimmed = data.trim();
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+          (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          JSON.parse(trimmed);
+          console.warn('⚠️ [PromptBuilder] WARNING: Data appears to be pre-stringified JSON!');
+          console.warn('   This may cause double-wrapping bugs. Pass objects instead of strings.');
+          console.warn('   String preview:', trimmed.substring(0, 100) + '...');
+        } catch {
+          // Not valid JSON, safe to use as plain string
+        }
+      }
       return data;
     }
 

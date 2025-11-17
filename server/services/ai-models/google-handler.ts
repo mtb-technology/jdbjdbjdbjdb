@@ -134,8 +134,15 @@ export class GoogleAIHandler extends BaseAIHandler {
     if (config.topK !== undefined && (config.topK < 1 || config.topK > 40)) {
       throw AIError.validationFailed(`TopK must be between 1 and 40 for Google AI, got ${config.topK}`);
     }
-    if (config.maxOutputTokens !== undefined && (config.maxOutputTokens < 100 || config.maxOutputTokens > 32768)) {
-      throw AIError.validationFailed(`MaxOutputTokens must be between 100 and 32768 for Google AI, got ${config.maxOutputTokens}`);
+    if (config.maxOutputTokens !== undefined) {
+      if (config.maxOutputTokens < 100) {
+        throw AIError.validationFailed(`MaxOutputTokens must be at least 100 for Google AI, got ${config.maxOutputTokens}`);
+      }
+      // ✅ AUTO-CAP: Gemini 2.5 Pro has hard limit of 65,535. If user requests more, cap with warning
+      if (config.maxOutputTokens > 65535) {
+        console.warn(`⚠️ [GoogleAI] maxOutputTokens ${config.maxOutputTokens} exceeds Gemini 2.5 Pro limit. Auto-capping to 65,535`);
+        config.maxOutputTokens = 65535;
+      }
     }
   }
 

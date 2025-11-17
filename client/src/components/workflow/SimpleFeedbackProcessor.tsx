@@ -234,14 +234,19 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
   });
 
   // Mutation for fetching prompt preview
+  // ✅ FIX: Changed to POST to avoid 431 Request Header Too Large errors with large feedback
   const promptPreviewMutation = useMutation({
     mutationFn: async (instructions: string): Promise<PromptPreviewResponse> => {
-      const params = new URLSearchParams();
-      if (instructions.trim()) {
-        params.append('userInstructions', instructions);
-      }
+      const response = await fetch(`/api/reports/${reportId}/stage/${stageId}/prompt-preview`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userInstructions: instructions.trim() || undefined
+        })
+      });
 
-      const response = await fetch(`/api/reports/${reportId}/stage/${stageId}/prompt-preview?${params.toString()}`);
       if (!response.ok) {
         // Try to extract error details from response
         let errorMessage = 'Failed to fetch prompt preview';

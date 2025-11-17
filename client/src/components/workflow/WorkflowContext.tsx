@@ -223,7 +223,7 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
           [action.stage]: action.isProcessing
         }
       };
-    
+
     case "UPDATE_TIMER":
       return { ...state, currentStageTimer: action.time };
     

@@ -373,6 +373,9 @@ function Cases() {
                 <Link href="/assistant" className="text-muted-foreground hover:text-foreground" data-testid="nav-assistant">
                   Assistent
                 </Link>
+                <Link href="/text-styler" className="text-muted-foreground hover:text-foreground" data-testid="nav-text-styler">
+                  Text Styler
+                </Link>
                 <Link href="/settings" className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
                   Instellingen
                 </Link>
@@ -409,6 +412,9 @@ function Cases() {
                       </Link>
                       <Link href="/assistant" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-assistant">
                         Assistent
+                      </Link>
+                      <Link href="/text-styler" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-text-styler">
+                        Text Styler
                       </Link>
                       <Link href="/batch" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-batch">
                         Batch Verwerking

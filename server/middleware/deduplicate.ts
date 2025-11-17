@@ -166,8 +166,14 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
     res.on('error', errorHandler);
     res.on('close', () => {
       if (!isCompleted) {
+        console.log(`🔌 [Deduplicate] Client disconnected: ${requestKey}`);
         cleanup();
-        rejectRequest!(new Error('Response closed'));
+        // Reject the promise silently - don't throw since the client is gone
+        try {
+          rejectRequest!(new Error('Response closed'));
+        } catch (e) {
+          // Ignore - client already disconnected
+        }
       }
     });
 

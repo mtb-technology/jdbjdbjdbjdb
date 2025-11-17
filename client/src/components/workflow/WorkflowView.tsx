@@ -559,8 +559,16 @@ export const WorkflowView = memo(function WorkflowView({
                 const isCompleted = rawStageStatus === "completed";
                 const isProcessing = state.stageProcessing[stage.key];
 
+                // Check if this is a reviewer stage with feedback but not yet processed
+                const isReviewerStage = stage.key.startsWith('4') && stage.key !== '4_change_summary';
+                const hasFeedback = !!state.stageResults[stage.key];
+                // A reviewer stage is "processed" if it has a concept version (means feedback was merged into concept)
+                const hasConceptVersion = !!conceptVersion;
+                const isFeedbackReady = isReviewerStage && hasFeedback && !hasConceptVersion;
+
                 // Map status to WorkflowStageCard expected type
-                const stageStatus: "error" | "processing" | "completed" | "idle" | "blocked" =
+                const stageStatus: "error" | "processing" | "completed" | "idle" | "blocked" | "feedback_ready" =
+                  isFeedbackReady ? "feedback_ready" :
                   rawStageStatus === "completed" ? "completed" :
                   isProcessing ? "processing" :
                   rawStageStatus === "current" ? "idle" :

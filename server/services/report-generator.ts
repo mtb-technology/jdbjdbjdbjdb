@@ -52,18 +52,37 @@ export class ReportGenerator {
   }
 
   // Test method for AI functionality
-  async testAI(prompt: string): Promise<string> {
+  async testAI(prompt: string, customConfig?: Partial<AiConfig>): Promise<string> {
+    // ✅ FIX: Get defaults from global config instead of hardcoding
+    const promptConfig = await storage.getActivePromptConfig();
+    const globalConfig: any = promptConfig?.config || {};
+    const testConfig = globalConfig['test_ai'] || globalConfig.aiConfig || {};
+
     const defaultConfig: AiConfig = {
-      provider: "google",
-      model: "gemini-2.5-pro",
-      temperature: 0.1,
-      topP: 0.95,
-      topK: 20,
-      maxOutputTokens: 2048
+      provider: testConfig.provider ?? "google",
+      model: testConfig.model ?? "gemini-2.5-pro",
+      temperature: testConfig.temperature ?? 0.1,
+      topP: testConfig.topP ?? 0.95,
+      topK: testConfig.topK ?? 20,
+      maxOutputTokens: testConfig.maxOutputTokens ?? 2048
     };
 
+    // ✅ Merge custom config to allow overriding defaults (especially maxOutputTokens)
+    const finalConfig: AiConfig = {
+      ...defaultConfig,
+      ...customConfig
+    };
+
+    console.log(`🚀 [testAI] Using AI config:`, {
+      provider: finalConfig.provider,
+      model: finalConfig.model,
+      maxOutputTokens: finalConfig.maxOutputTokens,
+      temperature: finalConfig.temperature,
+      topP: finalConfig.topP
+    });
+
     try {
-      const response = await this.modelFactory.callModel(defaultConfig, prompt, {
+      const response = await this.modelFactory.callModel(finalConfig, prompt, {
         jobId: "test-ai"
       });
 
@@ -82,20 +101,33 @@ export class ReportGenerator {
     systemPrompt: string;
     userPrompt: string;
     model: string;
+    customConfig?: Partial<AiConfig>; // ✅ NEW: Allow config override
   }): Promise<string> {
-    const { systemPrompt, userPrompt, model } = params;
+    const { systemPrompt, userPrompt, model, customConfig } = params;
 
     // Determine provider from model name
     const provider = model.startsWith("gpt") || model.startsWith("o3") ? "openai" : "google";
 
+    // ✅ FIX: Get config from global settings or use customConfig
+    const promptConfig = await storage.getActivePromptConfig();
+    const globalConfig: any = promptConfig?.config || {};
+    const assistantConfig = globalConfig['follow_up_assistant'] || globalConfig.aiConfig || {};
+
     const aiConfig: AiConfig = {
       provider,
       model,
-      temperature: 0.1,
-      topP: 0.95,
-      topK: 20,
-      maxOutputTokens: 8192
+      temperature: assistantConfig.temperature ?? 0.1,
+      topP: assistantConfig.topP ?? 0.95,
+      topK: assistantConfig.topK ?? 20,
+      maxOutputTokens: assistantConfig.maxOutputTokens ?? 8192,
+      ...customConfig // ✅ Allow override
     };
+
+    console.log('🤖 [generateWithCustomPrompt] Using AI config:', {
+      provider: aiConfig.provider,
+      model: aiConfig.model,
+      maxOutputTokens: aiConfig.maxOutputTokens
+    });
 
     try {
       // Build the full prompt (system + user)
@@ -167,16 +199,26 @@ Geef het resultaat terug als JSON in dit exacte formaat:
 ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
     try {
-      const config: AiConfig = {
-        provider: "google",
-        model: "gemini-2.5-pro",
-        temperature: 0.1,
-        topP: 0.95,
-        topK: 20,
-        maxOutputTokens: 2048
-      };
+      // ✅ FIX: Use configurable AI config instead of hardcoded values
+      const promptConfig = await storage.getActivePromptConfig();
+      const globalConfig: any = promptConfig?.config || {};
 
-      const response = await this.modelFactory.callModel(config, extractionPrompt, {
+      // Use dossier_extraction stage config or fall back to global
+      const extractionConfig = globalConfig['dossier_extraction'] || {};
+      const aiConfig = this.configResolver.resolveForStage(
+        'dossier_extraction',
+        extractionConfig,
+        globalConfig,
+        'extract-dossier'
+      );
+
+      console.log('🔍 [extractDossierData] Using AI config:', {
+        provider: aiConfig.provider,
+        model: aiConfig.model,
+        maxOutputTokens: aiConfig.maxOutputTokens
+      });
+
+      const response = await this.modelFactory.callModel(aiConfig, extractionPrompt, {
         jobId: "extract-dossier"
       });
 
@@ -262,9 +304,15 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       default:
         // For reviewer stages (4a-4f)
         if (stageName.startsWith("4")) {
+          // ✅ FIX: Use latest concept version, not just stage 3 base version
+          // This ensures reviewers work on the most recent version (after previous reviewers)
+          const latestContent = conceptReportVersions?.["latest"]?.content
+            || conceptReportVersions?.["3_generatie"]?.content
+            || "";
+
           prompt = this.buildReviewerPrompt(
             stageName,
-            conceptReportVersions?.["3_generatie"]?.content || "",
+            latestContent,
             dossier,
             bouwplan,
             currentDate,
@@ -393,9 +441,23 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       if (["3_generatie"].includes(stageName)) {
         conceptReport = stageOutput;
       }
+      // For reviewer stages (4a-4f), do NOT return a concept report
+      // They only produce feedback, not new versions of the report
+      else if (stageName.startsWith("4")) {
+        conceptReport = ""; // Explicitly empty - reviewers don't create new versions
+      }
       // For other stages, keep the previous concept report
       else {
-        conceptReport = conceptReportVersions?.["latest"] || "";
+        const latest = conceptReportVersions?.["latest"];
+        if (latest && typeof latest === 'object' && latest.pointer) {
+          // Resolve pointer to get actual content
+          const snapshot = conceptReportVersions[latest.pointer];
+          conceptReport = snapshot?.content || "";
+        } else if (typeof latest === 'string') {
+          conceptReport = latest;
+        } else {
+          conceptReport = "";
+        }
       }
 
       return { stageOutput, conceptReport, prompt: promptString };
@@ -472,10 +534,24 @@ ${errorGuidance}
 **Let op:** Dit systeem gebruikt GEEN automatische fallbacks om kwaliteit te garanderen. Los het probleem op of configureer een ander model in Instellingen.`;
 
       console.log(`⚠️ [${jobId}] Returning error response for failed stage ${stageName} (no fallbacks)`);
-      
+
+      // For reviewer stages, don't return a concept report even on error
+      let errorConceptReport = "";
+      if (!stageName.startsWith("4")) {
+        const latest = conceptReportVersions?.["latest"];
+        if (latest && typeof latest === 'object' && latest.pointer) {
+          const snapshot = conceptReportVersions[latest.pointer];
+          errorConceptReport = snapshot?.content || placeholderResponse;
+        } else if (typeof latest === 'string') {
+          errorConceptReport = latest;
+        } else {
+          errorConceptReport = placeholderResponse;
+        }
+      }
+
       return {
         stageOutput: placeholderResponse,
-        conceptReport: conceptReportVersions?.["latest"] || placeholderResponse,
+        conceptReport: errorConceptReport,
         prompt: promptString
       };
     }

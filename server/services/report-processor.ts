@@ -125,15 +125,23 @@ export class ReportProcessor {
   }
 
   /**
-   * AI-powered intelligent merging of feedback with existing concept report
+   * ❌ DEPRECATED: This method is OBSOLETE and should NOT be used.
+   *
+   * **Problem**: Duplicate prompt-building logic that conflicts with PromptBuilder.
+   * **Solution**: Use processStageWithPrompt() which accepts pre-built prompts from PromptBuilder.
+   *
+   * This method remains for backwards compatibility with legacy code paths ONLY.
+   * All new code should use PromptBuilder + processStageWithPrompt().
    */
   private async mergeWithAI(input: ReportProcessorInput): Promise<string> {
+    console.warn('⚠️ DEPRECATED: ReportProcessor.mergeWithAI() called - this should use PromptBuilder instead!');
+
     // Get active prompt config for editor prompt and AI settings
     const promptConfig = await getActivePromptConfig();
     const editorConfig = promptConfig.editor;
     const aiConfig = editorConfig?.aiConfig || promptConfig.aiConfig;
 
-    // Build prompt using editor prompt from config
+    // Build prompt using LEGACY prompt building (should be replaced with PromptBuilder)
     const prompt = await this.buildMergePrompt(input, editorConfig?.prompt);
 
     // Use AI config from editor or fallback to global config
@@ -152,8 +160,15 @@ export class ReportProcessor {
   }
 
   /**
-   * Build the AI prompt for merging feedback into concept report
-   * Uses the "editor" prompt from config - THROWS if not configured (NO FALLBACKS!)
+   * ❌ DEPRECATED: Legacy prompt building - use PromptBuilder instead!
+   *
+   * **Why this is wrong**:
+   * - Duplicate logic with PromptBuilder
+   * - Different placeholder syntax ({baseConcept} vs structured data)
+   * - Causes double-wrapping bugs
+   * - Not maintained consistently with PromptBuilder
+   *
+   * **Migration path**: Use PromptBuilder.buildEditorData() instead
    */
   private async buildMergePrompt(input: ReportProcessorInput, editorPrompt?: string): Promise<string> {
     const { baseConcept, feedback, stageId, strategy } = input;
@@ -402,6 +417,79 @@ ${feedback}
    * console.log(`Concept lengte: ${result.newConcept.length} chars`);
    * ```
    */
+  /**
+   * Process stage feedback with a PRE-BUILT prompt (bypasses internal prompt building)
+   * Use this when you've already built the full prompt externally (e.g., with PromptBuilder)
+   *
+   * @param reportId - The report ID
+   * @param stageId - The stage ID
+   * @param preBuiltPrompt - The FULL prompt ready to send to LLM
+   * @param feedbackForTracking - Original feedback for audit trail (won't be used in prompt)
+   */
+  async processStageWithPrompt(
+    reportId: string,
+    stageId: StageId,
+    preBuiltPrompt: string,
+    feedbackForTracking: any
+  ): Promise<{
+    newConcept: string;
+    snapshot: ConceptReportSnapshot;
+    updatedVersions: ConceptReportVersions;
+  }> {
+    console.log(`🏭 [ReportProcessor] Processing ${stageId} with pre-built prompt (${preBuiltPrompt.length} chars)`);
+
+    // Get AI config
+    const promptConfig = await getActivePromptConfig();
+    const parsedConfig = promptConfig as any;
+    const editorConfig = parsedConfig.editor || parsedConfig['5_feedback_verwerker'];
+    const aiConfig = editorConfig?.aiConfig || parsedConfig.aiConfig;
+
+    // 🔍 DEBUG: Log what config we're actually using
+    console.log(`🔍 [ReportProcessor] AI Config Debug:`, {
+      hasEditorConfig: !!editorConfig,
+      hasEditorAiConfig: !!editorConfig?.aiConfig,
+      hasGlobalAiConfig: !!parsedConfig.aiConfig,
+      maxOutputTokens: aiConfig?.maxOutputTokens,
+      temperature: aiConfig?.temperature,
+      aiConfigKeys: aiConfig ? Object.keys(aiConfig) : []
+    });
+
+    // Call AI with pre-built prompt
+    const response = await this.aiHandler.generateContent({
+      prompt: preBuiltPrompt,
+      temperature: aiConfig?.temperature ?? 0.1,
+      topP: aiConfig?.topP ?? 0.9,
+      maxOutputTokens: aiConfig?.maxOutputTokens ?? 32768
+    });
+
+    if (!response.content) {
+      throw new Error('AI response was empty');
+    }
+
+    // Get predecessor for snapshot metadata
+    const predecessorStage = this.getPredecessorStage(stageId);
+
+    // Create snapshot
+    const snapshot = await this.createSnapshot(
+      reportId,
+      stageId,
+      response.content,
+      predecessorStage || undefined,
+      feedbackForTracking
+    );
+
+    // Update versions
+    const updatedVersions = await this.updateConceptVersions(reportId, stageId, snapshot);
+
+    console.log(`🎉 [ReportProcessor] Stage ${stageId} processing complete`);
+
+    return {
+      newConcept: response.content,
+      snapshot,
+      updatedVersions
+    };
+  }
+
   async processStage(
     reportId: string,
     stageId: StageId,
