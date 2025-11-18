@@ -115,11 +115,4 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
       { key: "update", label: "Rapport update", type: "processing" }
     ]
   },
-  {
-    key: "6_change_summary",
-    label: "6. Change Summary",
-    description: "Overzicht wijzigingen per stage",
-    icon: GitCompare,
-    type: "processor",
-  },
 ];

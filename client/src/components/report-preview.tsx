@@ -27,8 +27,11 @@ interface ReportPreviewProps {
 const ReportPreview = memo(function ReportPreview({ report, isGenerating }: ReportPreviewProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
-  // Override dialog state  
+
+  // Version selector state
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+
+  // Override dialog state
   const [overrideDialog, setOverrideDialog] = useState<{
     isOpen: boolean;
     stageId: string;
@@ -167,6 +170,46 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
     );
   }
 
+  // Extract available versions from conceptReportVersions
+  const conceptVersions = (report.conceptReportVersions as any) || {};
+  const availableVersions: Array<{ stageId: string; version: number; label: string; content: string }> = [];
+
+  // Collect all stage snapshots
+  Object.entries(conceptVersions).forEach(([key, value]: [string, any]) => {
+    if (key !== 'latest' && key !== 'history' && value && typeof value === 'object' && value.content) {
+      const versionNum = value.v || 1;
+      const stageLabel = key.replace(/_/g, ' ').replace(/(\d)([a-z])/i, '$1$2');
+      availableVersions.push({
+        stageId: key,
+        version: versionNum,
+        label: `${stageLabel} v${versionNum}`,
+        content: value.content
+      });
+    }
+  });
+
+  // Sort by stage order (3_generatie, 4a_, 4b_, etc.)
+  availableVersions.sort((a, b) => a.stageId.localeCompare(b.stageId));
+
+  // Determine which content to display
+  let displayContent = report.generatedContent || '';
+  let currentVersionLabel = 'Basis concept';
+
+  if (selectedVersion) {
+    const selected = availableVersions.find(v => v.stageId === selectedVersion);
+    if (selected) {
+      displayContent = selected.content;
+      currentVersionLabel = selected.label;
+    }
+  } else if (conceptVersions.latest?.pointer) {
+    // Auto-select latest if available
+    const latest = conceptVersions[conceptVersions.latest.pointer];
+    if (latest?.content) {
+      displayContent = latest.content;
+      currentVersionLabel = `${conceptVersions.latest.pointer} v${latest.v || 1}`;
+    }
+  }
+
   return (
     <div className="lg:col-span-8 mt-8 lg:mt-0">
       <Card className="shadow-sm">
@@ -252,7 +295,47 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
 
         {/* Report Content */}
         <CardContent className="p-6 space-y-8">
-          
+
+          {/* Version Selector */}
+          {availableVersions.length > 0 && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                    Concept Versies
+                  </h3>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    Bekijk: <span className="font-medium">{currentVersionLabel}</span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {/* Base concept button */}
+                <Button
+                  size="sm"
+                  variant={selectedVersion === null ? "default" : "outline"}
+                  onClick={() => setSelectedVersion(null)}
+                  className="text-xs"
+                >
+                  Basis concept
+                </Button>
+
+                {/* Version buttons */}
+                {availableVersions.map((v) => (
+                  <Button
+                    key={v.stageId}
+                    size="sm"
+                    variant={selectedVersion === v.stageId ? "default" : "outline"}
+                    onClick={() => setSelectedVersion(v.stageId)}
+                    className="text-xs"
+                  >
+                    {v.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Mandatory Warning Box */}
           <div className="bg-accent/10 border-l-4 border-accent p-4 rounded-r-md" data-testid="warning-box">
             <div className="flex items-start">
@@ -270,7 +353,7 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
           </div>
 
           {/* Report Sections */}
-          {report.generatedContent ? (
+          {displayContent ? (
             <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="report-content">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
@@ -366,7 +449,7 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
                   },
                 }}
               >
-                {report.generatedContent}
+                {displayContent}
               </ReactMarkdown>
             </div>
           ) : (

@@ -19,7 +19,7 @@ import { ReportGenerator } from "../services/report-generator";
 import { SourceValidator } from "../services/source-validator";
 import { dossierSchema, bouwplanSchema } from "@shared/schema";
 import type { DossierData, BouwplanData, StageId, PromptConfig } from "@shared/schema";
-import { createReportRequestSchema, processFeedbackRequestSchema, overrideConceptRequestSchema, promoteSnapshotRequestSchema } from "@shared/types/api";
+import { createReportRequestSchema, processFeedbackRequestSchema, overrideConceptRequestSchema, promoteSnapshotRequestSchema, expressModeRequestSchema } from "@shared/types/api";
 import { ReportProcessor } from "../services/report-processor";
 import { SSEHandler } from "../services/streaming/sse-handler";
 import { StreamingSessionManager } from "../services/streaming/streaming-session-manager";
@@ -1165,5 +1165,269 @@ export function registerReportRoutes(
       newLatestVersion: targetStageSnapshot.v,
       message: `Stage ${stageId} is nu de actieve versie`
     }, "Stage gepromoveerd naar latest"));
+  }));
+
+  // Express Mode - Auto-run all review stages with auto-accept
+  app.post("/api/reports/:id/express-mode", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const validatedData = expressModeRequestSchema.parse(req.body);
+
+    console.log(`🚀 [${id}] Express Mode started`);
+
+    // Get report
+    let report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Check if stage 3 is completed (has concept report)
+    // Check conceptReportVersions (new versioning), generatedContent (legacy), or stageResults (legacy)
+    const conceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
+    const stageResults = (report.stageResults as Record<string, any>) || {};
+    const hasStage3 =
+      conceptVersions['3_generatie'] ||
+      conceptVersions['latest'] ||
+      report.generatedContent || // Legacy: direct content field
+      (stageResults['3_generatie']?.conceptReport);
+
+    if (!hasStage3) {
+      console.log(`❌ [${id}] Express Mode validation failed: No stage 3 concept found`, {
+        hasConceptVersions: !!report.conceptReportVersions,
+        conceptVersionKeys: Object.keys(conceptVersions),
+        hasGeneratedContent: !!report.generatedContent,
+        generatedContentLength: report.generatedContent?.toString().length,
+        hasStageResults: !!report.stageResults,
+        stageResultKeys: Object.keys(stageResults),
+        has3generatie: !!stageResults['3_generatie'],
+        has3generatieConceptReport: !!stageResults['3_generatie']?.conceptReport
+      });
+      throw ServerError.business(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Stage 3 (Generatie) moet eerst voltooid zijn voordat Express Mode kan worden gebruikt'
+      );
+    }
+
+    // Default stages: all review stages (4a-4f)
+    const stages = validatedData.stages || [
+      '4a_BronnenSpecialist',
+      '4b_FiscaalTechnischSpecialist',
+      '4c_ScenarioGatenAnalist',
+      '4d_DeVertaler',
+      '4e_DeAdvocaat',
+      '4f_DeKlantpsycholoog'
+    ];
+
+    // Set response headers for SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendEvent = (event: any) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+
+    try {
+      // Process each stage sequentially
+      for (let i = 0; i < stages.length; i++) {
+        const stageId = stages[i];
+        const stageNumber = i + 1;
+        const totalStages = stages.length;
+
+        // Send start event
+        sendEvent({
+          type: 'stage_start',
+          stageId,
+          stageNumber,
+          totalStages,
+          message: `Starting ${stageId}...`,
+          timestamp: new Date().toISOString()
+        });
+
+        try {
+          // Step 1: Execute review stage (generate feedback)
+          sendEvent({
+            type: 'step_progress',
+            stageId,
+            substepId: 'review',
+            percentage: 25,
+            message: `Generating review feedback for ${stageId}...`,
+            timestamp: new Date().toISOString()
+          });
+
+          const stageExecution = await reportGenerator.executeStage(
+            stageId,
+            report.dossierData as DossierData,
+            report.bouwplanData as BouwplanData,
+            report.stageResults as Record<string, string> || {},
+            report.conceptReportVersions as Record<string, string> || {},
+            undefined,
+            id
+          );
+
+          // Update stageResults with the feedback
+          const updatedStageResults = {
+            ...(report.stageResults as Record<string, string> || {}),
+            [stageId]: stageExecution.stageOutput
+          };
+
+          await storage.updateReport(id, {
+            stageResults: updatedStageResults,
+            currentStage: stageId as StageId
+          });
+
+          sendEvent({
+            type: 'step_complete',
+            stageId,
+            substepId: 'review',
+            percentage: 50,
+            message: `Review feedback generated for ${stageId}`,
+            timestamp: new Date().toISOString()
+          });
+
+          // Step 2: Auto-accept and process feedback
+          if (validatedData.autoAccept) {
+            sendEvent({
+              type: 'step_progress',
+              stageId,
+              substepId: 'process_feedback',
+              percentage: 75,
+              message: `Auto-processing feedback for ${stageId}...`,
+              timestamp: new Date().toISOString()
+            });
+
+            // Parse feedback JSON
+            let feedbackJSON;
+            try {
+              feedbackJSON = JSON.parse(stageExecution.stageOutput);
+            } catch (e) {
+              feedbackJSON = stageExecution.stageOutput;
+            }
+
+            // Get latest concept report
+            const conceptReportVersions = (report.conceptReportVersions as Record<string, any>) || {};
+            let latestConceptText = '';
+            const latest = conceptReportVersions?.['latest'];
+
+            if (latest && latest.pointer) {
+              const snapshot = conceptReportVersions[latest.pointer];
+              if (snapshot && snapshot.content) {
+                latestConceptText = snapshot.content;
+              }
+            }
+
+            if (!latestConceptText) {
+              let snapshot = conceptReportVersions?.['3_generatie'];
+              if (!snapshot || !snapshot.content) {
+                snapshot = Object.entries(conceptReportVersions || {}).find(([key, v]: [string, any]) => {
+                  return key !== 'latest' && !key.startsWith('4') && v && v.content;
+                })?.[1];
+              }
+              if (snapshot && snapshot.content) {
+                latestConceptText = snapshot.content;
+              }
+            }
+
+            // Legacy fallback: use generatedContent if no versioned concept found
+            if (!latestConceptText && report.generatedContent) {
+              latestConceptText = report.generatedContent.toString();
+            }
+
+            if (!latestConceptText) {
+              throw new Error('No concept report found to process feedback');
+            }
+
+            // Get Editor prompt
+            const activeConfig = await storage.getActivePromptConfig();
+            if (!activeConfig || !activeConfig.config) {
+              throw new Error('No active Editor prompt configuration found');
+            }
+
+            const parsedConfig = activeConfig.config as PromptConfig;
+            const editorPromptConfig = parsedConfig.editor || (parsedConfig as any)['5_feedback_verwerker'];
+
+            // Build Editor prompt
+            const promptBuilder = new PromptBuilder();
+            const { systemPrompt, userInput } = promptBuilder.build(
+              'editor',
+              editorPromptConfig,
+              () => ({
+                BASISTEKST: latestConceptText,
+                WIJZIGINGEN_JSON: feedbackJSON
+              })
+            );
+
+            const combinedPrompt = `${systemPrompt}\n\n### USER INPUT:\n${userInput}`;
+
+            // Process with Editor prompt
+            const processingResult = await reportProcessor.processStageWithPrompt(
+              id,
+              stageId as StageId,
+              combinedPrompt,
+              feedbackJSON
+            );
+
+            sendEvent({
+              type: 'step_complete',
+              stageId,
+              substepId: 'process_feedback',
+              percentage: 100,
+              message: `Feedback processed - new concept v${processingResult.snapshot.v}`,
+              data: {
+                version: processingResult.snapshot.v
+              },
+              timestamp: new Date().toISOString()
+            });
+
+            // Refresh report for next iteration
+            report = await storage.getReport(id) || report;
+          }
+
+          // Send stage complete event
+          sendEvent({
+            type: 'stage_complete',
+            stageId,
+            stageNumber,
+            totalStages,
+            message: `${stageId} completed successfully`,
+            timestamp: new Date().toISOString()
+          });
+
+        } catch (stageError: any) {
+          console.error(`❌ [${id}] Express Mode failed at ${stageId}:`, stageError);
+
+          sendEvent({
+            type: 'stage_error',
+            stageId,
+            error: stageError.message || 'Unknown error',
+            canRetry: false,
+            timestamp: new Date().toISOString()
+          });
+
+          // Stop processing on error
+          break;
+        }
+      }
+
+      // Send final complete event
+      sendEvent({
+        type: 'express_complete',
+        message: 'Express Mode completed successfully',
+        timestamp: new Date().toISOString()
+      });
+
+      res.end();
+
+    } catch (error: any) {
+      console.error(`❌ [${id}] Express Mode failed:`, error);
+
+      sendEvent({
+        type: 'express_error',
+        error: error.message || 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+
+      res.end();
+    }
   }));
 }

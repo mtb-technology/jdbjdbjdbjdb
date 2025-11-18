@@ -22,7 +22,6 @@ import {
 
 // Lazy load the heavy diff viewer library (150 KB) - only loads when user opens Timeline tab
 const ReactDiffViewer = lazy(() => import('react-diff-viewer-continued').then(module => ({ default: module.default })));
-const DiffMethod = { WORDS: 'WORDS' as const };
 
 interface ReportVersion {
   version: number;
@@ -48,23 +47,30 @@ export function ReportDiffViewer({
 }: ReportDiffViewerProps) {
   // Convert versions object to array
   const versionArray = useMemo((): ReportVersion[] => {
-    const stages = Object.keys(versions).sort();
+    // Filter out 'latest' and 'history' keys
+    const stages = Object.keys(versions)
+      .filter(k => k !== 'latest' && k !== 'history')
+      .sort();
+
     return stages.map((stageKey, index) => {
       const versionData = versions[stageKey];
       let content: string;
       let timestamp: string | undefined;
-      
+      let versionNum: number = index + 1;
+
       if (typeof versionData === 'string') {
         content = versionData;
       } else if (versionData && typeof versionData === 'object') {
-        content = (versionData as any).content || JSON.stringify(versionData);
-        timestamp = (versionData as any).timestamp;
+        const dataObj = versionData as any;
+        content = dataObj.content || JSON.stringify(versionData);
+        timestamp = dataObj.timestamp;
+        versionNum = dataObj.v || (index + 1);
       } else {
         content = String(versionData);
       }
-      
+
       return {
-        version: index + 1,
+        version: versionNum,
         stageKey,
         stageName: stageNames[stageKey] || stageKey,
         content,
@@ -277,7 +283,6 @@ export function ReportDiffViewer({
               oldValue={oldContent}
               newValue={newContent}
               splitView={viewMode === 'split'}
-              compareMethod={DiffMethod.WORDS as any}
               leftTitle={`Versie ${oldVersion} - ${oldVersionInfo?.stageName}`}
               rightTitle={`Versie ${newVersion} - ${newVersionInfo?.stageName}`}
               styles={{

@@ -197,9 +197,16 @@ export const stepBackResponseSchema = z.object({
   message: z.string()
 });
 
+// Express Mode Request - Auto-run all review stages with auto-accept
+export const expressModeRequestSchema = z.object({
+  stages: z.array(z.string()).optional(), // Default: all review stages (4a-4f)
+  autoAccept: z.boolean().default(true), // Auto-accept all feedback
+});
+
 export type OverrideConceptRequest = z.infer<typeof overrideConceptRequestSchema>;
 export type PromoteSnapshotRequest = z.infer<typeof promoteSnapshotRequestSchema>;
 export type StepBackResponse = z.infer<typeof stepBackResponseSchema>;
+export type ExpressModeRequest = z.infer<typeof expressModeRequestSchema>;
 
 export type ReportListResponse = z.infer<typeof reportListResponseSchema>;
 export type ReportDetailResponse = z.infer<typeof reportDetailResponseSchema>;

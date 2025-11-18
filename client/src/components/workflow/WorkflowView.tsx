@@ -36,6 +36,7 @@ import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import { WORKFLOW_STAGES } from "./constants";
 import { WorkflowStageCard } from "./WorkflowStageCard";
 import { OverrideConceptDialog } from "./OverrideConceptDialog";
+import { ExpressModeButton } from "./ExpressModeButton";
 import { useToast } from "@/hooks/use-toast";
 import { debug } from "@/lib/debug";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -467,7 +468,34 @@ export const WorkflowView = memo(function WorkflowView({
                       className="text-sm font-semibold px-4 py-2 bg-white dark:bg-jdb-panel"
                     >
                       <CheckCircle className="h-4 w-4 mr-2 text-jdb-success" />
-                      {Object.keys(state.stageResults).length}/{WORKFLOW_STAGES.length} Stappen
+                      {(() => {
+                        // Count completed stages by checking which workflow stages have results
+                        const stageResultKeys = Object.keys(state.stageResults);
+                        const conceptVersions = (state.currentReport?.conceptReportVersions as any) || {};
+
+                        // Count stages that actually exist in WORKFLOW_STAGES
+                        const completedStageKeys = stageResultKeys.filter(key =>
+                          WORKFLOW_STAGES.some(stage => stage.key === key)
+                        );
+
+                        // Check if stage 3 concept exists
+                        const hasStage3 = conceptVersions['3_generatie'] || conceptVersions['latest'];
+
+                        // Count how many of stages 1-3 are NOT yet in stageResults but should be counted
+                        let extraStages = 0;
+                        if (hasStage3) {
+                          // Only count stages 1-3 that are NOT already in completedStageKeys
+                          ['1_informatiecheck', '2_complexiteitscheck', '3_generatie'].forEach(stageKey => {
+                            if (!completedStageKeys.includes(stageKey)) {
+                              extraStages++;
+                            }
+                          });
+                        }
+
+                        const completedCount = completedStageKeys.length + extraStages;
+
+                        return `${completedCount}/${WORKFLOW_STAGES.length}`;
+                      })()}  Stappen
                     </Badge>
                   </motion.div>
                   {totalProcessingTime > 0 && (
@@ -495,6 +523,24 @@ export const WorkflowView = memo(function WorkflowView({
                       Herlaad Prompts
                     </Button>
                   </motion.div>
+                  {state.currentReport && (() => {
+                    // Check if stage 3 is completed by looking at conceptReportVersions
+                    const conceptVersions = state.currentReport.conceptReportVersions as any || {};
+                    const hasStage3 = conceptVersions['3_generatie'] || conceptVersions['latest'];
+
+                    return (
+                      <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
+                        <ExpressModeButton
+                          reportId={state.currentReport.id}
+                          onComplete={() => {
+                            queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport!.id}`] });
+                            window.location.reload();
+                          }}
+                          disabled={!hasStage3}
+                        />
+                      </motion.div>
+                    );
+                  })()}
                 </div>
               </div>
 
