@@ -748,17 +748,17 @@ const Settings = memo(function Settings() {
                     )}
 
                     {/* Per-Stage AI Configuration */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
+                    <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-4">
                       <div className="flex items-center space-x-2 mb-3">
-                        <Brain className="h-4 w-4 text-blue-600" />
-                        <Label className="text-sm font-medium text-blue-900">AI Model voor deze stap</Label>
+                        <Brain className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <Label className="text-sm font-medium text-blue-900 dark:text-blue-100">AI Model voor deze stap</Label>
                         <Badge variant="outline" className="text-xs">Overschrijft global default</Badge>
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Provider Selection per Stage */}
                         <div className="space-y-2">
-                          <Label className="text-xs font-medium">AI Provider</Label>
+                          <Label className="text-xs font-medium text-blue-900 dark:text-blue-100">AI Provider</Label>
                           <Select
                             value={stageConfig?.aiConfig?.provider || aiConfig.provider}
                             onValueChange={(value: "google" | "openai") => {
@@ -813,7 +813,7 @@ const Settings = memo(function Settings() {
                         
                         {/* Model Selection per Stage */}
                         <div className="space-y-2">
-                          <Label className="text-xs font-medium">Model</Label>
+                          <Label className="text-xs font-medium text-blue-900 dark:text-blue-100">Model</Label>
                           <Select
                             value={stageConfig?.aiConfig?.model || aiConfig.model}
                             onValueChange={(value) => handleStageAiConfigChange(stage.key, "model", value)}
@@ -845,7 +845,7 @@ const Settings = memo(function Settings() {
 
                           {/* Temperature */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium">Temperature</Label>
+                            <Label className="text-xs font-medium text-blue-900 dark:text-blue-100">Temperature</Label>
                             <Input
                               type="number"
                               step="0.1"
@@ -857,12 +857,12 @@ const Settings = memo(function Settings() {
                               placeholder="0.0 - 2.0"
                               data-testid={`input-temperature-${stage.key}`}
                             />
-                            <p className="text-xs text-muted-foreground">0 = precies, 1 = gebalanceerd, 2 = creatief</p>
+                            <p className="text-xs text-blue-700 dark:text-blue-300">0 = precies, 1 = gebalanceerd, 2 = creatief</p>
                           </div>
 
                           {/* Max Output Tokens */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium">Max Output Tokens</Label>
+                            <Label className="text-xs font-medium text-blue-900 dark:text-blue-100">Max Output Tokens</Label>
                             <Input
                               type="number"
                               step="256"
@@ -874,12 +874,12 @@ const Settings = memo(function Settings() {
                               placeholder="100 - 8192"
                               data-testid={`input-max-tokens-${stage.key}`}
                             />
-                            <p className="text-xs text-muted-foreground">Maximaal aantal tokens in de response</p>
+                            <p className="text-xs text-blue-700 dark:text-blue-300">Maximaal aantal tokens in de response</p>
                           </div>
 
                           {/* Top P */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium">Top P</Label>
+                            <Label className="text-xs font-medium text-blue-900 dark:text-blue-100">Top P</Label>
                             <Input
                               type="number"
                               step="0.05"
@@ -891,12 +891,12 @@ const Settings = memo(function Settings() {
                               placeholder="0.1 - 1.0"
                               data-testid={`input-topP-${stage.key}`}
                             />
-                            <p className="text-xs text-muted-foreground">0.1 = gefocust, 1.0 = gevarieerd</p>
+                            <p className="text-xs text-blue-700 dark:text-blue-300">0.1 = gefocust, 1.0 = gevarieerd</p>
                           </div>
 
                           {/* Top K */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium">Top K</Label>
+                            <Label className="text-xs font-medium text-blue-900 dark:text-blue-100">Top K</Label>
                             <Input
                               type="number"
                               step="1"
@@ -908,13 +908,13 @@ const Settings = memo(function Settings() {
                               placeholder="1 - 40"
                               data-testid={`input-topK-${stage.key}`}
                             />
-                            <p className="text-xs text-muted-foreground">Aantal top kandidaten voor sampling</p>
+                            <p className="text-xs text-blue-700 dark:text-blue-300">Aantal top kandidaten voor sampling</p>
                           </div>
 
                           {/* Thinking Level - Gemini 3 only */}
                           {(stageConfig?.aiConfig?.model || aiConfig.model) === 'gemini-3-pro-preview' && (
                             <div className="space-y-2 col-span-2">
-                              <Label className="text-xs font-medium">Thinking Level (Gemini 3)</Label>
+                              <Label className="text-xs font-medium text-blue-900 dark:text-blue-100">Thinking Level (Gemini 3)</Label>
                               <Select
                                 value={stageConfig?.aiConfig?.thinkingLevel || aiConfig.thinkingLevel || 'high'}
                                 onValueChange={(value) => handleStageAiConfigChange(stage.key, "thinkingLevel", value)}
@@ -937,7 +937,7 @@ const Settings = memo(function Settings() {
                                   </SelectItem>
                                 </SelectContent>
                               </Select>
-                              <p className="text-xs text-muted-foreground">Controleert diepte van reasoning proces</p>
+                              <p className="text-xs text-blue-700 dark:text-blue-300">Controleert diepte van reasoning proces</p>
                             </div>
                           )}
                         </div>
@@ -955,7 +955,7 @@ const Settings = memo(function Settings() {
 
                           {/* Temperature */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium">Temperature</Label>
+                            <Label className="text-xs font-medium text-orange-900 dark:text-orange-100">Temperature</Label>
                             <Input
                               type="number"
                               step="0.1"
@@ -967,12 +967,12 @@ const Settings = memo(function Settings() {
                               placeholder="0.0 - 2.0"
                               data-testid={`input-temperature-${stage.key}`}
                             />
-                            <p className="text-xs text-muted-foreground">0 = precies, 1 = gebalanceerd, 2 = creatief</p>
+                            <p className="text-xs text-orange-700 dark:text-orange-300">0 = precies, 1 = gebalanceerd, 2 = creatief</p>
                           </div>
 
                           {/* Max Output Tokens */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium">Max Output Tokens</Label>
+                            <Label className="text-xs font-medium text-orange-900 dark:text-orange-100">Max Output Tokens</Label>
                             <Input
                               type="number"
                               step="256"
@@ -984,12 +984,12 @@ const Settings = memo(function Settings() {
                               placeholder="100 - 8192"
                               data-testid={`input-max-tokens-${stage.key}`}
                             />
-                            <p className="text-xs text-muted-foreground">Maximaal aantal tokens in de response</p>
+                            <p className="text-xs text-orange-700 dark:text-orange-300">Maximaal aantal tokens in de response</p>
                           </div>
 
                           {/* Reasoning Effort */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium">Reasoning Effort</Label>
+                            <Label className="text-xs font-medium text-orange-900 dark:text-orange-100">Reasoning Effort</Label>
                             <Select
                               value={stageConfig?.aiConfig?.reasoning?.effort ?? "medium"}
                               onValueChange={(value) => handleStageOpenAIParamsChange(stage.key, "reasoning", value)}
@@ -1008,7 +1008,7 @@ const Settings = memo(function Settings() {
 
                           {/* Verbosity */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium">Verbosity</Label>
+                            <Label className="text-xs font-medium text-orange-900 dark:text-orange-100">Verbosity</Label>
                             <Select
                               value={stageConfig?.aiConfig?.verbosity ?? "medium"}
                               onValueChange={(value) => handleStageOpenAIParamsChange(stage.key, "verbosity", value)}
