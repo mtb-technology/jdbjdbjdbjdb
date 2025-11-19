@@ -55,16 +55,32 @@ export class GoogleAIHandler extends BaseAIHandler {
         generationConfig.thinking_level = config.thinkingLevel;
       }
 
+      // Add Google Search grounding if enabled
+      let tools: any[] | undefined;
+      if (options?.useGrounding) {
+        tools = [{
+          googleSearch: {} // Modern approach for all current models including Gemini 3
+        }];
+        console.log(`[${jobId}] 🔍 Google Search grounding enabled`);
+      }
+
       // Google AI SDK requires "models/" prefix for model names
       const modelName = config.model.startsWith('models/')
         ? config.model
         : `models/${config.model}`;
 
-      const response = await this.client.models.generateContent({
+      const requestConfig: any = {
         model: modelName,
         contents: finalPrompt,
         config: generationConfig
-      });
+      };
+
+      // Add tools if grounding is enabled
+      if (tools) {
+        requestConfig.config.tools = tools;
+      }
+
+      const response = await this.client.models.generateContent(requestConfig);
 
       const duration = Date.now() - startTime;
       const content = response.candidates?.[0]?.content?.parts?.[0]?.text || 
