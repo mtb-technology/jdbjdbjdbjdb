@@ -411,9 +411,8 @@ export const promptConfigSchema = z.object({
   "4a_BronnenSpecialist": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
   "4b_FiscaalTechnischSpecialist": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
   "4c_ScenarioGatenAnalist": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
-  "4d_DeVertaler": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "4e_DeAdvocaat": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
-  "4f_DeKlantpsycholoog": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+  "4f_HoofdCommunicatie": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "editor": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }), // Chirurgische Redacteur - past wijzigingen toe
   "6_change_summary": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   aiConfig: aiConfigSchema.optional(),
@@ -593,9 +592,8 @@ export const stageIdSchema = z.enum([
   "4a_BronnenSpecialist",
   "4b_FiscaalTechnischSpecialist",
   "4c_ScenarioGatenAnalist",
-  "4d_DeVertaler",
   "4e_DeAdvocaat",
-  "4f_DeKlantpsycholoog",
+  "4f_HoofdCommunicatie",
   "5_eindredactie"
 ]);
 
@@ -614,9 +612,8 @@ export const conceptReportVersionsSchema = z.object({
   "4a_BronnenSpecialist": conceptReportSnapshotSchema.optional(),
   "4b_FiscaalTechnischSpecialist": conceptReportSnapshotSchema.optional(),
   "4c_ScenarioGatenAnalist": conceptReportSnapshotSchema.optional(),
-  "4d_DeVertaler": conceptReportSnapshotSchema.optional(),
   "4e_DeAdvocaat": conceptReportSnapshotSchema.optional(),
-  "4f_DeKlantpsycholoog": conceptReportSnapshotSchema.optional(),
+  "4f_HoofdCommunicatie": conceptReportSnapshotSchema.optional(),
   "5_eindredactie": conceptReportSnapshotSchema.optional(),
   latest: z.object({
     pointer: stageIdSchema, // Points to the most recent completed stage
