@@ -282,9 +282,8 @@ export class DatabaseStorage implements IStorage {
         "4a_BronnenSpecialist": { prompt: "", useGrounding: true },
         "4b_FiscaalTechnischSpecialist": { prompt: "", useGrounding: true },
         "4c_ScenarioGatenAnalist": { prompt: "", useGrounding: true },
-        "4d_DeVertaler": { prompt: "", useGrounding: false },
         "4e_DeAdvocaat": { prompt: "", useGrounding: true },
-        "4f_DeKlantpsycholoog": { prompt: "", useGrounding: false },
+        "4f_HoofdCommunicatie": { prompt: "", useGrounding: false },
         "editor": { prompt: "", useGrounding: false },
         aiConfig: {
           model: "gemini-2.5-pro",

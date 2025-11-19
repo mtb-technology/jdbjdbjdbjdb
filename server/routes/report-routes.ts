@@ -374,9 +374,8 @@ export function registerReportRoutes(
       '4a_BronnenSpecialist',
       '4b_FiscaalTechnischSpecialist',
       '4c_ScenarioGatenAnalist',
-      '4d_DeVertaler',
       '4e_DeAdvocaat',
-      '4f_DeKlantpsycholoog'
+      '4f_HoofdCommunicatie'
     ];
 
     const deletedStageIndex = stageOrder.indexOf(stage);
@@ -548,8 +547,8 @@ export function registerReportRoutes(
     // Validate stage ID for review stages only
     const validReviewStages = [
       '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist',
-      '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat',
-      '4f_DeKlantpsycholoog'
+      '4c_ScenarioGatenAnalist', '4e_DeAdvocaat',
+      '4f_HoofdCommunicatie'
     ];
 
     if (!validReviewStages.includes(stageId)) {
@@ -716,8 +715,8 @@ export function registerReportRoutes(
     // Validate stage ID for review stages only
     const validReviewStages = [
       '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist',
-      '4c_ScenarioGatenAnalist', '4d_DeVertaler', '4e_DeAdvocaat',
-      '4f_DeKlantpsycholoog'
+      '4c_ScenarioGatenAnalist', '4e_DeAdvocaat',
+      '4f_HoofdCommunicatie'
     ];
 
     if (!validReviewStages.includes(stageId)) {
@@ -1212,9 +1211,8 @@ export function registerReportRoutes(
       '4a_BronnenSpecialist',
       '4b_FiscaalTechnischSpecialist',
       '4c_ScenarioGatenAnalist',
-      '4d_DeVertaler',
       '4e_DeAdvocaat',
-      '4f_DeKlantpsycholoog'
+      '4f_HoofdCommunicatie'
     ];
 
     // Set response headers for SSE

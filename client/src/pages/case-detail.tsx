@@ -196,9 +196,8 @@ export default function CaseDetail() {
       '4a_BronnenSpecialist': 'Bronnen Review',
       '4b_FiscaalTechnischSpecialist': 'Fiscaal Technisch',
       '4c_ScenarioGatenAnalist': 'Scenario Analyse',
-      '4d_DeVertaler': 'Communicatie Review',
       '4e_DeAdvocaat': 'Juridisch Review',
-      '4f_DeKlantpsycholoog': 'Client Psychologie',
+      '4f_HoofdCommunicatie': 'Hoofd Communicatie',
       '6_change_summary': 'Wijzigingen Samenvatting'
     };
 
@@ -720,9 +719,8 @@ export default function CaseDetail() {
                     '4a_BronnenSpecialist': 'Bronnen Review',
                     '4b_FiscaalTechnischSpecialist': 'Fiscaal Technisch',
                     '4c_ScenarioGatenAnalist': 'Scenario Analyse',
-                    '4d_DeVertaler': 'Communicatie Review',
                     '4e_DeAdvocaat': 'Juridisch Review',
-                    '4f_DeKlantpsycholoog': 'Client Psychologie',
+                    '4f_HoofdCommunicatie': 'Hoofd Communicatie',
                     '6_change_summary': 'Wijzigingen Samenvatting'
                   }}
                 />

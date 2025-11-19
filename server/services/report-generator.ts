@@ -31,9 +31,8 @@ export class ReportGenerator {
       '4a_BronnenSpecialist': 'Bronnen Specialist Review',
       '4b_FiscaalTechnischSpecialist': 'Fiscaal Technisch Review',
       '4c_ScenarioGatenAnalist': 'Scenario Analyse',
-      '4d_DeVertaler': 'Vertaling Review',
       '4e_DeAdvocaat': 'Juridisch Review',
-      '4f_DeKlantpsycholoog': 'Klant Psychologie Review',
+      '4f_HoofdCommunicatie': 'Hoofd Communicatie Review',
       '6_change_summary': 'Change Summary'
     };
     return stageNames[stageName] || stageName;

@@ -131,7 +131,7 @@ describe('ReportProcessor - De Chirurgische Redacteur', () => {
       const input: ReportProcessorInput = {
         baseConcept: 'Test',
         feedback: 'Feedback',
-        stageId: '4d_DeVertaler',
+        stageId: '4e_DeAdvocaat',
         strategy: 'append'
       };
 
@@ -356,7 +356,7 @@ describe('ReportProcessor - De Chirurgische Redacteur', () => {
     });
 
     it('should correctly identify predecessor for stage 4f (last reviewer)', () => {
-      const predecessor = reportProcessor.getPredecessorStage('4f_DeKlantpsycholoog');
+      const predecessor = reportProcessor.getPredecessorStage('4f_HoofdCommunicatie');
       expect(predecessor).toBe('4e_DeAdvocaat');
     });
 

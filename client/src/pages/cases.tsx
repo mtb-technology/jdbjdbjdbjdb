@@ -316,13 +316,13 @@ function Cases() {
         // Calculate progress based on completed stages for both processing and generated
         if (report?.stageResults) {
           const completedStages = Object.keys(report.stageResults).length;
-          const totalStages = 11; // 11 workflow stages
+          const totalStages = 10; // 10 workflow stages (removed 4d_DeVertaler, renamed 4f to 4f_HoofdCommunicatie)
           const percentage = Math.round((completedStages / totalStages) * 100);
           
           if (completedStages >= 3) {
-            return `Stap ${completedStages}/11 (${percentage}%)`;
+            return `Stap ${completedStages}/10 (${percentage}%)`;
           } else if (completedStages > 0) {
-            return `Wordt gegenereerd... ${completedStages}/11`;
+            return `Wordt gegenereerd... ${completedStages}/10`;
           }
         }
         // Fallback for processing without stage results yet

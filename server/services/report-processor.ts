@@ -346,12 +346,11 @@ ${feedback}
   getPredecessorStage(stageId: StageId): StageId | null {
     const stageOrder: StageId[] = [
       "3_generatie",
-      "4a_BronnenSpecialist", 
+      "4a_BronnenSpecialist",
       "4b_FiscaalTechnischSpecialist",
       "4c_ScenarioGatenAnalist",
-      "4d_DeVertaler",
       "4e_DeAdvocaat",
-      "4f_DeKlantpsycholoog",
+      "4f_HoofdCommunicatie",
       "5_eindredactie"
     ];
 
@@ -580,9 +579,8 @@ ${feedback}
       case '4a_BronnenSpecialist': return versions['4a_BronnenSpecialist'] || null;
       case '4b_FiscaalTechnischSpecialist': return versions['4b_FiscaalTechnischSpecialist'] || null;
       case '4c_ScenarioGatenAnalist': return versions['4c_ScenarioGatenAnalist'] || null;
-      case '4d_DeVertaler': return versions['4d_DeVertaler'] || null;
       case '4e_DeAdvocaat': return versions['4e_DeAdvocaat'] || null;
-      case '4f_DeKlantpsycholoog': return versions['4f_DeKlantpsycholoog'] || null;
+      case '4f_HoofdCommunicatie': return versions['4f_HoofdCommunicatie'] || null;
       case '5_eindredactie': return versions['5_eindredactie'] || null;
       default: return null;
     }
@@ -599,9 +597,8 @@ ${feedback}
       case '4a_BronnenSpecialist': versions['4a_BronnenSpecialist'] = snapshot; break;
       case '4b_FiscaalTechnischSpecialist': versions['4b_FiscaalTechnischSpecialist'] = snapshot; break;
       case '4c_ScenarioGatenAnalist': versions['4c_ScenarioGatenAnalist'] = snapshot; break;
-      case '4d_DeVertaler': versions['4d_DeVertaler'] = snapshot; break;
       case '4e_DeAdvocaat': versions['4e_DeAdvocaat'] = snapshot; break;
-      case '4f_DeKlantpsycholoog': versions['4f_DeKlantpsycholoog'] = snapshot; break;
+      case '4f_HoofdCommunicatie': versions['4f_HoofdCommunicatie'] = snapshot; break;
       case '5_eindredactie': versions['5_eindredactie'] = snapshot; break;
       default: 
         console.warn(`⚠️ [ReportProcessor] Cannot set snapshot for unknown stage: ${stageId}`);

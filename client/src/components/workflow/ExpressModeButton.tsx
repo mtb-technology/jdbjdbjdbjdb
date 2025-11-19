@@ -233,9 +233,8 @@ export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressMod
       '4a_BronnenSpecialist': '4a. Bronnen Specialist',
       '4b_FiscaalTechnischSpecialist': '4b. Fiscaal Technisch',
       '4c_ScenarioGatenAnalist': '4c. Scenario Gaten',
-      '4d_DeVertaler': '4d. De Vertaler',
       '4e_DeAdvocaat': '4e. De Advocaat',
-      '4f_DeKlantpsycholoog': '4f. Klantpsycholoog',
+      '4f_HoofdCommunicatie': '4f. Hoofd Communicatie',
     };
     return labels[stageId] || stageId;
   };

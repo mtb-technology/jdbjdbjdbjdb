@@ -310,18 +310,13 @@ export const REPORT_CONFIG = {
       timeout: 90000,
       maxTokens: 8192
     },
-    '4d_DeVertaler': {
-      name: 'De Vertaler Review',
-      timeout: 90000,
-      maxTokens: 8192
-    },
     '4e_DeAdvocaat': {
       name: 'De Advocaat Review',
       timeout: 90000,
       maxTokens: 8192
     },
-    '4f_DeKlantpsycholoog': {
-      name: 'De Klantpsycholoog Review',
+    '4f_HoofdCommunicatie': {
+      name: 'Hoofd Communicatie Review',
       timeout: 90000,
       maxTokens: 8192
     },

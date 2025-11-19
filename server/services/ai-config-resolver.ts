@@ -112,9 +112,8 @@ export class AIConfigResolver {
         return REPORT_CONFIG.reviewerModel; // Balanced for critical reviews
 
       case '4c_ScenarioGatenAnalist':
-      case '4d_DeVertaler':
       case '4e_DeAdvocaat':
-      case '4f_DeKlantpsycholoog':
+      case '4f_HoofdCommunicatie':
         return REPORT_CONFIG.simpleTaskModel; // Fast for routine reviews
 
       case '6_change_summary':

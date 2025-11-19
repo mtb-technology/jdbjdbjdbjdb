@@ -309,9 +309,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         { key: "4a_BronnenSpecialist" },
         { key: "4b_FiscaalTechnischSpecialist" },
         { key: "4c_ScenarioGatenAnalist" },
-        { key: "4d_DeVertaler" },
         { key: "4e_DeAdvocaat" },
-        { key: "4f_DeKlantpsycholoog" },
+        { key: "4f_HoofdCommunicatie" },
         { key: "6_change_summary" }
       ];
       

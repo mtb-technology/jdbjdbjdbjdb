@@ -321,9 +321,8 @@ export class PromptBuilder {
       '4a_BronnenSpecialist': previousStageResults?.['4a_BronnenSpecialist'],
       '4b_FiscaalTechnischSpecialist': previousStageResults?.['4b_FiscaalTechnischSpecialist'],
       '4c_ScenarioGatenAnalist': previousStageResults?.['4c_ScenarioGatenAnalist'],
-      '4d_DeVertaler': previousStageResults?.['4d_DeVertaler'],
       '4e_DeAdvocaat': previousStageResults?.['4e_DeAdvocaat'],
-      '4f_DeKlantpsycholoog': previousStageResults?.['4f_DeKlantpsycholoog']
+      '4f_HoofdCommunicatie': previousStageResults?.['4f_HoofdCommunicatie']
     };
 
     // Get latest concept report - prioritize 'latest', then '3_generatie', then any other key

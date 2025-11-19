@@ -54,9 +54,8 @@ const getStageIcon = (stageKey: string) => {
     '4a_BronnenSpecialist': <Users className="h-5 w-5 text-jdb-gold" />,
     '4b_FiscaalTechnischSpecialist': <Zap className="h-5 w-5 text-jdb-danger" />,
     '4c_ScenarioGatenAnalist': <Activity className="h-5 w-5 text-indigo-600" />,
-    '4d_DeVertaler': <PenTool className="h-5 w-5 text-pink-600" />,
     '4e_DeAdvocaat': <Users className="h-5 w-5 text-jdb-gold" />,
-    '4f_DeKlantpsycholoog': <Users className="h-5 w-5 text-teal-600" />,
+    '4f_HoofdCommunicatie': <Users className="h-5 w-5 text-teal-600" />,
     '6_change_summary': <GitCompare className="h-5 w-5 text-jdb-text-subtle" />
   };
   return icons[stageKey] || <Play className="h-5 w-5 text-jdb-blue-primary" />;

@@ -83,17 +83,6 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     ]
   },
   {
-    key: "4d_DeVertaler",
-    label: "4d. De Vertaler",
-    description: "Review communicatie → JSON feedback → Rapport update",
-    icon: MessageSquare,
-    type: "reviewer",
-    substeps: [
-      { key: "review", label: "Review & JSON feedback", type: "review" },
-      { key: "update", label: "Rapport update", type: "processing" }
-    ]
-  },
-  {
     key: "4e_DeAdvocaat",
     label: "4e. De Advocaat",
     description: "Review juridisch → JSON feedback → Rapport update",
@@ -105,10 +94,10 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     ]
   },
   {
-    key: "4f_DeKlantpsycholoog",
-    label: "4f. De Klantpsycholoog",
-    description: "Review klant focus → JSON feedback → Rapport update",
-    icon: PenTool,
+    key: "4f_HoofdCommunicatie",
+    label: "4f. Hoofd Communicatie",
+    description: "Review communicatie en klantgerichtheid → JSON feedback → Rapport update",
+    icon: MessageSquare,
     type: "reviewer",
     substeps: [
       { key: "review", label: "Review & JSON feedback", type: "review" },

@@ -378,9 +378,8 @@ Newlines and\ntabs\there`;
         '4a_BronnenSpecialist': 'Voeg bronverwijzingen toe',
         '4b_FiscaalTechnischSpecialist': 'Technische correcties',
         '4c_ScenarioGatenAnalist': 'Scenario analyse',
-        '4d_DeVertaler': 'Taalverbeteringen',
         '4e_DeAdvocaat': 'Juridische check',
-        '4f_DeKlantpsycholoog': 'Psychologische aanpassingen'
+        '4f_HoofdCommunicatie': 'Communicatie en klantgerichtheid'
       };
 
       const conceptVersions = {
