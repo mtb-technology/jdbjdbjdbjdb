@@ -299,7 +299,7 @@ export const bouwplanSchema = z.object({
 // AI Provider and Model Configuration schemas
 export const aiProviderSchema = z.enum(["google", "openai"]);
 
-export const googleModelSchema = z.enum(["gemini-2.5-pro", "gemini-2.5-flash"]);
+export const googleModelSchema = z.enum(["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview"]);
 export const openaiModelSchema = z.enum(["gpt-5", "gpt-4o", "gpt-4o-mini", "o3-mini", "o3", "o3-deep-research-2025-06-26", "o4-mini-deep-research-2025-06-26"]);
 
 export const aiConfigSchema = z.object({
@@ -340,6 +340,10 @@ export const aiConfigSchema = z.object({
   }).strict().optional(),
   verbosity: z.enum(["low", "medium", "high"], {
     errorMap: () => ({ message: "Verbosity moet 'low', 'medium' of 'high' zijn" })
+  }).optional(),
+  // Gemini 3-specific parameters
+  thinkingLevel: z.enum(["low", "high"], {
+    errorMap: () => ({ message: "Thinking level moet 'low' of 'high' zijn" })
   }).optional(),
 }).strict()
 .refine((config) => {

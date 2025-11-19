@@ -123,6 +123,26 @@ export const AI_MODELS = {
       maxRequestsPerMinute: 30
     }
   },
+
+  // Gemini 3 Models
+  'gemini-3-pro-preview': {
+    provider: 'google' as const,
+    handlerType: 'google' as const,
+    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel'],
+    requiresResponsesAPI: false,
+    timeout: 600000, // 10 minutes (thinking can take longer)
+    defaultConfig: {
+      temperature: 1.0, // Gemini 3 optimized for default 1.0
+      topP: 0.95,
+      topK: 40,
+      maxOutputTokens: 8192,
+      thinkingLevel: 'high' // default: high (dynamic thinking)
+    },
+    limits: {
+      maxTokensPerRequest: 64000, // 64k output token limit
+      maxRequestsPerMinute: 60
+    }
+  },
   
   // OpenAI Models
   'gpt-4o': {

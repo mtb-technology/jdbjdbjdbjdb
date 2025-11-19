@@ -8,7 +8,11 @@ export class GoogleAIHandler extends BaseAIHandler {
 
   constructor(apiKey: string) {
     super("Google AI", apiKey);
-    this.client = new GoogleGenAI({ apiKey });
+    // Use v1alpha API for Gemini 3 support
+    this.client = new GoogleGenAI({
+      apiKey,
+      httpOptions: { apiVersion: 'v1alpha' }
+    });
   }
 
   async callInternal(
@@ -30,21 +34,36 @@ export class GoogleAIHandler extends BaseAIHandler {
       temperature: config.temperature,
       topP: config.topP,
       topK: config.topK,
-      maxOutputTokens: config.maxOutputTokens
+      maxOutputTokens: config.maxOutputTokens,
+      thinkingLevel: config.thinkingLevel
     });
 
     try {
       // Note: Google AI SDK doesn't support AbortSignal directly
       // Timeout cancellation is handled by the base class timeout mechanism
+
+      // Build generation config
+      const generationConfig: any = {
+        temperature: config.temperature,
+        topP: config.topP,
+        topK: config.topK,
+        maxOutputTokens: config.maxOutputTokens,
+      };
+
+      // Add thinking_level for Gemini 3 models
+      if (config.thinkingLevel) {
+        generationConfig.thinking_level = config.thinkingLevel;
+      }
+
+      // Google AI SDK requires "models/" prefix for model names
+      const modelName = config.model.startsWith('models/')
+        ? config.model
+        : `models/${config.model}`;
+
       const response = await this.client.models.generateContent({
-        model: config.model,
+        model: modelName,
         contents: finalPrompt,
-        config: {
-          temperature: config.temperature,
-          topP: config.topP,
-          topK: config.topK,
-          maxOutputTokens: config.maxOutputTokens,
-        }
+        config: generationConfig
       });
 
       const duration = Date.now() - startTime;
@@ -147,6 +166,6 @@ export class GoogleAIHandler extends BaseAIHandler {
   }
 
   getSupportedParameters(): string[] {
-    return ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding'];
+    return ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding', 'thinkingLevel'];
   }
 }

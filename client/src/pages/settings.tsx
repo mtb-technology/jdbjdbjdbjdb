@@ -33,6 +33,7 @@ import type { PromptConfigRecord, PromptConfig, AiConfig, StageConfig } from "@s
 // Available AI models by provider - MUST match server/config/index.ts AI_MODELS
 const AI_MODELS = {
   google: [
+    { value: "gemini-3-pro-preview", label: "🧠 Gemini 3 Pro (Nieuwste - Advanced Reasoning)" },
     { value: "gemini-2.5-pro", label: "🌟 Gemini 2.5 Pro (Beste kwaliteit)" },
     { value: "gemini-2.5-flash", label: "⚡ Gemini 2.5 Flash (Snelste)" },
     { value: "gemini-2.5-pro-deep-research", label: "🔬 Gemini 2.5 Pro Deep Research (Diepgaande analyse)" },
@@ -261,7 +262,7 @@ const Settings = memo(function Settings() {
 
   const handleStageAiConfigChange = useCallback((stageKey: string, aiConfigKey: keyof AiConfig, value: any) => {
     if (!activeConfig) return;
-    
+
     const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
     const currentAiConfig = currentStageConfig?.aiConfig || {
       provider: "google",
@@ -271,14 +272,22 @@ const Settings = memo(function Settings() {
       topK: 20,
       maxOutputTokens: 8192,
     };
-    
+
+    const updates: Partial<AiConfig> = { [aiConfigKey]: value };
+
+    // Auto-adjust parameters for Gemini 3 Pro
+    if (aiConfigKey === 'model' && value === 'gemini-3-pro-preview') {
+      updates.temperature = 1.0; // Gemini 3 optimized for temperature 1.0
+      updates.thinkingLevel = currentAiConfig.thinkingLevel || 'high'; // Default thinking level
+    }
+
     setActiveConfig({
       ...activeConfig,
       [stageKey]: {
         ...currentStageConfig,
         aiConfig: {
           ...currentAiConfig,
-          [aiConfigKey]: value,
+          ...updates,
         },
       },
     });
@@ -466,11 +475,26 @@ const Settings = memo(function Settings() {
 
 
   const handleAiConfigChange = useCallback((key: keyof AiConfig, value: any) => {
-    setAiConfig(prev => ({
-      ...prev,
-      [key]: value,
-    }));
-  }, []);
+    setAiConfig(prev => {
+      const updates: Partial<AiConfig> = { [key]: value };
+
+      // Auto-adjust parameters for Gemini 3 Pro
+      if (key === 'model' && value === 'gemini-3-pro-preview') {
+        updates.temperature = 1.0; // Gemini 3 optimized for temperature 1.0
+        updates.thinkingLevel = prev.thinkingLevel || 'high'; // Default thinking level
+
+        toast({
+          title: "Parameters aangepast voor Gemini 3 Pro",
+          description: "Temperature automatisch ingesteld op 1.0 (aanbevolen voor optimale prestaties)",
+        });
+      }
+
+      return {
+        ...prev,
+        ...updates,
+      };
+    });
+  }, [toast]);
 
   const isPromptEmpty = useCallback((prompt: string) => {
     return !prompt || prompt.trim() === "" || prompt.startsWith("PLACEHOLDER:");
@@ -886,6 +910,36 @@ const Settings = memo(function Settings() {
                             />
                             <p className="text-xs text-muted-foreground">Aantal top kandidaten voor sampling</p>
                           </div>
+
+                          {/* Thinking Level - Gemini 3 only */}
+                          {(stageConfig?.aiConfig?.model || aiConfig.model) === 'gemini-3-pro-preview' && (
+                            <div className="space-y-2 col-span-2">
+                              <Label className="text-xs font-medium">Thinking Level (Gemini 3)</Label>
+                              <Select
+                                value={stageConfig?.aiConfig?.thinkingLevel || aiConfig.thinkingLevel || 'high'}
+                                onValueChange={(value) => handleStageAiConfigChange(stage.key, "thinkingLevel", value)}
+                              >
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="high">
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">High - Maximale Reasoning</span>
+                                      <span className="text-xs text-muted-foreground">Voor complexe taken (langzamer, dieper denken)</span>
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="low">
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">Low - Minimale Latency</span>
+                                      <span className="text-xs text-muted-foreground">Voor simpele taken (sneller, minder denken)</span>
+                                    </div>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <p className="text-xs text-muted-foreground">Controleert diepte van reasoning proces</p>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -1156,6 +1210,36 @@ const Settings = memo(function Settings() {
                   data-testid="input-topK"
                 />
                 <p className="text-xs text-muted-foreground">Aantal top kandidaten voor sampling (alleen Google AI)</p>
+              </div>
+            )}
+
+            {/* Thinking Level (Gemini 3 only) */}
+            {aiConfig.provider === "google" && aiConfig.model === 'gemini-3-pro-preview' && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Thinking Level (Gemini 3)</Label>
+                <Select
+                  value={aiConfig.thinkingLevel || 'high'}
+                  onValueChange={(value) => handleAiConfigChange("thinkingLevel", value)}
+                >
+                  <SelectTrigger data-testid="select-thinking-level">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">
+                      <div className="flex flex-col">
+                        <span className="font-medium">High - Maximale Reasoning</span>
+                        <span className="text-xs text-muted-foreground">Voor complexe taken (langzamer, dieper denken)</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="low">
+                      <div className="flex flex-col">
+                        <span className="font-medium">Low - Minimale Latency</span>
+                        <span className="text-xs text-muted-foreground">Voor simpele taken (sneller, minder denken)</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Controleert diepte van reasoning proces (alleen Gemini 3 Pro)</p>
               </div>
             )}
 
