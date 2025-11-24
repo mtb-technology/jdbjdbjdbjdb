@@ -24,6 +24,7 @@ import { ReportProcessor } from "../services/report-processor";
 import { SSEHandler } from "../services/streaming/sse-handler";
 import { StreamingSessionManager } from "../services/streaming/streaming-session-manager";
 import { PromptBuilder } from "../services/prompt-builder";
+import { AIModelFactory } from "../services/ai-models/ai-model-factory";
 import { z } from "zod";
 import { ServerError, asyncHandler, getErrorMessage, isErrorWithMessage } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
@@ -1522,5 +1523,172 @@ Gebruik bullet points. Max 150 woorden.
       summary,
       reportId: id
     }));
+  }));
+
+  /**
+   * POST /api/reports/:id/deep-research
+   * Conduct automatic deep research with Gemini 3 Pro
+   *
+   * Body: {
+   *   query: string,           // Research query
+   *   maxQuestions?: number,   // Optional: number of sub-questions (default: 5)
+   *   parallelExecutors?: number // Optional: parallel execution limit (default: 3)
+   * }
+   */
+  app.post("/api/reports/:id/deep-research", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { query, maxQuestions, parallelExecutors } = req.body;
+
+    if (!query || typeof query !== 'string') {
+      throw ServerError.validation("Query is required", "Onderzoeksvraag is verplicht");
+    }
+
+    console.log(`🔬 [${id}] Starting deep research:`, { query, maxQuestions, parallelExecutors });
+
+    // Get report (for context and validation)
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Set SSE headers for streaming progress updates
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendProgress = (stage: string, message: string, progress: number) => {
+      res.write(`data: ${JSON.stringify({ stage, message, progress })}\n\n`);
+    };
+
+    try {
+      sendProgress('planning', 'Initialiseren van deep research...', 0);
+
+      // Call AIModelFactory with gemini-3-pro-deep-research
+      const response = await AIModelFactory.getInstance().callModel(
+        {
+          provider: 'google',
+          model: 'gemini-3-pro-deep-research',
+          temperature: 1.0,
+          maxOutputTokens: 32768,
+          thinkingLevel: 'high',
+          ...(maxQuestions && { maxQuestions }),
+          ...(parallelExecutors && { parallelExecutors })
+        },
+        query,
+        {
+          useGrounding: true,
+          timeout: 1800000, // 30 minutes
+          jobId: `deep-research-${id}-${Date.now()}`
+        }
+      );
+
+      sendProgress('complete', 'Deep research voltooid', 100);
+
+      // Send final result
+      res.write(`data: ${JSON.stringify({
+        stage: 'result',
+        report: response.content,
+        metadata: response.metadata,
+        duration: response.duration
+      })}\n\n`);
+
+      // Store research result in report (optional - add field to schema)
+      // For now, we'll just return it without storing
+
+      console.log(`✅ [${id}] Deep research completed`, {
+        duration: response.duration,
+        contentLength: response.content.length,
+        metadata: response.metadata
+      });
+
+    } catch (error: any) {
+      console.error(`❌ [${id}] Deep research failed:`, error);
+
+      res.write(`data: ${JSON.stringify({
+        stage: 'error',
+        message: error.message || 'Deep research is mislukt',
+        error: true
+      })}\n\n`);
+    } finally {
+      res.end();
+    }
+  }));
+
+  /**
+   * POST /api/deep-research
+   * Standalone deep research endpoint (not tied to a report)
+   *
+   * Body: {
+   *   query: string,
+   *   maxQuestions?: number,
+   *   parallelExecutors?: number
+   * }
+   */
+  app.post("/api/deep-research", asyncHandler(async (req: Request, res: Response) => {
+    const { query, maxQuestions, parallelExecutors } = req.body;
+
+    if (!query || typeof query !== 'string') {
+      throw ServerError.validation("Query is required", "Onderzoeksvraag is verplicht");
+    }
+
+    console.log(`🔬 Starting standalone deep research:`, { query, maxQuestions, parallelExecutors });
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendProgress = (stage: string, message: string, progress: number) => {
+      res.write(`data: ${JSON.stringify({ stage, message, progress })}\n\n`);
+    };
+
+    try {
+      sendProgress('planning', 'Initialiseren van deep research...', 0);
+
+      const response = await AIModelFactory.getInstance().callModel(
+        {
+          provider: 'google',
+          model: 'gemini-3-pro-deep-research',
+          temperature: 1.0,
+          maxOutputTokens: 32768,
+          thinkingLevel: 'high',
+          ...(maxQuestions && { maxQuestions }),
+          ...(parallelExecutors && { parallelExecutors })
+        },
+        query,
+        {
+          useGrounding: true,
+          timeout: 1800000,
+          jobId: `deep-research-${Date.now()}`
+        }
+      );
+
+      sendProgress('complete', 'Deep research voltooid', 100);
+
+      res.write(`data: ${JSON.stringify({
+        stage: 'result',
+        report: response.content,
+        metadata: response.metadata,
+        duration: response.duration
+      })}\n\n`);
+
+      console.log(`✅ Standalone deep research completed`, {
+        duration: response.duration,
+        contentLength: response.content.length
+      });
+
+    } catch (error: any) {
+      console.error(`❌ Standalone deep research failed:`, error);
+
+      res.write(`data: ${JSON.stringify({
+        stage: 'error',
+        message: error.message || 'Deep research is mislukt',
+        error: true
+      })}\n\n`);
+    } finally {
+      res.end();
+    }
   }));
 }

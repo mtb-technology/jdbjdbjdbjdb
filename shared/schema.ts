@@ -345,8 +345,8 @@ export const aiConfigSchema = z.object({
     errorMap: () => ({ message: "Verbosity moet 'low', 'medium' of 'high' zijn" })
   }).optional(),
   // Gemini 3-specific parameters
-  thinkingLevel: z.enum(["low", "high"], {
-    errorMap: () => ({ message: "Thinking level moet 'low' of 'high' zijn" })
+  thinkingLevel: z.enum(["low", "medium", "high"], {
+    errorMap: () => ({ message: "Thinking level moet 'low', 'medium' of 'high' zijn" })
   }).optional(),
 }).strict()
 .refine((config) => {

@@ -128,7 +128,7 @@ export const AI_MODELS = {
   'gemini-3-pro-preview': {
     provider: 'google' as const,
     handlerType: 'google' as const,
-    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel'],
+    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel', 'useGrounding'],
     requiresResponsesAPI: false,
     timeout: 600000, // 10 minutes (thinking can take longer)
     defaultConfig: {
@@ -141,6 +141,27 @@ export const AI_MODELS = {
     limits: {
       maxTokensPerRequest: 64000, // 64k output token limit
       maxRequestsPerMinute: 60
+    }
+  },
+  'gemini-3-pro-deep-research': {
+    provider: 'google' as const,
+    handlerType: 'gemini-3-deep-research' as const,
+    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel', 'useGrounding', 'maxQuestions', 'parallelExecutors'],
+    requiresResponsesAPI: false,
+    timeout: 1800000, // 30 minutes for multi-step deep research
+    defaultConfig: {
+      temperature: 1.0,
+      topP: 0.95,
+      topK: 40,
+      maxOutputTokens: 32768, // Large output for comprehensive reports
+      thinkingLevel: 'high',
+      useGrounding: true, // Always use Google Search grounding
+      maxQuestions: 5, // Number of research sub-questions
+      parallelExecutors: 3 // Parallel research execution
+    },
+    limits: {
+      maxTokensPerRequest: 64000,
+      maxRequestsPerMinute: 20 // Lower due to multi-step process
     }
   },
   
