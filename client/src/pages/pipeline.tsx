@@ -7,7 +7,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Play, Zap, FolderOpen, Menu, Loader2, CheckCircle, Target, Upload, X, FileText } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import WorkflowInterface from "@/components/workflow-interface";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
@@ -28,6 +28,7 @@ const Pipeline = memo(function Pipeline() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
   const { toast} = useToast();
+  const [, setLocation] = useLocation();
 
   
   // Direct workflow data
@@ -158,13 +159,15 @@ const Pipeline = memo(function Pipeline() {
 
       console.log("🎯 Pipeline: Report created from API:", { reportId: report?.id, hasId: !!report?.id, data, report });
 
-      setCreatedReport(report);
-      setShowWorkflow(true);
-
       toast({
         title: "Case aangemaakt",
         description: `Nieuwe case "${report.title}" is succesvol opgeslagen`,
       });
+
+      // Navigate to the case detail page and auto-start workflow
+      if (report?.id) {
+        setLocation(`/cases/${report.id}?autoStart=true`);
+      }
 
     } catch (error: any) {
       console.error('Failed to create case:', error);
@@ -373,7 +376,7 @@ const Pipeline = memo(function Pipeline() {
 • Specifieke fiscale overwegingen
 
 De AI herkent automatisch alle relevante informatie uit je input."
-                  className="min-h-40 resize-none border-primary/20 focus:border-primary/40 bg-background/50"
+                  className="min-h-40 resize-none border-primary/20 focus:border-primary/40 bg-white dark:bg-slate-800"
                   data-testid="textarea-raw-input"
                   aria-label="Fiscale input voor analyse - Voer klantsituatie, email correspondentie en relevante documenten in"
                 />

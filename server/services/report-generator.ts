@@ -125,23 +125,43 @@ export class ReportGenerator {
     console.log('🤖 [generateWithCustomPrompt] Using AI config:', {
       provider: aiConfig.provider,
       model: aiConfig.model,
-      maxOutputTokens: aiConfig.maxOutputTokens
+      maxOutputTokens: aiConfig.maxOutputTokens,
+      temperature: aiConfig.temperature,
+      thinkingLevel: aiConfig.thinkingLevel
     });
 
     try {
       // Build the full prompt (system + user)
       const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
+      console.log('🤖 [generateWithCustomPrompt] Calling model factory with:', {
+        promptLength: fullPrompt.length,
+        jobId: "follow-up-assistant"
+      });
+
       const response = await this.modelFactory.callModel(aiConfig, fullPrompt, {
         jobId: "follow-up-assistant"
       });
 
+      console.log('✅ [generateWithCustomPrompt] Model call succeeded, response length:', response.content.length);
+
       return response.content;
     } catch (error: any) {
-      console.error('Custom prompt generation error:', error);
+      console.error('❌ [generateWithCustomPrompt] Model call failed:', {
+        errorType: error.constructor.name,
+        message: error.message,
+        code: error.code,
+        statusCode: error.statusCode,
+        stack: error.stack?.split('\n').slice(0, 3).join('\n')
+      });
       throw ServerError.ai(
         'AI kon geen antwoord genereren. Controleer de configuratie en probeer het opnieuw.',
-        { model, error: error.message }
+        {
+          model,
+          error: error.message,
+          errorCode: error.code,
+          provider: aiConfig.provider
+        }
       );
     }
   }
@@ -269,6 +289,33 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const promptConfig = await storage.getActivePromptConfig();
     const stageConfig: any = promptConfig?.config?.[stageName as keyof typeof promptConfig.config] || {};
 
+    // Helper function to resolve 'latest' pointer to actual content
+    const resolveLatestContent = (): string => {
+      let latestContent = "";
+      const latest = conceptReportVersions?.["latest"];
+
+      if (latest && typeof latest === 'object' && latest.pointer) {
+        // Resolve the pointer to get the actual snapshot
+        const snapshot = conceptReportVersions[latest.pointer];
+        if (snapshot && snapshot.content) {
+          latestContent = snapshot.content;
+          console.log(`📖 [${stageName}] Using concept from ${latest.pointer} v${latest.v} (${latestContent.length} chars)`);
+          return latestContent;
+        }
+      }
+
+      // Fallback: Try stage 3 if no latest or resolution failed
+      const stage3Snapshot = conceptReportVersions?.["3_generatie"];
+      if (stage3Snapshot && stage3Snapshot.content) {
+        latestContent = stage3Snapshot.content;
+        console.log(`📖 [${stageName}] Fallback to stage 3_generatie (${latestContent.length} chars)`);
+        return latestContent;
+      }
+
+      console.warn(`⚠️ [${stageName}] No concept content found - using empty string`);
+      return "";
+    };
+
     // Build the prompt based on stage
     let prompt: string | { systemPrompt: string; userInput: string };
 
@@ -294,7 +341,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         break;
       case "editor":
         prompt = this.buildEditorPrompt(
-          conceptReportVersions?.["latest"]?.content || conceptReportVersions?.["3_generatie"]?.content || "",
+          resolveLatestContent(),
           previousStageResults,
           currentDate,
           stageConfig
@@ -303,15 +350,9 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       default:
         // For reviewer stages (4a-4f)
         if (stageName.startsWith("4")) {
-          // ✅ FIX: Use latest concept version, not just stage 3 base version
-          // This ensures reviewers work on the most recent version (after previous reviewers)
-          const latestContent = conceptReportVersions?.["latest"]?.content
-            || conceptReportVersions?.["3_generatie"]?.content
-            || "";
-
           prompt = this.buildReviewerPrompt(
             stageName,
-            latestContent,
+            resolveLatestContent(),
             dossier,
             bouwplan,
             currentDate,

@@ -12,6 +12,7 @@ import { VersionTimeline } from "@/components/report/VersionTimeline";
 import { ReportDiffViewer } from "@/components/report/ReportDiffViewer";
 import { StickyReportPreview, FullScreenReportPreview } from "@/components/report/StickyReportPreview";
 import { ExportDialog } from "@/components/export/ExportDialog";
+import { DossierContextPanel } from "@/components/report/DossierContextPanel";
 import type { Report } from "@shared/schema";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -30,6 +31,9 @@ export default function CaseDetail() {
   const lastVersionRef = useRef<number>(0);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Check for autoStart query parameter
+  const autoStart = new URLSearchParams(window.location.search).get('autoStart') === 'true';
 
   const { data: report, isLoading, error } = useQuery<Report>({
     queryKey: [`/api/reports/${reportId}`],
@@ -670,6 +674,7 @@ export default function CaseDetail() {
                   clientName={report.clientName}
                   rawText={(report.dossierData as any)?.rawText || ""}
                   existingReport={report}
+                  autoStart={autoStart}
                   onComplete={(updatedReport) => {
                     // Trigger re-fetch
                     window.location.reload();
@@ -737,8 +742,13 @@ export default function CaseDetail() {
           </Tabs>
         </div>
 
-        {/* Sticky Report Preview */}
+        {/* Dossier Context & Report Preview */}
         <div className="hidden lg:block">
+          <DossierContextPanel
+            reportId={reportId!}
+            summary={report.dossierContextSummary || undefined}
+            rawText={(report.dossierData as any)?.rawText || ""}
+          />
           <StickyReportPreview
             content={currentContent}
             version={currentVersion}

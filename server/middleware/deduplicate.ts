@@ -169,10 +169,13 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
         console.log(`🔌 [Deduplicate] Client disconnected: ${requestKey}`);
         cleanup();
         // Reject the promise silently - don't throw since the client is gone
-        try {
-          rejectRequest!(new Error('Response closed'));
-        } catch (e) {
-          // Ignore - client already disconnected
+        if (rejectRequest) {
+          try {
+            rejectRequest(new Error('Response closed'));
+          } catch (e) {
+            // Ignore - client already disconnected
+            console.log(`🔌 [Deduplicate] Cleanup error ignored: ${e instanceof Error ? e.message : 'unknown'}`);
+          }
         }
       }
     });

@@ -38,6 +38,7 @@ interface WorkflowManagerProps {
   rawText: string;
   existingReport?: Report;
   onComplete: (report: Report) => void;
+  autoStart?: boolean; // Auto-start the first stage on mount
 }
 
 function WorkflowManagerContent({
@@ -46,7 +47,8 @@ function WorkflowManagerContent({
   clientName,
   rawText,
   existingReport,
-  onComplete
+  onComplete,
+  autoStart = false
 }: WorkflowManagerProps) {
   const { state, dispatch } = useWorkflow();
   const { toast } = useToast();
@@ -173,7 +175,7 @@ function WorkflowManagerContent({
     onMutate: ({ stage }) => {
       handleStageStart(stage, { dispatch });
     },
-    onSuccess: (data: any, variables) => {
+    onSuccess: async (data: any, variables) => {
       // Use centralized handler
       handleStageCompletion(data, variables, {
         dispatch,
@@ -186,6 +188,19 @@ function WorkflowManagerContent({
       const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
       const stageResult = data.stageResult || data.stageOutput || "";
       const updatedReport = data.report;
+
+      // Auto-trigger dossier context generation after Stage 1 completes
+      if (variables.stage === "1_informatiecheck" && updatedReport?.id) {
+        console.log('📋 Stage 1 completed - triggering dossier context generation');
+        try {
+          await apiRequest("POST", `/api/reports/${updatedReport.id}/dossier-context`, {});
+          // Invalidate to refresh the panel
+          queryClient.invalidateQueries({ queryKey: [`/api/reports/${updatedReport.id}`] });
+        } catch (error) {
+          console.error('Failed to generate dossier context:', error);
+          // Don't block workflow on failure
+        }
+      }
       
       // Only auto-advance if we're still on the same stage that was executed
       console.log(`🎯 Auto-advance evaluation: executedStage="${variables.stage}", currentStageKey="${currentStage.key}", currentIndex=${state.currentStageIndex}`);
@@ -440,6 +455,24 @@ function WorkflowManagerContent({
       }
     }
   }, [existingReport, state.currentReport, createReportMutation, dispatch]);
+
+  // Auto-start first stage if autoStart is true
+  useEffect(() => {
+    if (autoStart && state.currentReport && state.currentStageIndex === 0 && !state.isStageExecuting) {
+      const stageResults = state.currentReport.stageResults as Record<string, string> || {};
+      const firstStageKey = WORKFLOW_STAGES[0].key;
+
+      // Only auto-start if stage 1 hasn't been executed yet
+      if (!stageResults[firstStageKey]) {
+        console.log('🚀 Auto-starting first stage:', firstStageKey);
+        executeStageM.mutate({
+          reportId: state.currentReport.id,
+          stage: firstStageKey,
+          customInput: undefined,
+        });
+      }
+    }
+  }, [autoStart, state.currentReport, state.currentStageIndex, state.isStageExecuting]);
 
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
   const progressPercentage = Math.round((Object.keys(state.stageResults).length / WORKFLOW_STAGES.length) * 100);

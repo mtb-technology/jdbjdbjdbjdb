@@ -26,6 +26,9 @@ export const TIMEOUTS = {
   /** Reasoning models (o3, o4) may need longer (10 minutes) */
   AI_REASONING: 600_000,
 
+  /** Grounding requests may be slow (10 minutes) */
+  AI_GROUNDING: 600_000,
+
   /** Circuit breaker recovery wait time (1 minute) */
   CIRCUIT_BREAKER_RECOVERY: 60_000,
 

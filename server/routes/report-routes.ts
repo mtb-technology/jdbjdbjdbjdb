@@ -266,6 +266,30 @@ export function registerReportRoutes(
         }
       }
 
+      // *** STAGE 2 UPDATE: Update dossierData with corrected data from origineel_dossier ***
+      if (stage === '2_complexiteitscheck' && stageExecution.stageOutput) {
+        try {
+          const parsed = JSON.parse(stageExecution.stageOutput);
+          if (parsed.next_action === 'PROCEED_TO_GENERATION' && parsed.origineel_dossier) {
+            console.log(`🔄 [${id}] Stage 2 COMPLEET - updating dossierData with corrected data from origineel_dossier`);
+            // Update dossierData with the corrected/enriched data from stage 2
+            const currentDossier = (report.dossierData as Record<string, any>) || {};
+            updateData.dossierData = {
+              ...currentDossier,
+              klant: {
+                naam: report.clientName,
+                situatie: parsed.origineel_dossier.samenvatting_onderwerp || parsed.samenvatting_onderwerp || ''
+              },
+              gestructureerde_data: parsed.origineel_dossier.gestructureerde_data || parsed.origineel_dossier.relevante_data,
+              samenvatting_onderwerp: parsed.origineel_dossier.samenvatting_onderwerp || parsed.samenvatting_onderwerp
+            };
+          }
+        } catch (parseError) {
+          console.warn(`⚠️ [${id}] Could not parse Stage 2 output for dossierData update:`, parseError);
+          // Don't fail the request - just log warning
+        }
+      }
+
       // *** REVIEW STAGES (4a-4g): NO AUTOMATIC CONCEPT PROCESSING ***
       // These stages now require user feedback selection - only store raw feedback
       if (stage.startsWith('4')) {
@@ -848,18 +872,6 @@ export function registerReportRoutes(
 
       const combinedPrompt = `${systemPrompt}\n\n### USER INPUT:\n${userInput}`;
 
-      // 🔍 DEBUG: Log the ACTUAL prompt being sent to LLM
-      console.log(`📝 [${reportId}-${stageId}] Editor Prompt being sent to LLM:`, {
-        systemPromptLength: systemPrompt.length,
-        userInputLength: userInput.length,
-        combinedPromptLength: combinedPrompt.length,
-        basistekstLength: latestConceptText.length,
-        wijzigingenCount: Array.isArray(feedbackJSON) ? feedbackJSON.length : 'not an array',
-        userInstructionsLength: userInstructions.length,
-        systemPromptPreview: systemPrompt.substring(0, 200) + '...',
-        userInputPreview: userInput.substring(0, 200) + '...'
-      });
-
       // ✅ CRITICAL FIX: Use processStageWithPrompt to bypass double prompt wrapping
       // We've already built the FULL prompt above with PromptBuilder
       // The old processStage() would re-build it causing truncation
@@ -1427,5 +1439,88 @@ export function registerReportRoutes(
 
       res.end();
     }
+  }));
+
+  /**
+   * POST /api/reports/:id/dossier-context
+   * Generate or regenerate dossier context summary
+   */
+  app.post("/api/reports/:id/dossier-context", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { customPrompt } = req.body;
+
+    console.log(`📋 [${id}] Generating dossier context summary`);
+
+    // Get report
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Get raw text from dossier data
+    const rawText = (report.dossierData as any)?.rawText || "";
+    if (!rawText) {
+      throw ServerError.validation("No raw text available", "Geen ruwe tekst beschikbaar voor samenvatting");
+    }
+
+    // Get Stage 1 output (if available)
+    const stage1Output = (report.stageResults as any)?.["1_informatiecheck"] || "";
+
+    // Build prompt template with placeholder replacement
+    let promptTemplate = customPrompt || `Je bent een fiscaal assistent. Maak een compacte samenvatting van deze casus voor snelle referentie.
+
+Geef alleen de essentie:
+- Klant naam/type
+- Kern van de vraag (1 zin)
+- Belangrijkste bedragen/feiten
+- Status (COMPLEET of INCOMPLEET + wat ontbreekt)
+
+Gebruik bullet points. Max 150 woorden.
+
+{stage1Output}RAW INPUT:
+{rawText}`;
+
+    // Replace placeholders
+    const stage1Section = stage1Output ? `STAP 1 ANALYSE:\n${stage1Output}\n\n` : '';
+    const finalPrompt = promptTemplate
+      .replace('{stage1Output}', stage1Section)
+      .replace('{rawText}', rawText);
+
+    // Generate summary using reportGenerator
+    let summary;
+    try {
+      summary = await reportGenerator.generateWithCustomPrompt({
+        systemPrompt: "Je bent een fiscaal assistent die compacte samenvattingen maakt van klantcases.",
+        userPrompt: finalPrompt,
+        model: "gemini-3-pro-preview", // Gemini 3 Pro Preview
+        customConfig: {
+          provider: "google",
+          temperature: 1.0, // Keep default for Gemini 3
+          maxOutputTokens: 2000, // Plenty of room for thinking + summary (can optimize later)
+          thinkingLevel: "low" // Fast thinking for simple summarization tasks
+        }
+      });
+    } catch (error: any) {
+      console.error(`❌ [${id}] Dossier context generation failed:`, {
+        error: error.message,
+        stack: error.stack,
+        code: error.code,
+        details: error.details
+      });
+      throw error; // Re-throw for proper error handling
+    }
+
+    // Save to database
+    await storage.updateReport(id, {
+      dossierContextSummary: summary,
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ [${id}] Dossier context generated (${summary.length} chars)`);
+
+    res.json(createApiSuccessResponse({
+      summary,
+      reportId: id
+    }));
   }));
 }

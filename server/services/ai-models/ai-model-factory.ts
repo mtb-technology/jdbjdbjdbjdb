@@ -10,6 +10,7 @@ import type { AiConfig } from "@shared/schema";
 import { config, getAIModelConfig, type AIModelName } from "../../config";
 import { ServerError } from "../../middleware/errorHandler";
 import { ERROR_CODES } from "@shared/errors";
+import { TIMEOUTS } from "../../config/constants";
 
 export type { AIModelParameters } from "./base-handler";
 
@@ -244,7 +245,12 @@ export class AIModelFactory {
 
     try {
       // Pass model-specific timeout to handler via options
-      const timeoutMs = modelInfo.timeout || 120000;
+      // Use longer timeout for grounding requests (10 min vs 2 min)
+      let timeoutMs = modelInfo.timeout || 120000;
+      if (options?.useGrounding) {
+        timeoutMs = TIMEOUTS.AI_GROUNDING;
+        console.log(`⏱️ Using extended timeout for grounding request: ${timeoutMs}ms`);
+      }
       const optionsWithTimeout = {
         ...options,
         timeout: timeoutMs

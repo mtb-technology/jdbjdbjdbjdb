@@ -9,9 +9,13 @@ export class GoogleAIHandler extends BaseAIHandler {
   constructor(apiKey: string) {
     super("Google AI", apiKey);
     // Use v1alpha API for Gemini 3 support
+    // Set timeout to 15 minutes for grounding/long operations
     this.client = new GoogleGenAI({
       apiKey,
-      httpOptions: { apiVersion: 'v1alpha' }
+      httpOptions: {
+        apiVersion: 'v1alpha',
+        timeout: 900000  // 15 minutes in milliseconds
+      }
     });
   }
 
@@ -50,9 +54,11 @@ export class GoogleAIHandler extends BaseAIHandler {
         maxOutputTokens: config.maxOutputTokens,
       };
 
-      // Add thinking_level for Gemini 3 models
+      // Add thinking_config for Gemini 3 models (as per API docs)
       if (config.thinkingLevel) {
-        generationConfig.thinking_level = config.thinkingLevel;
+        generationConfig.thinking_config = {
+          thinking_level: config.thinkingLevel
+        };
       }
 
       // Add Google Search grounding if enabled
@@ -92,7 +98,7 @@ export class GoogleAIHandler extends BaseAIHandler {
       if (finishReason === 'MAX_TOKENS' && content && content.trim().length > 10) {
         console.warn(`[${jobId}] Google AI hit token limit, but returning partial content`);
       } else if (!content || content.trim() === '') {
-        throw AIError.invalidResponse('Google AI', `Empty response (${finishReason || 'unknown reason'})`);
+        throw AIError.invalidResponse(`Google AI returned empty response (${finishReason || 'unknown reason'})`, { finishReason, model: config.model });
       }
 
       const result: AIModelResponse = {
@@ -113,6 +119,17 @@ export class GoogleAIHandler extends BaseAIHandler {
         throw error;
       }
 
+      // ✅ LOG FULL ERROR DETAILS for debugging
+      console.error(`❌ [${jobId}] Google AI call failed:`, {
+        errorType: error.constructor?.name,
+        message: error.message,
+        status: error.status,
+        code: error.code,
+        details: error.details,
+        errorString: error.toString(),
+        stack: error.stack?.split('\n').slice(0, 5).join('\n')
+      });
+
       // Enhanced rate limit detection for Google API
       const errorMessage = error.message || error.toString() || '';
       const is429Error = error.status === 429;
@@ -132,14 +149,16 @@ export class GoogleAIHandler extends BaseAIHandler {
         throw new AIError(
           `Rate limit exceeded for Google AI`,
           ERROR_CODES.AI_RATE_LIMITED,
-          false, // NOT retryable - fail fast
-          undefined,
+          error.status || 429,
           {
-            statusCode: error.status,
-            responseText: errorMessage,
-            provider: 'Google AI',
-            model: config.model,
-            suggestedWaitTime: '5-10 minutes'
+            isRetryable: false, // NOT retryable - fail fast
+            details: {
+              statusCode: error.status,
+              responseText: errorMessage,
+              provider: 'Google AI',
+              model: config.model,
+              suggestedWaitTime: '5-10 minutes'
+            }
           }
         );
       }

@@ -364,8 +364,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
               {/* Action Buttons - Only show for AI mode or non-manual stages */}
               {(!supportsManualMode || manualMode === 'ai') && (
                 <div className="space-y-3">
-                  {/* Custom Context Section - Show for re-runs */}
-                  {stageStatus === 'completed' && (
+                  {/* Custom Context Section - Always show when stage can execute */}
+                  {canExecute && (
                     <div className="bg-purple-50 dark:bg-purple-950/20 border-2 border-purple-200 dark:border-purple-800 rounded-lg p-4">
                       <button
                         onClick={() => setShowCustomContext(!showCustomContext)}
@@ -375,10 +375,10 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                           <MessageSquare className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5" />
                           <div className="flex-1">
                             <h4 className="font-semibold text-sm text-purple-900 dark:text-purple-100">
-                              Extra Context voor Re-run (optioneel)
+                              {stageStatus === 'completed' ? 'Extra Context voor Re-run (optioneel)' : 'Extra Context (optioneel)'}
                             </h4>
                             <p className="text-xs text-purple-700 dark:text-purple-300 mt-1">
-                              Voeg extra instructies of context toe die de AI moet gebruiken bij het opnieuw uitvoeren
+                              Voeg extra instructies of context toe die de AI moet gebruiken
                             </p>
                           </div>
                         </div>
@@ -487,27 +487,6 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                 </div>
               )}
 
-              {/* Input Section */}
-              <div className="border border-jdb-border rounded-lg overflow-hidden max-w-full">
-                <button
-                  onClick={onToggleInput}
-                  className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-jdb-bg dark:hover:bg-jdb-border/10 transition-colors focus:outline-none focus:ring-2 focus:ring-jdb-blue-primary focus:ring-offset-2 rounded-lg"
-                >
-                  <span className="font-medium text-sm flex items-center gap-2 text-jdb-text-heading">
-                    <FileText className="w-4 h-4" />
-                    Input
-                  </span>
-                  {isInputCollapsed ? <ChevronRight className="w-4 h-4 text-jdb-text-subtle" /> : <ChevronDown className="w-4 h-4 text-jdb-text-subtle" />}
-                </button>
-                {!isInputCollapsed && (
-                  <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border max-w-full">
-                    <p className="text-sm text-jdb-text-body">
-                      Input wordt automatisch gegenereerd uit vorige stappen
-                    </p>
-                  </div>
-                )}
-              </div>
-
               {/* Output Section */}
               {stageResult && (
                 <div className="border border-jdb-border rounded-lg overflow-hidden max-w-full">
@@ -552,8 +531,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
                       {/* Default output display */}
                       {!['1_informatiecheck', '2_complexiteitscheck'].includes(stageKey) && (
-                        <div className="bg-white p-3 rounded border font-mono text-xs overflow-x-auto overflow-y-auto max-h-96 w-full max-w-full">
-                          <pre className="whitespace-pre-wrap break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>{stageResult}</pre>
+                        <div className="bg-white dark:bg-gray-900 p-3 rounded border border-gray-300 dark:border-gray-700 font-mono text-xs overflow-x-auto overflow-y-auto max-h-96 w-full max-w-full">
+                          <pre className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>{stageResult}</pre>
                         </div>
                       )}
 

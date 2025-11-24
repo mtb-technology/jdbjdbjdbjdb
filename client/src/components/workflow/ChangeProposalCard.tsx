@@ -16,8 +16,7 @@ import {
 } from "lucide-react";
 
 // Lazy load diff viewer - only loads when proposal card is expanded with diff view
-const ReactDiffViewer = lazy(() => import('react-diff-viewer-continued').then(module => ({ default: module.default })));
-const DiffMethod = { WORDS: 'WORDS' as const };
+const ReactDiffViewer = lazy(() => import('react-diff-viewer-continued'));
 
 export interface ChangeProposal {
   id: string;
@@ -72,11 +71,11 @@ export function ChangeProposalCard({
   const getSeverityColor = () => {
     switch (proposal.severity) {
       case 'critical':
-        return 'bg-red-100 text-red-800 border-red-300';
+        return 'bg-red-50 dark:bg-red-950/20 text-red-900 dark:text-red-100 border-red-300 dark:border-red-800';
       case 'important':
-        return 'bg-blue-100 text-blue-800 border-blue-300';
+        return 'bg-blue-50 dark:bg-blue-950/20 text-blue-900 dark:text-blue-100 border-blue-300 dark:border-blue-800';
       case 'suggestion':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+        return 'bg-yellow-50 dark:bg-yellow-950/20 text-yellow-900 dark:text-yellow-100 border-yellow-300 dark:border-yellow-800';
     }
   };
 
@@ -158,14 +157,14 @@ export function ChangeProposalCard({
       {isExpanded && (
         <CardContent className="space-y-4">
           {/* Reasoning */}
-          <div className="bg-background/50 p-3 rounded-md">
+          <div className="bg-background/50 dark:bg-gray-800/50 p-3 rounded-md border border-gray-200 dark:border-gray-700">
             <p className="text-sm font-medium mb-1">Reden:</p>
             <p className="text-sm text-muted-foreground">{proposal.reasoning}</p>
           </div>
 
           {/* Diff View */}
           {showDiff && proposal.changeType !== 'add' && (
-            <div className="border rounded-lg overflow-hidden bg-background">
+            <div className="border rounded-lg overflow-hidden bg-background dark:bg-gray-900">
               <Suspense fallback={
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -176,7 +175,7 @@ export function ChangeProposalCard({
                   oldValue={proposal.original}
                   newValue={proposal.proposed}
                   splitView={false}
-                  compareMethod={DiffMethod.WORDS as any}
+                  compareMethod="diffWords"
                   hideLineNumbers={true}
                   showDiffOnly={true}
                   styles={{
@@ -187,6 +186,13 @@ export function ChangeProposalCard({
                         removedBackground: '#ffeef0',
                         wordAddedBackground: '#acf2bd',
                         wordRemovedBackground: '#fdb8c0',
+                      },
+                      dark: {
+                        diffViewerBackground: '#1f2937',
+                        addedBackground: '#064e3b',
+                        removedBackground: '#7f1d1d',
+                        wordAddedBackground: '#065f46',
+                        wordRemovedBackground: '#991b1b',
                       },
                     },
                   }}
@@ -199,8 +205,8 @@ export function ChangeProposalCard({
           {proposal.changeType === 'add' && (
             <div className="space-y-2">
               <p className="text-sm font-medium">Nieuwe tekst:</p>
-              <div className="bg-green-50 border border-green-200 p-3 rounded-md">
-                <p className="text-sm whitespace-pre-wrap">{proposal.proposed}</p>
+              <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 p-3 rounded-md">
+                <p className="text-sm whitespace-pre-wrap text-gray-800 dark:text-gray-200">{proposal.proposed}</p>
               </div>
             </div>
           )}
@@ -295,30 +301,30 @@ export function ChangeProposalBulkActions({
   const totalCount = proposals.length;
 
   return (
-    <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+    <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-blue-200 dark:border-blue-800">
       <CardContent className="pt-6">
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Overzicht Voorstellen</h3>
+            <h3 className="text-base font-semibold">Overzicht Voorstellen</h3>
             <Badge variant="secondary">
               {decidedCount}/{totalCount} behandeld
             </Badge>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div className="text-center p-3 bg-white rounded-lg border border-red-200">
-              <AlertTriangle className="h-6 w-6 text-red-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-red-600">{criticalCount}</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="text-center p-2 bg-white dark:bg-gray-900 rounded-lg border border-red-200 dark:border-red-800">
+              <AlertTriangle className="h-5 w-5 text-red-500 mx-auto mb-1" />
+              <p className="text-xl font-bold text-red-600 dark:text-red-400">{criticalCount}</p>
               <p className="text-xs text-muted-foreground">Kritiek</p>
             </div>
-            <div className="text-center p-3 bg-white rounded-lg border border-blue-200">
-              <Info className="h-6 w-6 text-blue-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-blue-600">{importantCount}</p>
+            <div className="text-center p-2 bg-white dark:bg-gray-900 rounded-lg border border-blue-200 dark:border-blue-800">
+              <Info className="h-5 w-5 text-blue-500 mx-auto mb-1" />
+              <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{importantCount}</p>
               <p className="text-xs text-muted-foreground">Belangrijk</p>
             </div>
-            <div className="text-center p-3 bg-white rounded-lg border border-yellow-200">
-              <Lightbulb className="h-6 w-6 text-yellow-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-yellow-600">{suggestionCount}</p>
+            <div className="text-center p-2 bg-white dark:bg-gray-900 rounded-lg border border-yellow-200 dark:border-yellow-800">
+              <Lightbulb className="h-5 w-5 text-yellow-500 mx-auto mb-1" />
+              <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{suggestionCount}</p>
               <p className="text-xs text-muted-foreground">Suggestie</p>
             </div>
           </div>

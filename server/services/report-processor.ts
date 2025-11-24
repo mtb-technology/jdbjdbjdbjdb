@@ -443,16 +443,6 @@ ${feedback}
     const editorConfig = parsedConfig.editor || parsedConfig['5_feedback_verwerker'];
     const aiConfig = editorConfig?.aiConfig || parsedConfig.aiConfig;
 
-    // 🔍 DEBUG: Log what config we're actually using
-    console.log(`🔍 [ReportProcessor] AI Config Debug:`, {
-      hasEditorConfig: !!editorConfig,
-      hasEditorAiConfig: !!editorConfig?.aiConfig,
-      hasGlobalAiConfig: !!parsedConfig.aiConfig,
-      maxOutputTokens: aiConfig?.maxOutputTokens,
-      temperature: aiConfig?.temperature,
-      aiConfigKeys: aiConfig ? Object.keys(aiConfig) : []
-    });
-
     // Call AI with pre-built prompt
     const response = await this.aiHandler.generateContent({
       prompt: preBuiltPrompt,

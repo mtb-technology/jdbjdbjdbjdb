@@ -101,6 +101,9 @@ export const reports = pgTable("reports", {
   pendingChanges: jsonb("pending_changes"), // Structured change proposals from specialists
   documentSnapshots: jsonb("document_snapshots"), // Snapshots per stage for audit trail
 
+  // Dossier context summary - AI-generated summary for quick reference
+  dossierContextSummary: text("dossier_context_summary"), // Compact summary of case context
+
   currentStage: text("current_stage").default("1_informatiecheck"),
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),

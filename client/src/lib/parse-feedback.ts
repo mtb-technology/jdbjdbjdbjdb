@@ -11,56 +11,170 @@ export function parseFeedbackToProposals(
 ): ChangeProposal[] {
   const proposals: ChangeProposal[] = [];
 
-  // Try to detect if feedback is already structured (JSON)
-  if (rawFeedback.trim().startsWith('{') || rawFeedback.trim().startsWith('[')) {
-    try {
-      const parsed = JSON.parse(rawFeedback);
-      if (Array.isArray(parsed)) {
-        return parsed.map((p, idx) => normalizeProposal(p, specialist, stageId, idx));
-      } else if (parsed.proposals && Array.isArray(parsed.proposals)) {
-        return parsed.proposals.map((p: any, idx: number) => normalizeProposal(p, specialist, stageId, idx));
-      }
-    } catch (e) {
-      // Not JSON, continue with text parsing
+  // Extract JSON from markdown code blocks if present
+  let jsonContent = rawFeedback.trim();
+
+  // Try multiple patterns for code blocks
+  const codeBlockPatterns = [
+    /```json\s*([\s\S]*?)```/,  // ```json ... ```
+    /```\s*([\s\S]*?)```/,       // ``` ... ```
+    /`json\s*([\s\S]*?)`/,       // `json ... `
+  ];
+
+  for (const pattern of codeBlockPatterns) {
+    const match = jsonContent.match(pattern);
+    if (match) {
+      jsonContent = match[1].trim();
+      console.log('[parseFeedbackToProposals] Extracted JSON from code block:', jsonContent.substring(0, 200));
+      break;
     }
   }
 
-  // Parse text-based feedback into proposals
-  // Look for patterns like:
-  // 1. CHANGE: ... REASON: ...
-  // 2. Section X: ... => ...
-  // 3. - Add/Modify/Delete: ...
+  // Try to detect if feedback is already structured (JSON)
+  if (jsonContent.startsWith('{') || jsonContent.startsWith('[')) {
+    try {
+      console.log('[parseFeedbackToProposals] Attempting to parse JSON...');
+      const parsed = JSON.parse(jsonContent);
+      console.log('[parseFeedbackToProposals] Successfully parsed JSON:', parsed);
 
+      if (Array.isArray(parsed)) {
+        console.log(`[parseFeedbackToProposals] Found array with ${parsed.length} proposals`);
+        const normalized = parsed
+          .map((p, idx) => normalizeProposal(p, specialist, stageId, idx))
+          .filter((p): p is ChangeProposal => p !== null); // Filter out null values
+        console.log(`[parseFeedbackToProposals] After filtering: ${normalized.length} valid proposals`);
+        return normalized;
+      } else if (parsed.proposals && Array.isArray(parsed.proposals)) {
+        console.log(`[parseFeedbackToProposals] Found proposals array with ${parsed.proposals.length} items`);
+        const normalized = parsed.proposals
+          .map((p: any, idx: number) => normalizeProposal(p, specialist, stageId, idx))
+          .filter((p: ChangeProposal | null): p is ChangeProposal => p !== null); // Filter out null values
+        console.log(`[parseFeedbackToProposals] After filtering: ${normalized.length} valid proposals`);
+        return normalized;
+      } else if (parsed.bevindingen && Array.isArray(parsed.bevindingen)) {
+        console.log(`[parseFeedbackToProposals] Found bevindingen array with ${parsed.bevindingen.length} items`);
+        const normalized = parsed.bevindingen
+          .map((p: any, idx: number) => normalizeProposal(p, specialist, stageId, idx))
+          .filter((p: ChangeProposal | null): p is ChangeProposal => p !== null); // Filter out null values
+        console.log(`[parseFeedbackToProposals] After filtering: ${normalized.length} valid proposals`);
+        return normalized;
+      }
+    } catch (e) {
+      console.error('[parseFeedbackToProposals] Failed to parse JSON feedback:', e);
+      console.error('[parseFeedbackToProposals] JSON content:', jsonContent.substring(0, 500));
+      // Not JSON, continue with text parsing
+    }
+  } else {
+    console.log('[parseFeedbackToProposals] Content does not start with { or [, using text parser');
+  }
+
+  // Parse text-based feedback into proposals
+  // Look for structured patterns like "Bevinding #X" blocks or complete change proposals
+
+  // STRATEGY: Look for "Bevinding #N" or "### Bevinding #N" or "**Bevinding #N:**" blocks with complete structure
+  // Only create a proposal if we have ALL required fields
+
+  // Updated pattern to match both markdown headers (### Bevinding #1) and bold text (**Bevinding #1:**)
+  const bevindingPattern = /(?:###?\s*|^\*\*\s*)Bevinding\s+#(\d+)/gim;
+  const bevindingMatches = Array.from(rawFeedback.matchAll(bevindingPattern));
+
+  if (bevindingMatches.length > 0) {
+    console.log(`[parseFeedbackToProposals] Found ${bevindingMatches.length} "Bevinding" blocks`);
+
+    // Split feedback into bevinding blocks
+    for (let i = 0; i < bevindingMatches.length; i++) {
+      const startIndex = bevindingMatches[i].index!;
+      const endIndex = i < bevindingMatches.length - 1 ? bevindingMatches[i + 1].index! : rawFeedback.length;
+      const bevindingBlock = rawFeedback.substring(startIndex, endIndex);
+
+      // Extract structured fields using markdown bold patterns (more flexible)
+      const locatieMatch = bevindingBlock.match(/\*\*Locatie[^:]*:\*\*\s*([\s\S]+?)(?=\n+\*\*|$)/);
+      const typeMatch = bevindingBlock.match(/\*\*Type\s+Fout[^:]*:\*\*\s*(.+?)(?=\n+\*\*|$)/);
+      const probleemMatch = bevindingBlock.match(/\*\*Probleem[^:]*:\*\*\s*([\s\S]+?)(?=\n+\*\*|$)/);
+      const correctieMatch = bevindingBlock.match(/\*\*Correctie[^:]*:\*\*\s*([\s\S]+?)(?=\n+---|\n+\*\*Bevinding|$)/i);
+
+      // Only create proposal if we have substantive content
+      if (locatieMatch && (probleemMatch || correctieMatch)) {
+        const locatie = locatieMatch[1].trim();
+        const probleem = probleemMatch ? probleemMatch[1].trim() : '';
+        const correctie = correctieMatch ? correctieMatch[1].trim() : '';
+        const typeFout = typeMatch ? typeMatch[1].trim().toLowerCase() : '';
+
+        // Determine severity based on type
+        let severity: ChangeProposal['severity'] = 'suggestion';
+        if (typeFout.includes('regel') || typeFout.includes('critical') || typeFout.includes('kritiek')) {
+          severity = 'critical';
+        } else if (typeFout.includes('cijfer') || typeFout.includes('important') || typeFout.includes('belangrijk') || typeFout.includes('onnauwkeurig')) {
+          severity = 'important';
+        }
+
+        const proposal = finalizeProposal({
+          section: locatie.substring(0, 100), // Use location as section
+          proposed: correctie || probleem, // Use correction as proposed change
+          original: '', // We don't have "old" text in this format
+          reasoning: probleem, // Use problem description as reasoning
+          changeType: 'modify',
+          severity
+        }, specialist, stageId, i);
+
+        if (proposal) {
+          proposals.push(proposal);
+          console.log(`[parseFeedbackToProposals] Created proposal from Bevinding #${i + 1}`);
+        }
+      } else {
+        console.log(`[parseFeedbackToProposals] Skipping incomplete Bevinding block #${i + 1}`);
+      }
+    }
+
+    if (proposals.length > 0) {
+      console.log(`[parseFeedbackToProposals] Extracted ${proposals.length} complete bevindingen`);
+      return proposals;
+    }
+  }
+
+  // FALLBACK: Original text parsing for other formats
   const lines = rawFeedback.split('\n');
   let currentProposal: Partial<ChangeProposal> | null = null;
   let proposalCounter = 0;
 
   for (const line of lines) {
     const trimmed = line.trim();
-    
+
     // Skip empty lines
     if (!trimmed) {
-      if (currentProposal) {
+      if (currentProposal && currentProposal.proposed && currentProposal.proposed.length >= 10) {
         proposals.push(finalizeProposal(currentProposal, specialist, stageId, proposalCounter++));
         currentProposal = null;
       }
       continue;
     }
 
-    // Detect numbered items (1., 2., etc.)
+    // Skip status lines and markdown headers that aren't real proposals
+    if (trimmed.startsWith('**Status:') || trimmed.startsWith('*Status:') ||
+        trimmed.startsWith('**Overige') || trimmed.startsWith('**Locatie') ||
+        trimmed.startsWith('**Type') || trimmed.startsWith('**Probleem') ||
+        trimmed.startsWith('**Correctie') || trimmed.startsWith('Hieronder volgen')) {
+      continue;
+    }
+
+    // Detect numbered items (1., 2., etc.) - but only if they look like real changes
     const numberedMatch = trimmed.match(/^(\d+)\.\s*(.+)/);
-    if (numberedMatch) {
-      if (currentProposal) {
-        proposals.push(finalizeProposal(currentProposal, specialist, stageId, proposalCounter++));
+    if (numberedMatch && !trimmed.includes('Bevinding')) {
+      const content = numberedMatch[2];
+      // Only treat as proposal if it's substantial and looks like a change
+      if (content.length > 20 && (content.includes('wijzig') || content.includes('vervang') || content.includes('update') || content.includes('toevoeg'))) {
+        if (currentProposal && currentProposal.proposed && currentProposal.proposed.length >= 10) {
+          proposals.push(finalizeProposal(currentProposal, specialist, stageId, proposalCounter++));
+        }
+        currentProposal = {
+          section: 'Algemeen',
+          proposed: content,
+          original: '',
+          reasoning: '',
+          changeType: 'modify',
+          severity: 'suggestion'
+        };
       }
-      currentProposal = {
-        section: 'Algemeen',
-        proposed: numberedMatch[2],
-        original: '',
-        reasoning: '',
-        changeType: 'modify',
-        severity: 'suggestion'
-      };
       continue;
     }
 
@@ -191,16 +305,54 @@ function normalizeProposal(
   specialist: string,
   stageId: string,
   index: number
-): ChangeProposal {
+): ChangeProposal | null {
+  // VALIDATION: Only accept objects that have the essential fields for a real change proposal
+  // Filter out status text, headers, and other non-change content
+
+  // Check if this looks like a real change proposal
+  const hasChangeIdentifier = data.bevinding_id || data.change_type || data.changeType || data.type;
+  const hasContentFields = data.suggestie_tekst || data.proposed || data.new || data.suggestion || data.instructie || data.herschreven_tekst;
+  const hasLocationOrSection = data.locatie_origineel || data.section;
+
+  // Reject if it's missing critical fields (likely status text or other content)
+  if (!hasChangeIdentifier && !hasContentFields) {
+    console.log('[normalizeProposal] Skipping non-change content:', JSON.stringify(data).substring(0, 100));
+    return null;
+  }
+
+  // Map various field name formats to our standard format
+  const changeType = (data.change_type || data.changeType || data.type || 'REPLACE').toUpperCase();
+  const mappedChangeType: ChangeProposal['changeType'] =
+    changeType === 'ADD' || changeType === 'TOEVOEGEN' ? 'add' :
+    changeType === 'DELETE' || changeType === 'VERWIJDER' ? 'delete' :
+    changeType === 'RESTRUCTURE' || changeType === 'HERSTRUCTUREER' ? 'restructure' :
+    'modify';
+
+  // Map severity - support both old and new field names
+  const severityStr = (data.bevinding_categorie || data.probleem_categorie || data.severity || data.priority || 'suggestion').toLowerCase();
+  const mappedSeverity: ChangeProposal['severity'] =
+    severityStr.includes('verouderd') || severityStr.includes('critical') || severityStr.includes('kritiek') ? 'critical' :
+    severityStr.includes('onnauwkeurig') || severityStr.includes('important') || severityStr.includes('belangrijk') || severityStr.includes('toon') ? 'important' :
+    'suggestion';
+
+  // Extract the actual suggestion/change text - support multiple field names
+  const proposed = data.herschreven_tekst || data.suggestie_tekst || data.proposed || data.new || data.suggestion || data.instructie || '';
+
+  // VALIDATION: Skip if the proposal is too short (likely noise)
+  if (proposed.length < 10) {
+    console.log('[normalizeProposal] Skipping proposal with content too short:', proposed);
+    return null;
+  }
+
   return {
-    id: data.id || `${stageId}-${index}`,
-    specialist: data.specialist || specialist,
-    changeType: data.changeType || data.type || 'modify',
-    section: data.section || 'Algemeen',
-    original: data.original || data.old || '',
-    proposed: data.proposed || data.new || data.suggestion || '',
-    reasoning: data.reasoning || data.reason || data.rationale || '',
-    severity: data.severity || data.priority || 'suggestion',
+    id: data.bevinding_id || data.id || `${stageId}-${index}`,
+    specialist: data.validator_naam || data.specialist || specialist,
+    changeType: mappedChangeType,
+    section: data.locatie_origineel || data.section || 'Algemeen',
+    original: data.locatie_origineel || data.original || data.old || '',
+    proposed,
+    reasoning: data.analyse || data.instructie || data.reasoning || data.reason || data.rationale || 'Geen reden opgegeven',
+    severity: mappedSeverity,
     userDecision: data.userDecision,
     userNote: data.userNote
   };
