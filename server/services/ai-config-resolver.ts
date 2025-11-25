@@ -25,6 +25,7 @@ export class AIConfigResolver {
    */
   private static readonly TOKEN_REQUIREMENTS = {
     'deep-research': {
+      '3_generatie': 32768,       // Deep research needs large output for comprehensive reports
       '4a_BronnenSpecialist': 32768,
       'default': 24576
     },
@@ -189,25 +190,37 @@ export class AIConfigResolver {
     model: string,
     jobId?: string
   ): AiConfig {
-    // Only adjust for reviewer stages (4a-4f)
-    if (!stageName.startsWith('4')) {
-      return config;
-    }
-
     let adjustedTokens = config.maxOutputTokens;
 
-    // Deep Research models need more tokens
+    // Deep Research models need more tokens for comprehensive reports
     if (model.includes('deep-research')) {
       const requirements = AIConfigResolver.TOKEN_REQUIREMENTS['deep-research'];
-      const stageRequirement = stageName === '4a_BronnenSpecialist'
-        ? requirements['4a_BronnenSpecialist']
-        : requirements.default;
+
+      // Stage-specific token requirements
+      let stageRequirement: number;
+      if (stageName === '3_generatie') {
+        stageRequirement = requirements['3_generatie'];
+      } else if (stageName === '4a_BronnenSpecialist') {
+        stageRequirement = requirements['4a_BronnenSpecialist'];
+      } else {
+        stageRequirement = requirements.default;
+      }
 
       adjustedTokens = Math.max(config.maxOutputTokens, stageRequirement);
 
       if (jobId) {
-        console.log(`📦 [${jobId}] Increased tokens for Deep Research: ${adjustedTokens}`);
+        console.log(`📦 [${jobId}] Increased tokens for Deep Research (${stageName}): ${adjustedTokens}`);
       }
+
+      return {
+        ...config,
+        maxOutputTokens: adjustedTokens
+      };
+    }
+
+    // Only adjust for reviewer stages (4a-4f) for non-deep-research models
+    if (!stageName.startsWith('4')) {
+      return config;
     }
     // GPT-4o also benefits from more tokens
     else if (model.includes('gpt-4o')) {

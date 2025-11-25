@@ -352,7 +352,7 @@ export const REPORT_CONFIG = {
   reviewerModel: 'gpt-4o' as AIModelName, // Balanced for reviews - restored with fallback handling
   generationModel: 'gpt-5' as AIModelName, // Powerful for large reports
   simpleTaskModel: 'gpt-4o-mini' as AIModelName, // Quick tasks (1-2 mins)
-  complexTaskModel: 'gpt-5' as AIModelName // Complex reports (5-10 mins)
+  complexTaskModel: 'gemini-3-pro-deep-research' as AIModelName // Deep research with multi-agent pattern (20-30 mins)
 } as const;
 
 // Session configuratie
