@@ -495,7 +495,37 @@ ${researchReport.sources.map((s, i) => `${i + 1}. ${s.title}${s.url ? ` - ${s.ur
 3. Professioneel en samenhangend zijn geschreven
 4. Eindigen met een apart hoofdstuk "Bronnen" waarin alle geraadpleegde bronnen worden vermeld
 
-Begin direct met het rapport (geen meta-commentaar over het proces). Eindig ALTIJD met:
+${this.config.polishPrompt ? `---
+## POLIJST INSTRUCTIES (pas dit toe op het eindrapport)
+
+${this.config.polishPrompt}
+
+---
+` : `---
+## POLIJST INSTRUCTIES (pas dit toe op het eindrapport)
+
+1. SCHRIJFSTIJL
+   - Gebruik consequent WIJ-vorm of objectieve schrijfstijl
+   - Vermijd IK-vorm volledig
+   - Professioneel en zakelijk taalgebruik
+
+2. STRUCTUUR
+   - Nummer alle hoofdstukken: 1. / 1.1 / 1.1.1
+   - Volg exact de structuur uit de originele prompt
+   - Zorg voor logische volgorde en flow
+
+3. VOLLEDIGHEID
+   - Controleer kritisch of elke sectie voldoende diepgang heeft
+   - Breid waar nodig uit met extra toelichting en onderbouwing
+   - Voeg concrete voorbeelden toe waar relevant
+
+4. KWALITEITSCONTROLE
+   - Verwijder herhalingen en redundante tekst
+   - Zorg voor consistente terminologie
+   - Controleer op spelling en grammatica
+
+---
+`}Begin direct met het rapport (geen meta-commentaar over het proces). Eindig ALTIJD met:
 
 ### Bronnen
 [Lijst van alle geraadpleegde bronnen met URL waar beschikbaar]`;

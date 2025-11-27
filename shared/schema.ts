@@ -386,6 +386,7 @@ export const stageConfigSchema = z.object({
     }, "Prompt moet minimaal 10 karakters bevatten wanneer opgegeven"),
   useGrounding: z.boolean().default(false), // For Google/Gemini models only
   useWebSearch: z.boolean().default(false), // For OpenAI models only
+  polishPrompt: z.string().optional(), // Polish instructies voor deep research output (Stage 3)
   stepType: z.enum(["generator", "reviewer", "processor"], {
     errorMap: () => ({ message: "StepType moet 'generator', 'reviewer' of 'processor' zijn" })
   }).default("generator"),

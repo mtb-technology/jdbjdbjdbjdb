@@ -247,14 +247,28 @@ const Settings = memo(function Settings() {
 
   const handleVerwerkerPromptChange = useCallback((stageKey: string, verwerkerPrompt: string) => {
     if (!activeConfig) return;
-    
+
     const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
-    
+
     setActiveConfig({
       ...activeConfig,
       [stageKey]: {
         ...currentStageConfig,
         verwerkerPrompt,
+      },
+    });
+  }, [activeConfig]);
+
+  const handlePolishPromptChange = useCallback((stageKey: string, polishPrompt: string) => {
+    if (!activeConfig) return;
+
+    const currentStageConfig = activeConfig[stageKey as keyof Omit<PromptConfig, 'aiConfig'>] as StageConfig;
+
+    setActiveConfig({
+      ...activeConfig,
+      [stageKey]: {
+        ...currentStageConfig,
+        polishPrompt,
       },
     });
   }, [activeConfig]);
@@ -1036,15 +1050,15 @@ const Settings = memo(function Settings() {
                     {/* Main Prompt */}
                     <div className="space-y-2">
                       <Label className="text-sm font-medium">
-                        {isReviewer ? "Review Prompt (→ JSON feedback)" : 
-                         isProcessor ? "Processor Prompt (JSON feedback → Rapport update)" : 
+                        {isReviewer ? "Review Prompt (→ JSON feedback)" :
+                         isProcessor ? "Processor Prompt (JSON feedback → Rapport update)" :
                          "Generator Prompt (→ Rapport content)"}
                       </Label>
                       <Textarea
                         value={prompt}
                         onChange={(e) => handlePromptChange(stage.key, e.target.value)}
                         className="font-mono text-sm min-h-32"
-                        placeholder={isReviewer ? 
+                        placeholder={isReviewer ?
                           `Review prompt die JSON feedback geeft voor ${stage.label}...` :
                           isProcessor ?
                           `Processor prompt die alle JSON feedback verwerkt in het rapport...` :
@@ -1053,6 +1067,53 @@ const Settings = memo(function Settings() {
                         data-testid={`textarea-prompt-${stage.key}`}
                       />
                     </div>
+
+                    {/* Polish Prompt - Only for Stage 3 (Generatie) with Deep Research */}
+                    {stage.key === "3_generatie" && (
+                      <div className="space-y-2 mt-4">
+                        <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <span className="text-lg">✨</span>
+                            <Label className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
+                              Polish Instructies (Deep Research)
+                            </Label>
+                            <Badge variant="outline" className="text-xs bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300">
+                              Automatisch toegepast
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-emerald-700 dark:text-emerald-300 mb-3">
+                            Deze instructies worden automatisch toegepast in de laatste fase van deep research om het rapport te polijsten (schrijfstijl, nummering, volledigheid).
+                          </p>
+                          <Textarea
+                            value={stageConfig?.polishPrompt || ''}
+                            onChange={(e) => handlePolishPromptChange(stage.key, e.target.value)}
+                            className="font-mono text-sm min-h-40 bg-white dark:bg-gray-900"
+                            placeholder={`POLIJST INSTRUCTIES (pas dit toe op het eindrapport):
+
+1. SCHRIJFSTIJL
+   - Gebruik consequent WIJ-vorm of objectieve schrijfstijl
+   - Vermijd IK-vorm volledig
+   - Professioneel en zakelijk taalgebruik
+
+2. STRUCTUUR
+   - Nummer alle hoofdstukken: 1. / 1.1 / 1.1.1
+   - Volg exact de structuur uit de originele prompt
+   - Zorg voor logische volgorde en flow
+
+3. VOLLEDIGHEID
+   - Controleer kritisch of elke sectie voldoende diepgang heeft
+   - Breid waar nodig uit met extra toelichting en onderbouwing
+   - Voeg concrete voorbeelden toe waar relevant
+
+4. KWALITEITSCONTROLE
+   - Verwijder herhalingen en redundante tekst
+   - Zorg voor consistente terminologie
+   - Controleer op spelling en grammatica`}
+                            data-testid={`textarea-polish-prompt-${stage.key}`}
+                          />
+                        </div>
+                      </div>
+                    )}
 
                   </div>
                 </CardContent>

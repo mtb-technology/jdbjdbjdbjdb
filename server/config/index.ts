@@ -128,7 +128,7 @@ export const AI_MODELS = {
   'gemini-3-pro-preview': {
     provider: 'google' as const,
     handlerType: 'google' as const,
-    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel', 'useGrounding', 'useDeepResearch', 'maxQuestions', 'parallelExecutors'],
+    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel', 'useGrounding', 'useDeepResearch', 'maxQuestions', 'parallelExecutors', 'polishPrompt'],
     requiresResponsesAPI: false,
     timeout: 1800000, // 30 minutes for deep research
     defaultConfig: {

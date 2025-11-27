@@ -322,6 +322,9 @@ export class AIModelFactory {
     if (supportedParams.includes('parallelExecutors') && (config as any).parallelExecutors !== undefined) {
       (filtered as any).parallelExecutors = (config as any).parallelExecutors;
     }
+    if (supportedParams.includes('polishPrompt') && (config as any).polishPrompt !== undefined) {
+      (filtered as any).polishPrompt = (config as any).polishPrompt;
+    }
 
     return filtered;
   }

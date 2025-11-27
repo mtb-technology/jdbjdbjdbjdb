@@ -73,6 +73,7 @@ export interface ResearchConfig {
   temperature?: number; // default: 1.0
   maxOutputTokens?: number; // default: 8192
   timeout?: number; // milliseconds, default: 1800000 (30 min)
+  polishPrompt?: string; // optional polish instructions for final synthesis
 }
 
 /**

@@ -231,7 +231,7 @@ export class GoogleAIHandler extends BaseAIHandler {
   }
 
   getSupportedParameters(): string[] {
-    return ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding', 'thinkingLevel', 'useDeepResearch', 'maxQuestions', 'parallelExecutors'];
+    return ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding', 'thinkingLevel', 'useDeepResearch', 'maxQuestions', 'parallelExecutors', 'polishPrompt'];
   }
 
   /**
@@ -256,7 +256,8 @@ export class GoogleAIHandler extends BaseAIHandler {
       thinkingLevel: (config as any).thinkingLevel || 'high',
       temperature: config.temperature || 1.0,
       maxOutputTokens: config.maxOutputTokens || 32768,
-      timeout: 1800000 // 30 minutes
+      timeout: 1800000, // 30 minutes
+      polishPrompt: (config as any).polishPrompt // Pass through polish instructions from stage config
     };
 
     // Re-create orchestrator with custom config

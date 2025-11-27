@@ -50,7 +50,7 @@ export class AIConfigResolver {
    */
   resolveForStage(
     stageName: string,
-    stageConfig?: { aiConfig?: AiConfig },
+    stageConfig?: { aiConfig?: AiConfig; polishPrompt?: string },
     globalConfig?: { aiConfig?: AiConfig },
     jobId?: string
   ): AiConfig {
@@ -73,7 +73,7 @@ export class AIConfigResolver {
     const finalConfig = this.applyTokenAdjustments(configWithLimits, stageName, selectedModel, jobId);
 
     // Step 6: Enable deep research for Stage 3 if using Gemini 3 Pro
-    const configWithDeepResearch = this.enableDeepResearchIfNeeded(finalConfig, stageName, stageAiConfig);
+    const configWithDeepResearch = this.enableDeepResearchIfNeeded(finalConfig, stageName, stageAiConfig, stageConfig?.polishPrompt);
 
     // Log for debugging
     if (jobId) {
@@ -83,6 +83,7 @@ export class AIConfigResolver {
         provider: configWithDeepResearch.provider,
         maxTokens: configWithDeepResearch.maxOutputTokens,
         useDeepResearch: (configWithDeepResearch as any).useDeepResearch,
+        hasPolishPrompt: !!(configWithDeepResearch as any).polishPrompt,
         isHybridSelection: !stageAiConfig?.model && !globalAiConfig?.model
       });
     }
@@ -258,7 +259,8 @@ export class AIConfigResolver {
   private enableDeepResearchIfNeeded(
     config: AiConfig,
     stageName: string,
-    stageAiConfig?: AiConfig
+    stageAiConfig?: AiConfig,
+    polishPrompt?: string
   ): AiConfig {
     // Only auto-enable for Stage 3 (Generatie)
     if (stageName !== '3_generatie') {
@@ -282,7 +284,8 @@ export class AIConfigResolver {
       useGrounding: true, // Deep research requires grounding
       maxQuestions: (stageAiConfig as any)?.maxQuestions || 5,
       parallelExecutors: (stageAiConfig as any)?.parallelExecutors || 3,
-      thinkingLevel: config.thinkingLevel || 'high'
+      thinkingLevel: config.thinkingLevel || 'high',
+      polishPrompt: polishPrompt // Pass through polish instructions from stage config
     } as any;
   }
 }
