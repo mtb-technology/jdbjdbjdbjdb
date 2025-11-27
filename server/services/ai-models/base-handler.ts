@@ -7,6 +7,18 @@ export interface AIModelResponse {
   content: string;
   usage?: any;
   duration: number;
+  groundingMetadata?: {
+    groundingChunks?: Array<{
+      web?: {
+        uri?: string;
+        title?: string;
+        snippet?: string;
+        score?: number;
+      };
+    }>;
+    searchEntryPoint?: any;
+    webSearchQueries?: string[];
+  };
   metadata?: Record<string, any>;
 }
 

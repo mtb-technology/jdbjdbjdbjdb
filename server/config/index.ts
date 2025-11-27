@@ -128,14 +128,14 @@ export const AI_MODELS = {
   'gemini-3-pro-preview': {
     provider: 'google' as const,
     handlerType: 'google' as const,
-    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel', 'useGrounding'],
+    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel', 'useGrounding', 'useDeepResearch', 'maxQuestions', 'parallelExecutors'],
     requiresResponsesAPI: false,
-    timeout: 600000, // 10 minutes (thinking can take longer)
+    timeout: 1800000, // 30 minutes for deep research
     defaultConfig: {
       temperature: 1.0, // Gemini 3 optimized for default 1.0
       topP: 0.95,
       topK: 40,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384, // Higher for thinking+grounding which consume extra tokens
       thinkingLevel: 'high' // default: high (dynamic thinking)
     },
     limits: {
@@ -143,28 +143,7 @@ export const AI_MODELS = {
       maxRequestsPerMinute: 60
     }
   },
-  'gemini-3-pro-deep-research': {
-    provider: 'google' as const,
-    handlerType: 'gemini-3-deep-research' as const,
-    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel', 'useGrounding', 'maxQuestions', 'parallelExecutors'],
-    requiresResponsesAPI: false,
-    timeout: 1800000, // 30 minutes for multi-step deep research
-    defaultConfig: {
-      temperature: 1.0,
-      topP: 0.95,
-      topK: 40,
-      maxOutputTokens: 32768, // Large output for comprehensive reports
-      thinkingLevel: 'high',
-      useGrounding: true, // Always use Google Search grounding
-      maxQuestions: 5, // Number of research sub-questions
-      parallelExecutors: 3 // Parallel research execution
-    },
-    limits: {
-      maxTokensPerRequest: 64000,
-      maxRequestsPerMinute: 20 // Lower due to multi-step process
-    }
-  },
-  
+
   // OpenAI Models
   'gpt-4o': {
     provider: 'openai' as const,
@@ -352,7 +331,7 @@ export const REPORT_CONFIG = {
   reviewerModel: 'gpt-4o' as AIModelName, // Balanced for reviews - restored with fallback handling
   generationModel: 'gpt-5' as AIModelName, // Powerful for large reports
   simpleTaskModel: 'gpt-4o-mini' as AIModelName, // Quick tasks (1-2 mins)
-  complexTaskModel: 'gemini-3-pro-deep-research' as AIModelName // Deep research with multi-agent pattern (20-30 mins)
+  complexTaskModel: 'gemini-3-pro-preview' as AIModelName // Gemini 3 Pro with deep research via useDeepResearch (20-30 mins)
 } as const;
 
 // Session configuratie

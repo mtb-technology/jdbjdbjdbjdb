@@ -2,7 +2,6 @@ import { BaseAIHandler, AIModelResponse } from "./base-handler";
 import type { AIModelParameters } from "./base-handler";
 import { GoogleAIHandler } from "./google-handler";
 import { GoogleDeepResearchHandler } from "./google-deep-research-handler";
-import { Gemini3DeepResearchHandler } from "./gemini-3-deep-research-handler";
 import { OpenAIStandardHandler } from "./openai-standard-handler";
 import { OpenAIReasoningHandler } from "./openai-reasoning-handler";
 import { OpenAIDeepResearchHandler } from "./openai-deep-research-handler";
@@ -17,7 +16,7 @@ export type { AIModelParameters } from "./base-handler";
 
 export interface ModelInfo {
   provider: "google" | "openai";
-  handlerType: "google" | "google-deep-research" | "gemini-3-deep-research" | "openai-standard" | "openai-reasoning" | "openai-gpt5" | "openai-deep-research";
+  handlerType: "google" | "google-deep-research" | "openai-standard" | "openai-reasoning" | "openai-gpt5" | "openai-deep-research";
   supportedParameters: string[];
   requiresResponsesAPI?: boolean;
   timeout?: number;
@@ -101,11 +100,6 @@ export class AIModelFactory {
       initializeHandler("google-deep-research", GoogleDeepResearchHandler, googleApiKey);
     } else if (googleApiKey && !process.env.GOOGLE_CLOUD_PROJECT) {
       console.warn('⚠️ Google Deep Research not initialized - GOOGLE_CLOUD_PROJECT environment variable required');
-    }
-
-    // Initialize Gemini 3 Deep Research handler (native implementation, no GOOGLE_CLOUD_PROJECT required)
-    if (googleApiKey) {
-      initializeHandler("gemini-3-deep-research", Gemini3DeepResearchHandler, googleApiKey);
     }
 
     // Initialize OpenAI handlers with additional validation
@@ -199,9 +193,6 @@ export class AIModelFactory {
     } else if (modelInfo.handlerType === "google-deep-research") {
       // Use Google Deep Research handler
       handler = this.handlers.get("google-deep-research");
-    } else if (modelInfo.handlerType === "gemini-3-deep-research") {
-      // Use Gemini 3 Deep Research orchestrator
-      handler = this.handlers.get("gemini-3-deep-research");
     } else {
       handler = this.handlers.get(modelInfo.handlerType);
     }
@@ -317,6 +308,19 @@ export class AIModelFactory {
     }
     if (supportedParams.includes('verbosity') && config.verbosity !== undefined) {
       filtered.verbosity = config.verbosity;
+    }
+    if (supportedParams.includes('thinkingLevel') && (config as any).thinkingLevel !== undefined) {
+      (filtered as any).thinkingLevel = (config as any).thinkingLevel;
+    }
+    // Deep research workflow parameters
+    if (supportedParams.includes('useDeepResearch') && (config as any).useDeepResearch !== undefined) {
+      (filtered as any).useDeepResearch = (config as any).useDeepResearch;
+    }
+    if (supportedParams.includes('maxQuestions') && (config as any).maxQuestions !== undefined) {
+      (filtered as any).maxQuestions = (config as any).maxQuestions;
+    }
+    if (supportedParams.includes('parallelExecutors') && (config as any).parallelExecutors !== undefined) {
+      (filtered as any).parallelExecutors = (config as any).parallelExecutors;
     }
 
     return filtered;

@@ -612,8 +612,11 @@ export function registerReportRoutes(
       if (latest && latest.pointer) {
         // Resolve the pointer to get the actual snapshot
         const snapshot = conceptReportVersions[latest.pointer];
-        if (snapshot && snapshot.content) {
+        // Handle both object format {content: "..."} and direct string format
+        if (snapshot && typeof snapshot === 'object' && snapshot.content) {
           latestConceptText = snapshot.content;
+        } else if (typeof snapshot === 'string' && snapshot.length > 0) {
+          latestConceptText = snapshot;
         }
       }
 
@@ -621,18 +624,29 @@ export function registerReportRoutes(
       // IMPORTANT: Skip reviewer stages (4a-4f) as they don't contain concept reports
       if (!latestConceptText) {
         // Try stage 3 first (the generation stage)
-        let snapshot = conceptReportVersions?.['3_generatie'];
+        const stage3Snapshot = conceptReportVersions?.['3_generatie'];
 
-        // If not found, search for any valid snapshot (excluding reviewer stages 4a-4f)
-        if (!snapshot || !snapshot.content) {
-          snapshot = Object.entries(conceptReportVersions || {}).find(([key, v]: [string, any]) => {
-            // Skip 'latest' pointer, skip reviewer stages, only take snapshots with content
-            return key !== 'latest' && !key.startsWith('4') && v && v.content;
-          })?.[1];
+        // Handle both object format {content: "..."} and direct string format
+        if (stage3Snapshot) {
+          if (typeof stage3Snapshot === 'object' && stage3Snapshot.content) {
+            latestConceptText = stage3Snapshot.content;
+          } else if (typeof stage3Snapshot === 'string' && stage3Snapshot.length > 0) {
+            latestConceptText = stage3Snapshot;
+          }
         }
 
-        if (snapshot && snapshot.content) {
-          latestConceptText = snapshot.content;
+        // If still not found, search for any valid snapshot (excluding reviewer stages 4a-4f)
+        if (!latestConceptText) {
+          const foundEntry = Object.entries(conceptReportVersions || {}).find(([key, v]: [string, any]) => {
+            // Skip 'latest' pointer, skip reviewer stages
+            if (key === 'latest' || key.startsWith('4')) return false;
+            // Accept both object with content and direct strings
+            return (v && typeof v === 'object' && v.content) || (typeof v === 'string' && v.length > 0);
+          });
+          if (foundEntry) {
+            const [, snapshot] = foundEntry;
+            latestConceptText = typeof snapshot === 'string' ? snapshot : snapshot.content;
+          }
         }
       }
 
@@ -805,8 +819,11 @@ export function registerReportRoutes(
       if (latest && latest.pointer) {
         // Resolve the pointer to get the actual snapshot
         const snapshot = conceptReportVersions[latest.pointer];
-        if (snapshot && snapshot.content) {
+        // Handle both object format {content: "..."} and direct string format
+        if (snapshot && typeof snapshot === 'object' && snapshot.content) {
           latestConceptText = snapshot.content;
+        } else if (typeof snapshot === 'string' && snapshot.length > 0) {
+          latestConceptText = snapshot;
         }
       }
 
@@ -814,18 +831,29 @@ export function registerReportRoutes(
       // IMPORTANT: Skip reviewer stages (4a-4f) as they don't contain concept reports
       if (!latestConceptText) {
         // Try stage 3 first (the generation stage)
-        let snapshot = conceptReportVersions?.['3_generatie'];
+        const stage3Snapshot = conceptReportVersions?.['3_generatie'];
 
-        // If not found, search for any valid snapshot (excluding reviewer stages 4a-4f)
-        if (!snapshot || !snapshot.content) {
-          snapshot = Object.entries(conceptReportVersions || {}).find(([key, v]: [string, any]) => {
-            // Skip 'latest' pointer, skip reviewer stages, only take snapshots with content
-            return key !== 'latest' && !key.startsWith('4') && v && v.content;
-          })?.[1];
+        // Handle both object format {content: "..."} and direct string format
+        if (stage3Snapshot) {
+          if (typeof stage3Snapshot === 'object' && stage3Snapshot.content) {
+            latestConceptText = stage3Snapshot.content;
+          } else if (typeof stage3Snapshot === 'string' && stage3Snapshot.length > 0) {
+            latestConceptText = stage3Snapshot;
+          }
         }
 
-        if (snapshot && snapshot.content) {
-          latestConceptText = snapshot.content;
+        // If still not found, search for any valid snapshot (excluding reviewer stages 4a-4f)
+        if (!latestConceptText) {
+          const foundEntry = Object.entries(conceptReportVersions || {}).find(([key, v]: [string, any]) => {
+            // Skip 'latest' pointer, skip reviewer stages
+            if (key === 'latest' || key.startsWith('4')) return false;
+            // Accept both object with content and direct strings
+            return (v && typeof v === 'object' && v.content) || (typeof v === 'string' && v.length > 0);
+          });
+          if (foundEntry) {
+            const [, snapshot] = foundEntry;
+            latestConceptText = typeof snapshot === 'string' ? snapshot : snapshot.content;
+          }
         }
       }
 

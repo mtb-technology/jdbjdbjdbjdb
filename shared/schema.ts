@@ -348,6 +348,12 @@ export const aiConfigSchema = z.object({
   thinkingLevel: z.enum(["low", "medium", "high"], {
     errorMap: () => ({ message: "Thinking level moet 'low', 'medium' of 'high' zijn" })
   }).optional(),
+  // Deep research workflow (GPT Researcher pattern)
+  useDeepResearch: z.boolean({
+    errorMap: () => ({ message: "Deep research moet een boolean zijn" })
+  }).optional(),
+  maxQuestions: z.number().min(1).max(10).optional(),
+  parallelExecutors: z.number().min(1).max(5).optional(),
 }).strict()
 .refine((config) => {
   // Cross-validation: check if model is compatible with provider

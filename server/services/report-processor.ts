@@ -564,16 +564,30 @@ ${feedback}
    * Helper method for type-safe access to stage versions
    */
   private getStageVersion(versions: ConceptReportVersions, stageId: StageId): ConceptReportSnapshot | null {
+    let value: any;
     switch (stageId) {
-      case '3_generatie': return versions['3_generatie'] || null;
-      case '4a_BronnenSpecialist': return versions['4a_BronnenSpecialist'] || null;
-      case '4b_FiscaalTechnischSpecialist': return versions['4b_FiscaalTechnischSpecialist'] || null;
-      case '4c_ScenarioGatenAnalist': return versions['4c_ScenarioGatenAnalist'] || null;
-      case '4e_DeAdvocaat': return versions['4e_DeAdvocaat'] || null;
-      case '4f_HoofdCommunicatie': return versions['4f_HoofdCommunicatie'] || null;
-      case '5_eindredactie': return versions['5_eindredactie'] || null;
+      case '3_generatie': value = versions['3_generatie']; break;
+      case '4a_BronnenSpecialist': value = versions['4a_BronnenSpecialist']; break;
+      case '4b_FiscaalTechnischSpecialist': value = versions['4b_FiscaalTechnischSpecialist']; break;
+      case '4c_ScenarioGatenAnalist': value = versions['4c_ScenarioGatenAnalist']; break;
+      case '4e_DeAdvocaat': value = versions['4e_DeAdvocaat']; break;
+      case '4f_HoofdCommunicatie': value = versions['4f_HoofdCommunicatie']; break;
+      case '5_eindredactie': value = versions['5_eindredactie']; break;
       default: return null;
     }
+
+    if (!value) return null;
+
+    // Handle both object format {v: number, content: "..."} and direct string format
+    if (typeof value === 'object' && value.v !== undefined) {
+      return value as ConceptReportSnapshot;
+    }
+    // If it's a direct string, treat as v1
+    if (typeof value === 'string') {
+      return { v: 1, content: value, createdAt: new Date().toISOString() };
+    }
+
+    return null;
   }
   
   /**

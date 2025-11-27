@@ -302,14 +302,26 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
           console.log(`📖 [${stageName}] Using concept from ${latest.pointer} v${latest.v} (${latestContent.length} chars)`);
           return latestContent;
         }
+        // Handle case where snapshot is a direct string
+        if (typeof snapshot === 'string' && snapshot.length > 0) {
+          console.log(`📖 [${stageName}] Using concept string from ${latest.pointer} (${snapshot.length} chars)`);
+          return snapshot;
+        }
       }
 
       // Fallback: Try stage 3 if no latest or resolution failed
       const stage3Snapshot = conceptReportVersions?.["3_generatie"];
-      if (stage3Snapshot && stage3Snapshot.content) {
-        latestContent = stage3Snapshot.content;
-        console.log(`📖 [${stageName}] Fallback to stage 3_generatie (${latestContent.length} chars)`);
-        return latestContent;
+      // Handle both object format {content: "..."} and direct string format
+      if (stage3Snapshot) {
+        if (typeof stage3Snapshot === 'object' && stage3Snapshot.content) {
+          latestContent = stage3Snapshot.content;
+          console.log(`📖 [${stageName}] Fallback to stage 3_generatie object (${latestContent.length} chars)`);
+          return latestContent;
+        }
+        if (typeof stage3Snapshot === 'string' && stage3Snapshot.length > 0) {
+          console.log(`📖 [${stageName}] Fallback to stage 3_generatie string (${stage3Snapshot.length} chars)`);
+          return stage3Snapshot;
+        }
       }
 
       console.warn(`⚠️ [${stageName}] No concept content found - using empty string`);

@@ -71,7 +71,161 @@ export function parseFeedbackToProposals(
   // Parse text-based feedback into proposals
   // Look for structured patterns like "Bevinding #X" blocks or complete change proposals
 
-  // STRATEGY: Look for "Bevinding #N" or "### Bevinding #N" or "**Bevinding #N:**" blocks with complete structure
+  // STRATEGY 0: Look for "Sectie:" blocks - used by some reviewers (4c ScenarioGatenAnalist)
+  // Each block starts with "Sectie:" and ends at the next "Sectie:" or "***" followed by a new section
+  const sectiePattern = /^Sectie:\s*(.+?)$/gm;
+  const sectieMatches = Array.from(rawFeedback.matchAll(sectiePattern));
+
+  if (sectieMatches.length >= 1) {
+    console.log(`[parseFeedbackToProposals] Found ${sectieMatches.length} "Sectie:" blocks`);
+
+    for (let i = 0; i < sectieMatches.length; i++) {
+      const startIndex = sectieMatches[i].index!;
+      // Find the end - either next "Sectie:" or next separator pattern that indicates a new logical section
+      let endIndex = rawFeedback.length;
+
+      if (i < sectieMatches.length - 1) {
+        endIndex = sectieMatches[i + 1].index!;
+      }
+
+      // Also check for "***" followed by "### " which indicates a meta-section like "Toe te voegen"
+      const metaSectionMatch = rawFeedback.substring(startIndex, endIndex).match(/\n\*\*\*\n+###\s+/);
+      if (metaSectionMatch && metaSectionMatch.index) {
+        endIndex = startIndex + metaSectionMatch.index;
+      }
+
+      const sectionBlock = rawFeedback.substring(startIndex, endIndex).trim();
+      const sectionTitle = sectieMatches[i][1].trim();
+
+      // Extract "Reden:" if present
+      const redenMatch = sectionBlock.match(/\n\s*Reden:\s*([\s\S]+?)(?=\n\s*(?:Voeg|Vervang|Verwijder)|$)/i);
+      const reden = redenMatch ? redenMatch[1].trim() : '';
+
+      // Extract the suggested action (Voeg toe, Vervang, etc.)
+      const actionMatch = sectionBlock.match(/\n\s*(Voeg[^:]*:|Vervang[^:]*:|Verwijder[^:]*:)\s*([\s\S]+?)$/i);
+      const action = actionMatch ? actionMatch[2].trim() : '';
+
+      // Determine severity
+      let severity: ChangeProposal['severity'] = 'suggestion';
+      if (sectionBlock.toLowerCase().includes('kritiek') || sectionBlock.toLowerCase().includes('cruciaal') || sectionBlock.toLowerCase().includes('red flag')) {
+        severity = 'critical';
+      } else if (sectionBlock.toLowerCase().includes('belangrijk')) {
+        severity = 'important';
+      }
+
+      const proposal = finalizeProposal({
+        section: sectionTitle.substring(0, 150),
+        proposed: action || reden || sectionBlock,
+        original: '',
+        reasoning: reden || sectionTitle,
+        changeType: 'modify',
+        severity
+      }, specialist, stageId, i);
+
+      if (proposal && proposal.proposed.length > 20) {
+        proposals.push(proposal);
+        console.log(`[parseFeedbackToProposals] Created proposal from Sectie block #${i + 1}: "${sectionTitle.substring(0, 50)}..."`);
+      }
+    }
+
+    // Also look for meta-sections like "### Toe te voegen Impliciete Aannames"
+    const metaSectionPattern = /^###\s+(?:Toe te voegen|Het Grootste Risico|Impliciete Aannames)[^\n]*$/gm;
+    const metaSectionMatches = Array.from(rawFeedback.matchAll(metaSectionPattern));
+
+    for (let i = 0; i < metaSectionMatches.length; i++) {
+      const startIndex = metaSectionMatches[i].index!;
+      const endIndex = i < metaSectionMatches.length - 1
+        ? metaSectionMatches[i + 1].index!
+        : rawFeedback.length;
+      const metaBlock = rawFeedback.substring(startIndex, endIndex).trim();
+
+      // Get title
+      const titleMatch = metaBlock.match(/^###\s+(.+?)$/m);
+      const title = titleMatch ? titleMatch[1].trim() : `Aanvullend ${i + 1}`;
+
+      // Get content after title
+      const contentStart = metaBlock.indexOf('\n');
+      const content = contentStart > -1 ? metaBlock.substring(contentStart).trim() : metaBlock;
+
+      // These are usually important
+      let severity: ChangeProposal['severity'] = 'important';
+      if (title.toLowerCase().includes('grootste risico') || title.toLowerCase().includes('blinde vlek')) {
+        severity = 'critical';
+      }
+
+      const proposal = finalizeProposal({
+        section: title.substring(0, 150),
+        proposed: content,
+        original: '',
+        reasoning: title,
+        changeType: 'add',
+        severity
+      }, specialist, stageId, proposals.length);
+
+      if (proposal && proposal.proposed.length > 30) {
+        proposals.push(proposal);
+        console.log(`[parseFeedbackToProposals] Created proposal from meta-section: "${title.substring(0, 50)}..."`);
+      }
+    }
+
+    if (proposals.length > 0) {
+      console.log(`[parseFeedbackToProposals] Extracted ${proposals.length} Sectie blocks`);
+      return proposals;
+    }
+  }
+
+  // STRATEGY 1: Look for numbered section blocks (### 1. ... ### 2. ...) - used by 4c ScenarioGatenAnalist
+  const numberedSectionPattern = /^###\s*(\d+)\.\s*/gm;
+  const numberedSectionMatches = Array.from(rawFeedback.matchAll(numberedSectionPattern));
+
+  if (numberedSectionMatches.length >= 2) {
+    console.log(`[parseFeedbackToProposals] Found ${numberedSectionMatches.length} numbered section blocks`);
+
+    for (let i = 0; i < numberedSectionMatches.length; i++) {
+      const startIndex = numberedSectionMatches[i].index!;
+      const endIndex = i < numberedSectionMatches.length - 1
+        ? numberedSectionMatches[i + 1].index!
+        : rawFeedback.length;
+      const sectionBlock = rawFeedback.substring(startIndex, endIndex);
+
+      // Extract section title (first line after ###)
+      const titleMatch = sectionBlock.match(/^###\s*\d+\.\s*(.+?)(?:\n|$)/);
+      const title = titleMatch ? titleMatch[1].trim() : `Item ${i + 1}`;
+
+      // Look for severity indicators
+      let severity: ChangeProposal['severity'] = 'suggestion';
+      if (sectionBlock.toLowerCase().includes('kritiek') || sectionBlock.toLowerCase().includes('critical') || sectionBlock.toLowerCase().includes('cruciaal')) {
+        severity = 'critical';
+      } else if (sectionBlock.toLowerCase().includes('belangrijk') || sectionBlock.toLowerCase().includes('important')) {
+        severity = 'important';
+      }
+
+      // Get the full content (excluding the title line)
+      const contentStart = sectionBlock.indexOf('\n');
+      const fullContent = contentStart > -1 ? sectionBlock.substring(contentStart).trim() : sectionBlock;
+
+      const proposal = finalizeProposal({
+        section: title.substring(0, 150),
+        proposed: fullContent,
+        original: '',
+        reasoning: title,
+        changeType: 'modify',
+        severity
+      }, specialist, stageId, i);
+
+      if (proposal && proposal.proposed.length > 20) {
+        proposals.push(proposal);
+        console.log(`[parseFeedbackToProposals] Created proposal from numbered section #${i + 1}`);
+      }
+    }
+
+    if (proposals.length > 0) {
+      console.log(`[parseFeedbackToProposals] Extracted ${proposals.length} numbered sections`);
+      return proposals;
+    }
+  }
+
+  // STRATEGY 2: Look for "Bevinding #N" or "### Bevinding #N" or "**Bevinding #N:**" blocks with complete structure
   // Only create a proposal if we have ALL required fields
 
   // Updated pattern to match both markdown headers (### Bevinding #1) and bold text (**Bevinding #1:**)

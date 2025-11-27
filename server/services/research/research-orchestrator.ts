@@ -22,7 +22,8 @@ export class ResearchOrchestrator {
   private config: ResearchConfig;
 
   constructor(apiKey: string, config: Partial<ResearchConfig> = {}) {
-    this.handler = new GoogleAIHandler(apiKey);
+    // Pass true to skip deep research (prevent circular dependency)
+    this.handler = new GoogleAIHandler(apiKey, true);
     this.config = {
       maxQuestions: 5,
       parallelExecutors: 3,
@@ -88,15 +89,25 @@ export class ResearchOrchestrator {
         progress: 90
       });
 
-      // PHASE 3: PUBLISHER - Synthesize final report
+      // PHASE 3: PUBLISHER - Synthesize research findings
       progressCallback?.({
         stage: 'publishing',
-        message: 'Synthetiseren van eindrapport...',
+        message: 'Synthetiseren van onderzoeksresultaten...',
+        progress: 85
+      });
+
+      const researchReport = await this.publishReport(query, findings);
+      totalTokens += 4000; // Estimate for synthesis
+
+      // PHASE 4: FINAL SYNTHESIS - Generate final report using original prompt
+      progressCallback?.({
+        stage: 'finalizing',
+        message: 'Genereren van eindrapport volgens promptinstructies...',
         progress: 92
       });
 
-      const report = await this.publishReport(query, findings);
-      totalTokens += 4000; // Estimate for synthesis
+      const finalReport = await this.generateFinalReport(query, researchReport, findings);
+      totalTokens += 8000; // Estimate for final report
 
       const duration = Date.now() - startTime;
 
@@ -108,7 +119,7 @@ export class ResearchOrchestrator {
       });
 
       return {
-        ...report,
+        ...finalReport,
         metadata: {
           questionsGenerated: questions.length,
           sourcesConsulted: findings.reduce((sum, f) => sum + f.sources.length, 0),
@@ -439,5 +450,84 @@ Schrijf in professionele, heldere Nederlandse taal. Het rapport moet zelfstandig
 
     // Fallback: Use first 500 characters
     return reportText.substring(0, 500) + '...';
+  }
+
+  /**
+   * FINAL SYNTHESIS: Generate the final report using original prompt instructions
+   * This takes the research findings and generates a proper report following the prompt format
+   */
+  private async generateFinalReport(
+    originalQuery: string,
+    researchReport: Omit<ResearchReport, 'metadata'>,
+    findings: ResearchFinding[]
+  ): Promise<Omit<ResearchReport, 'metadata'>> {
+    // Build context from research findings
+    const researchContext = findings
+      .map((f, idx) => {
+        const sourcesText = f.sources.length > 0
+          ? `\nBronnen: ${f.sources.map(s => s.title).join(', ')}`
+          : '';
+        return `### Onderzoeksresultaat ${idx + 1}: ${f.question}\n${f.answer}${sourcesText}`;
+      })
+      .join('\n\n');
+
+    // The final synthesis prompt - uses the original query (which contains the prompt instructions)
+    // and enriches it with research findings
+    const finalPrompt = `${originalQuery}
+
+---
+## AANVULLENDE ONDERZOEKSRESULTATEN (gebruik deze informatie bij het schrijven van het rapport)
+
+De volgende informatie is verzameld via diepgaand onderzoek met actuele bronnen. Integreer deze bevindingen in het rapport waar relevant:
+
+${researchContext}
+
+---
+## BRONVERMELDING
+
+${researchReport.sources.map((s, i) => `${i + 1}. ${s.title}${s.url ? ` - ${s.url}` : ''}`).join('\n')}
+
+---
+
+**BELANGRIJKE INSTRUCTIE:** Schrijf nu het complete rapport volgens de instructies hierboven. Gebruik de onderzoeksresultaten om het rapport te verrijken met actuele, gefundeerde informatie. Het eindrapport moet:
+1. De structuur van de originele prompt volgen
+2. De onderzoeksresultaten naadloos integreren in de relevante secties
+3. Professioneel en samenhangend zijn geschreven
+4. Eindigen met een apart hoofdstuk "Bronnen" waarin alle geraadpleegde bronnen worden vermeld
+
+Begin direct met het rapport (geen meta-commentaar over het proces). Eindig ALTIJD met:
+
+### Bronnen
+[Lijst van alle geraadpleegde bronnen met URL waar beschikbaar]`;
+
+    console.log(`[ResearchOrchestrator] Generating final report with enriched context...`);
+
+    const response = await this.handler.callInternal(
+      finalPrompt,
+      {
+        provider: 'google',
+        model: 'gemini-3-pro-preview',
+        temperature: 0.7,
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 32768,
+        thinkingLevel: this.config.thinkingLevel || 'high'
+      },
+      {
+        timeout: 300000, // 5 minutes
+        jobId: `final-synthesis-${Date.now()}`,
+        useGrounding: false // No grounding needed, we already have research
+      }
+    );
+
+    console.log(`[ResearchOrchestrator] Final report generated: ${response.content.length} chars`);
+
+    return {
+      query: originalQuery,
+      summary: this.extractSummary(response.content),
+      findings,
+      synthesis: response.content, // This is now the final polished report
+      sources: researchReport.sources
+    };
   }
 }

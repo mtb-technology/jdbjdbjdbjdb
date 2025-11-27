@@ -79,7 +79,7 @@ export interface ResearchConfig {
  * Progress update during research (for streaming)
  */
 export interface ResearchProgress {
-  stage: 'planning' | 'executing' | 'publishing' | 'complete';
+  stage: 'planning' | 'executing' | 'publishing' | 'finalizing' | 'complete';
   message: string;
   progress: number; // 0-100
   currentQuestion?: string;

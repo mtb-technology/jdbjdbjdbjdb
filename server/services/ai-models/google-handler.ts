@@ -2,12 +2,18 @@ import { GoogleGenAI } from "@google/genai";
 import { BaseAIHandler, AIModelResponse, AIModelParameters } from "./base-handler";
 import { AIError, ERROR_CODES } from "@shared/errors";
 import type { AiConfig } from "@shared/schema";
+import { ResearchOrchestrator } from "../research/research-orchestrator";
 
 export class GoogleAIHandler extends BaseAIHandler {
   private client: GoogleGenAI;
+  private orchestrator?: ResearchOrchestrator;
+  private handlerApiKey: string;
+  private skipDeepResearch: boolean; // Prevent circular dependency
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, skipDeepResearch: boolean = false) {
     super("Google AI", apiKey);
+    this.handlerApiKey = apiKey;
+    this.skipDeepResearch = skipDeepResearch;
     // Use v1alpha API for Gemini 3 support
     // Set timeout to 15 minutes for grounding/long operations
     this.client = new GoogleGenAI({
@@ -17,6 +23,10 @@ export class GoogleAIHandler extends BaseAIHandler {
         timeout: 900000  // 15 minutes in milliseconds
       }
     });
+    // Only create orchestrator if deep research is enabled
+    if (!skipDeepResearch) {
+      this.orchestrator = new ResearchOrchestrator(apiKey);
+    }
   }
 
   async callInternal(
@@ -26,6 +36,19 @@ export class GoogleAIHandler extends BaseAIHandler {
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
+
+    // DEBUG: Log incoming config to verify deep research flag
+    console.log(`🔍 [${jobId}] GoogleAIHandler received config:`, {
+      model: config.model,
+      useDeepResearch: (config as any).useDeepResearch,
+      skipDeepResearch: this.skipDeepResearch,
+      willUseDeepResearch: !this.skipDeepResearch && (config as any).useDeepResearch
+    });
+
+    // Check if deep research is requested (and not skipped)
+    if (!this.skipDeepResearch && (config as any).useDeepResearch) {
+      return this.executeDeepResearch(prompt, config, options);
+    }
 
     this.validateParameters(config);
     
@@ -93,7 +116,8 @@ export class GoogleAIHandler extends BaseAIHandler {
                      response.text || "";
       
       const finishReason = response.candidates?.[0]?.finishReason;
-      
+      const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+
       // Handle MAX_TOKENS - partial content may still be useful
       if (finishReason === 'MAX_TOKENS' && content && content.trim().length > 10) {
         console.warn(`[${jobId}] Google AI hit token limit, but returning partial content`);
@@ -101,10 +125,16 @@ export class GoogleAIHandler extends BaseAIHandler {
         throw AIError.invalidResponse(`Google AI returned empty response (${finishReason || 'unknown reason'})`, { finishReason, model: config.model });
       }
 
+      // Log grounding sources if available
+      if (groundingMetadata?.groundingChunks && groundingMetadata.groundingChunks.length > 0) {
+        console.log(`[${jobId}] 📚 Grounding found ${groundingMetadata.groundingChunks.length} sources`);
+      }
+
       const result: AIModelResponse = {
         content,
         duration,
         usage: response.usageMetadata,
+        groundingMetadata, // Pass through grounding data for source extraction
         metadata: {
           finishReason,
           model: config.model
@@ -201,6 +231,83 @@ export class GoogleAIHandler extends BaseAIHandler {
   }
 
   getSupportedParameters(): string[] {
-    return ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding', 'thinkingLevel'];
+    return ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useGrounding', 'thinkingLevel', 'useDeepResearch', 'maxQuestions', 'parallelExecutors'];
+  }
+
+  /**
+   * Execute deep research using GPT Researcher pattern
+   * Routes to ResearchOrchestrator for multi-agent workflow
+   */
+  private async executeDeepResearch(
+    prompt: string,
+    config: AiConfig,
+    options?: AIModelParameters & { signal?: AbortSignal }
+  ): Promise<AIModelResponse> {
+    const startTime = Date.now();
+    const jobId = options?.jobId;
+
+    console.log(`[${jobId}] 🔬 Deep Research Mode activated`);
+
+    // Extract research configuration
+    const researchConfig = {
+      maxQuestions: (config as any).maxQuestions || 5,
+      parallelExecutors: (config as any).parallelExecutors || 3,
+      useGrounding: true, // Always use grounding for deep research
+      thinkingLevel: (config as any).thinkingLevel || 'high',
+      temperature: config.temperature || 1.0,
+      maxOutputTokens: config.maxOutputTokens || 32768,
+      timeout: 1800000 // 30 minutes
+    };
+
+    // Re-create orchestrator with custom config
+    this.orchestrator = new ResearchOrchestrator(this.handlerApiKey, researchConfig);
+
+    // Progress tracking for SSE
+    const progressCallback = (progress: any) => {
+      if (jobId) {
+        console.log(`[${jobId}] Research progress: ${progress.stage} - ${progress.progress}%`);
+      }
+    };
+
+    try {
+      const report = await this.orchestrator.conductDeepResearch(prompt, progressCallback);
+
+      // Format response using the handler's formatter
+      const formattedResponse = this.formatDeepResearchReport(report);
+
+      return {
+        content: formattedResponse,
+        duration: Date.now() - startTime,
+        metadata: {
+          questionsGenerated: report.metadata.questionsGenerated,
+          sourcesConsulted: report.metadata.sourcesConsulted,
+          findings: report.findings.length,
+          model: report.metadata.model
+        }
+      };
+
+    } catch (error) {
+      console.error(`[${jobId}] Deep research failed:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Format research report for consumption by the application
+   * Now returns the final synthesized report directly (no wrapper sections)
+   */
+  private formatDeepResearchReport(report: any): string {
+    // The synthesis now contains the final polished report
+    // Just return it directly - it's already properly formatted
+    let content = report.synthesis;
+
+    // Add metadata footer (subtle, at the end)
+    content += `\n\n---\n`;
+    content += `_Rapport gegenereerd met deep research | `;
+    content += `${report.metadata.questionsGenerated} onderzoeksvragen | `;
+    content += `${report.metadata.sourcesConsulted} bronnen | `;
+    content += `${Math.round(report.metadata.duration / 1000)}s_\n`;
+
+    return content;
   }
 }

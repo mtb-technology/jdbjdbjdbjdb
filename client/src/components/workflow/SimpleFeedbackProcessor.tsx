@@ -750,7 +750,7 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
                 <Play className="h-4 w-4" />
                 <span>
                   {viewMode === 'structured'
-                    ? `Verwerk ${proposals.filter(p => p.userDecision === 'accept').length} wijzigingen`
+                    ? `Verwerk ${proposals.filter(p => p.userDecision === 'accept' || p.userDecision === 'modify').length} wijzigingen`
                     : 'Verwerk Feedback'
                   }
                 </span>

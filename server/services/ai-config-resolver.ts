@@ -72,18 +72,22 @@ export class AIConfigResolver {
     // Step 5: Apply stage-specific token adjustments
     const finalConfig = this.applyTokenAdjustments(configWithLimits, stageName, selectedModel, jobId);
 
+    // Step 6: Enable deep research for Stage 3 if using Gemini 3 Pro
+    const configWithDeepResearch = this.enableDeepResearchIfNeeded(finalConfig, stageName, stageAiConfig);
+
     // Log for debugging
     if (jobId) {
       console.log(`📊 [${jobId}] AIConfigResolver resolved:`, {
         stage: stageName,
-        model: finalConfig.model,
-        provider: finalConfig.provider,
-        maxTokens: finalConfig.maxOutputTokens,
+        model: configWithDeepResearch.model,
+        provider: configWithDeepResearch.provider,
+        maxTokens: configWithDeepResearch.maxOutputTokens,
+        useDeepResearch: (configWithDeepResearch as any).useDeepResearch,
         isHybridSelection: !stageAiConfig?.model && !globalAiConfig?.model
       });
     }
 
-    return finalConfig;
+    return configWithDeepResearch;
   }
 
   /**
@@ -245,5 +249,40 @@ export class AIConfigResolver {
       ...config,
       maxOutputTokens: adjustedTokens
     };
+  }
+
+  /**
+   * Enable deep research for Stage 3 when using Gemini 3 Pro
+   * Deep research is automatically enabled unless explicitly disabled
+   */
+  private enableDeepResearchIfNeeded(
+    config: AiConfig,
+    stageName: string,
+    stageAiConfig?: AiConfig
+  ): AiConfig {
+    // Only auto-enable for Stage 3 (Generatie)
+    if (stageName !== '3_generatie') {
+      return config;
+    }
+
+    // Only enable for Gemini 3 Pro model
+    if (config.model !== 'gemini-3-pro-preview') {
+      return config;
+    }
+
+    // Check if explicitly disabled in stage config
+    if (stageAiConfig && (stageAiConfig as any).useDeepResearch === false) {
+      return config;
+    }
+
+    // Enable deep research with default settings
+    return {
+      ...config,
+      useDeepResearch: true,
+      useGrounding: true, // Deep research requires grounding
+      maxQuestions: (stageAiConfig as any)?.maxQuestions || 5,
+      parallelExecutors: (stageAiConfig as any)?.parallelExecutors || 3,
+      thinkingLevel: config.thinkingLevel || 'high'
+    } as any;
   }
 }
