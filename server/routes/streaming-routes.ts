@@ -78,6 +78,18 @@ export function registerStreamingRoutes(
             timestamp: new Date().toISOString()
           });
 
+          // Progress callback for deep research - broadcasts to SSE
+          const onProgress = (progress: { stage: string; message: string; progress: number }) => {
+            sseHandler.broadcast(reportId, stageId, {
+              type: 'research_progress',
+              stageId,
+              researchStage: progress.stage,
+              percentage: progress.progress,
+              message: progress.message,
+              timestamp: new Date().toISOString()
+            });
+          };
+
           // Execute using ReportGenerator (uses prompt from settings)
           const result = await reportGenerator.executeStage(
             stageId,
@@ -86,7 +98,8 @@ export function registerStreamingRoutes(
             report.stageResults as Record<string, string> || {},
             report.conceptReportVersions as Record<string, string> || {},
             customInput,
-            reportId
+            reportId,
+            onProgress
           );
 
           // Update stage results

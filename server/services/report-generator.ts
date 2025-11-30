@@ -422,7 +422,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     previousStageResults: Record<string, string>,
     conceptReportVersions: Record<string, any>,
     customInput?: string,
-    jobId?: string
+    jobId?: string,
+    onProgress?: (progress: { stage: string; message: string; progress: number }) => void
   ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
     // Generate the prompt using the new method
     const promptResult = await this.generatePromptForStage(
@@ -479,7 +480,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       jobId,
       useWebSearch,
       useGrounding,
-      timeout: stageTimeout // Pass stage-specific timeout
+      timeout: stageTimeout, // Pass stage-specific timeout
+      onProgress // Pass through for deep research progress updates
     };
 
     try {

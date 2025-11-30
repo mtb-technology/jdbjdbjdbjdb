@@ -35,6 +35,7 @@ export interface AIModelParameters {
   useGrounding?: boolean;
   jobId?: string;
   timeout?: number; // Timeout in milliseconds
+  onProgress?: (progress: { stage: string; message: string; progress: number }) => void; // For deep research progress
 }
 
 export interface CircuitBreakerState {

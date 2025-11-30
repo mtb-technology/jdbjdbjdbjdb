@@ -263,8 +263,11 @@ export class GoogleAIHandler extends BaseAIHandler {
     // Re-create orchestrator with custom config
     this.orchestrator = new ResearchOrchestrator(this.handlerApiKey, researchConfig);
 
-    // Progress tracking for SSE
+    // Progress tracking - use provided callback or fallback to console.log
     const progressCallback = (progress: any) => {
+      if (options?.onProgress) {
+        options.onProgress(progress);
+      }
       if (jobId) {
         console.log(`[${jobId}] Research progress: ${progress.stage} - ${progress.progress}%`);
       }

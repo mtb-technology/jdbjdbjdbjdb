@@ -208,6 +208,20 @@ export function StreamingWorkflow({
         });
         break;
 
+      case 'research_progress':
+        // Deep research progress update
+        logger.streaming(reportId, stageId, `Research progress: ${event.researchStage} - ${event.percentage}%`);
+        setSession(prev => prev ? {
+          ...prev,
+          progress: {
+            ...prev.progress,
+            percentage: event.percentage,
+            currentSubstep: event.researchStage,
+            message: event.message
+          }
+        } : null);
+        break;
+
       case 'token':
         // Accumulate streaming content
         setStreamingContent(prev => prev + (event.token || ""));
@@ -396,9 +410,9 @@ export function StreamingWorkflow({
               className="w-full"
               data-testid={`progress-overall-${stageId}`}
             />
-            {session.progress.currentSubstep && (
+            {(session.progress.currentSubstep || (session.progress as any).message) && (
               <p className="text-sm text-muted-foreground">
-                Current: {session.progress.currentSubstep}
+                {(session.progress as any).message || `Current: ${session.progress.currentSubstep}`}
               </p>
             )}
           </div>
