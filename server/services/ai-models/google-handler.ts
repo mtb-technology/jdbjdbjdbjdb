@@ -32,7 +32,7 @@ export class GoogleAIHandler extends BaseAIHandler {
   async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters & { signal?: AbortSignal }
+    options?: AIModelParameters & { signal?: AbortSignal; visionAttachments?: Array<{ mimeType: string; data: string; filename: string }> }
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -42,7 +42,8 @@ export class GoogleAIHandler extends BaseAIHandler {
       model: config.model,
       useDeepResearch: (config as any).useDeepResearch,
       skipDeepResearch: this.skipDeepResearch,
-      willUseDeepResearch: !this.skipDeepResearch && (config as any).useDeepResearch
+      willUseDeepResearch: !this.skipDeepResearch && (config as any).useDeepResearch,
+      hasVisionAttachments: options?.visionAttachments?.length || 0
     });
 
     // Check if deep research is requested (and not skipped)
@@ -51,9 +52,9 @@ export class GoogleAIHandler extends BaseAIHandler {
     }
 
     this.validateParameters(config);
-    
+
     const finalPrompt = this.formatPromptWithSearch(prompt, options?.useWebSearch || false);
-    
+
     this.logStart(jobId, {
       model: config.model,
       useGrounding: options?.useGrounding,
@@ -62,7 +63,8 @@ export class GoogleAIHandler extends BaseAIHandler {
       topP: config.topP,
       topK: config.topK,
       maxOutputTokens: config.maxOutputTokens,
-      thinkingLevel: config.thinkingLevel
+      thinkingLevel: config.thinkingLevel,
+      visionAttachments: options?.visionAttachments?.length || 0
     });
 
     try {
@@ -98,9 +100,37 @@ export class GoogleAIHandler extends BaseAIHandler {
         ? config.model
         : `models/${config.model}`;
 
+      // Build content parts - support multimodal (text + PDFs/images)
+      let contentParts: any[] | string;
+
+      if (options?.visionAttachments && options.visionAttachments.length > 0) {
+        // Multimodal request: include PDFs/images as inline data
+        console.log(`[${jobId}] 📄 Adding ${options.visionAttachments.length} vision attachment(s) to request`);
+
+        contentParts = [
+          // Text prompt first
+          { text: finalPrompt },
+          // Then all attachments as inline data
+          ...options.visionAttachments.map(att => ({
+            inlineData: {
+              mimeType: att.mimeType,
+              data: att.data // base64 encoded
+            }
+          }))
+        ];
+
+        // Log what we're sending
+        options.visionAttachments.forEach(att => {
+          console.log(`[${jobId}]   📎 ${att.filename} (${att.mimeType}, ${Math.round(att.data.length / 1024)}KB base64)`);
+        });
+      } else {
+        // Text-only request
+        contentParts = finalPrompt;
+      }
+
       const requestConfig: any = {
         model: modelName,
-        contents: finalPrompt,
+        contents: contentParts,
         config: generationConfig
       };
 

@@ -423,7 +423,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     conceptReportVersions: Record<string, any>,
     customInput?: string,
     jobId?: string,
-    onProgress?: (progress: { stage: string; message: string; progress: number }) => void
+    onProgress?: (progress: { stage: string; message: string; progress: number }) => void,
+    visionAttachments?: Array<{ mimeType: string; data: string; filename: string }>
   ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
     // Generate the prompt using the new method
     const promptResult = await this.generatePromptForStage(
@@ -481,8 +482,13 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       useWebSearch,
       useGrounding,
       timeout: stageTimeout, // Pass stage-specific timeout
-      onProgress // Pass through for deep research progress updates
+      onProgress, // Pass through for deep research progress updates
+      visionAttachments // Pass through for multimodal PDF/image processing
     };
+
+    if (visionAttachments && visionAttachments.length > 0) {
+      console.log(`📄 [${jobId}] Sending ${visionAttachments.length} vision attachment(s) to AI for OCR/analysis`);
+    }
 
     try {
       const response = await this.modelFactory.callModel(aiConfig, promptResult, options);

@@ -15,14 +15,22 @@ import { apiRequest } from "@/lib/queryClient";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
 import DOMPurify from "isomorphic-dompurify";
 
+// Type for pending file uploads (stored in memory until case is created)
+interface PendingFile {
+  file: File;
+  name: string;
+  size: number;
+  type: string;
+}
+
 const Pipeline = memo(function Pipeline() {
-  const [rawText, setRawText] = useState("");
+  const [rawText, setRawText] = useState(""); // Voor extra context/notities
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [finalReport, setFinalReport] = useState<string>("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [createdReport, setCreatedReport] = useState<Report | null>(null);
   const [isCreatingCase, setIsCreatingCase] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<Array<{name: string, size: number}>>([]);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]); // Files wachten tot case is gemaakt
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,100 +57,138 @@ const Pipeline = memo(function Pipeline() {
     setFinalReport(report.generatedContent || "");
   }, []);
 
-  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Stage files for upload (stored in memory until case is created)
+  const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    setIsUploading(true);
-    setUploadProgress(0);
-    const formData = new FormData();
+    // Add new files to pending list
+    const newPendingFiles: PendingFile[] = Array.from(files).map(file => ({
+      file,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    }));
 
-    // Add all files to FormData
-    Array.from(files).forEach(file => {
-      formData.append('files', file);
+    setPendingFiles(prev => [...prev, ...newPendingFiles]);
+
+    toast({
+      title: "Bestanden geselecteerd",
+      description: `${newPendingFiles.length} bestand(en) klaar voor upload`,
     });
 
-    try {
-      // Use XMLHttpRequest for progress tracking
-      const data: any = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-
-        // Track upload progress
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            const percentComplete = Math.round((e.loaded / e.total) * 100);
-            setUploadProgress(percentComplete);
-          }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              resolve(JSON.parse(xhr.responseText));
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            reject(new Error('Upload mislukt'));
-          }
-        });
-
-        xhr.addEventListener('error', () => reject(new Error('Network error')));
-        xhr.addEventListener('abort', () => reject(new Error('Upload geannuleerd')));
-
-        xhr.open('POST', '/api/upload/extract-text-batch');
-        xhr.withCredentials = true;
-        xhr.send(formData);
-      });
-
-      if (data.success && data.data.results) {
-        // Combine all extracted texts
-        const combinedText = data.data.results
-          .map((result: any) => result.extractedText)
-          .join('\n\n');
-
-        // Append to existing text or set new text
-        setRawText(prev => {
-          if (prev.trim()) {
-            return prev + '\n\n' + combinedText;
-          }
-          return combinedText;
-        });
-
-        // Track uploaded files
-        setUploadedFiles(data.data.results.map((r: any) => ({
-          name: r.filename,
-          size: r.characterCount
-        })));
-
-        toast({
-          title: "Bestanden verwerkt",
-          description: `${data.data.successful} bestand(en) succesvol ingelezen`,
-        });
-      }
-    } catch (error: any) {
-      toast({
-        title: "Upload mislukt",
-        description: error.message || "Er ging iets mis bij het uploaden",
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   }, [toast]);
 
   const handleRemoveFile = useCallback((fileName: string) => {
-    setUploadedFiles(prev => prev.filter(f => f.name !== fileName));
-    // Note: We don't remove the text from rawText as user might have edited it
+    setPendingFiles(prev => prev.filter(f => f.name !== fileName));
   }, []);
 
+  // Upload attachments to a report (called after case is created)
+  const uploadAttachments = useCallback(async (reportId: string, files: PendingFile[]): Promise<boolean> => {
+    if (files.length === 0) return true;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    const formData = new FormData();
+    files.forEach(pf => formData.append('files', pf.file));
+
+    try {
+      const response = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const progress = Math.round((e.loaded / e.total) * 100);
+            console.log(`📎 Upload progress: ${progress}%`);
+            setUploadProgress(progress);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          console.log('📎 Upload response received:', {
+            status: xhr.status,
+            statusText: xhr.statusText,
+            responseLength: xhr.responseText?.length || 0,
+            responsePreview: xhr.responseText?.substring(0, 500) || '(empty)',
+            headers: xhr.getAllResponseHeaders()
+          });
+
+          if (xhr.status >= 200 && xhr.status < 300) {
+            if (!xhr.responseText || xhr.responseText.length === 0) {
+              reject(new Error('Server returned empty response - check server logs'));
+              return;
+            }
+            try {
+              const parsed = JSON.parse(xhr.responseText);
+              resolve(parsed);
+            } catch (e) {
+              console.error('📎 JSON parse error:', e, 'Response:', xhr.responseText);
+              reject(new Error(`Invalid JSON response: ${xhr.responseText?.substring(0, 100) || '(empty)'}`));
+            }
+          } else {
+            // Try to extract error message from response
+            try {
+              const errorResponse = JSON.parse(xhr.responseText);
+              const errorMsg = errorResponse?.error?.message || errorResponse?.error?.userMessage || errorResponse?.message || 'Upload mislukt';
+              reject(new Error(errorMsg));
+            } catch {
+              reject(new Error(`Upload mislukt (status ${xhr.status}): ${xhr.responseText?.substring(0, 100) || '(empty)'}`));
+            }
+          }
+        });
+
+        xhr.addEventListener('error', (e) => {
+          console.error('📎 XHR error event:', e);
+          reject(new Error('Network error - connection failed'));
+        });
+
+        xhr.addEventListener('abort', () => {
+          console.warn('📎 XHR aborted');
+          reject(new Error('Upload cancelled'));
+        });
+
+        xhr.addEventListener('timeout', () => {
+          console.error('📎 XHR timeout');
+          reject(new Error('Upload timeout - server took too long'));
+        });
+
+        // Set a reasonable timeout (5 minutes for large files)
+        xhr.timeout = 300000;
+
+        xhr.open('POST', `/api/upload/attachments/${reportId}/batch`);
+        xhr.withCredentials = true;
+        xhr.send(formData);
+      });
+
+      if (response.success) {
+        toast({
+          title: "Bijlages opgeslagen",
+          description: `${response.data.successful} bijlage(s) succesvol opgeslagen bij case`,
+        });
+        return true;
+      }
+      return false;
+    } catch (error: any) {
+      toast({
+        title: "Bijlage upload mislukt",
+        description: error.message,
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
+  }, [toast]);
+
   const startWorkflow = useCallback(async () => {
-    if (!rawText.trim()) return;
+    // Require either files OR text input
+    if (!rawText.trim() && pendingFiles.length === 0) return;
 
     setIsCreatingCase(true);
     try {
@@ -151,17 +197,21 @@ const Pipeline = memo(function Pipeline() {
         dossier: dossierData,
         bouwplan: bouwplanData,
         clientName: "Client",
-        rawText: rawText.trim(),
+        rawText: rawText.trim() || "(Zie bijlages)", // Fallback als alleen files
       });
       const data = await response.json();
-      // Handle API response format - extract report from success response or use data directly
       const report = (data && typeof data === 'object' && 'success' in data && data.success === true) ? data.data : data;
 
-      console.log("🎯 Pipeline: Report created from API:", { reportId: report?.id, hasId: !!report?.id, data, report });
+      console.log("🎯 Pipeline: Report created:", { reportId: report?.id });
+
+      // Upload pending attachments to the new case
+      if (pendingFiles.length > 0 && report?.id) {
+        await uploadAttachments(report.id, pendingFiles);
+      }
 
       toast({
         title: "Case aangemaakt",
-        description: `Nieuwe case "${report.title}" is succesvol opgeslagen`,
+        description: `Nieuwe case "${report.title}" met ${pendingFiles.length} bijlage(s) opgeslagen`,
       });
 
       // Navigate to the case detail page and auto-start workflow
@@ -179,7 +229,7 @@ const Pipeline = memo(function Pipeline() {
     } finally {
       setIsCreatingCase(false);
     }
-  }, [rawText, dossierData, bouwplanData, toast]);
+  }, [rawText, pendingFiles, dossierData, bouwplanData, toast, uploadAttachments, setLocation]);
 
 
   return (
@@ -317,7 +367,7 @@ const Pipeline = memo(function Pipeline() {
                       type="file"
                       accept=".pdf,.txt"
                       multiple
-                      onChange={handleFileUpload}
+                      onChange={handleFileSelect}
                       className="hidden"
                     />
                     <Button
@@ -347,13 +397,16 @@ const Pipeline = memo(function Pipeline() {
                   </div>
                 )}
 
-                {/* Uploaded files badges */}
-                {uploadedFiles.length > 0 && (
+                {/* Pending files badges */}
+                {pendingFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {uploadedFiles.map((file) => (
+                    {pendingFiles.map((file) => (
                       <Badge key={file.name} variant="secondary" className="gap-2 pr-1">
                         <FileText className="h-3 w-3" />
                         <span className="text-xs">{file.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({Math.round(file.size / 1024)}KB)
+                        </span>
                         <button
                           onClick={() => handleRemoveFile(file.name)}
                           className="ml-1 hover:bg-muted rounded-sm p-0.5"
@@ -368,14 +421,15 @@ const Pipeline = memo(function Pipeline() {
                 <Textarea
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
-                  placeholder="Plak hier de klant conversatie en/of relevante documenten, of upload PDF/TXT bestanden...
+                  placeholder={pendingFiles.length > 0
+                    ? "Optioneel: voeg hier extra context of notities toe bij de geüploade bestanden..."
+                    : `Upload PDF/TXT bestanden hierboven, of plak hier tekst:
 
 • Klantsituatie en concrete vraag
 • Email correspondentie
 • Relevante feiten en bedragen
-• Specifieke fiscale overwegingen
 
-De AI herkent automatisch alle relevante informatie uit je input."
+De AI analyseert zowel geüploade bestanden als tekst input.`}
                   className="min-h-40 resize-none border-primary/20 focus:border-primary/40 bg-white dark:bg-slate-800"
                   data-testid="textarea-raw-input"
                   aria-label="Fiscale input voor analyse - Voer klantsituatie, email correspondentie en relevante documenten in"
@@ -383,15 +437,17 @@ De AI herkent automatisch alle relevante informatie uit je input."
               </div>
               
               <div className="flex flex-col sm:flex-row gap-4">
-                <Button 
+                <Button
                   onClick={startWorkflow}
-                  disabled={!rawText.trim() || isCreatingCase}
+                  disabled={(!rawText.trim() && pendingFiles.length === 0) || isCreatingCase || isUploading}
                   data-testid="button-start-workflow"
                   className="flex-1 h-12 text-base font-semibold bg-primary hover:bg-primary/90 shadow-lg"
                   size="lg"
                 >
-                  {isCreatingCase ? (
-                    <><Loader2 className="mr-3 h-5 w-5 animate-spin" /> Case aanmaken...</>
+                  {isCreatingCase || isUploading ? (
+                    <><Loader2 className="mr-3 h-5 w-5 animate-spin" />
+                      {isUploading ? `Uploaden ${uploadProgress}%...` : 'Case aanmaken...'}
+                    </>
                   ) : (
                     <><Play className="mr-3 h-5 w-5" /> Start Fiscale Analyse</>
                   )}
@@ -406,9 +462,9 @@ De AI herkent automatisch alle relevante informatie uit je input."
                 </div>
               </div>
               
-              {!rawText.trim() && (
+              {!rawText.trim() && pendingFiles.length === 0 && (
                 <div className="text-center py-4">
-                  <p className="text-sm text-muted-foreground">💡 Start met het invoeren van uw fiscale vraagstuk hierboven</p>
+                  <p className="text-sm text-muted-foreground">💡 Upload PDF bestanden of voer tekst in om te starten</p>
                 </div>
               )}
             </CardContent>

@@ -1,0 +1,1 @@
+ALTER TABLE "attachments" ADD COLUMN "needs_vision_ocr" boolean DEFAULT false;

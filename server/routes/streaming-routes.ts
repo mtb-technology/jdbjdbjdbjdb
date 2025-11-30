@@ -90,16 +90,59 @@ export function registerStreamingRoutes(
             });
           };
 
+          // For Stage 1 (informatiecheck): Include attachment extracted text AND vision attachments
+          let dossierWithAttachments = report.dossierData as DossierData;
+          let visionAttachments: Array<{ mimeType: string; data: string; filename: string }> = [];
+
+          if (stageId === '1_informatiecheck') {
+            const attachments = await storage.getAttachmentsForReport(reportId);
+            if (attachments.length > 0) {
+              // Separate attachments into text-extracted and vision-needed
+              const textAttachments = attachments.filter(att => att.extractedText && !att.needsVisionOCR);
+              const visionNeededAttachments = attachments.filter(att => att.needsVisionOCR);
+
+              // Add text from successfully extracted attachments to rawText
+              if (textAttachments.length > 0) {
+                const attachmentTexts = textAttachments
+                  .map(att => `\n\n=== BIJLAGE: ${att.filename} ===\n${att.extractedText}`)
+                  .join('');
+
+                const existingRawText = (dossierWithAttachments as any).rawText || '';
+                dossierWithAttachments = {
+                  ...dossierWithAttachments,
+                  rawText: existingRawText + attachmentTexts
+                };
+                console.log(`📎 [${reportId}] Stage 1: Added ${textAttachments.length} text attachment(s) to dossier`);
+              }
+
+              // Prepare scanned PDFs for Gemini Vision OCR
+              if (visionNeededAttachments.length > 0) {
+                visionAttachments = visionNeededAttachments.map(att => ({
+                  mimeType: att.mimeType,
+                  data: att.fileData, // base64 encoded
+                  filename: att.filename
+                }));
+                console.log(`📄 [${reportId}] Stage 1: Sending ${visionNeededAttachments.length} scanned PDF(s) to Gemini Vision for OCR`);
+              }
+
+              // Mark all attachments as used in this stage
+              for (const att of attachments) {
+                await storage.updateAttachmentUsage(att.id, stageId);
+              }
+            }
+          }
+
           // Execute using ReportGenerator (uses prompt from settings)
           const result = await reportGenerator.executeStage(
             stageId,
-            report.dossierData as DossierData,
+            dossierWithAttachments,
             report.bouwplanData as BouwplanData,
             report.stageResults as Record<string, string> || {},
             report.conceptReportVersions as Record<string, string> || {},
             customInput,
             reportId,
-            onProgress
+            onProgress,
+            visionAttachments.length > 0 ? visionAttachments : undefined
           );
 
           // Update stage results

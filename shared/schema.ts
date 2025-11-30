@@ -798,3 +798,56 @@ export const insertFollowUpThreadSchema = createInsertSchema(followUpThreads, {
   aiAnalysis: z.unknown(), // Will be validated as JSON - required field
   conceptEmail: z.unknown(), // Will be validated as JSON - required field
 }).required({ aiAnalysis: true, conceptEmail: true });
+
+// ===== ATTACHMENTS TABLE =====
+/**
+ * ## ATTACHMENTS TABLE
+ *
+ * **Verantwoordelijkheid**: Persistente opslag van bijlages (PDFs, etc.) bij cases
+ *
+ * In plaats van PDFs direct naar text te extracten en te verliezen, slaan we nu
+ * de originele bestanden op zodat:
+ * 1. Fiscalisten altijd terug kunnen naar het origineel
+ * 2. Native PDF upload naar AI APIs mogelijk is (Gemini/OpenAI ondersteunen dit)
+ * 3. Meerdere bijlages per case clean beheerd worden
+ *
+ * **Opslag**: Base64 encoded in database (simpele aanpak, max ~10MB per file)
+ * **Future**: Migreer naar S3/R2 voor grotere bestanden
+ */
+export const attachments = pgTable("attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reportId: varchar("report_id").notNull().references(() => reports.id, { onDelete: 'cascade' }),
+
+  // File metadata
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type").notNull(), // application/pdf, text/plain, etc.
+  fileSize: text("file_size").notNull(), // Size in bytes (stored as text for precision)
+  pageCount: text("page_count"), // For PDFs: number of pages
+
+  // File content
+  fileData: text("file_data").notNull(), // Base64 encoded file content
+  extractedText: text("extracted_text"), // Pre-extracted text for searching/indexing
+
+  // Vision/OCR tracking
+  needsVisionOCR: boolean("needs_vision_ocr").default(false), // True if PDF is scanned (little extractable text)
+
+  // Usage tracking
+  usedInStages: json("used_in_stages").$type<string[]>().default([]), // Which stages used this attachment
+
+  // Timestamps
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+}, (table) => ({
+  reportIdIdx: index("attachments_report_id_idx").on(table.reportId),
+}));
+
+// Attachment types
+export type Attachment = typeof attachments.$inferSelect;
+export type InsertAttachment = typeof attachments.$inferInsert;
+
+export const insertAttachmentSchema = createInsertSchema(attachments, {
+  reportId: z.string().uuid("Ongeldige report ID"),
+  filename: z.string().min(1, "Filename is verplicht"),
+  mimeType: z.string().min(1, "MIME type is verplicht"),
+  fileSize: z.string().min(1, "File size is verplicht"),
+  fileData: z.string().min(1, "File data is verplicht"),
+}).omit({ id: true, uploadedAt: true });

@@ -98,7 +98,7 @@ const FollowUpAssistant = memo(function FollowUpAssistant() {
   const [isSavingSession, setIsSavingSession] = useState(false);
 
   // Local settings state (independent from main app settings)
-  const [aiModel, setAiModel] = useState("gemini-1.5-pro");
+  const [aiModel, setAiModel] = useState("gemini-3-pro-preview");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_FISCAL_ASSISTANT_PROMPT);
 
   const { toast } = useToast();

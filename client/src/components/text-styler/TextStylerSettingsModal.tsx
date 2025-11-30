@@ -16,10 +16,9 @@ import { DEFAULT_TEXT_STYLE_PROMPT } from "@/pages/text-styler";
 // Available AI models - matching the server configuration
 const AI_MODELS = {
   google: [
+    { value: "gemini-3-pro-preview", label: "Gemini 3 Pro (Nieuwste - Thinking)" },
     { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Beste kwaliteit)" },
     { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Snelste)" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-    { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
   ],
   openai: [
     { value: "gpt-5", label: "GPT-5 (Nieuwste)" },
@@ -51,7 +50,7 @@ export const TextStylerSettingsModal = memo(function TextStylerSettingsModal({
 
   const handleProviderChange = (provider: "google" | "openai") => {
     // Set default model for the selected provider
-    const defaultModel = provider === "google" ? "gemini-2.5-pro" : "gpt-4o";
+    const defaultModel = provider === "google" ? "gemini-3-pro-preview" : "gpt-4o";
     onAiModelChange(defaultModel);
   };
 

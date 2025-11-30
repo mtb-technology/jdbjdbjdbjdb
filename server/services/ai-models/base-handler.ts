@@ -36,6 +36,12 @@ export interface AIModelParameters {
   jobId?: string;
   timeout?: number; // Timeout in milliseconds
   onProgress?: (progress: { stage: string; message: string; progress: number }) => void; // For deep research progress
+  // Vision/multimodal support - send PDFs/images directly to Gemini
+  visionAttachments?: Array<{
+    mimeType: string;  // e.g., 'application/pdf', 'image/png'
+    data: string;      // base64 encoded file content
+    filename: string;  // for logging purposes
+  }>;
 }
 
 export interface CircuitBreakerState {

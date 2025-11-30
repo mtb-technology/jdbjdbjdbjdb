@@ -8,6 +8,20 @@
       "when": 1762777809284,
       "tag": "0000_perpetual_leech",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1764510349581,
+      "tag": "0001_mean_morgan_stark",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1764512971881,
+      "tag": "0002_demonic_stryfe",
+      "breakpoints": true
     }
   ]
 }

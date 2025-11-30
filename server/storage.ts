@@ -1,5 +1,5 @@
-import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread } from "@shared/schema";
-import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads } from "@shared/schema";
+import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment } from "@shared/schema";
+import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql } from "drizzle-orm";
 import * as fs from "fs";
@@ -42,6 +42,14 @@ export interface IStorage {
   // Follow-up threads
   createFollowUpThread(thread: InsertFollowUpThread): Promise<FollowUpThread>;
   getThreadsForSession(sessionId: string): Promise<FollowUpThread[]>;
+
+  // Attachments
+  createAttachment(attachment: InsertAttachment): Promise<Attachment>;
+  getAttachment(id: string): Promise<Attachment | undefined>;
+  getAttachmentsForReport(reportId: string): Promise<Attachment[]>;
+  updateAttachmentUsage(id: string, stageId: string): Promise<Attachment | undefined>;
+  updateAttachment(id: string, data: Partial<Attachment>): Promise<Attachment | undefined>;
+  deleteAttachment(id: string): Promise<void>;
 }
 
 // DatabaseStorage - permanente opslag in PostgreSQL
@@ -350,6 +358,54 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(followUpThreads)
       .where(eq(followUpThreads.sessionId, sessionId))
       .orderBy(followUpThreads.createdAt);
+  }
+
+  // Attachment methods
+  async createAttachment(insertAttachment: InsertAttachment): Promise<Attachment> {
+    const [attachment] = await db.insert(attachments).values(insertAttachment).returning();
+    return attachment;
+  }
+
+  async getAttachment(id: string): Promise<Attachment | undefined> {
+    const [attachment] = await db.select().from(attachments).where(eq(attachments.id, id));
+    return attachment || undefined;
+  }
+
+  async getAttachmentsForReport(reportId: string): Promise<Attachment[]> {
+    return await db.select().from(attachments)
+      .where(eq(attachments.reportId, reportId))
+      .orderBy(attachments.uploadedAt);
+  }
+
+  async updateAttachmentUsage(id: string, stageId: string): Promise<Attachment | undefined> {
+    // First get current attachment to check existing usedInStages
+    const existing = await this.getAttachment(id);
+    if (!existing) return undefined;
+
+    const currentStages = (existing.usedInStages as string[]) || [];
+    if (!currentStages.includes(stageId)) {
+      currentStages.push(stageId);
+    }
+
+    const [updated] = await db
+      .update(attachments)
+      .set({ usedInStages: currentStages })
+      .where(eq(attachments.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async updateAttachment(id: string, data: Partial<Attachment>): Promise<Attachment | undefined> {
+    const [updated] = await db
+      .update(attachments)
+      .set(data)
+      .where(eq(attachments.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteAttachment(id: string): Promise<void> {
+    await db.delete(attachments).where(eq(attachments.id, id));
   }
 }
 
