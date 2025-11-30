@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, FileText, Calendar, User, Download, FileDown, GitBranch, Eye, Activity, Edit2, Save, X } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, User, Download, GitBranch, Eye, Activity, Edit2, Save, X, Paperclip, FileImage, AlertCircle, CheckCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import WorkflowInterface from "@/components/workflow-interface";
 import { VersionTimeline } from "@/components/report/VersionTimeline";
 import { ReportDiffViewer } from "@/components/report/ReportDiffViewer";
@@ -14,9 +15,9 @@ import { StickyReportPreview, FullScreenReportPreview } from "@/components/repor
 import { ExportDialog } from "@/components/export/ExportDialog";
 import { DossierContextPanel } from "@/components/report/DossierContextPanel";
 import type { Report } from "@shared/schema";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { STAGE_NAMES, getLatestConceptText } from "@shared/constants";
+import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshBanner } from "@/components/ui/refresh-banner";
 
 export default function CaseDetail() {
   const params = useParams();
@@ -27,8 +28,7 @@ export default function CaseDetail() {
   const [editedTitle, setEditedTitle] = useState("");
   const [isEditingClient, setIsEditingClient] = useState(false);
   const [editedClient, setEditedClient] = useState("");
-  const [showRefreshBanner, setShowRefreshBanner] = useState(false);
-  const lastVersionRef = useRef<number>(0);
+  const [expandedAttachments, setExpandedAttachments] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -40,58 +40,11 @@ export default function CaseDetail() {
     enabled: !!reportId,
   });
 
-  // Check for updates periodically without auto-refreshing
-  useEffect(() => {
-    if (!reportId || !report) return;
-
-    // Initialize the version ref with current report's timestamp
-    if (lastVersionRef.current === 0 && report.updatedAt) {
-      lastVersionRef.current = new Date(report.updatedAt).getTime();
-    }
-
-    const checkForUpdates = async () => {
-      try {
-        const response = await fetch(`/api/reports/${reportId}`, {
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const serverReport = data.data || data;
-
-          // Check if updatedAt has changed (version indicator)
-          const serverTimestamp = serverReport.updatedAt ? new Date(serverReport.updatedAt).getTime() : 0;
-
-          // Only show banner if there's actually a newer version
-          if (serverTimestamp > 0 && lastVersionRef.current > 0 && serverTimestamp > lastVersionRef.current) {
-            console.log('🔔 New version detected:', {
-              current: new Date(lastVersionRef.current).toISOString(),
-              server: new Date(serverTimestamp).toISOString()
-            });
-            setShowRefreshBanner(true);
-          }
-        }
-      } catch (err) {
-        // Silently fail - don't disrupt user experience
-        console.debug('Version check failed:', err);
-      }
-    };
-
-    // Check every 10 seconds (less aggressive)
-    const interval = setInterval(checkForUpdates, 10000);
-
-    return () => clearInterval(interval);
-  }, [reportId, report]);
-
-  const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
-    setShowRefreshBanner(false);
-    if (report) {
-      // Use updatedAt as version indicator
-      const timestamp = report.updatedAt ? new Date(report.updatedAt).getTime() : Date.now();
-      lastVersionRef.current = timestamp;
-    }
-  };
+  // Fetch attachments for the report
+  const { data: attachmentsData } = useQuery<any[]>({
+    queryKey: [`/api/upload/attachments/${reportId}`],
+    enabled: !!reportId,
+  });
 
   // Mutation for updating case metadata
   const updateCaseMutation = useMutation({
@@ -131,7 +84,7 @@ export default function CaseDetail() {
       // Return context with the snapshotted value
       return { previousReport };
     },
-    onError: (error: Error, variables, context) => {
+    onError: (error: Error, _variables, context) => {
       // Rollback to previous value on error
       if (context?.previousReport) {
         queryClient.setQueryData([`/api/reports/${reportId}`], context.previousReport);
@@ -193,18 +146,6 @@ export default function CaseDetail() {
   const versionCheckpoints = useMemo(() => {
     if (!report?.conceptReportVersions) return [];
 
-    const stageNames: Record<string, string> = {
-      '1_informatiecheck': 'Informatie Check',
-      '2_complexiteitscheck': 'Complexiteits Check',
-      '3_generatie': 'Basis Rapport',
-      '4a_BronnenSpecialist': 'Bronnen Review',
-      '4b_FiscaalTechnischSpecialist': 'Fiscaal Technisch',
-      '4c_ScenarioGatenAnalist': 'Scenario Analyse',
-      '4e_DeAdvocaat': 'Juridisch Review',
-      '4f_HoofdCommunicatie': 'Hoofd Communicatie',
-      '6_change_summary': 'Wijzigingen Samenvatting'
-    };
-
     const versions = report.conceptReportVersions as any;
 
     // Use history array if available (most accurate)
@@ -218,7 +159,7 @@ export default function CaseDetail() {
         return {
           version: entry.v,
           stageKey: entry.stageId,
-          stageName: `${stageNames[entry.stageId] || entry.stageId} v${entry.v}`,
+          stageName: `${STAGE_NAMES[entry.stageId] || entry.stageId} v${entry.v}`,
           changeCount: undefined, // Not tracked in history
           timestamp: entry.timestamp,
           isCurrent: isLatest
@@ -239,7 +180,7 @@ export default function CaseDetail() {
         return {
           version: v,
           stageKey,
-          stageName: `${stageNames[stageKey] || stageKey} v${v}`,
+          stageName: `${STAGE_NAMES[stageKey] || stageKey} v${v}`,
           changeCount: versionData?.changeCount,
           timestamp: versionData?.createdAt || versionData?.timestamp,
           isCurrent: versions?.latest?.pointer === stageKey
@@ -266,44 +207,7 @@ export default function CaseDetail() {
   }, [report?.conceptReportVersions, versionCheckpoints]);
 
   const currentContent = useMemo(() => {
-    if (!report?.conceptReportVersions) return "";
-
-    const versions = report.conceptReportVersions as any;
-
-    // Check if we have any version history at all
-    const hasHistory = versions?.history && versions.history.length > 0;
-    const hasStageSnapshots = Object.keys(versions).some(key =>
-      key !== 'latest' && key !== 'history'
-    );
-
-    // If no versions exist, return empty string (no preview)
-    if (!hasHistory && !hasStageSnapshots) {
-      return "";
-    }
-
-    // PRIORITEIT 1: Latest pointer - dit is de meest recente versie
-    // Na feedback processing wijst dit naar de bijgewerkte versie (4a, 4b, etc)
-    const latestPointer = versions?.latest?.pointer;
-    if (latestPointer && versions[latestPointer]) {
-      const versionData = versions[latestPointer];
-      if (typeof versionData === 'string') return versionData;
-      if (typeof versionData === 'object' && versionData.content) {
-        return versionData.content;
-      }
-    }
-
-    // FALLBACK 2: Kijk naar het gegenereerde rapport (3_generatie)
-    // Dit wordt alleen gebruikt als er nog geen latest pointer is
-    if (versions['3_generatie']) {
-      const generationData = versions['3_generatie'];
-      if (typeof generationData === 'string') return generationData;
-      if (typeof generationData === 'object' && generationData.content) {
-        return generationData.content;
-      }
-    }
-
-    // No valid content found - return empty if no versions exist
-    return "";
+    return getLatestConceptText(report?.conceptReportVersions as any);
   }, [report?.conceptReportVersions]);
 
   const latestChanges = useMemo(() => {
@@ -418,7 +322,6 @@ export default function CaseDetail() {
       // Force refetch to get latest version data
       queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to restore version:', error);
       toast({
         title: "Fout bij herstellen",
@@ -472,7 +375,6 @@ export default function CaseDetail() {
       // Force refetch to get latest version data
       queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to delete version:', error);
       toast({
         title: "Fout bij verwijderen",
@@ -485,15 +387,6 @@ export default function CaseDetail() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Refresh Banner */}
-      <RefreshBanner
-        visible={showRefreshBanner}
-        message="Er is een nieuwe versie van deze case beschikbaar"
-        onRefresh={handleRefresh}
-        onDismiss={() => setShowRefreshBanner(false)}
-        variant="info"
-      />
-
       {/* Header with back button */}
       <div className="flex items-center justify-between mb-8">
         <Link href="/cases">
@@ -651,10 +544,14 @@ export default function CaseDetail() {
         {/* Main Content Area */}
         <div className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="workflow" className="flex items-center gap-2">
                 <Activity className="h-4 w-4" />
                 Workflow
+              </TabsTrigger>
+              <TabsTrigger value="attachments" className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4" />
+                Bijlages {attachmentsData && attachmentsData.length > 0 && `(${attachmentsData.length})`}
               </TabsTrigger>
               <TabsTrigger value="timeline" className="flex items-center gap-2">
                 <GitBranch className="h-4 w-4" />
@@ -675,7 +572,7 @@ export default function CaseDetail() {
                   rawText={(report.dossierData as any)?.rawText || ""}
                   existingReport={report}
                   autoStart={autoStart}
-                  onComplete={(updatedReport) => {
+                  onComplete={() => {
                     // Trigger re-fetch
                     window.location.reload();
                   }}
@@ -688,6 +585,177 @@ export default function CaseDetail() {
                   </CardContent>
                 </Card>
               )}
+            </TabsContent>
+
+            <TabsContent value="attachments" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Paperclip className="h-5 w-5" />
+                    Bijlages bij deze case
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {attachmentsData && attachmentsData.length > 0 ? (
+                    <div className="space-y-3">
+                      {attachmentsData.map((att: any) => {
+                        const isExpanded = expandedAttachments.has(att.id);
+                        const toggleExpand = () => {
+                          setExpandedAttachments(prev => {
+                            const next = new Set(prev);
+                            if (next.has(att.id)) {
+                              next.delete(att.id);
+                            } else {
+                              next.add(att.id);
+                            }
+                            return next;
+                          });
+                        };
+
+                        return (
+                          <Collapsible key={att.id} open={isExpanded} onOpenChange={toggleExpand}>
+                            <div className="border rounded-lg overflow-hidden">
+                              <CollapsibleTrigger asChild>
+                                <div className="flex items-center justify-between p-3 hover:bg-accent/50 transition-colors cursor-pointer">
+                                  <div className="flex items-center gap-3">
+                                    {isExpanded ? (
+                                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                    )}
+                                    {att.mimeType?.includes('pdf') ? (
+                                      <FileText className="h-8 w-8 text-red-500" />
+                                    ) : att.mimeType?.includes('image') ? (
+                                      <FileImage className="h-8 w-8 text-blue-500" />
+                                    ) : (
+                                      <FileText className="h-8 w-8 text-gray-500" />
+                                    )}
+                                    <div>
+                                      <p className="font-medium text-sm">{att.filename}</p>
+                                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <span>{att.pageCount ? `${att.pageCount} pagina's` : 'Bestand'}</span>
+                                        <span>•</span>
+                                        <span>{Math.round(parseInt(att.fileSize) / 1024)} KB</span>
+                                        {att.extractedText && (
+                                          <>
+                                            <span>•</span>
+                                            <span>{att.extractedText.length.toLocaleString()} tekens</span>
+                                          </>
+                                        )}
+                                        {att.usedInStages && att.usedInStages.length > 0 && (
+                                          <>
+                                            <span>•</span>
+                                            <span>Gebruikt in: {att.usedInStages.join(', ')}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                    {att.needsVisionOCR ? (
+                                      <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                                        <FileImage className="h-3 w-3 mr-1" />
+                                        Gemini Vision
+                                      </Badge>
+                                    ) : att.extractedText ? (
+                                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                        <CheckCircle className="h-3 w-3 mr-1" />
+                                        Tekst geëxtraheerd
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="bg-gray-50 text-gray-500">
+                                        <AlertCircle className="h-3 w-3 mr-1" />
+                                        Geen tekst
+                                      </Badge>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => window.open(`/api/upload/attachment/${att.id}/download`, '_blank')}
+                                    >
+                                      <Download className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <div className="border-t bg-muted/30 p-4">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h4 className="text-sm font-medium">
+                                      {att.needsVisionOCR ? "📄 Gescande PDF - wordt door Gemini Vision gelezen" : "Geëxtraheerde tekst"}
+                                    </h4>
+                                    {att.extractedText && (
+                                      <span className="text-xs text-muted-foreground">
+                                        {att.extractedText.length.toLocaleString()} tekens
+                                      </span>
+                                    )}
+                                  </div>
+                                  {att.needsVisionOCR ? (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+                                      <p className="text-amber-800 mb-2">
+                                        <strong>Dit is een gescande PDF</strong> met weinig of geen extracteerbare tekst.
+                                      </p>
+                                      <p className="text-amber-700">
+                                        Bij Stage 1 (Informatiecheck) wordt dit bestand direct naar Gemini Vision gestuurd
+                                        voor OCR-verwerking. De AI kan de inhoud dan visueel lezen.
+                                      </p>
+                                      {(() => {
+                                        // Filter out useless page markers like "-- 3 of 4 --"
+                                        const cleanedText = att.extractedText
+                                          ?.replace(/--\s*\d+\s*of\s*\d+\s*--/gi, '')
+                                          .trim();
+                                        return cleanedText && cleanedText.length > 10 ? (
+                                          <div className="mt-3 pt-3 border-t border-amber-200">
+                                            <p className="text-xs text-amber-600 mb-1">Beschikbare tekst (beperkt):</p>
+                                            <pre className="text-xs bg-white/50 p-2 rounded overflow-auto max-h-32 whitespace-pre-wrap font-mono">
+                                              {cleanedText}
+                                            </pre>
+                                          </div>
+                                        ) : null;
+                                      })()}
+                                    </div>
+                                  ) : att.extractedText ? (
+                                    <pre className="text-xs bg-background border rounded-lg p-3 overflow-auto max-h-96 whitespace-pre-wrap font-mono">
+                                      {att.extractedText}
+                                    </pre>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground italic">
+                                      Geen tekst beschikbaar voor dit bestand.
+                                    </p>
+                                  )}
+                                </div>
+                              </CollapsibleContent>
+                            </div>
+                          </Collapsible>
+                        );
+                      })}
+
+                      {/* Summary */}
+                      <div className="mt-4 pt-4 border-t">
+                        <div className="flex items-center justify-between text-sm text-muted-foreground">
+                          <span>Totaal: {attachmentsData.length} bijlage(s)</span>
+                          <div className="flex items-center gap-4">
+                            <span className="flex items-center gap-1">
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              {attachmentsData.filter((a: any) => a.extractedText && !a.needsVisionOCR).length} tekst
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <FileImage className="h-4 w-4 text-amber-500" />
+                              {attachmentsData.filter((a: any) => a.needsVisionOCR).length} vision OCR
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-muted-foreground">
+                      <Paperclip className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>Geen bijlages geüpload voor deze case.</p>
+                      <p className="text-sm mt-2">Upload bijlages via de Pipeline pagina.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="timeline" className="mt-6">
@@ -717,17 +785,7 @@ export default function CaseDetail() {
                 <ReportDiffViewer
                   versions={report.conceptReportVersions as Record<string, string>}
                   currentStageKey={(report.conceptReportVersions as any)?.latest?.pointer}
-                  stageNames={{
-                    '1_informatiecheck': 'Informatie Check',
-                    '2_complexiteitscheck': 'Complexiteits Check',
-                    '3_generatie': 'Basis Rapport',
-                    '4a_BronnenSpecialist': 'Bronnen Review',
-                    '4b_FiscaalTechnischSpecialist': 'Fiscaal Technisch',
-                    '4c_ScenarioGatenAnalist': 'Scenario Analyse',
-                    '4e_DeAdvocaat': 'Juridisch Review',
-                    '4f_HoofdCommunicatie': 'Hoofd Communicatie',
-                    '6_change_summary': 'Wijzigingen Samenvatting'
-                  }}
+                  stageNames={STAGE_NAMES}
                 />
               ) : (
                 <Card>

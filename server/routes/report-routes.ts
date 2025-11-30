@@ -19,6 +19,7 @@ import { ReportGenerator } from "../services/report-generator";
 import { SourceValidator } from "../services/source-validator";
 import { dossierSchema, bouwplanSchema } from "@shared/schema";
 import type { DossierData, BouwplanData, StageId, PromptConfig } from "@shared/schema";
+import { STAGE_ORDER, REVIEW_STAGES, getLatestConceptText } from "@shared/constants";
 import { createReportRequestSchema, processFeedbackRequestSchema, overrideConceptRequestSchema, promoteSnapshotRequestSchema, expressModeRequestSchema } from "@shared/types/api";
 import { ReportProcessor } from "../services/report-processor";
 import { SSEHandler } from "../services/streaming/sse-handler";
@@ -185,17 +186,61 @@ export function registerReportRoutes(
         throw new Error("Rapport niet gevonden");
       }
 
+      // For Stage 1 (informatiecheck): Include attachment extracted text AND vision attachments
+      let dossierWithAttachments = report.dossierData as DossierData;
+      let visionAttachments: Array<{ mimeType: string; data: string; filename: string }> = [];
+
+      if (stage === '1_informatiecheck') {
+        const attachments = await storage.getAttachmentsForReport(id);
+        if (attachments.length > 0) {
+          // Separate attachments into text-extracted and vision-needed
+          const textAttachments = attachments.filter(att => att.extractedText && !att.needsVisionOCR);
+          const visionNeededAttachments = attachments.filter(att => att.needsVisionOCR);
+
+          // Add text from successfully extracted attachments to rawText
+          if (textAttachments.length > 0) {
+            const attachmentTexts = textAttachments
+              .map(att => `\n\n=== BIJLAGE: ${att.filename} ===\n${att.extractedText}`)
+              .join('');
+
+            const existingRawText = (dossierWithAttachments as any).rawText || '';
+            dossierWithAttachments = {
+              ...dossierWithAttachments,
+              rawText: existingRawText + attachmentTexts
+            };
+            console.log(`📎 [${id}] Stage 1: Added ${textAttachments.length} text attachment(s) to dossier`);
+          }
+
+          // Prepare scanned PDFs for Gemini Vision OCR
+          if (visionNeededAttachments.length > 0) {
+            visionAttachments = visionNeededAttachments.map(att => ({
+              mimeType: att.mimeType,
+              data: att.fileData, // base64 encoded
+              filename: att.filename
+            }));
+            console.log(`📄 [${id}] Stage 1: Sending ${visionNeededAttachments.length} scanned PDF(s) to Gemini Vision for OCR`);
+          }
+
+          // Mark all attachments as used in this stage
+          for (const att of attachments) {
+            await storage.updateAttachmentUsage(att.id, stage);
+          }
+        }
+      }
+
       // Execute the specific stage with error recovery
       let stageExecution;
       try {
         stageExecution = await reportGenerator.executeStage(
           stage,
-          report.dossierData as DossierData,
+          dossierWithAttachments,
           report.bouwplanData as BouwplanData,
           report.stageResults as Record<string, string> || {},
           report.conceptReportVersions as Record<string, string> || {},
           customInput,
-          id // Pass reportId as jobId for logging
+          id, // Pass reportId as jobId for logging
+          undefined, // onProgress - not used in non-streaming
+          visionAttachments.length > 0 ? visionAttachments : undefined
         );
       } catch (stageError: unknown) {
         console.error(`🚨 Stage execution failed but recovering gracefully:`, getErrorMessage(stageError));
@@ -391,19 +436,7 @@ export function registerReportRoutes(
       throw ServerError.notFound("Report");
     }
 
-    // Define stage order for cascading deletes
-    const stageOrder = [
-      '1_informatiecheck',
-      '2_complexiteitscheck',
-      '3_generatie',
-      '4a_BronnenSpecialist',
-      '4b_FiscaalTechnischSpecialist',
-      '4c_ScenarioGatenAnalist',
-      '4e_DeAdvocaat',
-      '4f_HoofdCommunicatie'
-    ];
-
-    const deletedStageIndex = stageOrder.indexOf(stage);
+    const deletedStageIndex = STAGE_ORDER.indexOf(stage as typeof STAGE_ORDER[number]);
 
     // Remove the stage from stageResults
     const currentStageResults = (report.stageResults as Record<string, string>) || {};
@@ -411,8 +444,8 @@ export function registerReportRoutes(
 
     // Cascade delete: remove all stages that come after this one
     if (deletedStageIndex >= 0) {
-      for (let i = deletedStageIndex + 1; i < stageOrder.length; i++) {
-        const laterStage = stageOrder[i];
+      for (let i = deletedStageIndex + 1; i < STAGE_ORDER.length; i++) {
+        const laterStage = STAGE_ORDER[i];
         delete currentStageResults[laterStage];
       }
     }
@@ -425,8 +458,8 @@ export function registerReportRoutes(
 
     // Delete all later stages' snapshots
     if (deletedStageIndex >= 0) {
-      for (let i = deletedStageIndex + 1; i < stageOrder.length; i++) {
-        const laterStage = stageOrder[i];
+      for (let i = deletedStageIndex + 1; i < STAGE_ORDER.length; i++) {
+        const laterStage = STAGE_ORDER[i];
         delete currentConceptVersions[laterStage];
       }
     }
@@ -437,7 +470,7 @@ export function registerReportRoutes(
         // Keep only entries that are NOT the deleted stage or later stages
         if (entry.stageId === stage) return false;
         if (deletedStageIndex >= 0) {
-          const entryStageIndex = stageOrder.indexOf(entry.stageId);
+          const entryStageIndex = STAGE_ORDER.indexOf(entry.stageId);
           if (entryStageIndex > deletedStageIndex) return false;
         }
         return true;
@@ -462,7 +495,7 @@ export function registerReportRoutes(
     } else {
       // Fallback: search in stage keys (legacy behavior)
       for (let i = deletedStageIndex - 1; i >= 0; i--) {
-        const earlierStage = stageOrder[i];
+        const earlierStage = STAGE_ORDER[i];
         if (currentConceptVersions[earlierStage]) {
           newLatestStage = earlierStage;
           newLatestVersion = currentConceptVersions[earlierStage].v || 1;
@@ -496,7 +529,7 @@ export function registerReportRoutes(
     res.json(createApiSuccessResponse({
       report: updatedReport,
       clearedStage: stage,
-      cascadeDeleted: deletedStageIndex >= 0 ? stageOrder.slice(deletedStageIndex + 1) : []
+      cascadeDeleted: deletedStageIndex >= 0 ? STAGE_ORDER.slice(deletedStageIndex + 1) : []
     }, `Stage ${stage} en alle volgende stages zijn verwijderd - workflow kan opnieuw vanaf hier worden uitgevoerd`));
   }));
 
@@ -570,13 +603,7 @@ export function registerReportRoutes(
     }
 
     // Validate stage ID for review stages only
-    const validReviewStages = [
-      '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist',
-      '4c_ScenarioGatenAnalist', '4e_DeAdvocaat',
-      '4f_HoofdCommunicatie'
-    ];
-
-    if (!validReviewStages.includes(stageId)) {
+    if (!REVIEW_STAGES.includes(stageId as typeof REVIEW_STAGES[number])) {
       res.status(400).json(createApiErrorResponse(
         'INVALID_STAGE',
         'VALIDATION_FAILED',
@@ -601,54 +628,8 @@ export function registerReportRoutes(
         return;
       }
 
-      // Get the latest concept report (same as process-feedback endpoint)
-      const conceptReportVersions = (report.conceptReportVersions as Record<string, any>) || {};
-
-      // The 'latest' field is a pointer { pointer: stageId, v: version }
-      // We need to resolve it to get the actual content
-      let latestConceptText = '';
-      const latest = conceptReportVersions?.['latest'];
-
-      if (latest && latest.pointer) {
-        // Resolve the pointer to get the actual snapshot
-        const snapshot = conceptReportVersions[latest.pointer];
-        // Handle both object format {content: "..."} and direct string format
-        if (snapshot && typeof snapshot === 'object' && snapshot.content) {
-          latestConceptText = snapshot.content;
-        } else if (typeof snapshot === 'string' && snapshot.length > 0) {
-          latestConceptText = snapshot;
-        }
-      }
-
-      // Fallback: Try direct stage snapshots
-      // IMPORTANT: Skip reviewer stages (4a-4f) as they don't contain concept reports
-      if (!latestConceptText) {
-        // Try stage 3 first (the generation stage)
-        const stage3Snapshot = conceptReportVersions?.['3_generatie'];
-
-        // Handle both object format {content: "..."} and direct string format
-        if (stage3Snapshot) {
-          if (typeof stage3Snapshot === 'object' && stage3Snapshot.content) {
-            latestConceptText = stage3Snapshot.content;
-          } else if (typeof stage3Snapshot === 'string' && stage3Snapshot.length > 0) {
-            latestConceptText = stage3Snapshot;
-          }
-        }
-
-        // If still not found, search for any valid snapshot (excluding reviewer stages 4a-4f)
-        if (!latestConceptText) {
-          const foundEntry = Object.entries(conceptReportVersions || {}).find(([key, v]: [string, any]) => {
-            // Skip 'latest' pointer, skip reviewer stages
-            if (key === 'latest' || key.startsWith('4')) return false;
-            // Accept both object with content and direct strings
-            return (v && typeof v === 'object' && v.content) || (typeof v === 'string' && v.length > 0);
-          });
-          if (foundEntry) {
-            const [, snapshot] = foundEntry;
-            latestConceptText = typeof snapshot === 'string' ? snapshot : snapshot.content;
-          }
-        }
-      }
+      // Get the latest concept report
+      const latestConceptText = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
 
       if (!latestConceptText) {
         res.status(400).json(createApiErrorResponse(
@@ -660,7 +641,7 @@ export function registerReportRoutes(
         return;
       }
 
-      // Get the Editor prompt from active config (same as process-feedback endpoint)
+      // Get the Editor prompt from active config
       const activeConfig = await storage.getActivePromptConfig();
       if (!activeConfig || !activeConfig.config) {
         res.status(400).json(createApiErrorResponse(
@@ -752,13 +733,7 @@ export function registerReportRoutes(
     }
 
     // Validate stage ID for review stages only
-    const validReviewStages = [
-      '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist',
-      '4c_ScenarioGatenAnalist', '4e_DeAdvocaat',
-      '4f_HoofdCommunicatie'
-    ];
-
-    if (!validReviewStages.includes(stageId)) {
+    if (!REVIEW_STAGES.includes(stageId as typeof REVIEW_STAGES[number])) {
       return res.status(400).json(createApiErrorResponse(
         'INVALID_STAGE',
         'VALIDATION_FAILED',
@@ -809,53 +784,7 @@ export function registerReportRoutes(
       }
 
       // Get the latest concept report to send to the editor
-      const conceptReportVersions = (report.conceptReportVersions as Record<string, any>) || {};
-
-      // The 'latest' field is a pointer { pointer: stageId, v: version }
-      // We need to resolve it to get the actual content
-      let latestConceptText = '';
-      const latest = conceptReportVersions?.['latest'];
-
-      if (latest && latest.pointer) {
-        // Resolve the pointer to get the actual snapshot
-        const snapshot = conceptReportVersions[latest.pointer];
-        // Handle both object format {content: "..."} and direct string format
-        if (snapshot && typeof snapshot === 'object' && snapshot.content) {
-          latestConceptText = snapshot.content;
-        } else if (typeof snapshot === 'string' && snapshot.length > 0) {
-          latestConceptText = snapshot;
-        }
-      }
-
-      // Fallback: Try direct stage snapshots
-      // IMPORTANT: Skip reviewer stages (4a-4f) as they don't contain concept reports
-      if (!latestConceptText) {
-        // Try stage 3 first (the generation stage)
-        const stage3Snapshot = conceptReportVersions?.['3_generatie'];
-
-        // Handle both object format {content: "..."} and direct string format
-        if (stage3Snapshot) {
-          if (typeof stage3Snapshot === 'object' && stage3Snapshot.content) {
-            latestConceptText = stage3Snapshot.content;
-          } else if (typeof stage3Snapshot === 'string' && stage3Snapshot.length > 0) {
-            latestConceptText = stage3Snapshot;
-          }
-        }
-
-        // If still not found, search for any valid snapshot (excluding reviewer stages 4a-4f)
-        if (!latestConceptText) {
-          const foundEntry = Object.entries(conceptReportVersions || {}).find(([key, v]: [string, any]) => {
-            // Skip 'latest' pointer, skip reviewer stages
-            if (key === 'latest' || key.startsWith('4')) return false;
-            // Accept both object with content and direct strings
-            return (v && typeof v === 'object' && v.content) || (typeof v === 'string' && v.length > 0);
-          });
-          if (foundEntry) {
-            const [, snapshot] = foundEntry;
-            latestConceptText = typeof snapshot === 'string' ? snapshot : snapshot.content;
-          }
-        }
-      }
+      const latestConceptText = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
 
       if (!latestConceptText) {
         return res.status(400).json(createApiErrorResponse(
@@ -1344,28 +1273,7 @@ export function registerReportRoutes(
             }
 
             // Get latest concept report
-            const conceptReportVersions = (report.conceptReportVersions as Record<string, any>) || {};
-            let latestConceptText = '';
-            const latest = conceptReportVersions?.['latest'];
-
-            if (latest && latest.pointer) {
-              const snapshot = conceptReportVersions[latest.pointer];
-              if (snapshot && snapshot.content) {
-                latestConceptText = snapshot.content;
-              }
-            }
-
-            if (!latestConceptText) {
-              let snapshot = conceptReportVersions?.['3_generatie'];
-              if (!snapshot || !snapshot.content) {
-                snapshot = Object.entries(conceptReportVersions || {}).find(([key, v]: [string, any]) => {
-                  return key !== 'latest' && !key.startsWith('4') && v && v.content;
-                })?.[1];
-              }
-              if (snapshot && snapshot.content) {
-                latestConceptText = snapshot.content;
-              }
-            }
+            let latestConceptText = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
 
             // Legacy fallback: use generatedContent if no versioned concept found
             if (!latestConceptText && report.generatedContent) {
