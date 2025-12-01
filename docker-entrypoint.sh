@@ -1,0 +1,84 @@
+#!/bin/sh
+set -e
+
+echo "🔧 Configuring nginx for port $PORT..."
+
+# Generate nginx config with correct PORT
+cat > /etc/nginx/conf.d/default.conf <<EOF
+server {
+    listen $PORT;
+    server_name _;
+
+    # Basic authentication for the entire application
+    auth_basic "De Fiscale Analist - Internal Access Only";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    # Health check endpoint - NO authentication required (for Railway monitoring)
+    location = /api/health {
+        auth_basic off;
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # Proxy to Node.js application
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+
+        # Increased timeouts for long-running AI operations
+        proxy_connect_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
+        send_timeout 600s;
+    }
+
+    # SSE (Server-Sent Events) specific configuration
+    location /api/reports/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Connection '';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # SSE specific settings
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding on;
+
+        # Long timeout for streaming
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # File upload size limit
+    client_max_body_size 10M;
+}
+EOF
+
+echo "✅ nginx configured to listen on port $PORT"
+
+# Generate htpasswd
+if [ -n "$AUTH_PASSWORD" ]; then
+  echo "$AUTH_PASSWORD" | htpasswd -c -i /etc/nginx/.htpasswd admin
+  echo "✅ Password authentication configured for user: admin"
+else
+  echo "⚠️ WARNING: No AUTH_PASSWORD set. Using default password: changeme"
+  echo "changeme" | htpasswd -c -i /etc/nginx/.htpasswd admin
+fi
+
+# Now run the start script
+exec /start.sh
+EOF
