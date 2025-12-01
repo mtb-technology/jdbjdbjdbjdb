@@ -61,6 +61,10 @@ Then visit http://localhost:3000 and login with:
 3. **Internal Only**: This is designed for 2-3 internal users - not public-facing
 4. **No Bypass**: All routes (including API endpoints) require authentication
 5. **Session Management**: After initial login, browser caches credentials
+6. **Health Check Exception**: `/api/health` is NOT password-protected (Railway needs this for monitoring)
+   - Only returns: `status`, `timestamp`, `uptime`
+   - No sensitive data exposed
+   - All other endpoints (`/api/health/full`, `/api/health/detailed`, etc.) remain protected
 
 ## Changing Password
 

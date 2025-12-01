@@ -173,6 +173,7 @@ PostgreSQL Database
 - ✅ No code changes needed to enable/disable
 - ✅ Simple for 2-3 internal users
 - ✅ HTTPS encryption via Railway
+- ⚠️ Exception: `/api/health` is unprotected for Railway monitoring (only returns status/uptime)
 
 **How to Change Password:**
 1. Update `AUTH_PASSWORD` in Railway variables
