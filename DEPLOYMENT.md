@@ -1,6 +1,8 @@
 # Deployment Guide - Railway
 
-This guide covers deploying "De Fiscale Analist" to Railway.
+This guide covers deploying "De Fiscale Analist" to Railway with nginx password protection.
+
+> **🔒 Security Note:** This application uses nginx basic authentication to protect all routes. Only authorized internal users with the password can access the application.
 
 ## Prerequisites
 
@@ -32,12 +34,14 @@ This guide covers deploying "De Fiscale Analist" to Railway.
 ### Step 3: Configure Environment Variables
 1. Click on your service (the web app)
 2. Go to "Variables" tab
-3. Add the following variables:
+3. Add the following **required** variables:
 
 ```
 NODE_ENV=production
 GOOGLE_AI_API_KEY=your_google_ai_key_here
 OPENAI_API_KEY=your_openai_key_here
+AUTH_PASSWORD=your-strong-password-here
+SESSION_SECRET=generate-random-32-byte-hex-string
 ```
 
 If using Neon instead of Railway Postgres, also add:
@@ -45,11 +49,29 @@ If using Neon instead of Railway Postgres, also add:
 DATABASE_URL=postgresql://user:password@your-neon-url/dbname
 ```
 
+**🔒 Important - AUTH_PASSWORD:**
+- This password protects your entire application
+- Choose a strong password
+- Username will be `admin`
+- All users (including you) will need this password to access the app
+- Generate strong secrets with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+
 ### Step 4: Deploy
-1. Railway will automatically deploy on every push to your main branch
-2. First deployment starts immediately after setup
+1. Railway will automatically detect the `Dockerfile` and build using Docker
+2. The build process will:
+   - Build your Node.js application
+   - Set up nginx with password protection
+   - Configure authentication from `AUTH_PASSWORD`
 3. Monitor deployment in the "Deployments" tab
 4. Once deployed, click "Generate Domain" to get a public URL
+
+### Step 5: Access Your Application
+1. Visit your Railway URL
+2. You'll see a browser login prompt
+3. Enter credentials:
+   - **Username:** `admin`
+   - **Password:** The value you set in `AUTH_PASSWORD`
+4. Your browser will remember these credentials for future visits
 
 ## Option 2: Deploy via Railway CLI
 
@@ -79,6 +101,8 @@ railway add --database postgres
 railway variables set NODE_ENV=production
 railway variables set GOOGLE_AI_API_KEY=your_google_ai_key_here
 railway variables set OPENAI_API_KEY=your_openai_key_here
+railway variables set AUTH_PASSWORD=your-strong-password-here
+railway variables set SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 
 # If using Neon database
 railway variables set DATABASE_URL=postgresql://user:password@your-neon-url/dbname
@@ -127,6 +151,42 @@ Your app includes a health endpoint at `/api/health` that Railway can use for mo
 3. Click "Generate Domain" for a railway.app subdomain
 4. Or click "Custom Domain" to add your own domain
 
+## Password Protection Architecture
+
+This deployment uses a **multi-container Docker setup** with nginx as a reverse proxy:
+
+```
+Internet (HTTPS)
+    ↓
+Railway Load Balancer (Port $PORT)
+    ↓
+nginx Container (basic auth) 🔒 ← PASSWORD CHECK HERE
+    ↓ (only if authenticated)
+Node.js Application (Port 5000)
+    ↓
+PostgreSQL Database
+```
+
+**Security Features:**
+- ✅ All routes protected (frontend, API, static files)
+- ✅ Network-level authentication (happens before any code runs)
+- ✅ No code changes needed to enable/disable
+- ✅ Simple for 2-3 internal users
+- ✅ HTTPS encryption via Railway
+
+**How to Change Password:**
+1. Update `AUTH_PASSWORD` in Railway variables
+2. Railway will automatically redeploy
+3. Inform users of new credentials
+
+**How to Remove Password Protection:**
+1. Change `railway.json` back to use NIXPACKS instead of DOCKERFILE
+2. Remove `Dockerfile` and `nginx.conf`
+3. Remove `AUTH_PASSWORD` variable
+4. Redeploy
+
+See `AUTH_SETUP.md` for detailed authentication documentation.
+
 ## Troubleshooting
 
 ### Build Fails
@@ -145,10 +205,23 @@ Your app includes a health endpoint at `/api/health` that Railway can use for mo
 - Check for typos in variable names
 
 ### Port Issues
-Railway automatically sets the `PORT` environment variable. Your Express app should use:
-```javascript
-const PORT = process.env.PORT || 3000;
-```
+Railway automatically sets the `PORT` environment variable. The Dockerfile is configured to:
+- Run nginx on Railway's `$PORT` (public-facing)
+- Run Node.js on port 5000 (internal only)
+- nginx proxies authenticated requests to Node.js
+
+### Authentication Issues
+**401 Unauthorized:**
+- Verify username is `admin` (lowercase)
+- Check password matches `AUTH_PASSWORD` in Railway
+- Clear browser cache/cookies
+- Try incognito/private mode
+
+**502 Bad Gateway:**
+- Node.js application failed to start
+- Check Railway logs for errors
+- Verify all environment variables are set
+- Check database connectivity
 
 ## Costs
 

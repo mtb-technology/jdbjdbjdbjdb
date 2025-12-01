@@ -43,6 +43,6 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.d/40-generate-htpasswd.sh && \
     chmod +x /docker-entrypoint.d/40-generate-htpasswd.sh
 
 # Start Node.js app in background and nginx in foreground
-CMD sh -c "cd /app && PORT=5000 node dist/index.js & nginx -g 'daemon off;'"
+CMD sh -c "cd /app && NODE_ENV=production PORT=5000 node dist/index.js & nginx -g 'daemon off;'"
 
 EXPOSE $PORT
