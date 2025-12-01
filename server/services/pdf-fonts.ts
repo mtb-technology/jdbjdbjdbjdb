@@ -1,11 +1,6 @@
 import { jsPDF } from 'jspdf';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 interface FontConfig {
   name: string;
@@ -31,7 +26,8 @@ export class PDFFontLoader {
     }
 
     try {
-      const fontsDir = path.join(__dirname, '../assets/fonts');
+      // In production (bundled), fonts are in server/assets/fonts relative to project root
+      const fontsDir = path.join(process.cwd(), 'server', 'assets', 'fonts');
 
       // Check if fonts directory exists
       if (!fs.existsSync(fontsDir)) {
