@@ -1,5 +1,5 @@
-import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment } from "@shared/schema";
-import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments } from "@shared/schema";
+import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession } from "@shared/schema";
+import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql } from "drizzle-orm";
 import * as fs from "fs";
@@ -50,6 +50,13 @@ export interface IStorage {
   updateAttachmentUsage(id: string, stageId: string): Promise<Attachment | undefined>;
   updateAttachment(id: string, data: Partial<Attachment>): Promise<Attachment | undefined>;
   deleteAttachment(id: string): Promise<void>;
+
+  // Box 3 Validator Sessions
+  getBox3ValidatorSession(id: string): Promise<Box3ValidatorSession | undefined>;
+  getAllBox3ValidatorSessions(): Promise<Box3ValidatorSession[]>;
+  createBox3ValidatorSession(session: InsertBox3ValidatorSession): Promise<Box3ValidatorSession>;
+  updateBox3ValidatorSession(id: string, data: Partial<Box3ValidatorSession>): Promise<Box3ValidatorSession | undefined>;
+  deleteBox3ValidatorSession(id: string): Promise<void>;
 }
 
 // DatabaseStorage - permanente opslag in PostgreSQL
@@ -406,6 +413,34 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAttachment(id: string): Promise<void> {
     await db.delete(attachments).where(eq(attachments.id, id));
+  }
+
+  // Box 3 Validator Session methods
+  async getBox3ValidatorSession(id: string): Promise<Box3ValidatorSession | undefined> {
+    const [session] = await db.select().from(box3ValidatorSessions).where(eq(box3ValidatorSessions.id, id));
+    return session || undefined;
+  }
+
+  async getAllBox3ValidatorSessions(): Promise<Box3ValidatorSession[]> {
+    return await db.select().from(box3ValidatorSessions).orderBy(desc(box3ValidatorSessions.createdAt));
+  }
+
+  async createBox3ValidatorSession(insertSession: InsertBox3ValidatorSession): Promise<Box3ValidatorSession> {
+    const [session] = await db.insert(box3ValidatorSessions).values(insertSession).returning();
+    return session;
+  }
+
+  async updateBox3ValidatorSession(id: string, updateData: Partial<Box3ValidatorSession>): Promise<Box3ValidatorSession | undefined> {
+    const [updated] = await db
+      .update(box3ValidatorSessions)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(box3ValidatorSessions.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteBox3ValidatorSession(id: string): Promise<void> {
+    await db.delete(box3ValidatorSessions).where(eq(box3ValidatorSessions.id, id));
   }
 }
 

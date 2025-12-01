@@ -851,3 +851,163 @@ export const insertAttachmentSchema = createInsertSchema(attachments, {
   fileSize: z.string().min(1, "File size is verplicht"),
   fileData: z.string().min(1, "File data is verplicht"),
 }).omit({ id: true, uploadedAt: true });
+
+// ===== BOX 3 VALIDATOR SESSIONS =====
+/**
+ * ## BOX 3 VALIDATOR SESSIONS TABLE
+ *
+ * **Verantwoordelijkheid**: Micro-module voor validatie van Box 3 bezwaar documenten
+ *
+ * Valideert of alle gevraagde documenten uit een informatieverzoek aanwezig zijn:
+ * 1. Aangifte inkomstenbelasting
+ * 2. Bankrekeningen (rente + valutaresultaten)
+ * 3. Beleggingen (beginstand, eindstand, stortingen, dividenden)
+ * 4. Vastgoed & overige bezittingen (WOZ-waarde, huuroverzicht)
+ * 5. Schulden (overzicht + betaalde rente)
+ *
+ * Output: Checklist per categorie + concept reactie-mail
+ */
+// Type voor opgeslagen bijlages
+export interface Box3Attachment {
+  filename: string;
+  mimeType: string;
+  fileSize: number;
+  fileData: string; // base64 encoded
+}
+
+export const box3ValidatorSessions = pgTable("box3_validator_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientName: text("client_name").notNull(),
+  belastingjaar: text("belastingjaar"), // Gedetecteerd belastingjaar
+  inputText: text("input_text").notNull(), // Mail tekst van klant
+  attachmentNames: jsonb("attachment_names").$type<string[]>(), // Array van bestandsnamen (legacy)
+  attachments: jsonb("attachments").$type<Box3Attachment[]>(), // Volledige bijlages met data
+  validationResult: jsonb("validation_result").$type<Box3ValidationResult>(), // AI validatie output
+  conceptMail: jsonb("concept_mail").$type<{ onderwerp: string; body: string }>(), // Concept reactie
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  clientNameIdx: index("box3_validator_client_name_idx").on(table.clientName),
+  createdAtIdx: index("box3_validator_created_at_idx").on(table.createdAt),
+}));
+
+// Box 3 Validation Result Schema - Flexibel voor COG output
+// De structuur is afhankelijk van de prompt die de gebruiker configureert
+
+// Global status types
+export const box3GlobalStatusSchema = z.enum([
+  "REJECTED_LOW_VALUE",
+  "REJECTED_SAVINGS_ONLY",
+  "MISSING_IB_CRITICAL",
+  "ACTION_REQUIRED",
+  "READY_FOR_CALCULATION"
+]);
+
+// Document validatie status
+export const box3DocumentStatusSchema = z.enum(["compleet", "onvolledig", "ontbreekt", "nvt"]);
+
+// Flexibel schema dat alles accepteert wat de AI teruggeeft
+export const box3ValidationResultSchema = z.object({
+  // Geëxtraheerde data (flexibel)
+  gevonden_data: z.object({
+    algemeen: z.object({
+      belastingjaar: z.union([z.number(), z.string()]).nullable().optional(),
+      fiscaal_partnerschap_detectie: z.string().nullable().optional(),
+    }).optional(),
+    fiscus_box3: z.object({
+      totaal_bezittingen_bruto: z.number().nullable().optional(),
+      heffingsvrij_vermogen: z.number().nullable().optional(),
+      belastbaar_inkomen_na_drempel: z.number().nullable().optional(),
+      schulden_box3: z.number().nullable().optional(),
+    }).optional(),
+    werkelijk_rendement_input: z.object({
+      bank_rente_ontvangen: z.number().nullable().optional(),
+      beleggingen_waarde_1jan: z.number().nullable().optional(),
+      beleggingen_waarde_31dec: z.number().nullable().optional(),
+      beleggingen_dividend: z.number().nullable().optional(),
+      beleggingen_mutaties_gevonden: z.boolean().nullable().optional(),
+      schulden_rente_betaald: z.number().nullable().optional(),
+    }).optional(),
+  }).optional(),
+
+  // Analyse resultaat
+  analyse_box3: z.object({
+    oordeel_basis_bedrag: z.number().nullable().optional(),
+    conclusie_type: z.string().optional(),
+  }).optional(),
+
+  // Globale status
+  global_status: z.string().optional(),
+
+  // Document validatie per categorie
+  document_validatie: z.object({
+    bank: box3DocumentStatusSchema.optional(),
+    beleggingen: box3DocumentStatusSchema.optional(),
+    vastgoed: box3DocumentStatusSchema.optional(),
+  }).optional(),
+
+  // Concept mail
+  draft_mail: z.object({
+    onderwerp: z.string(),
+    body: z.string(),
+  }).optional(),
+
+  // Legacy velden voor backward compatibility
+  belastingjaar: z.string().optional(),
+  validatie: z.object({
+    aangifte_ib: z.object({
+      status: z.enum(["compleet", "onvolledig", "ontbreekt"]),
+      feedback: z.string(),
+      gevonden_in: z.array(z.string()).optional(),
+    }).optional(),
+    bankrekeningen: z.object({
+      status: z.enum(["compleet", "onvolledig", "ontbreekt"]),
+      feedback: z.string(),
+      gevonden_in: z.array(z.string()).optional(),
+    }).optional(),
+    beleggingen: z.object({
+      status: z.enum(["compleet", "onvolledig", "ontbreekt"]),
+      feedback: z.string(),
+      gevonden_in: z.array(z.string()).optional(),
+    }).optional(),
+    vastgoed: z.object({
+      status: z.enum(["compleet", "onvolledig", "ontbreekt"]),
+      feedback: z.string(),
+      gevonden_in: z.array(z.string()).optional(),
+    }).optional(),
+    schulden: z.object({
+      status: z.enum(["compleet", "onvolledig", "ontbreekt"]),
+      feedback: z.string(),
+      gevonden_in: z.array(z.string()).optional(),
+    }).optional(),
+  }).optional(),
+  concept_mail: z.object({
+    onderwerp: z.string(),
+    body: z.string(),
+  }).optional(),
+}).passthrough(); // Accepteer extra velden die niet in het schema staan
+
+export type Box3ValidationResult = z.infer<typeof box3ValidationResultSchema>;
+export type Box3GlobalStatus = z.infer<typeof box3GlobalStatusSchema>;
+export type Box3DocumentStatus = z.infer<typeof box3DocumentStatusSchema>;
+export type Box3ValidatorSession = typeof box3ValidatorSessions.$inferSelect;
+export type InsertBox3ValidatorSession = typeof box3ValidatorSessions.$inferInsert;
+
+export const box3AttachmentSchema = z.object({
+  filename: z.string(),
+  mimeType: z.string(),
+  fileSize: z.number(),
+  fileData: z.string(), // base64
+});
+
+export const insertBox3ValidatorSessionSchema = createInsertSchema(box3ValidatorSessions, {
+  clientName: z.string().min(1, "Klantnaam is verplicht"),
+  inputText: z.string().min(1, "Input tekst is verplicht"),
+  attachmentNames: z.array(z.string()).nullable().optional(),
+  attachments: z.array(box3AttachmentSchema).nullable().optional(),
+  validationResult: box3ValidationResultSchema.nullable().optional(),
+  conceptMail: z.object({
+    onderwerp: z.string(),
+    body: z.string()
+  }).nullable().optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });

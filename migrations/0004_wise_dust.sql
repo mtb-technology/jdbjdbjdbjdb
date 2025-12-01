@@ -1,0 +1,1 @@
+ALTER TABLE "box3_validator_sessions" ADD COLUMN "attachments" jsonb;

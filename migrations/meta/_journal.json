@@ -22,6 +22,20 @@
       "when": 1764512971881,
       "tag": "0002_demonic_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1764530797645,
+      "tag": "0003_dazzling_skaar",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1764533058256,
+      "tag": "0004_wise_dust",
+      "breakpoints": true
     }
   ]
 }

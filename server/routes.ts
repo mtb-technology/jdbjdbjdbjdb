@@ -24,6 +24,7 @@ import { registerHealthRoutes } from "./routes/health-routes";
 import { registerPromptRoutes } from "./routes/prompt-routes";
 import { registerCaseRoutes } from "./routes/case-routes";
 import { registerReportRoutes } from "./routes/report-routes";
+import { box3ValidatorRouter } from "./routes/box3-validator-routes";
 import { z } from "zod";
 import { ServerError, asyncHandler, getErrorMessage, isErrorWithMessage } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
@@ -81,6 +82,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     sseHandler,
     sessionManager
   });
+
+  // Box 3 Validator micro-module
+  app.use("/api/box3-validator", box3ValidatorRouter);
   // ==============================================
 
   // Start periodic health checks and run immediate warm-up
