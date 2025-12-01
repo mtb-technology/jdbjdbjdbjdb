@@ -106,17 +106,26 @@ app.use((req, res, next) => {
     process.exit(1);
   }
 
-  // Check database connection
+  // Check database connection (non-blocking in production for Railway startup)
   try {
     const dbConnected = await checkDatabaseConnection();
     if (!dbConnected) {
-      console.error('❌ Database connection failed. Exiting...');
-      process.exit(1);
+      console.warn('⚠️ Database connection failed. App will start but may have limited functionality.');
+      if (!config.IS_PRODUCTION) {
+        console.error('❌ Exiting in development mode...');
+        process.exit(1);
+      }
+    } else {
+      console.log('✅ Database connection verified');
     }
-    console.log('✅ Database connection verified');
   } catch (error) {
     console.error('❌ Database connection error:', error);
-    process.exit(1);
+    if (!config.IS_PRODUCTION) {
+      console.error('❌ Exiting in development mode...');
+      process.exit(1);
+    } else {
+      console.warn('⚠️ Continuing in production mode...');
+    }
   }
 
   const server = await registerRoutes(app);

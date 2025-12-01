@@ -15,10 +15,10 @@ import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@
 export function registerHealthRoutes(app: Express): void {
   const healthService = new AIHealthService(AIMonitoringService.getInstance());
 
-  // Start periodic health checks and run immediate warm-up
+  // Start periodic health checks and run immediate warm-up (non-blocking)
   healthService.startPeriodicHealthChecks();
 
-  // Warm up health cache immediately
+  // Warm up health cache immediately (don't wait for it)
   healthService.getSystemHealth().catch(error => {
     console.warn('Initial health check failed:', error);
   });
@@ -26,12 +26,31 @@ export function registerHealthRoutes(app: Express): void {
   /**
    * GET /api/health
    *
-   * Public health check endpoint for load balancers and monitoring systems.
+   * Simple health check endpoint for load balancers (Railway, etc).
+   * Returns 200 OK immediately if the server is running.
+   * This endpoint is optimized for fast startup checks.
+   *
+   * Response: 200 OK if server is running
+   */
+  app.get("/api/health", asyncHandler(async (req: Request, res: Response) => {
+    // Simple, fast health check - just return OK if we can respond
+    // Railway needs this to be fast during initial startup
+    res.status(200).json(createApiSuccessResponse({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    }, 'Service is running'));
+  }));
+
+  /**
+   * GET /api/health/full
+   *
+   * Comprehensive health check with AI services and database status.
    * Returns cached health status (redacted for security).
    *
    * Response: 200 OK if healthy, 503 Service Unavailable if unhealthy
    */
-  app.get("/api/health", asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/health/full", asyncHandler(async (req: Request, res: Response) => {
     const health = healthService.getCachedHealth();
     const statusCode = health.overall === 'healthy' ? 200 : 503;
 
