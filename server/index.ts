@@ -8,10 +8,17 @@ import { checkDatabaseConnection } from "./db";
 
 const app = express();
 
-// CORS middleware - allow requests from Vite dev server
+// CORS middleware - allow requests from Vite dev server and production
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
-  res.header('Access-Control-Allow-Credentials', 'true');
+  const origin = req.headers.origin;
+  const allowedOrigins = ['http://localhost:3000', 'http://localhost:5000'];
+
+  // In production, allow same-origin requests
+  if (config.IS_PRODUCTION || (origin && allowedOrigins.includes(origin))) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-ID, X-Admin-Key');
 
@@ -133,7 +140,7 @@ app.use((req, res, next) => {
   const port = config.PORT;
   server.listen({
     port,
-    host: "localhost",
+    host: "0.0.0.0",
   }, () => {
     log(`serving on port ${port}`);
   });

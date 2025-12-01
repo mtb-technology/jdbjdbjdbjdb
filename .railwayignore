@@ -1,0 +1,38 @@
+# Development files
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Build artifacts (will be built on Railway)
+dist/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+coverage/
+*.test.ts
+*.test.tsx
+__tests__/
+
+# Documentation
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+
+# Logs
+logs/
+*.log
+npm-debug.log*
