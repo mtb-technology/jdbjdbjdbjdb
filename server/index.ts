@@ -147,7 +147,18 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = config.PORT;
+  console.log(`🔧 Attempting to bind to port ${port} on host 0.0.0.0`);
+  console.log(`🔧 Environment PORT: ${process.env.PORT}`);
+  console.log(`🔧 Config PORT: ${config.PORT}`);
+
   server.listen(port, "0.0.0.0", () => {
+    console.log(`🚀 ✅ SERVER SUCCESSFULLY LISTENING ON PORT ${port}`);
     log(`serving on port ${port}`);
+  });
+
+  server.on('error', (error: any) => {
+    console.error(`❌ SERVER ERROR:`, error);
+    console.error(`❌ Failed to bind to port ${port}`);
+    process.exit(1);
   });
 })();
