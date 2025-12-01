@@ -72,16 +72,26 @@ export function serveStatic(app: Express) {
   // Use process.cwd() to get the project root, then resolve to dist/public
   const distPath = path.resolve(process.cwd(), "dist", "public");
 
-  if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
-    );
+  console.log(`📁 Serving static files from: ${distPath}`);
+  console.log(`📁 Directory exists: ${fs.existsSync(distPath)}`);
+
+  if (fs.existsSync(distPath)) {
+    console.log(`✅ Found build directory, serving static files`);
+    app.use(express.static(distPath));
+
+    // fall through to index.html if the file doesn't exist
+    app.use("*", (_req, res) => {
+      res.sendFile(path.resolve(distPath, "index.html"));
+    });
+  } else {
+    console.warn(`⚠️ Build directory not found at ${distPath}`);
+    console.warn(`⚠️ Static file serving disabled - API-only mode`);
+
+    // Serve a simple message for non-API routes
+    app.use("*", (_req, res) => {
+      res.status(404).json({
+        message: "Static files not available - API is running at /api/*"
+      });
+    });
   }
-
-  app.use(express.static(distPath));
-
-  // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
-  });
 }
