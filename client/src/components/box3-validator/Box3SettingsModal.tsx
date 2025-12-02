@@ -13,8 +13,7 @@ import { RotateCcw, Info, Calculator } from "lucide-react";
 import {
   FORFAITAIRE_RENDEMENTEN,
   BOX3_TARIEVEN,
-  type ForfaitaireRendementen,
-} from "@/pages/box3-validator";
+} from "@/constants/box3.constants";
 
 // Default Box 3 Validator System Prompt
 export const DEFAULT_BOX3_SYSTEM_PROMPT = `Je bent een fiscaal specialist die documenten voor Box 3 bezwaar zaken valideert.

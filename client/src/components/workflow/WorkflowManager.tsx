@@ -458,7 +458,8 @@ function WorkflowManagerContent({
 
   // Auto-start first stage if autoStart is true
   useEffect(() => {
-    if (autoStart && state.currentReport && state.currentStageIndex === 0 && !state.isStageExecuting) {
+    const isAnyStageProcessing = Object.values(state.stageProcessing).some(v => v);
+    if (autoStart && state.currentReport && state.currentStageIndex === 0 && !isAnyStageProcessing) {
       const stageResults = state.currentReport.stageResults as Record<string, string> || {};
       const firstStageKey = WORKFLOW_STAGES[0].key;
 
@@ -472,7 +473,7 @@ function WorkflowManagerContent({
         });
       }
     }
-  }, [autoStart, state.currentReport, state.currentStageIndex, state.isStageExecuting]);
+  }, [autoStart, state.currentReport, state.currentStageIndex, state.stageProcessing]);
 
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
   const progressPercentage = Math.round((Object.keys(state.stageResults).length / WORKFLOW_STAGES.length) * 100);

@@ -361,7 +361,7 @@ fileUploadRouter.post(
         console.error('📎 Multer error:', err.message, err.stack);
         return res.status(400).json(createApiErrorResponse(
           'VALIDATION_ERROR',
-          'FILE_UPLOAD_ERROR',
+          ERROR_CODES.VALIDATION_FAILED,
           err.message || 'Bestand upload mislukt',
           err.message
         ));
@@ -443,6 +443,8 @@ fileUploadRouter.post(
                     model: 'gemini-2.5-flash',
                     temperature: 0.1,
                     maxOutputTokens: 32768,
+                    topP: 0.95,
+                    topK: 40,
                     provider: 'google'
                   },
                   {
@@ -489,6 +491,8 @@ fileUploadRouter.post(
                   model: 'gemini-2.5-flash',
                   temperature: 0.1,
                   maxOutputTokens: 32768,
+                  topP: 0.95,
+                  topK: 40,
                   provider: 'google'
                 },
                 {
@@ -766,6 +770,8 @@ fileUploadRouter.post(
             model: 'gemini-2.5-flash',
             temperature: 0.1,
             maxOutputTokens: 32768,
+            topP: 0.95,
+            topK: 40,
             provider: 'google'
           },
           {

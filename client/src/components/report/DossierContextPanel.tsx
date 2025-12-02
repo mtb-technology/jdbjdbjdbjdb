@@ -120,7 +120,7 @@ Je kunt nu vragen stellen over deze casus.`;
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => generateMutation.mutate()}
+                onClick={() => generateMutation.mutate(undefined)}
                 disabled={generateMutation.isPending}
               >
                 {generateMutation.isPending ? (
@@ -152,7 +152,7 @@ Je kunt nu vragen stellen over deze casus.`;
                 variant="outline"
                 size="sm"
                 className="mt-3"
-                onClick={() => generateMutation.mutate()}
+                onClick={() => generateMutation.mutate(undefined)}
                 disabled={generateMutation.isPending}
               >
                 {generateMutation.isPending ? (

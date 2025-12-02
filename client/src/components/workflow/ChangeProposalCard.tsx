@@ -17,6 +17,7 @@ import {
 
 // Lazy load diff viewer - only loads when proposal card is expanded with diff view
 const ReactDiffViewer = lazy(() => import('react-diff-viewer-continued'));
+import { DiffMethod } from 'react-diff-viewer-continued';
 
 export interface ChangeProposal {
   id: string;
@@ -173,7 +174,7 @@ export function ChangeProposalCard({
                   oldValue={proposal.original}
                   newValue={proposal.proposed}
                   splitView={false}
-                  compareMethod="diffWords"
+                  compareMethod={DiffMethod.WORDS}
                   hideLineNumbers={true}
                   showDiffOnly={true}
                   styles={{

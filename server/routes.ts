@@ -78,7 +78,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     reportGenerator,
     reportProcessor,
     sourceValidator,
-    promptBuilder,
     sseHandler,
     sessionManager
   });
@@ -93,8 +92,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Warm up health cache immediately
   healthService.getSystemHealth().catch(error => {
     console.error('❌ Initial health check FAILED:', error);
-    // Log to monitoring system for visibility
-    AIMonitoringService.getInstance().recordError('initial_health_check', error);
   });
 
   // Test route voor AI - simpele test om te verifieren dat API werkt

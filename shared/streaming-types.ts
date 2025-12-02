@@ -54,13 +54,23 @@ export interface CancelEvent {
   timestamp: string;
 }
 
-export type StreamingEvent = 
-  | ProgressEvent 
-  | StreamingStepEvent 
-  | TokenStreamEvent 
-  | StageCompleteEvent 
-  | StageErrorEvent 
-  | CancelEvent;
+export interface ResearchProgressEvent {
+  type: 'research_progress';
+  stageId: string;
+  researchStage: string;
+  percentage: number;
+  message: string;
+  timestamp: string;
+}
+
+export type StreamingEvent =
+  | ProgressEvent
+  | StreamingStepEvent
+  | TokenStreamEvent
+  | StageCompleteEvent
+  | StageErrorEvent
+  | CancelEvent
+  | ResearchProgressEvent;
 
 export interface StageProgress {
   stageId: string;
