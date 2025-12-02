@@ -101,10 +101,10 @@ Je kunt nu vragen stellen over deze casus.`;
   return (
     <>
       <Card className="mb-4 dark:bg-slate-800/50">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-2 pt-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <FileText className="h-5 w-5" />
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <FileText className="h-4 w-4" />
               Dossier Context
             </CardTitle>
             <div className="flex items-center gap-2">
@@ -141,7 +141,7 @@ Je kunt nu vragen stellen over deze casus.`;
         </CardHeader>
         <CardContent>
           {summary ? (
-            <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
+            <div className="prose prose-xs dark:prose-invert max-w-none text-xs leading-relaxed [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">
               <ReactMarkdown>{summary}</ReactMarkdown>
             </div>
           ) : (

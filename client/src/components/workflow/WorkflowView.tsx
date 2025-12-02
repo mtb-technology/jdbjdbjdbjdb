@@ -442,7 +442,7 @@ export const WorkflowView = memo(function WorkflowView({
         >
           <Card className="bg-white dark:bg-jdb-panel border-jdb-border">
             <CardContent className="p-6 md:p-8">
-              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                 <motion.div
                   className="flex items-center gap-4"
                   whileHover={shouldReduceMotion ? {} : { scale: 1.02 }}
@@ -460,7 +460,7 @@ export const WorkflowView = memo(function WorkflowView({
                     </p>
                   </div>
                 </motion.div>
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-6">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4 flex-shrink-0">
                   <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
                     <Badge
                       variant="outline"
@@ -570,29 +570,181 @@ export const WorkflowView = memo(function WorkflowView({
           </Card>
         </motion.div>
 
-        {/* Workflow Stages */}
-        <motion.div
-          initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
-          animate={shouldReduceMotion ? false : { opacity: 1, y: 0 }}
-          transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.5, delay: 0.1 }}
-        >
-          <Card className="bg-white dark:bg-jdb-panel">
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-jdb-blue-primary shadow-sm">
-                  <Eye className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <span className="text-xl font-semibold text-jdb-text-heading">
-                    AI Workflow - Volledige Transparantie
-                  </span>
-                  <p className="text-sm text-jdb-text-subtle font-normal mt-1">
-                    Bekijk en bewerk exact wat naar de AI wordt gestuurd en wat terugkomt
-                  </p>
-                </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 md:p-6 space-y-4">
+        {/* Workflow Layout with Sidebar */}
+        <div className="flex gap-4">
+          {/* Sticky Sidebar Navigator - Only on 2XL screens (1536px+) to avoid conflict with case-detail sidebar */}
+          <div className="hidden 2xl:block w-44 flex-shrink-0">
+            <div className="sticky top-24">
+              <Card className="bg-white dark:bg-jdb-panel">
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <CardTitle className="text-sm font-semibold text-jdb-text-heading">Stappen</CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 space-y-1">
+                  {/* Stage Groups */}
+                  <div className="space-y-3">
+                    {/* Intake Group */}
+                    <div>
+                      <p className="text-[10px] font-semibold text-jdb-text-subtle uppercase tracking-wider px-2 mb-1">Intake</p>
+                      {WORKFLOW_STAGES.filter(s => ['1_informatiecheck', '2_complexiteitscheck'].includes(s.key)).map((stage, idx) => {
+                        const hasResult = !!state.stageResults[stage.key];
+                        const isActive = WORKFLOW_STAGES.findIndex(s => s.key === stage.key) === state.currentStageIndex;
+                        return (
+                          <button
+                            key={stage.key}
+                            onClick={() => {
+                              toggleStageExpansion(stage.key);
+                              document.getElementById(`stage-${stage.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
+                            className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                              isActive ? 'bg-jdb-blue-primary/10 text-jdb-blue-primary font-medium' :
+                              hasResult ? 'text-jdb-success hover:bg-jdb-bg' :
+                              'text-jdb-text-subtle hover:bg-jdb-bg'
+                            }`}
+                          >
+                            {hasResult ? (
+                              <CheckCircle className="w-3 h-3 text-jdb-success flex-shrink-0" />
+                            ) : isActive ? (
+                              <div className="w-3 h-3 rounded-full border-2 border-jdb-blue-primary flex-shrink-0" />
+                            ) : (
+                              <div className="w-3 h-3 rounded-full border border-jdb-text-subtle/30 flex-shrink-0" />
+                            )}
+                            <span className="truncate">{stage.label.replace(/^\d+[a-z]?\.\s*/, '')}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Generatie Group */}
+                    <div>
+                      <p className="text-[10px] font-semibold text-jdb-text-subtle uppercase tracking-wider px-2 mb-1">Generatie</p>
+                      {WORKFLOW_STAGES.filter(s => s.key === '3_generatie').map((stage) => {
+                        const hasResult = !!state.stageResults[stage.key] || !!state.conceptReportVersions[stage.key];
+                        const isActive = WORKFLOW_STAGES.findIndex(s => s.key === stage.key) === state.currentStageIndex;
+                        return (
+                          <button
+                            key={stage.key}
+                            onClick={() => {
+                              toggleStageExpansion(stage.key);
+                              document.getElementById(`stage-${stage.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
+                            className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                              isActive ? 'bg-jdb-blue-primary/10 text-jdb-blue-primary font-medium' :
+                              hasResult ? 'text-jdb-success hover:bg-jdb-bg' :
+                              'text-jdb-text-subtle hover:bg-jdb-bg'
+                            }`}
+                          >
+                            {hasResult ? (
+                              <CheckCircle className="w-3 h-3 text-jdb-success flex-shrink-0" />
+                            ) : isActive ? (
+                              <div className="w-3 h-3 rounded-full border-2 border-jdb-blue-primary flex-shrink-0" />
+                            ) : (
+                              <div className="w-3 h-3 rounded-full border border-jdb-text-subtle/30 flex-shrink-0" />
+                            )}
+                            <span className="truncate">Rapport</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Review Group */}
+                    <div>
+                      <p className="text-[10px] font-semibold text-jdb-text-subtle uppercase tracking-wider px-2 mb-1">Review</p>
+                      {WORKFLOW_STAGES.filter(s => s.key.startsWith('4') && s.key !== '4_change_summary').map((stage) => {
+                        const hasResult = !!state.stageResults[stage.key];
+                        const isActive = WORKFLOW_STAGES.findIndex(s => s.key === stage.key) === state.currentStageIndex;
+                        // Shorten reviewer names
+                        const shortName = stage.label
+                          .replace(/^\d+[a-z]?\.\s*/, '')
+                          .replace('Specialist', '')
+                          .replace('Hoofd ', '')
+                          .trim();
+                        return (
+                          <button
+                            key={stage.key}
+                            onClick={() => {
+                              toggleStageExpansion(stage.key);
+                              document.getElementById(`stage-${stage.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
+                            className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                              isActive ? 'bg-jdb-blue-primary/10 text-jdb-blue-primary font-medium' :
+                              hasResult ? 'text-jdb-success hover:bg-jdb-bg' :
+                              'text-jdb-text-subtle hover:bg-jdb-bg'
+                            }`}
+                          >
+                            {hasResult ? (
+                              <CheckCircle className="w-3 h-3 text-jdb-success flex-shrink-0" />
+                            ) : isActive ? (
+                              <div className="w-3 h-3 rounded-full border-2 border-jdb-blue-primary flex-shrink-0" />
+                            ) : (
+                              <div className="w-3 h-3 rounded-full border border-jdb-text-subtle/30 flex-shrink-0" />
+                            )}
+                            <span className="truncate">{shortName}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Afronding Group */}
+                    <div>
+                      <p className="text-[10px] font-semibold text-jdb-text-subtle uppercase tracking-wider px-2 mb-1">Afronding</p>
+                      {WORKFLOW_STAGES.filter(s => s.key === '6_change_summary').map((stage) => {
+                        const hasResult = !!state.stageResults[stage.key];
+                        const isActive = WORKFLOW_STAGES.findIndex(s => s.key === stage.key) === state.currentStageIndex;
+                        return (
+                          <button
+                            key={stage.key}
+                            onClick={() => {
+                              toggleStageExpansion(stage.key);
+                              document.getElementById(`stage-${stage.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
+                            className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                              isActive ? 'bg-jdb-blue-primary/10 text-jdb-blue-primary font-medium' :
+                              hasResult ? 'text-jdb-success hover:bg-jdb-bg' :
+                              'text-jdb-text-subtle hover:bg-jdb-bg'
+                            }`}
+                          >
+                            {hasResult ? (
+                              <CheckCircle className="w-3 h-3 text-jdb-success flex-shrink-0" />
+                            ) : isActive ? (
+                              <div className="w-3 h-3 rounded-full border-2 border-jdb-blue-primary flex-shrink-0" />
+                            ) : (
+                              <div className="w-3 h-3 rounded-full border border-jdb-text-subtle/30 flex-shrink-0" />
+                            )}
+                            <span className="truncate">Samenvatting</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* Main Workflow Content */}
+          <motion.div
+            className="flex-1 min-w-0"
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
+            animate={shouldReduceMotion ? false : { opacity: 1, y: 0 }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.5, delay: 0.1 }}
+          >
+            <Card className="bg-white dark:bg-jdb-panel overflow-hidden">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-jdb-blue-primary shadow-sm">
+                    <Eye className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <span className="text-xl font-semibold text-jdb-text-heading">
+                      AI Workflow
+                    </span>
+                    <p className="text-sm text-jdb-text-subtle font-normal mt-1">
+                      Volledige transparantie - bekijk wat naar de AI gaat en terugkomt
+                    </p>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 md:p-6 space-y-4 overflow-hidden">
               {/* ✅ REFACTORED: Use WorkflowStageCard for each stage */}
               {WORKFLOW_STAGES.map((stage, index) => {
                 const stageResult = state.stageResults[stage.key] || "";
@@ -655,8 +807,8 @@ export const WorkflowView = memo(function WorkflowView({
                 const showFeedbackProcessor = isReviewer && hasRawFeedback;
 
                 return (
+                  <div key={stage.key} id={`stage-${stage.key}`}>
                   <WorkflowStageCard
-                    key={stage.key}
                     stageKey={stage.key}
                     stageName={stage.label}
                     stageIcon={getStageIcon(stage.key)}
@@ -703,11 +855,13 @@ export const WorkflowView = memo(function WorkflowView({
                       onManualExecute: handleStageManualExecute(stage.key)
                     } : {})}
                   />
+                  </div>
                 );
               })}
             </CardContent>
           </Card>
         </motion.div>
+        </div>
       </div>
     </>
   );

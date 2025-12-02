@@ -49,11 +49,11 @@ export function ChangeProposalCard({
   const getSeverityIcon = () => {
     switch (proposal.severity) {
       case 'critical':
-        return <AlertTriangle className="h-5 w-5 text-red-500" />;
+        return <AlertTriangle className="h-4 w-4 text-red-500" />;
       case 'important':
-        return <Info className="h-5 w-5 text-blue-500" />;
+        return <Info className="h-4 w-4 text-blue-500" />;
       case 'suggestion':
-        return <Lightbulb className="h-5 w-5 text-yellow-500" />;
+        return <Lightbulb className="h-4 w-4 text-amber-500" />;
     }
   };
 
@@ -112,63 +112,61 @@ export function ChangeProposalCard({
   const isDecided = !!proposal.userDecision;
 
   return (
-    <Card className={`${getSeverityColor()} border-2 transition-all ${isDecided ? 'opacity-60' : ''}`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-3 flex-1">
-            {getSeverityIcon()}
-            <div className="flex-1 space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="outline" className="font-semibold">
-                  {getSeverityLabel()}
-                </Badge>
-                <Badge variant="secondary">
-                  {getChangeTypeLabel()}
-                </Badge>
-                <Badge variant="secondary">
-                  {proposal.specialist}
-                </Badge>
-                {isDecided && (
-                  <Badge 
-                    variant={proposal.userDecision === 'accept' ? 'default' : 'destructive'}
-                    className="ml-auto"
-                  >
-                    {proposal.userDecision === 'accept' ? '✅ Geaccepteerd' : 
-                     proposal.userDecision === 'reject' ? '❌ Afgewezen' : 
-                     '✏️ Aangepast'}
-                  </Badge>
-                )}
-              </div>
-              <div className="text-sm font-medium text-foreground">
-                Sectie: {proposal.section}
-              </div>
+    <Card className={`${getSeverityColor()} border transition-all ${isDecided ? 'opacity-50' : ''}`}>
+      <CardHeader className="py-2.5 px-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="flex-shrink-0">{getSeverityIcon()}</span>
+            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
+                {getSeverityLabel()}
+              </Badge>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
+                {getChangeTypeLabel()}
+              </Badge>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
+                {proposal.specialist}
+              </Badge>
             </div>
+            {isDecided && (
+              <Badge
+                variant={proposal.userDecision === 'accept' ? 'default' : 'destructive'}
+                className="text-[10px] px-1.5 py-0 h-5 ml-auto flex-shrink-0"
+              >
+                {proposal.userDecision === 'accept' ? '✓' :
+                 proposal.userDecision === 'reject' ? '✗' : '✎'}
+              </Badge>
+            )}
           </div>
           <Button
             variant="ghost"
             size="sm"
+            className="h-6 w-6 p-0 flex-shrink-0"
             onClick={() => setIsExpanded(!isExpanded)}
           >
-            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </Button>
         </div>
+        <p className="text-xs text-foreground/80 mt-1 truncate pl-7">
+          {proposal.section}
+        </p>
       </CardHeader>
 
       {isExpanded && (
-        <CardContent className="space-y-4">
-          {/* Reasoning */}
-          <div className="bg-background/50 dark:bg-gray-800/50 p-3 rounded-md border border-gray-200 dark:border-gray-700">
-            <p className="text-sm font-medium mb-1">Reden:</p>
-            <p className="text-sm text-muted-foreground">{proposal.reasoning}</p>
+        <CardContent className="space-y-3 pt-0 px-3 pb-3">
+          {/* Reasoning - compact */}
+          <div className="bg-background/50 dark:bg-gray-800/50 px-2.5 py-2 rounded border border-gray-200/50 dark:border-gray-700/50">
+            <p className="text-[11px] font-medium text-muted-foreground mb-0.5">Reden:</p>
+            <p className="text-xs text-foreground/80 leading-relaxed">{proposal.reasoning}</p>
           </div>
 
-          {/* Diff View */}
+          {/* Diff View - compact */}
           {showDiff && proposal.changeType !== 'add' && (
-            <div className="border rounded-lg overflow-hidden bg-background dark:bg-gray-900">
+            <div className="border rounded overflow-hidden bg-background dark:bg-gray-900 text-xs">
               <Suspense fallback={
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  <span className="ml-2 text-sm text-muted-foreground">Diff laden...</span>
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  <span className="ml-2 text-xs text-muted-foreground">Laden...</span>
                 </div>
               }>
                 <ReactDiffViewer
@@ -179,13 +177,21 @@ export function ChangeProposalCard({
                   hideLineNumbers={true}
                   showDiffOnly={true}
                   styles={{
+                    contentText: {
+                      fontSize: '12px',
+                      lineHeight: '1.4',
+                      fontFamily: 'ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace',
+                    },
+                    line: {
+                      padding: '2px 8px',
+                    },
                     variables: {
                       light: {
                         diffViewerBackground: '#ffffff',
-                        addedBackground: '#e6ffed',
-                        removedBackground: '#ffeef0',
-                        wordAddedBackground: '#acf2bd',
-                        wordRemovedBackground: '#fdb8c0',
+                        addedBackground: '#ecfdf5',
+                        removedBackground: '#fef2f2',
+                        wordAddedBackground: '#bbf7d0',
+                        wordRemovedBackground: '#fecaca',
                       },
                       dark: {
                         diffViewerBackground: '#1f2937',
@@ -201,66 +207,63 @@ export function ChangeProposalCard({
             </div>
           )}
 
-          {/* Just show new text for additions */}
+          {/* Just show new text for additions - compact */}
           {proposal.changeType === 'add' && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Nieuwe tekst:</p>
-              <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 p-3 rounded-md">
-                <p className="text-sm whitespace-pre-wrap text-gray-800 dark:text-gray-200">{proposal.proposed}</p>
-              </div>
+            <div className="bg-green-50/50 dark:bg-green-950/20 border border-green-200/50 dark:border-green-800/50 px-2.5 py-2 rounded">
+              <p className="text-xs whitespace-pre-wrap text-foreground/80 font-mono leading-relaxed">{proposal.proposed}</p>
             </div>
           )}
 
-          {/* Modification Note */}
+          {/* Modification Note - compact */}
           {isModifying && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Jouw aanpassing:</label>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Jouw aanpassing:</label>
               <Textarea
                 value={modificationNote}
                 onChange={(e) => setModificationNote(e.target.value)}
                 placeholder="Beschrijf hoe je deze wijziging wilt aanpassen..."
-                rows={3}
-                className="bg-background"
+                rows={2}
+                className="bg-background text-xs min-h-[60px]"
               />
             </div>
           )}
 
-          {/* Show user note if decided */}
+          {/* Show user note if decided - compact */}
           {isDecided && proposal.userNote && (
-            <div className="bg-background/50 p-3 rounded-md border-l-4 border-primary">
-              <p className="text-sm font-medium mb-1">Jouw notitie:</p>
-              <p className="text-sm text-muted-foreground">{proposal.userNote}</p>
+            <div className="bg-background/50 px-2.5 py-2 rounded border-l-2 border-primary">
+              <p className="text-[11px] font-medium text-muted-foreground mb-0.5">Notitie:</p>
+              <p className="text-xs text-foreground/80">{proposal.userNote}</p>
             </div>
           )}
 
-          {/* Action Buttons */}
+          {/* Action Buttons - compact row */}
           {!isDecided && (
-            <div className="flex items-center gap-2 pt-2">
+            <div className="flex items-center gap-1.5 pt-1">
               <Button
                 variant="default"
                 size="sm"
                 onClick={handleAccept}
-                className="flex-1"
+                className="flex-1 h-8 text-xs"
               >
-                <CheckCircle2 className="h-4 w-4 mr-2" />
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
                 Accepteer
               </Button>
               <Button
                 variant="destructive"
                 size="sm"
                 onClick={handleReject}
-                className="flex-1"
+                className="flex-1 h-8 text-xs"
               >
-                <XCircle className="h-4 w-4 mr-2" />
+                <XCircle className="h-3.5 w-3.5 mr-1.5" />
                 Afwijzen
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleModify}
-                className="flex-1"
+                className="flex-1 h-8 text-xs"
               >
-                <Edit3 className="h-4 w-4 mr-2" />
+                <Edit3 className="h-3.5 w-3.5 mr-1.5" />
                 {isModifying ? 'Opslaan' : 'Aanpassen'}
               </Button>
             </div>
@@ -271,7 +274,7 @@ export function ChangeProposalCard({
               variant="ghost"
               size="sm"
               onClick={() => setIsModifying(false)}
-              className="w-full"
+              className="w-full h-7 text-xs"
             >
               Annuleer
             </Button>

@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Settings as SettingsIcon,
   Save,
@@ -541,60 +542,96 @@ const Settings = memo(function Settings() {
       <AppHeader />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        
+
         {/* Page Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Prompt Configuratie</h1>
-            <p className="text-muted-foreground">Configureer de workflow prompts voor fiscale rapportgeneratie</p>
+            <h1 className="text-2xl font-bold tracking-tight">Instellingen</h1>
+            <p className="text-muted-foreground">Beheer alle configuraties en instellingen</p>
           </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className="text-right">
-                <div className="text-2xl font-bold text-foreground">
-                  {stats.completed}/{stats.total}
+        </div>
+
+        {/* Tabs */}
+        <Tabs defaultValue="pipeline" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+            <TabsTrigger value="general" data-testid="tab-general">Algemeen</TabsTrigger>
+            <TabsTrigger value="pipeline" data-testid="tab-pipeline">Rapport Pipeline</TabsTrigger>
+          </TabsList>
+
+          {/* Tab: Algemeen */}
+          <TabsContent value="general" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Algemene Instellingen</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <SettingsIcon className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                  <h3 className="text-lg font-medium text-muted-foreground mb-2">Komt Binnenkort</h3>
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    Hier komen toekomstige algemene instellingen zoals notificaties, gebruikersvoorkeuren en meer.
+                  </p>
                 </div>
-                <div className="text-xs text-muted-foreground">Prompts Ingesteld</div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab: Rapport Pipeline */}
+          <TabsContent value="pipeline" className="space-y-6">
+
+            {/* Pipeline Header with Stats and Actions */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Prompt Configuratie</h2>
+                <p className="text-sm text-muted-foreground">Configureer de workflow prompts voor fiscale rapportgeneratie</p>
               </div>
-              
-              <div className="flex gap-2">
-                <Button 
-                  onClick={handleBackup}
-                  variant="outline"
-                  size="sm"
-                  data-testid="button-export-json"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export JSON
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json"
-                  onChange={handleRestore}
-                  className="hidden"
-                  data-testid="input-import-file"
-                />
-                <Button 
-                  onClick={() => fileInputRef.current?.click()}
-                  variant="outline"
-                  size="sm"
-                  data-testid="button-import-json"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import JSON
-                </Button>
-                <Button 
-                  onClick={handleSave}
-                  disabled={updatePromptMutation.isPending}
-                  data-testid="button-save-config"
-                >
-                  <Save className="mr-2 h-4 w-4" />
-                  {updatePromptMutation.isPending ? "Opslaan..." : "Opslaan"}
-                </Button>
+
+              <div className="flex items-center space-x-4">
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-foreground">
+                    {stats.completed}/{stats.total}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Prompts Ingesteld</div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleBackup}
+                    variant="outline"
+                    size="sm"
+                    data-testid="button-export-json"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export JSON
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json"
+                    onChange={handleRestore}
+                    className="hidden"
+                    data-testid="input-import-file"
+                  />
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    variant="outline"
+                    size="sm"
+                    data-testid="button-import-json"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import JSON
+                  </Button>
+                  <Button
+                    onClick={handleSave}
+                    disabled={updatePromptMutation.isPending}
+                    data-testid="button-save-config"
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {updatePromptMutation.isPending ? "Opslaan..." : "Opslaan"}
+                  </Button>
+                </div>
               </div>
             </div>
-        </div>
 
         {/* Prompt Stages */}
         <div className="grid gap-6">
@@ -1283,15 +1320,18 @@ const Settings = memo(function Settings() {
               <div>
                 <h3 className="font-semibold text-foreground mb-2">Workflow Overzicht</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  De 11-stappen workflow verwerkt elk rapport sequentieel door gespecialiseerde AI rollen. 
-                  Elke stap bouwt voort op de resultaten van de vorige stap, wat zorgt voor een gelaagde 
+                  De 11-stappen workflow verwerkt elk rapport sequentieel door gespecialiseerde AI rollen.
+                  Elke stap bouwt voort op de resultaten van de vorige stap, wat zorgt voor een gelaagde
                   en grondige analyse. Configureer alle prompts om de volledige functionaliteit te benutten.
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
-        
+
+          </TabsContent>
+        </Tabs>
+
       </div>
     </div>
   );

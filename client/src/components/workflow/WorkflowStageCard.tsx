@@ -95,6 +95,49 @@ export interface WorkflowStageCardProps {
   onManualExecute?: () => void;
 }
 
+// Helper to generate output preview (first ~120 chars, cleaned)
+const getOutputPreview = (output: string | undefined, stageKey: string): string | null => {
+  if (!output) return null;
+
+  // Clean markdown and special chars
+  let cleaned = output
+    .replace(/^#+\s*/gm, '') // Remove headers
+    .replace(/\*\*/g, '') // Remove bold
+    .replace(/\n+/g, ' ') // Replace newlines with spaces
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
+
+  // Stage-specific preview extraction
+  if (stageKey === '1_informatiecheck') {
+    const klantMatch = cleaned.match(/Klant[^:]*:\s*([^,\n]+)/i);
+    if (klantMatch) {
+      return `Klant: ${klantMatch[1].trim().substring(0, 60)}`;
+    }
+  }
+
+  // Default: first 120 chars
+  if (cleaned.length > 120) {
+    return cleaned.substring(0, 120) + '...';
+  }
+  return cleaned.length > 10 ? cleaned : null;
+};
+
+// Stage-specific result labels
+const getResultLabel = (stageKey: string): string => {
+  const labels: Record<string, string> = {
+    '1_informatiecheck': 'Dossieranalyse',
+    '2_complexiteitscheck': 'Bouwplan',
+    '3_generatie': 'Concept rapport',
+    '4a_BronnenSpecialist': 'Bronnen feedback',
+    '4b_FiscaalTechnischSpecialist': 'Fiscale feedback',
+    '4c_ScenarioGatenAnalist': 'Scenario feedback',
+    '4e_DeAdvocaat': 'Juridische feedback',
+    '4f_HoofdCommunicatie': 'Communicatie feedback',
+    '6_change_summary': 'Wijzigingsoverzicht'
+  };
+  return labels[stageKey] || 'Resultaat';
+};
+
 export const WorkflowStageCard = memo(function WorkflowStageCard({
   stageKey,
   stageName,
@@ -130,8 +173,14 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 }: WorkflowStageCardProps) {
   const [copied, setCopied] = useState(false);
   const [isRawInputCollapsed, setIsRawInputCollapsed] = useState(true);
+  const [showRawOutput, setShowRawOutput] = useState(false);
   const [customContext, setCustomContext] = useState('');
   const [showCustomContext, setShowCustomContext] = useState(false);
+  const [showDevTools, setShowDevTools] = useState(false);
+
+  // Calculate output preview and labels
+  const outputPreview = useMemo(() => getOutputPreview(stageResult, stageKey), [stageResult, stageKey]);
+  const resultLabel = useMemo(() => getResultLabel(stageKey), [stageKey]);
 
   // Check if this stage supports manual mode (stage 3, 4a, 4b)
   const supportsManualMode = useMemo(() => [
@@ -172,6 +221,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
   return (
     <Card className={`
+      overflow-hidden
       ${stageStatus === 'completed' ? 'border-jdb-success/30 bg-green-50/30 dark:bg-green-950/10' : ''}
       ${stageStatus === 'feedback_ready' ? 'border-orange-400/50 bg-orange-50/40 dark:bg-orange-950/20 shadow-md' : ''}
       ${stageStatus === 'processing' ? 'border-jdb-blue-primary/30 bg-jdb-blue-light/30 dark:bg-jdb-blue-primary/10 shadow-lg' : ''}
@@ -199,14 +249,26 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
             <div className="p-2 bg-jdb-blue-light dark:bg-jdb-blue-primary/10 rounded-lg">
               {stageIcon}
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 {stageName}
               </CardTitle>
-              <p className="text-xs text-jdb-text-subtle mt-1">{stageKey}</p>
+              {/* Output Preview in Collapsed State */}
+              {!isExpanded && stageStatus === 'completed' && outputPreview && (
+                <p className="text-xs text-jdb-text-body mt-1 truncate max-w-md">
+                  <span className="text-jdb-success font-medium">{resultLabel}:</span>{' '}
+                  <span className="text-jdb-text-subtle">{outputPreview}</span>
+                </p>
+              )}
+              {!isExpanded && stageStatus !== 'completed' && (
+                <p className="text-xs text-jdb-text-subtle mt-1">{stageKey}</p>
+              )}
+              {isExpanded && (
+                <p className="text-xs text-jdb-text-subtle mt-1">{stageKey}</p>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {getStatusBadge()}
           </div>
         </div>
@@ -446,59 +508,101 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                 </div>
               )}
 
-              {/* Raw LLM Input Preview - Only show if prompt exists */}
+              {/* Developer Tools Toggle - Hidden by default */}
               {stagePrompt && (
-                <div className="border-2 border-jdb-blue-primary/30 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 overflow-hidden max-w-full">
+                <div className="border border-dashed border-jdb-border/50 rounded-lg overflow-hidden">
                   <button
-                    onClick={() => setIsRawInputCollapsed(!isRawInputCollapsed)}
-                    className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-blue-100/50 dark:hover:bg-blue-950/30 transition-colors focus:outline-none focus:ring-2 focus:ring-jdb-blue-primary focus:ring-offset-2 rounded-lg"
+                    onClick={() => setShowDevTools(!showDevTools)}
+                    className="w-full px-4 py-2 flex items-center justify-between hover:bg-jdb-bg/30 transition-colors text-jdb-text-subtle"
                   >
-                    <span className="font-medium text-sm flex items-center gap-2 text-jdb-blue-primary">
-                      <Code2 className="w-4 h-4" />
-                      Raw LLM Input Preview (voor verificatie)
+                    <span className="text-xs flex items-center gap-2">
+                      <Code2 className="w-3 h-3" />
+                      Developer Tools
                     </span>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs bg-white">
-                        {stagePrompt.length.toLocaleString()} chars
-                      </Badge>
-                      {isRawInputCollapsed ? <ChevronRight className="w-4 h-4 text-jdb-blue-primary" /> : <ChevronDown className="w-4 h-4 text-jdb-blue-primary" />}
-                    </div>
+                    {showDevTools ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                   </button>
-                  {!isRawInputCollapsed && (
-                    <div className="px-4 py-4 bg-white dark:bg-jdb-panel border-t-2 border-jdb-blue-primary/30 max-w-full">
-                      <div className="mb-2 flex items-center justify-between">
-                        <p className="text-xs text-jdb-text-subtle font-medium">
-                          Dit is exact wat naar de LLM wordt gestuurd - controleer of concept rapport + feedback beide aanwezig zijn
-                        </p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCopy(normalizePromptToString(stagePrompt))}
-                          className="min-h-[36px] min-w-[36px]"
+
+                  {showDevTools && (
+                    <div className="space-y-3 p-4 border-t border-dashed border-jdb-border/50">
+                      {/* Raw LLM Input Preview */}
+                      <div className="border border-jdb-blue-primary/30 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 overflow-hidden">
+                        <button
+                          onClick={() => setIsRawInputCollapsed(!isRawInputCollapsed)}
+                          className="w-full px-3 py-2 flex items-center justify-between hover:bg-blue-100/50 dark:hover:bg-blue-950/30 transition-colors"
                         >
-                          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                        </Button>
+                          <span className="font-medium text-xs flex items-center gap-2 text-jdb-blue-primary">
+                            <Code2 className="w-3 h-3" />
+                            Raw LLM Input
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs bg-white">
+                              {stagePrompt.length.toLocaleString()} chars
+                            </Badge>
+                            {isRawInputCollapsed ? <ChevronRight className="w-3 h-3 text-jdb-blue-primary" /> : <ChevronDown className="w-3 h-3 text-jdb-blue-primary" />}
+                          </div>
+                        </button>
+                        {!isRawInputCollapsed && (
+                          <div className="px-3 py-3 bg-white dark:bg-jdb-panel border-t border-jdb-blue-primary/30">
+                            <div className="mb-2 flex items-center justify-between">
+                              <p className="text-xs text-jdb-text-subtle">
+                                Exacte prompt naar LLM
+                              </p>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleCopy(normalizePromptToString(stagePrompt))}
+                                className="h-6 w-6 p-0"
+                              >
+                                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              </Button>
+                            </div>
+                            <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded border border-gray-300 dark:border-gray-700 font-mono text-xs overflow-auto max-h-64">
+                              <pre className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{normalizePromptToString(stagePrompt)}</pre>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-300 dark:border-gray-700 font-mono text-xs overflow-x-auto overflow-y-auto max-h-[500px] max-w-full">
-                        <pre className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>{normalizePromptToString(stagePrompt)}</pre>
+
+                      {/* Prompt Template */}
+                      <div className="border border-jdb-border rounded-lg">
+                        <button
+                          onClick={onTogglePrompt}
+                          className="w-full px-3 py-2 flex items-center justify-between hover:bg-jdb-bg dark:hover:bg-jdb-border/10 transition-colors"
+                        >
+                          <span className="font-medium text-xs flex items-center gap-2 text-jdb-text-heading">
+                            <Wand2 className="w-3 h-3" />
+                            Prompt Template
+                          </span>
+                          {isPromptCollapsed ? <ChevronRight className="w-3 h-3 text-jdb-text-subtle" /> : <ChevronDown className="w-3 h-3 text-jdb-text-subtle" />}
+                        </button>
+                        {!isPromptCollapsed && (
+                          <div className="px-3 py-3 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border">
+                            <div className="bg-white dark:bg-jdb-panel p-3 rounded border border-jdb-border font-mono text-xs overflow-auto max-h-64">
+                              <pre className="whitespace-pre-wrap break-all text-jdb-text-body" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{normalizePromptToString(stagePrompt)}</pre>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Output Section */}
+              {/* Output Section - Resultaat */}
               {stageResult && (
-                <div className="border border-jdb-border rounded-lg overflow-hidden max-w-full">
+                <div className="border border-jdb-border rounded-lg overflow-hidden max-w-full bg-green-50/30 dark:bg-green-950/10">
                   <div className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between">
                     <button
                       onClick={onToggleOutput}
                       className="flex-1 flex items-center gap-2 text-left hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-jdb-blue-primary focus:ring-offset-2 rounded"
                     >
                       <span className="font-medium text-sm flex items-center gap-2 text-jdb-text-heading">
-                        <MessageSquare className="w-4 h-4" />
-                        Output {stageResult && `(${stageResult.length} karakters)`}
+                        <CheckCircle className="w-4 h-4 text-jdb-success" />
+                        {resultLabel}
                       </span>
+                      <Badge variant="outline" className="text-xs ml-2">
+                        {stageResult.length.toLocaleString()} chars
+                      </Badge>
                       {isOutputCollapsed ? <ChevronRight className="w-4 h-4 text-jdb-text-subtle" /> : <ChevronDown className="w-4 h-4 text-jdb-text-subtle" />}
                     </button>
                     <Button
@@ -514,7 +618,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                     </Button>
                   </div>
                   {!isOutputCollapsed && (
-                    <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border overflow-hidden max-w-full">
+                    <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border overflow-hidden max-w-full space-y-3">
                       {/* Special viewers for specific stages */}
                       {stageKey === '1_informatiecheck' && (
                         <InformatieCheckViewer
@@ -529,16 +633,9 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                         />
                       )}
 
-                      {/* Default output display */}
-                      {!['1_informatiecheck', '2_complexiteitscheck'].includes(stageKey) && (
-                        <div className="bg-white dark:bg-gray-900 p-3 rounded border border-gray-300 dark:border-gray-700 font-mono text-xs overflow-x-auto overflow-y-auto max-h-96 w-full max-w-full">
-                          <pre className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>{stageResult}</pre>
-                        </div>
-                      )}
-
-                      {/* Feedback Processor for reviewer stages */}
+                      {/* For reviewer stages: Show Feedback Processor FIRST, then raw output in dropdown */}
                       {showFeedbackProcessor && reportId && (
-                        <div className="mt-4">
+                        <>
                           <SimpleFeedbackProcessor
                             reportId={reportId}
                             stageId={stageKey}
@@ -551,6 +648,39 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                             onManualContentChange={onManualContentChange}
                             onManualExecute={onManualExecute}
                           />
+
+                          {/* Raw Output Toggle - Small dropdown at the bottom */}
+                          <div className="border border-dashed border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden mt-4">
+                            <button
+                              onClick={() => setShowRawOutput(!showRawOutput)}
+                              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors text-gray-500 dark:text-gray-400"
+                            >
+                              <span className="text-[10px] flex items-center gap-1.5">
+                                <Code2 className="w-3 h-3" />
+                                Raw JSON Output
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                                  {stageResult.length.toLocaleString()} chars
+                                </Badge>
+                                {showRawOutput ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                              </div>
+                            </button>
+                            {showRawOutput && (
+                              <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border-t border-dashed border-gray-300 dark:border-gray-700">
+                                <div className="bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700 font-mono text-[10px] overflow-x-auto overflow-y-auto max-h-48 w-full">
+                                  <pre className="whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>{stageResult}</pre>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Default output display for non-reviewer stages (stage 3 etc) */}
+                      {!['1_informatiecheck', '2_complexiteitscheck'].includes(stageKey) && !showFeedbackProcessor && (
+                        <div className="bg-white dark:bg-gray-900 p-3 rounded border border-gray-300 dark:border-gray-700 font-mono text-xs overflow-x-auto overflow-y-auto max-h-96 w-full max-w-full">
+                          <pre className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>{stageResult}</pre>
                         </div>
                       )}
                     </div>
@@ -558,28 +688,6 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                 </div>
               )}
 
-              {/* Prompt Section */}
-              {stagePrompt && (
-                <div className="border border-jdb-border rounded-lg">
-                  <button
-                    onClick={onTogglePrompt}
-                    className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-jdb-bg dark:hover:bg-jdb-border/10 transition-colors focus:outline-none focus:ring-2 focus:ring-jdb-blue-primary focus:ring-offset-2 rounded-lg"
-                  >
-                    <span className="font-medium text-sm flex items-center gap-2 text-jdb-text-heading">
-                      <Wand2 className="w-4 h-4" />
-                      Gebruikte Prompt
-                    </span>
-                    {isPromptCollapsed ? <ChevronRight className="w-4 h-4 text-jdb-text-subtle" /> : <ChevronDown className="w-4 h-4 text-jdb-text-subtle" />}
-                  </button>
-                  {!isPromptCollapsed && (
-                    <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border">
-                      <div className="bg-white dark:bg-jdb-panel p-4 rounded-lg border border-jdb-border font-mono text-xs overflow-auto max-h-96">
-                        <pre className="whitespace-pre-wrap break-all text-jdb-text-body" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{normalizePromptToString(stagePrompt)}</pre>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </CardContent>
           </motion.div>
         )}

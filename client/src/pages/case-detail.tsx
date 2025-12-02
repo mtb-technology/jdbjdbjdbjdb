@@ -17,6 +17,7 @@ import { DossierContextPanel } from "@/components/report/DossierContextPanel";
 import { AppHeader } from "@/components/app-header";
 import type { Report } from "@shared/schema";
 import { STAGE_NAMES, getLatestConceptText } from "@shared/constants";
+import { WORKFLOW_STAGES } from "@/components/workflow/constants";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -275,13 +276,13 @@ export default function CaseDetail() {
       case "generated": {
         if (report?.stageResults) {
           const completedStages = Object.keys(report.stageResults).length;
-          const totalStages = 13;
+          const totalStages = WORKFLOW_STAGES.length;
           const percentage = Math.round((completedStages / totalStages) * 100);
 
           if (completedStages >= 3) {
-            return `Stap ${completedStages}/13 (${percentage}%)`;
+            return `Stap ${completedStages}/${totalStages} (${percentage}%)`;
           } else {
-            return `Wordt gegenereerd... ${completedStages}/13`;
+            return `Wordt gegenereerd... ${completedStages}/${totalStages}`;
           }
         }
         return "Gegenereerd";
@@ -556,7 +557,7 @@ export default function CaseDetail() {
       </Card>
 
       {/* 2-Column Layout: Content + Sticky Preview */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
         {/* Main Content Area */}
         <div className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -816,8 +817,8 @@ export default function CaseDetail() {
           </Tabs>
         </div>
 
-        {/* Dossier Context & Report Preview */}
-        <div className="hidden lg:block">
+        {/* Dossier Context & Report Preview - Hidden below XL (1280px) */}
+        <div className="hidden xl:block">
           <DossierContextPanel
             reportId={reportId!}
             summary={report.dossierContextSummary || undefined}
