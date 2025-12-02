@@ -543,17 +543,11 @@ const Settings = memo(function Settings() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         
         {/* Page Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">
-                Prompt Configuratie
-              </h1>
-              <p className="text-muted-foreground mt-2">
-                Configureer de 11-stappen prompting workflow voor fiscale rapportgeneratie.
-                <span className="block text-xs mt-1">Gebruik Export JSON in ontwikkeling → Import JSON in productie voor deployment.</span>
-              </p>
-            </div>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Prompt Configuratie</h1>
+            <p className="text-muted-foreground">Configureer de workflow prompts voor fiscale rapportgeneratie</p>
+          </div>
             
             <div className="flex items-center space-x-4">
               <div className="text-right">
@@ -600,18 +594,6 @@ const Settings = memo(function Settings() {
                 </Button>
               </div>
             </div>
-          </div>
-          
-          
-          {/* Progress indicator */}
-          <div className="mt-4">
-            <div className="w-full bg-muted rounded-full h-2">
-              <div 
-                className="bg-primary h-2 rounded-full transition-all duration-300"
-                style={{ width: `${(stats.completed / stats.total) * 100}%` }}
-              ></div>
-            </div>
-          </div>
         </div>
 
         {/* Prompt Stages */}

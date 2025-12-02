@@ -786,21 +786,19 @@ const Box3Validator = memo(function Box3Validator() {
           {/* Main Content */}
           <div className="flex-1 min-w-0">
             {/* Page Header */}
-            <div className="mb-8">
-              <div className="flex items-center justify-between">
-                <h1 className="text-3xl font-bold text-foreground">Box 3 Informatieverzoek Validator</h1>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSettingsOpen(true)}
-                >
-                  <SettingsIcon className="h-4 w-4 mr-2" />
-                  COG Prompt
-                </Button>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">Box 3 Validator</h1>
+                <p className="text-muted-foreground">Valideer ontvangen documenten en genereer een concept reactie</p>
               </div>
-              <p className="text-muted-foreground mt-2">
-                Valideer ontvangen documenten en genereer een concept reactie.
-              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <SettingsIcon className="h-4 w-4 mr-2" />
+                Settings
+              </Button>
             </div>
 
             {/* Input Section */}

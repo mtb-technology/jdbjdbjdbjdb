@@ -14,6 +14,7 @@ import { ReportDiffViewer } from "@/components/report/ReportDiffViewer";
 import { StickyReportPreview, FullScreenReportPreview } from "@/components/report/StickyReportPreview";
 import { ExportDialog } from "@/components/export/ExportDialog";
 import { DossierContextPanel } from "@/components/report/DossierContextPanel";
+import { AppHeader } from "@/components/app-header";
 import type { Report } from "@shared/schema";
 import { STAGE_NAMES, getLatestConceptText } from "@shared/constants";
 import { useState, useMemo } from "react";
@@ -392,28 +393,37 @@ export default function CaseDetail() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header with back button */}
-      <div className="flex items-center justify-between mb-8">
-        <Link href="/cases">
-          <Button variant="outline" size="sm" data-testid="button-back-to-cases">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Terug naar Cases
-          </Button>
-        </Link>
+    <div className="min-h-screen bg-background">
+      <AppHeader />
 
-        {/* Quick Actions */}
-        <div className="flex items-center gap-2">
-          <Badge className={getStatusColor(report.status)} data-testid="badge-case-status">
-            {getStatusLabel(report.status, report)}
-          </Badge>
-          <ExportDialog
-            reportId={reportId || ""}
-            reportTitle={report.title}
-            clientName={report.clientName}
-          />
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+        {/* Page Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-4">
+            <Link href="/cases">
+              <Button variant="outline" size="sm" data-testid="button-back-to-cases">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Terug
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">{report.title}</h1>
+              <p className="text-muted-foreground">{report.clientName}</p>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2">
+            <Badge className={getStatusColor(report.status)} data-testid="badge-case-status">
+              {getStatusLabel(report.status, report)}
+            </Badge>
+            <ExportDialog
+              reportId={reportId || ""}
+              reportTitle={report.title}
+              clientName={report.clientName}
+            />
+          </div>
         </div>
-      </div>
 
       {/* Document Header */}
       <Card className="mb-6">
@@ -833,6 +843,7 @@ export default function CaseDetail() {
           onClose={() => setShowFullScreen(false)}
         />
       )}
+      </div>
     </div>
   );
 }

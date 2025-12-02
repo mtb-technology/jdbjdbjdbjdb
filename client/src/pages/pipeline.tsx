@@ -233,54 +233,21 @@ const Pipeline = memo(function Pipeline() {
 
       <AppHeader />
 
-      {/* Hero Section */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-primary/10 to-secondary/5 py-16 sm:py-24">
-        <div className="absolute inset-0 bg-grid-pattern opacity-10"></div>
-        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      {/* Hero Section - Compact */}
+      <div className="border-b bg-gradient-to-r from-primary/5 to-secondary/5 py-8">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
-              De Fiscale <span className="text-primary">Analist</span>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+              Jan de <span className="text-primary">Belastingman</span>
             </h1>
-            <p className="mt-6 text-lg leading-8 text-muted-foreground max-w-2xl mx-auto">
-              AI-gedreven fiscale analyse voor professionele rapportage. 
-              Van ruwe input naar compleet duidingsrapport in minuten.
+            <p className="mt-2 text-muted-foreground">
+              Fiscale Pipeline — van ruwe input naar compleet duidingsrapport in minuten.
             </p>
           </div>
         </div>
       </div>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-
-        {/* Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-          <Card className="text-center border-primary/20 hover:shadow-lg transition-all duration-300">
-            <CardContent className="pt-6">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                <Zap className="h-6 w-6 text-primary" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">AI-Gedreven Analyse</h3>
-              <p className="text-sm text-muted-foreground">13-stappen workflow met gespecialiseerde AI experts voor elke fase</p>
-            </CardContent>
-          </Card>
-          <Card className="text-center border-primary/20 hover:shadow-lg transition-all duration-300">
-            <CardContent className="pt-6">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                <FolderOpen className="h-6 w-6 text-primary" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Case Management</h3>
-              <p className="text-sm text-muted-foreground">Automatische opslag en tracking van alle fiscale analyses</p>
-            </CardContent>
-          </Card>
-          <Card className="text-center border-primary/20 hover:shadow-lg transition-all duration-300">
-            <CardContent className="pt-6">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                <Play className="h-6 w-6 text-primary" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Snelle Resultaten</h3>
-              <p className="text-sm text-muted-foreground">Van input tot professioneel rapport binnen 15 minuten</p>
-            </CardContent>
-          </Card>
-        </div>
 
         {/* Input + Start */}
         {!showWorkflow ? (

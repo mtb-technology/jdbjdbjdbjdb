@@ -346,36 +346,38 @@ function Cases() {
   const cases = useMemo(() => casesData?.reports || [], [casesData?.reports]);
   const totalPages = useMemo(() => casesData?.totalPages || 1, [casesData?.totalPages]);
 
-  const headerActions = (
-    <>
-      <Link href="/batch" asChild>
-        <Button variant="outline" data-testid="button-batch-processing">
-          <Package className="mr-2 h-4 w-4" />
-          Batch
-        </Button>
-      </Link>
-      <Link href="/pipeline" asChild>
-        <Button data-testid="button-new-case">
-          Nieuwe Case
-        </Button>
-      </Link>
-    </>
-  );
-
   return (
     <div className="min-h-screen bg-background">
 
-      <AppHeader actions={headerActions} />
+      <AppHeader />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
 
+        {/* Page Header with Actions */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Cases Overzicht</h1>
+            <p className="text-muted-foreground">Beheer al je fiscale cases en rapporten</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/batch" asChild>
+              <Button variant="outline" data-testid="button-batch-processing">
+                <Package className="mr-2 h-4 w-4" />
+                Batch
+              </Button>
+            </Link>
+            <Link href="/pipeline" asChild>
+              <Button data-testid="button-new-case">
+                Nieuwe Case
+              </Button>
+            </Link>
+          </div>
+        </div>
+
         {/* Filters */}
         <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Cases Overzicht</CardTitle>
-            <CardDescription>
-              Beheer al je fiscale cases en rapporten
-            </CardDescription>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Filters</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">

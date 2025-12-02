@@ -21,13 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/settings", label: "Instellingen", icon: Settings, testId: "settings" },
 ];
 
-interface AppHeaderProps {
-  title?: string;
-  icon?: LucideIcon;
-  actions?: React.ReactNode;
-}
-
-export const AppHeader = memo(function AppHeader({ actions }: AppHeaderProps) {
+export const AppHeader = memo(function AppHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [location] = useLocation();
 
@@ -73,7 +67,6 @@ export const AppHeader = memo(function AppHeader({ actions }: AppHeaderProps) {
 
           {/* Right side actions */}
           <div className="flex items-center gap-2">
-            {actions}
             <DarkModeToggle />
 
             {/* Mobile Menu */}
