@@ -231,7 +231,7 @@ const Pipeline = memo(function Pipeline() {
   return (
     <div className="min-h-screen bg-background">
 
-      <AppHeader title="Fiscale Pipeline" icon={Zap} />
+      <AppHeader />
 
       {/* Hero Section */}
       <div className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-primary/10 to-secondary/5 py-16 sm:py-24">

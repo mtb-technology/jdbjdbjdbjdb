@@ -198,7 +198,7 @@ export default function TextStyler() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader title="Text Styler" icon={FileText} actions={headerActions} />
+      <AppHeader />
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">

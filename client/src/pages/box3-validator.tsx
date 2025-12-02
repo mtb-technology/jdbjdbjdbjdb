@@ -779,7 +779,7 @@ const Box3Validator = memo(function Box3Validator() {
         onSystemPromptChange={handleSystemPromptChange}
       />
 
-      <AppHeader title="Box 3 Validator" icon={FileCheck} />
+      <AppHeader />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex gap-6">

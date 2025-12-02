@@ -382,7 +382,7 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
     <div className="min-h-screen bg-background">
 
       {/* Header */}
-      <AppHeader title="Follow-up Assistent" icon={Mail} />
+      <AppHeader />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex gap-6">

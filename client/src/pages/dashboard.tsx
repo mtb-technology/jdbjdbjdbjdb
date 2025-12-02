@@ -5,7 +5,7 @@ import { AppHeader } from "@/components/app-header";
 export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader title="De Fiscale Analist" icon={ChartLine} />
+      <AppHeader />
 
       {/* Main Content */}
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">

@@ -538,7 +538,7 @@ const Settings = memo(function Settings() {
   return (
     <div className="min-h-screen bg-background">
 
-      <AppHeader title="Instellingen" icon={SettingsIcon} />
+      <AppHeader />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         
