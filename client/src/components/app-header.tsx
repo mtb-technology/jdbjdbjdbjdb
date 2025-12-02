@@ -17,6 +17,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/cases", label: "Cases", testId: "cases" },
   { href: "/assistant", label: "Assistent", testId: "assistant" },
   { href: "/text-styler", label: "Text Styler", testId: "text-styler" },
+  { href: "/box3-validator", label: "Box 3", testId: "box3-validator" },
   { href: "/settings", label: "Instellingen", testId: "settings" },
 ];
 

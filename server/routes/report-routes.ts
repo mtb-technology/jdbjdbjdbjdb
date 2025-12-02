@@ -933,6 +933,18 @@ export function registerReportRoutes(
     }
   });
 
+  /**
+   * POST /api/reports/restore-client-names
+   * Restore client names from dossier_context_summary for all reports
+   * Must be defined BEFORE /api/reports/:id to avoid route conflict
+   */
+  app.post("/api/reports/restore-client-names", asyncHandler(async (req: Request, res: Response) => {
+    console.log('🔧 Starting client name restoration...');
+    const result = await storage.restoreClientNamesFromContext();
+    console.log(`🔧 Restoration complete:`, result);
+    res.json(createApiSuccessResponse(result, `Client names restored: ${result.updated} updated, ${result.failed} failed/skipped`));
+  }));
+
   // Get specific report
   app.get("/api/reports/:id", async (req, res) => {
     try {
@@ -1550,21 +1562,6 @@ Gebruik bullet points. Max 150 woorden.
     } finally {
       res.end();
     }
-  }));
-
-  /**
-   * POST /api/reports/restore-client-names
-   * Restore client names from dossier_context_summary for all reports
-   * This fixes the mass-update mistake where all cases got wrong client_name
-   */
-  app.post("/api/reports/restore-client-names", asyncHandler(async (req: Request, res: Response) => {
-    console.log('🔧 Starting client name restoration...');
-
-    const result = await storage.restoreClientNamesFromContext();
-
-    console.log(`🔧 Restoration complete:`, result);
-
-    res.json(createApiSuccessResponse(result, `Client names restored: ${result.updated} updated, ${result.failed} failed/skipped`));
   }));
 
   /**
