@@ -95,23 +95,29 @@ export default function CaseDetail() {
         variant: "destructive",
       });
     },
-    onSuccess: async () => {
-      // Refetch immediately to get the updated data from server
-      await queryClient.refetchQueries({ queryKey: [`/api/reports/${reportId}`] });
+    onSuccess: (updatedReport) => {
+      // Close edit mode immediately - optimistic update already shows new value
+      setIsEditingTitle(false);
+      setIsEditingClient(false);
 
-      // Invalidate all related queries to ensure UI updates everywhere
-      queryClient.invalidateQueries({ queryKey: [`/api/cases/${reportId}`] });
-      // Also invalidate the cases list query (with all filter combinations)
+      // Update cache with server response
+      if (updatedReport) {
+        queryClient.setQueryData([`/api/reports/${reportId}`], (old: any) => ({
+          ...old,
+          ...updatedReport
+        }));
+      }
+
+      // Invalidate cases list in background (non-blocking)
       queryClient.invalidateQueries({
         queryKey: ["/api/cases"],
         exact: false
       });
+
       toast({
         title: "Succesvol bijgewerkt",
         description: "De wijzigingen zijn opgeslagen.",
       });
-      setIsEditingTitle(false);
-      setIsEditingClient(false);
     },
   });
 
