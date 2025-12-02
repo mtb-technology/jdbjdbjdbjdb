@@ -19,7 +19,7 @@ import {
   Save
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { DarkModeToggle } from "@/components/dark-mode-toggle";
+import { AppHeader } from "@/components/app-header";
 import { AssistantSettingsModal } from "@/components/assistant/AssistantSettingsModal";
 import { SessionSidebar } from "@/components/assistant/SessionSidebar";
 import type { FollowUpSession } from "@shared/schema";
@@ -382,35 +382,7 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
     <div className="min-h-screen bg-background">
 
       {/* Header */}
-      <header className="border-b border-border bg-card shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 flex items-center">
-                <Mail className="text-primary mr-3 h-8 w-8" />
-                <span className="text-xl font-bold text-foreground">Follow-up Assistent</span>
-              </div>
-              <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <a href="/pipeline" className="text-muted-foreground hover:text-foreground">
-                  Pipeline
-                </a>
-                <a href="/cases" className="text-muted-foreground hover:text-foreground">
-                  Cases
-                </a>
-                <a href="/assistant" className="text-primary font-medium">
-                  Assistent
-                </a>
-                <a href="/settings" className="text-muted-foreground hover:text-foreground">
-                  Instellingen
-                </a>
-              </nav>
-            </div>
-            <div className="flex items-center space-x-4">
-              <DarkModeToggle />
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader title="Follow-up Assistent" icon={Mail} />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex gap-6">

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Settings as SettingsIcon, FileText, Download, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { DarkModeToggle } from "@/components/dark-mode-toggle";
+import { AppHeader } from "@/components/app-header";
 import { TextStylerSettingsModal } from "@/components/text-styler/TextStylerSettingsModal";
 import { Editor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -185,35 +185,20 @@ export default function TextStyler() {
     }
   };
 
+  const headerActions = (
+    <Button
+      variant="outline"
+      size="icon"
+      onClick={() => setSettingsOpen(true)}
+      title="Instellingen"
+    >
+      <SettingsIcon className="h-4 w-4" />
+    </Button>
+  );
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <FileText className="h-8 w-8 text-primary" />
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">Text Styler</h1>
-                <p className="text-sm text-muted-foreground">
-                  Style je tekst professioneel met AI en exporteer naar PDF
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setSettingsOpen(true)}
-                title="Instellingen"
-              >
-                <SettingsIcon className="h-4 w-4" />
-              </Button>
-              <DarkModeToggle />
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader title="Text Styler" icon={FileText} actions={headerActions} />
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">

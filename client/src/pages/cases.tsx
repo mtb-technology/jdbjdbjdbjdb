@@ -6,14 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ToastAction } from "@/components/ui/toast";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, RefreshCw, Menu, Package } from "lucide-react";
+import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, Package } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { DarkModeToggle } from "@/components/dark-mode-toggle";
+import { AppHeader } from "@/components/app-header";
 import { celebrateExport } from "@/lib/confetti";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -144,10 +142,8 @@ function Cases() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingDeletion, setPendingDeletion] = useState<{ id: string; timeoutId: NodeJS.Timeout } | null>(null);
   const queryClient = useQueryClient();
-  const isMobile = useIsMobile();
   const { toast } = useToast();
 
   const { data: casesData, isLoading } = useQuery<CasesResponse>({
@@ -350,86 +346,26 @@ function Cases() {
   const cases = useMemo(() => casesData?.reports || [], [casesData?.reports]);
   const totalPages = useMemo(() => casesData?.totalPages || 1, [casesData?.totalPages]);
 
+  const headerActions = (
+    <>
+      <Link href="/batch" asChild>
+        <Button variant="outline" data-testid="button-batch-processing">
+          <Package className="mr-2 h-4 w-4" />
+          Batch
+        </Button>
+      </Link>
+      <Link href="/pipeline" asChild>
+        <Button data-testid="button-new-case">
+          Nieuwe Case
+        </Button>
+      </Link>
+    </>
+  );
+
   return (
     <div className="min-h-screen bg-background">
-      
-      {/* Header */}
-      <header className="border-b border-border bg-card shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 flex items-center">
-                <FileText className="text-2xl text-primary mr-3 h-8 w-8" />
-                <span className="text-xl font-bold text-foreground">Case Management</span>
-              </div>
-              {/* Desktop Navigation */}
-              <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <Link href="/pipeline" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
-                  Pipeline
-                </Link>
-                <Link href="/cases" className="text-primary font-medium" data-testid="nav-cases">
-                  Cases
-                </Link>
-                <Link href="/assistant" className="text-muted-foreground hover:text-foreground" data-testid="nav-assistant">
-                  Assistent
-                </Link>
-                <Link href="/text-styler" className="text-muted-foreground hover:text-foreground" data-testid="nav-text-styler">
-                  Text Styler
-                </Link>
-                <Link href="/settings" className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
-                  Instellingen
-                </Link>
-              </nav>
-            </div>
-            <div className="flex items-center gap-3">
-              <DarkModeToggle />
-              <Link href="/batch" asChild>
-                <Button variant="outline" data-testid="button-batch-processing">
-                  <Package className="mr-2 h-4 w-4" />
-                  Batch
-                </Button>
-              </Link>
-              <Link href="/pipeline" asChild>
-                <Button data-testid="button-new-case">
-                  Nieuwe Case
-                </Button>
-              </Link>
-              {/* Mobile Navigation */}
-              <div className="md:hidden">
-                <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-                  <SheetTrigger asChild>
-                    <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
-                      <Menu className="h-5 w-5" />
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="right" className="w-64">
-                    <nav className="flex flex-col space-y-4 mt-8">
-                      <Link href="/pipeline" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-pipeline">
-                        Pipeline
-                      </Link>
-                      <Link href="/cases" className="text-primary font-medium p-2 rounded-md" data-testid="nav-mobile-cases">
-                        Cases
-                      </Link>
-                      <Link href="/assistant" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-assistant">
-                        Assistent
-                      </Link>
-                      <Link href="/text-styler" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-text-styler">
-                        Text Styler
-                      </Link>
-                      <Link href="/batch" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-batch">
-                        Batch Verwerking
-                      </Link>
-                      <Link href="/settings" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-settings">
-                        Instellingen
-                      </Link>
-                    </nav>
-                  </SheetContent>
-                </Sheet>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+
+      <AppHeader title="Case Management" icon={FileText} actions={headerActions} />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
 

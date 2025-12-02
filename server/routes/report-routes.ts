@@ -92,8 +92,9 @@ export function registerReportRoutes(
     });
 
     // Create report in draft state - sla alleen ruwe tekst op
+    // Title will be automatically formatted by storage with dossier number: "D-0001 - [clientName]"
     const report = await storage.createReport({
-      title: `Fiscaal Duidingsrapport - ${clientName}`,
+      title: clientName, // Base title - storage will add dossier number prefix
       clientName: clientName,
       dossierData: { rawText, klant: { naam: clientName } }, // Ruwe tekst + klantnaam voor fallback prompts
       bouwplanData: {},
@@ -1549,6 +1550,21 @@ Gebruik bullet points. Max 150 woorden.
     } finally {
       res.end();
     }
+  }));
+
+  /**
+   * POST /api/reports/restore-client-names
+   * Restore client names from dossier_context_summary for all reports
+   * This fixes the mass-update mistake where all cases got wrong client_name
+   */
+  app.post("/api/reports/restore-client-names", asyncHandler(async (req: Request, res: Response) => {
+    console.log('🔧 Starting client name restoration...');
+
+    const result = await storage.restoreClientNamesFromContext();
+
+    console.log(`🔧 Restoration complete:`, result);
+
+    res.json(createApiSuccessResponse(result, `Client names restored: ${result.updated} updated, ${result.failed} failed/skipped`));
   }));
 
   /**

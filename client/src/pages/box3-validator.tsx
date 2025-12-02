@@ -35,7 +35,7 @@ import {
   Info
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { DarkModeToggle } from "@/components/dark-mode-toggle";
+import { AppHeader } from "@/components/app-header";
 import { Box3SettingsModal, DEFAULT_BOX3_SYSTEM_PROMPT } from "@/components/box3-validator/Box3SettingsModal";
 import { formatDistanceToNow } from "date-fns";
 import { nl } from "date-fns/locale";
@@ -779,29 +779,7 @@ const Box3Validator = memo(function Box3Validator() {
         onSystemPromptChange={handleSystemPromptChange}
       />
 
-      {/* Header */}
-      <header className="border-b border-border bg-card shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 flex items-center">
-                <FileCheck className="text-primary mr-3 h-8 w-8" />
-                <span className="text-xl font-bold text-foreground">Box 3 Validator</span>
-              </div>
-              <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <a href="/pipeline" className="text-muted-foreground hover:text-foreground">Pipeline</a>
-                <a href="/cases" className="text-muted-foreground hover:text-foreground">Cases</a>
-                <a href="/assistant" className="text-muted-foreground hover:text-foreground">Assistent</a>
-                <a href="/box3-validator" className="text-primary font-medium">Box 3 Validator</a>
-                <a href="/settings" className="text-muted-foreground hover:text-foreground">Instellingen</a>
-              </nav>
-            </div>
-            <div className="flex items-center space-x-4">
-              <DarkModeToggle />
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader title="Box 3 Validator" icon={FileCheck} />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex gap-6">

@@ -3,14 +3,12 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Zap, FolderOpen, Menu, Loader2, CheckCircle, Target, Upload, X, FileText } from "lucide-react";
+import { Play, Zap, FolderOpen, Loader2, Upload, X, FileText } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { useIsMobile } from "@/hooks/use-mobile";
 import WorkflowInterface from "@/components/workflow-interface";
-import { DarkModeToggle } from "@/components/dark-mode-toggle";
+import { AppHeader } from "@/components/app-header";
 import { apiRequest } from "@/lib/queryClient";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
 import DOMPurify from "isomorphic-dompurify";
@@ -27,14 +25,12 @@ const Pipeline = memo(function Pipeline() {
   const [rawText, setRawText] = useState(""); // Voor extra context/notities
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [finalReport, setFinalReport] = useState<string>("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [createdReport, setCreatedReport] = useState<Report | null>(null);
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]); // Files wachten tot case is gemaakt
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isMobile = useIsMobile();
   const { toast} = useToast();
   const [, setLocation] = useLocation();
 
@@ -234,64 +230,8 @@ const Pipeline = memo(function Pipeline() {
 
   return (
     <div className="min-h-screen bg-background">
-      
-      {/* Header */}
-      <header className="border-b border-border bg-card shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 flex items-center">
-                <Zap className="text-2xl text-primary mr-3 h-8 w-8" />
-                <span className="text-xl font-bold text-foreground">Fiscale Pipeline</span>
-              </div>
-              {/* Desktop Navigation */}
-              <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <Link href="/" className="text-primary font-medium" data-testid="nav-pipeline">
-                  Pipeline
-                </Link>
-                <Link href="/cases" className="text-muted-foreground hover:text-foreground" data-testid="nav-cases">
-                  Cases
-                </Link>
-                <Link href="/assistant" className="text-muted-foreground hover:text-foreground" data-testid="nav-assistant">
-                  Assistent
-                </Link>
-                <Link href="/settings" className="text-muted-foreground hover:text-foreground" data-testid="nav-settings">
-                  Instellingen
-                </Link>
-              </nav>
-            </div>
-            <div className="flex items-center space-x-4">
-              <DarkModeToggle />
-              {/* Mobile Navigation */}
-              <div className="md:hidden">
-              <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
-                    <Menu className="h-5 w-5" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-64">
-                  <nav className="flex flex-col space-y-4 mt-8">
-                    <Link href="/" className="text-primary font-medium p-2 rounded-md" data-testid="nav-mobile-pipeline">
-                      Pipeline
-                    </Link>
-                    <Link href="/cases" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-cases">
-                      Cases
-                    </Link>
-                    <Link href="/assistant" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-assistant">
-                      Assistent
-                    </Link>
-                    <Link href="/settings" className="text-muted-foreground hover:text-foreground p-2 rounded-md" data-testid="nav-mobile-settings">
-                      Instellingen
-                    </Link>
-                  </nav>
-                </SheetContent>
-              </Sheet>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+
+      <AppHeader title="Fiscale Pipeline" icon={Zap} />
 
       {/* Hero Section */}
       <div className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-primary/10 to-secondary/5 py-16 sm:py-24">

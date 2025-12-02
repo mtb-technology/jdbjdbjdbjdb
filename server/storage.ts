@@ -59,8 +59,121 @@ export interface IStorage {
   deleteBox3ValidatorSession(id: string): Promise<void>;
 }
 
+// Flag to track if dossier number migration has been checked
+let dossierNumberMigrationChecked = false;
+
+/**
+ * Extract client name from dossier_context_summary text
+ * Looks for patterns like:
+ * - "Klant naam/type: Mike Nauheimer (Particulier)"
+ * - "Klant: Jan de Vries"
+ * - "Client: Company Name B.V."
+ * - "**Klant naam/type:** Mike Nauheimer"
+ */
+function extractClientNameFromContext(contextSummary: string | null): string | null {
+  if (!contextSummary) return null;
+
+  // Helper to clean up extracted name (remove markdown, extra whitespace, trailing slashes)
+  const cleanName = (name: string): string => {
+    return name
+      .replace(/^\*+\s*/, '') // Remove leading asterisks
+      .replace(/\s*\*+$/, '') // Remove trailing asterisks
+      .replace(/\s*\/\s*$/, '') // Remove trailing slash
+      .replace(/\s*\/\s*Particulier.*$/i, '') // Remove "/ Particulier" suffix
+      .replace(/\s*\(Particulier\).*$/i, '') // Remove "(Particulier)" suffix
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+  };
+
+  // Pattern 1: "**Klant naam/type:** Name (Type)" - with markdown bold
+  const pattern1a = /\*\*Klant\s+naam\/type:\*\*\s*([^(\n]+?)(?:\s*\(|$|\n)/i;
+  const match1a = contextSummary.match(pattern1a);
+  if (match1a?.[1]) {
+    const cleaned = cleanName(match1a[1]);
+    if (cleaned && cleaned.length > 2 && cleaned.length < 50) return cleaned;
+  }
+
+  // Pattern 1b: "Klant naam/type: Name (Type)" without markdown
+  const pattern1b = /Klant\s+naam\/type:\s*([^(\n]+?)(?:\s*\(|$|\n)/i;
+  const match1b = contextSummary.match(pattern1b);
+  if (match1b?.[1]) {
+    const cleaned = cleanName(match1b[1]);
+    if (cleaned && cleaned.length > 2 && cleaned.length < 50) return cleaned;
+  }
+
+  // Pattern 2: "- Klant: Name" or "• Klant: Name" with optional markdown
+  const pattern2 = /(?:^|\n)\s*[-•*]\s*\*{0,2}Klant:?\*{0,2}\s*([^\n(]+?)(?:\s*\(|$|\n)/i;
+  const match2 = contextSummary.match(pattern2);
+  if (match2?.[1]) {
+    const cleaned = cleanName(match2[1]);
+    if (cleaned && cleaned.length > 2 && cleaned.length < 50) return cleaned;
+  }
+
+  // Pattern 3: "Client: Name"
+  const pattern3 = /(?:^|\n)\s*[-•*]?\s*\*{0,2}Client:?\*{0,2}\s*([^\n(]+?)(?:\s*\(|$|\n)/i;
+  const match3 = contextSummary.match(pattern3);
+  if (match3?.[1]) {
+    const cleaned = cleanName(match3[1]);
+    if (cleaned && cleaned.length > 2 && cleaned.length < 50) return cleaned;
+  }
+
+  return null;
+}
+
 // DatabaseStorage - permanente opslag in PostgreSQL
 export class DatabaseStorage implements IStorage {
+  /**
+   * Ensure dossier_number column and sequence exist (auto-migration for production)
+   * Only runs once per server start
+   */
+  private async ensureDossierNumberMigration(): Promise<void> {
+    if (dossierNumberMigrationChecked) return;
+
+    try {
+      await db.execute(sql`
+        DO $$
+        BEGIN
+          -- Create sequence if not exists
+          IF NOT EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname = 'public' AND sequencename = 'dossier_number_seq') THEN
+            CREATE SEQUENCE dossier_number_seq START WITH 1;
+          END IF;
+
+          -- Add column if not exists
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'reports' AND column_name = 'dossier_number') THEN
+            ALTER TABLE reports ADD COLUMN dossier_number integer;
+
+            -- Set existing reports to have sequential numbers
+            UPDATE reports SET dossier_number = subquery.row_num
+            FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC) as row_num FROM reports) AS subquery
+            WHERE reports.id = subquery.id AND reports.dossier_number IS NULL;
+
+            -- Update sequence to continue from highest
+            PERFORM setval('dossier_number_seq', COALESCE((SELECT MAX(dossier_number) FROM reports), 0));
+
+            -- Add constraints
+            ALTER TABLE reports ALTER COLUMN dossier_number SET NOT NULL;
+            ALTER TABLE reports ADD CONSTRAINT reports_dossier_number_unique UNIQUE (dossier_number);
+
+            RAISE NOTICE 'Dossier number column migration completed';
+          END IF;
+
+          -- Always fix titles that don't have the dossier number prefix (runs every time)
+          -- Prepend dossier number to existing title instead of using client_name
+          UPDATE reports
+          SET title = 'D-' || LPAD(dossier_number::text, 4, '0') || ' - ' || title
+          WHERE dossier_number IS NOT NULL
+            AND title NOT LIKE 'D-____% - %';
+
+        END $$;
+      `);
+      console.log('✅ [Storage] Dossier number schema verified');
+    } catch (migrationError) {
+      console.log('ℹ️ [Storage] Dossier number migration skipped (already exists or error):', migrationError);
+    }
+
+    dossierNumberMigrationChecked = true;
+  }
+
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
@@ -77,6 +190,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getReport(id: string): Promise<Report | undefined> {
+    // Ensure dossier_number column exists before querying
+    await this.ensureDossierNumberMigration();
     const [report] = await db.select().from(reports).where(eq(reports.id, id));
     return report || undefined;
   }
@@ -87,6 +202,9 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     search?: string;
   }): Promise<{ reports: Report[]; total: number; page: number; totalPages: number }> {
+    // Ensure dossier_number column exists before querying
+    await this.ensureDossierNumberMigration();
+
     try {
       const page = options?.page || 1;
       const limit = options?.limit || 10;
@@ -140,7 +258,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReport(insertReport: InsertReport): Promise<Report> {
-    const [report] = await db.insert(reports).values(insertReport).returning();
+    // Ensure dossier_number column and sequence exist (runs once per server start)
+    await this.ensureDossierNumberMigration();
+
+    // Get next dossier number from sequence
+    const result = await db.execute(sql`SELECT nextval('dossier_number_seq')`);
+    const nextval = (result as any)[0]?.nextval;
+    const dossierNumber = parseInt(String(nextval), 10);
+
+    // Format title with dossier number: "D-0001 - [original title or client name]"
+    const formattedNumber = String(dossierNumber).padStart(4, '0');
+    const baseTitle = insertReport.title || insertReport.clientName;
+    const title = `D-${formattedNumber} - ${baseTitle}`;
+
+    const [report] = await db.insert(reports).values({
+      ...insertReport,
+      dossierNumber,
+      title,
+    }).returning();
     return report;
   }
 
@@ -441,6 +576,63 @@ export class DatabaseStorage implements IStorage {
 
   async deleteBox3ValidatorSession(id: string): Promise<void> {
     await db.delete(box3ValidatorSessions).where(eq(box3ValidatorSessions.id, id));
+  }
+
+  /**
+   * Restore client names from dossier_context_summary for all reports
+   * This fixes the mass-update mistake where all cases got "Mike Nauheimer" as client_name
+   */
+  async restoreClientNamesFromContext(): Promise<{ updated: number; failed: number; details: Array<{ id: string; oldName: string; newName: string | null; success: boolean }> }> {
+    console.log('🔧 Starting client name restoration from dossier_context_summary...');
+
+    const allReports = await db.select().from(reports).orderBy(desc(reports.createdAt));
+    const details: Array<{ id: string; oldName: string; newName: string | null; success: boolean }> = [];
+    let updated = 0;
+    let failed = 0;
+
+    for (const report of allReports) {
+      const contextSummary = report.dossierContextSummary;
+      const currentClientName = report.clientName;
+      const extractedName = extractClientNameFromContext(contextSummary);
+
+      if (extractedName && extractedName !== currentClientName) {
+        try {
+          // Update client_name and title with the extracted name
+          const dossierNumber = report.dossierNumber;
+          const formattedNumber = String(dossierNumber).padStart(4, '0');
+          const newTitle = `D-${formattedNumber} - ${extractedName}`;
+
+          await db.update(reports)
+            .set({
+              clientName: extractedName,
+              title: newTitle,
+              updatedAt: new Date()
+            })
+            .where(eq(reports.id, report.id));
+
+          console.log(`✅ [${report.id}] Updated: "${currentClientName}" -> "${extractedName}"`);
+          details.push({ id: report.id, oldName: currentClientName, newName: extractedName, success: true });
+          updated++;
+        } catch (error) {
+          console.error(`❌ [${report.id}] Failed to update:`, error);
+          details.push({ id: report.id, oldName: currentClientName, newName: extractedName, success: false });
+          failed++;
+        }
+      } else {
+        // No change needed or couldn't extract
+        if (!extractedName) {
+          console.log(`⚠️ [${report.id}] Could not extract client name from context`);
+          details.push({ id: report.id, oldName: currentClientName, newName: null, success: false });
+          failed++;
+        } else {
+          console.log(`ℹ️ [${report.id}] Already correct: "${currentClientName}"`);
+          details.push({ id: report.id, oldName: currentClientName, newName: extractedName, success: true });
+        }
+      }
+    }
+
+    console.log(`🔧 Client name restoration complete: ${updated} updated, ${failed} failed/skipped`);
+    return { updated, failed, details };
   }
 }
 

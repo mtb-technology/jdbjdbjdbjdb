@@ -11,9 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Settings as SettingsIcon, 
-  Save, 
+import {
+  Settings as SettingsIcon,
+  Save,
   RefreshCw,
   CheckCircle,
   AlertCircle,
@@ -21,13 +21,10 @@ import {
   Brain,
   Zap,
   Search,
-  Info,
   Download,
   Upload,
-  Shield,
-  Clock
 } from "lucide-react";
-import { DarkModeToggle } from "@/components/dark-mode-toggle";
+import { AppHeader } from "@/components/app-header";
 import type { PromptConfigRecord, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
 
 // Available AI models by provider - MUST match server/config/index.ts AI_MODELS
@@ -540,34 +537,8 @@ const Settings = memo(function Settings() {
 
   return (
     <div className="min-h-screen bg-background">
-      
-      {/* Header */}
-      <header className="border-b border-border bg-card shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <SettingsIcon className="text-2xl text-primary mr-3 h-8 w-8" />
-                <span className="text-xl font-bold text-foreground">Instellingen</span>
-              </div>
-              <nav className="hidden md:ml-10 md:flex md:space-x-8">
-                <a href="/pipeline" className="text-muted-foreground hover:text-foreground" data-testid="nav-pipeline">
-                  Pipeline
-                </a>
-                <a href="/cases" className="text-muted-foreground hover:text-foreground" data-testid="nav-cases">
-                  Cases
-                </a>
-                <a href="/settings" className="text-primary font-medium" data-testid="nav-settings">
-                  Instellingen
-                </a>
-              </nav>
-            </div>
-            <div className="flex items-center space-x-4">
-              <DarkModeToggle />
-            </div>
-          </div>
-        </div>
-      </header>
+
+      <AppHeader title="Instellingen" icon={SettingsIcon} />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         
