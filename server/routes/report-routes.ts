@@ -1642,8 +1642,48 @@ Gebruik bullet points. Max 150 woorden.
   }));
 
   // ============================================================
-  // PDF EXPORT
+  // PDF EXPORT & PREVIEW
   // ============================================================
+
+  /**
+   * Preview report as HTML (for debugging/previewing before PDF export)
+   * GET /api/reports/:id/preview-pdf
+   *
+   * Returns the HTML that would be used to generate the PDF.
+   * Opens in browser for visual inspection.
+   */
+  app.get("/api/reports/:id/preview-pdf", asyncHandler(async (req: Request, res: Response) => {
+    const reportId = req.params.id;
+
+    if (!reportId) {
+      throw ServerError.validation('Report ID is required', 'Rapport ID is verplicht');
+    }
+
+    const report = await storage.getReport(reportId);
+
+    if (!report) {
+      throw ServerError.notFound('Report not found');
+    }
+
+    const { getHtmlPdfGenerator } = await import('../services/html-pdf-generator.js');
+    const pdfGenerator = getHtmlPdfGenerator();
+
+    try {
+      const html = await pdfGenerator.generateHTMLPreview(report);
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(html);
+
+      console.log(`👁️ PDF preview generated for report ${reportId}`);
+
+    } catch (error: any) {
+      console.error(`❌ PDF preview failed for report ${reportId}:`, error);
+      throw ServerError.internal(
+        'PDF preview failed',
+        error.message || 'Er is een fout opgetreden bij het genereren van de preview'
+      );
+    }
+  }));
 
   /**
    * Export report as PDF

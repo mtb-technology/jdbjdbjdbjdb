@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, FileDown, Loader2, CheckCircle } from "lucide-react";
+import { Download, FileDown, Loader2, CheckCircle, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ExportDialogProps {
@@ -106,6 +106,11 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
     }
   };
 
+  const handlePreview = () => {
+    // Open preview in new tab
+    window.open(`/api/reports/${reportId}/preview-pdf`, '_blank');
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -191,8 +196,20 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
             </div>
           </div>
 
-          {/* Export Buttons */}
+          {/* Preview & Export Buttons */}
           <div className="space-y-3 pt-4 border-t">
+            {/* Preview button - only for PDF */}
+            {settings.format === "pdf" && (
+              <Button
+                onClick={handlePreview}
+                variant="secondary"
+                className="w-full"
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                Preview in Browser
+              </Button>
+            )}
+
             <Button
               onClick={() => handleExport(true)}
               disabled={isExporting}

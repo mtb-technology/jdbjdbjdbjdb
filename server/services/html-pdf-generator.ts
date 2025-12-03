@@ -108,27 +108,36 @@ export class HtmlPdfGenerator {
     return report.title || 'Fiscaal Advies';
   }
 
+  /**
+   * Generate HTML preview (without converting to PDF)
+   * Useful for debugging and previewing the template
+   */
+  async generateHTMLPreview(report: Report): Promise<string> {
+    // Extract content and convert to HTML
+    const markdownContent = this.extractLatestContent(report);
+    const contentHtml = await this.markdownToHtml(markdownContent);
+
+    // Build template context
+    const context: PDFTemplateContext = {
+      clientName: report.clientName || 'Onbekend',
+      date: this.formatDate(report.createdAt),
+      subject: this.extractSubject(report),
+      reference: this.formatReference(report.dossierNumber, report.createdAt),
+      contentHtml,
+    };
+
+    // Render HTML from template
+    const template = this.getTemplate();
+    return template(context);
+  }
+
   async generatePDF(report: Report): Promise<Buffer> {
     const browser = await this.getBrowser();
     const page = await browser.newPage();
 
     try {
-      // Extract content and convert to HTML
-      const markdownContent = this.extractLatestContent(report);
-      const contentHtml = await this.markdownToHtml(markdownContent);
-
-      // Build template context
-      const context: PDFTemplateContext = {
-        clientName: report.clientName || 'Onbekend',
-        date: this.formatDate(report.createdAt),
-        subject: this.extractSubject(report),
-        reference: this.formatReference(report.dossierNumber, report.createdAt),
-        contentHtml,
-      };
-
-      // Render HTML from template
-      const template = this.getTemplate();
-      const html = template(context);
+      // Generate HTML first
+      const html = await this.generateHTMLPreview(report);
 
       // Load HTML in page
       await page.setContent(html, { waitUntil: 'networkidle' });
