@@ -43,15 +43,22 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
     setExportSuccess(false);
 
     try {
-      const queryParams = new URLSearchParams({
-        includeTOC: settings.includeTOC.toString(),
-        includeSources: settings.includeSources.toString(),
-        includeFooter: settings.includeFooter.toString(),
-        useCompanyBranding: settings.useCompanyBranding.toString(),
-        clientVersion: isClientVersion.toString(),
-      });
+      // Use new HTML-to-PDF endpoint for PDF format
+      let response: Response;
 
-      const response = await fetch(`/api/cases/${reportId}/export/${settings.format}?${queryParams}`);
+      if (settings.format === "pdf") {
+        response = await fetch(`/api/reports/${reportId}/export-pdf`);
+      } else {
+        // Fallback to old endpoint for other formats
+        const queryParams = new URLSearchParams({
+          includeTOC: settings.includeTOC.toString(),
+          includeSources: settings.includeSources.toString(),
+          includeFooter: settings.includeFooter.toString(),
+          useCompanyBranding: settings.useCompanyBranding.toString(),
+          clientVersion: isClientVersion.toString(),
+        });
+        response = await fetch(`/api/cases/${reportId}/export/${settings.format}?${queryParams}`);
+      }
 
       if (!response.ok) {
         throw new Error("Export mislukt");

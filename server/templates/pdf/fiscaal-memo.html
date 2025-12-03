@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fiscaal Memorandum - {{clientName}}</title>
+  <style>
+    /* ========== BASE STYLES ========== */
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      font-family: 'Proxima Nova', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.5;
+      color: #333333;
+      background: white;
+    }
+
+    /* ========== COLORS ========== */
+    :root {
+      --primary: #003366;
+      --accent: #007BBF;
+      --text: #333333;
+      --muted: #666666;
+      --light: #f5f5f5;
+      --border: #e0e0e0;
+    }
+
+    /* ========== LAYOUT ========== */
+    .document {
+      max-width: 210mm;
+      margin: 0 auto;
+      padding: 0;
+    }
+
+    .content {
+      padding: 0;
+    }
+
+    /* ========== TITLE BLOCK ========== */
+    .title-block {
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--primary);
+    }
+
+    .document-type {
+      font-size: 24pt;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: 1px;
+      margin-bottom: 5px;
+    }
+
+    .document-subtitle {
+      font-size: 11pt;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /* ========== META BLOCK ========== */
+    .meta-block {
+      margin-bottom: 35px;
+      padding: 20px;
+      background: var(--light);
+      border-left: 4px solid var(--primary);
+    }
+
+    .meta-row {
+      display: flex;
+      margin-bottom: 8px;
+    }
+
+    .meta-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .meta-label {
+      width: 80px;
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 10pt;
+      flex-shrink: 0;
+    }
+
+    .meta-value {
+      font-size: 11pt;
+      color: var(--text);
+    }
+
+    .meta-value.client-name {
+      font-weight: 600;
+    }
+
+    /* ========== CONTENT TYPOGRAPHY ========== */
+    .report-content {
+      line-height: 1.7;
+    }
+
+    .report-content h1 {
+      font-size: 16pt;
+      font-weight: 700;
+      color: var(--primary);
+      margin-top: 35px;
+      margin-bottom: 15px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      page-break-after: avoid;
+    }
+
+    .report-content h1:first-child {
+      margin-top: 0;
+    }
+
+    .report-content h2 {
+      font-size: 13pt;
+      font-weight: 600;
+      color: var(--primary);
+      margin-top: 25px;
+      margin-bottom: 12px;
+      page-break-after: avoid;
+    }
+
+    .report-content h3 {
+      font-size: 11pt;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 20px;
+      margin-bottom: 10px;
+      page-break-after: avoid;
+    }
+
+    .report-content p {
+      margin-bottom: 12px;
+      text-align: justify;
+      hyphens: auto;
+    }
+
+    .report-content ul,
+    .report-content ol {
+      margin-bottom: 15px;
+      padding-left: 25px;
+    }
+
+    .report-content li {
+      margin-bottom: 6px;
+    }
+
+    .report-content strong {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .report-content em {
+      font-style: italic;
+    }
+
+    /* ========== TABLES ========== */
+    .report-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 10pt;
+      page-break-inside: avoid;
+    }
+
+    .report-content th {
+      background: var(--primary);
+      color: white;
+      font-weight: 600;
+      text-align: left;
+      padding: 10px 12px;
+    }
+
+    .report-content td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    .report-content tr:nth-child(even) {
+      background: var(--light);
+    }
+
+    /* ========== BLOCKQUOTES ========== */
+    .report-content blockquote {
+      margin: 20px 0;
+      padding: 15px 20px;
+      background: var(--light);
+      border-left: 4px solid var(--accent);
+      font-style: italic;
+      color: var(--muted);
+    }
+
+    /* ========== CODE BLOCKS ========== */
+    .report-content code {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 9pt;
+      background: var(--light);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .report-content pre {
+      background: var(--light);
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      margin: 15px 0;
+      font-size: 9pt;
+    }
+
+    .report-content pre code {
+      padding: 0;
+      background: none;
+    }
+
+    /* ========== DISCLAIMER ========== */
+    .disclaimer {
+      margin-top: 50px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .disclaimer-title {
+      font-size: 9pt;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+
+    .disclaimer-text {
+      font-size: 8pt;
+      line-height: 1.6;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    /* ========== PRINT SPECIFIC ========== */
+    @media print {
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page-break {
+        page-break-before: always;
+      }
+
+      .no-break {
+        page-break-inside: avoid;
+      }
+
+      h1, h2, h3 {
+        page-break-after: avoid;
+      }
+
+      p, li {
+        orphans: 3;
+        widows: 3;
+      }
+
+      table {
+        page-break-inside: avoid;
+      }
+
+      .disclaimer {
+        page-break-inside: avoid;
+      }
+    }
+
+    /* ========== LINKS ========== */
+    .report-content a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .report-content a:hover {
+      text-decoration: underline;
+    }
+
+    /* Print: show URLs */
+    @media print {
+      .report-content a[href^="http"]::after {
+        content: " (" attr(href) ")";
+        font-size: 8pt;
+        color: var(--muted);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="document">
+    <div class="content">
+      <!-- Title Block -->
+      <div class="title-block">
+        <div class="document-type">FISCAAL MEMORANDUM</div>
+        <div class="document-subtitle">Jan de Belastingman &middot; Fiscaal Adviesbureau</div>
+      </div>
+
+      <!-- Meta Block -->
+      <div class="meta-block">
+        <div class="meta-row">
+          <span class="meta-label">Aan:</span>
+          <span class="meta-value client-name">{{clientName}}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Van:</span>
+          <span class="meta-value">Jan de Belastingman</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Datum:</span>
+          <span class="meta-value">{{date}}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Betreft:</span>
+          <span class="meta-value">{{subject}}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Ref:</span>
+          <span class="meta-value">{{reference}}</span>
+        </div>
+      </div>
+
+      <!-- Report Content -->
+      <div class="report-content">
+        {{{contentHtml}}}
+      </div>
+
+      <!-- Disclaimer -->
+      <div class="disclaimer">
+        <div class="disclaimer-title">Disclaimer</div>
+        <div class="disclaimer-text">
+          Dit memorandum is opgesteld door Jan de Belastingman en is uitsluitend bestemd voor de geadresseerde.
+          De inhoud is gebaseerd op de aan ons verstrekte informatie en de op dit moment geldende wet- en regelgeving.
+          Aan dit advies kunnen geen rechten worden ontleend. Wij aanvaarden geen aansprakelijkheid voor eventuele
+          onjuistheden of onvolledigheden, noch voor beslissingen die worden genomen op basis van dit memorandum.
+          Bij twijfel raden wij aan contact op te nemen met een gekwalificeerde belastingadviseur of de Belastingdienst.
+          Dit document is vertrouwelijk en mag niet zonder schriftelijke toestemming worden gedeeld met derden.
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1640,4 +1640,66 @@ Gebruik bullet points. Max 150 woorden.
       res.end();
     }
   }));
+
+  // ============================================================
+  // PDF EXPORT
+  // ============================================================
+
+  /**
+   * Export report as PDF
+   * GET /api/reports/:id/export-pdf
+   *
+   * Generates a professionally formatted PDF document from the report content.
+   * Uses HTML template with Playwright for pixel-perfect rendering.
+   */
+  app.get("/api/reports/:id/export-pdf", asyncHandler(async (req: Request, res: Response) => {
+    const reportId = req.params.id;
+
+    if (!reportId) {
+      throw ServerError.validation('Report ID is required', 'Rapport ID is verplicht');
+    }
+
+    // Fetch the report
+    const report = await storage.getReport(reportId);
+
+    if (!report) {
+      throw ServerError.notFound('Report not found');
+    }
+
+    // Import and use HTML PDF generator
+    const { getHtmlPdfGenerator } = await import('../services/html-pdf-generator.js');
+    const pdfGenerator = getHtmlPdfGenerator();
+
+    try {
+      const pdfBuffer = await pdfGenerator.generatePDF(report);
+
+      // Create safe filename
+      const safeClientName = (report.clientName || 'rapport')
+        .replace(/[^a-zA-Z0-9\-_\s]/g, '')
+        .replace(/\s+/g, '-')
+        .substring(0, 50);
+
+      const filename = `JDB-${report.dossierNumber || '00000'}-${safeClientName}.pdf`;
+
+      // Set headers for PDF download
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+
+      res.send(pdfBuffer);
+
+      console.log(`📄 PDF exported for report ${reportId}:`, {
+        filename,
+        size: pdfBuffer.length,
+        clientName: report.clientName
+      });
+
+    } catch (error: any) {
+      console.error(`❌ PDF generation failed for report ${reportId}:`, error);
+      throw ServerError.internal(
+        'PDF generation failed',
+        error.message || 'Er is een fout opgetreden bij het genereren van de PDF'
+      );
+    }
+  }));
 }
