@@ -67,6 +67,12 @@
       font-weight: 400;
     }
 
+    .logo {
+      max-height: 50px;
+      max-width: 200px;
+      margin-bottom: 15px;
+    }
+
     /* ========== META BLOCK ========== */
     .meta-block {
       margin-bottom: 35px;
@@ -305,6 +311,9 @@
     <div class="content">
       <!-- Title Block -->
       <div class="title-block">
+        {{#if logoSrc}}
+        <img src="{{logoSrc}}" alt="Logo" class="logo" />
+        {{/if}}
         <div class="document-type">FISCAAL MEMORANDUM</div>
         <div class="document-subtitle">Jan de Belastingman &middot; Fiscaal Adviesbureau</div>
       </div>

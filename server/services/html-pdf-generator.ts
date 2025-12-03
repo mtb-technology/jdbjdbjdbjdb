@@ -3,11 +3,10 @@ import Handlebars from 'handlebars';
 import { marked } from 'marked';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
 import type { Report } from '@shared/schema';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Get project root - works in both dev and production
+const PROJECT_ROOT = process.cwd();
 
 interface PDFTemplateContext {
   // Meta information
@@ -38,7 +37,12 @@ export class HtmlPdfGenerator {
 
   private getTemplate(): Handlebars.TemplateDelegate {
     if (!this.template) {
-      const templatePath = path.join(__dirname, '../templates/pdf/fiscaal-memo.html');
+      const templatePath = path.join(PROJECT_ROOT, 'server/templates/pdf/fiscaal-memo.html');
+
+      if (!fs.existsSync(templatePath)) {
+        throw new Error(`PDF template not found at: ${templatePath}`);
+      }
+
       const templateSource = fs.readFileSync(templatePath, 'utf-8');
       this.template = Handlebars.compile(templateSource);
     }
@@ -115,6 +119,12 @@ export class HtmlPdfGenerator {
   async generateHTMLPreview(report: Report): Promise<string> {
     // Extract content and convert to HTML
     const markdownContent = this.extractLatestContent(report);
+
+    // Check if we have content
+    if (!markdownContent || markdownContent.trim().length === 0) {
+      throw new Error('Geen rapport content gevonden. Zorg dat het rapport eerst is gegenereerd.');
+    }
+
     const contentHtml = await this.markdownToHtml(markdownContent);
 
     // Build template context
