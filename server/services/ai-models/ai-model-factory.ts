@@ -1,10 +1,8 @@
 import { BaseAIHandler, AIModelResponse } from "./base-handler";
 import type { AIModelParameters } from "./base-handler";
 import { GoogleAIHandler } from "./google-handler";
-import { GoogleDeepResearchHandler } from "./google-deep-research-handler";
 import { OpenAIStandardHandler } from "./openai-standard-handler";
 import { OpenAIReasoningHandler } from "./openai-reasoning-handler";
-import { OpenAIDeepResearchHandler } from "./openai-deep-research-handler";
 import { OpenAIGPT5Handler } from "./openai-gpt5-handler";
 import type { AiConfig } from "@shared/schema";
 import { config, getAIModelConfig, type AIModelName } from "../../config";
@@ -16,7 +14,7 @@ export type { AIModelParameters } from "./base-handler";
 
 export interface ModelInfo {
   provider: "google" | "openai";
-  handlerType: "google" | "google-deep-research" | "openai-standard" | "openai-reasoning" | "openai-gpt5" | "openai-deep-research";
+  handlerType: "google" | "openai-standard" | "openai-reasoning" | "openai-gpt5";
   supportedParameters: string[];
   requiresResponsesAPI?: boolean;
   timeout?: number;
@@ -92,15 +90,8 @@ export class AIModelFactory {
       }
     };
 
-    // Initialize Google handlers
+    // Initialize Google handler (includes our own deep research via ResearchOrchestrator)
     initializeHandler("google", GoogleAIHandler, googleApiKey);
-
-    // Initialize Google Deep Research handler (requires GOOGLE_CLOUD_PROJECT env var)
-    if (googleApiKey && process.env.GOOGLE_CLOUD_PROJECT) {
-      initializeHandler("google-deep-research", GoogleDeepResearchHandler, googleApiKey);
-    } else if (googleApiKey && !process.env.GOOGLE_CLOUD_PROJECT) {
-      console.warn('⚠️ Google Deep Research not initialized - GOOGLE_CLOUD_PROJECT environment variable required');
-    }
 
     // Initialize OpenAI handlers with additional validation
     if (openaiApiKey) {
@@ -180,22 +171,8 @@ export class AIModelFactory {
       throw new Error(`Model ${config.model} is niet geregistreerd`);
     }
 
-    // Get the appropriate handler
-    let handler: BaseAIHandler | undefined;
-
-    if (modelInfo.handlerType === "openai-deep-research") {
-      // Use specific deep research handler based on model
-      if (config.model.includes("o3")) {
-        handler = this.handlers.get("openai-deep-research-o3");
-      } else if (config.model.includes("o4")) {
-        handler = this.handlers.get("openai-deep-research-o4");
-      }
-    } else if (modelInfo.handlerType === "google-deep-research") {
-      // Use Google Deep Research handler
-      handler = this.handlers.get("google-deep-research");
-    } else {
-      handler = this.handlers.get(modelInfo.handlerType);
-    }
+    // Get the appropriate handler based on handlerType
+    const handler = this.handlers.get(modelInfo.handlerType);
 
     if (!handler) {
       throw new Error(`Geen handler gevonden voor ${config.model}`);
@@ -363,19 +340,6 @@ export class AIModelFactory {
     const modelInfo = this.modelRegistry.get(modelName);
     if (!modelInfo) {
       return null;
-    }
-    
-    // Handle special cases for deep research models
-    if (modelInfo.handlerType === "openai-deep-research") {
-      if (modelName.includes("o3")) {
-        return this.handlers.get("openai-deep-research-o3") || null;
-      } else if (modelName.includes("o4")) {
-        return this.handlers.get("openai-deep-research-o4") || null;
-      }
-    }
-
-    if (modelInfo.handlerType === "google-deep-research") {
-      return this.handlers.get("google-deep-research") || null;
     }
 
     return this.handlers.get(modelInfo.handlerType) || null;

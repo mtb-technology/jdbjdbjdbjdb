@@ -20,12 +20,20 @@ export interface StageExecutionResponse {
 }
 
 /**
+ * Report depth levels for Stage 3 deep research.
+ * Controls how detailed the generated report should be.
+ */
+export type ReportDepth = "concise" | "balanced" | "comprehensive";
+
+/**
  * Variables for executing a stage mutation.
  */
 export interface ExecuteStageVariables {
   stage: string;
   reportId?: string;
   customInput?: string;
+  /** Report depth for Stage 3 - controls detail level */
+  reportDepth?: ReportDepth;
 }
 
 /**

@@ -79,10 +79,15 @@ export class SSEHandler {
   // Send event to specific client
   private sendEvent(res: Response, event: StreamingEvent): void {
     try {
+      // Check of connectie nog open is voordat we schrijven
+      if (res.destroyed || res.writableEnded) {
+        return;
+      }
       const data = JSON.stringify(event);
       res.write(`data: ${data}\n\n`);
     } catch (error) {
-      console.error('Failed to send SSE event:', error);
+      // Silently ignore write errors - client likely disconnected
+      console.debug('SSE write failed (client likely disconnected)');
     }
   }
 

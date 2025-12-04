@@ -32,6 +32,30 @@ import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@
 import { deduplicateRequests } from "../middleware/deduplicate";
 
 /**
+ * Helper function to parse JSON that may be wrapped in markdown code blocks
+ * Handles responses like: ```json\n{...}\n```
+ */
+function parseJsonWithMarkdown(text: string): any {
+  // First try direct parse
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Try to extract JSON from markdown code blocks
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch && jsonMatch[1]) {
+      return JSON.parse(jsonMatch[1].trim());
+    }
+    // Try to find a JSON object in the text
+    const objectMatch = text.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+      return JSON.parse(objectMatch[0]);
+    }
+    // Re-throw if nothing worked
+    throw new Error('No valid JSON found in response');
+  }
+}
+
+/**
  * Register all report-related routes
  *
  * @param app Express application
@@ -180,7 +204,7 @@ export function registerReportRoutes(
     }),
     asyncHandler(async (req: Request, res: Response) => {
       const { id, stage } = req.params;
-      const { customInput } = req.body;
+      const { customInput, reportDepth } = req.body;
 
       const report = await storage.getReport(id);
       if (!report) {
@@ -241,7 +265,8 @@ export function registerReportRoutes(
           customInput,
           id, // Pass reportId as jobId for logging
           undefined, // onProgress - not used in non-streaming
-          visionAttachments.length > 0 ? visionAttachments : undefined
+          visionAttachments.length > 0 ? visionAttachments : undefined,
+          reportDepth // Report depth for Stage 3
         );
       } catch (stageError: unknown) {
         console.error(`🚨 Stage execution failed but recovering gracefully:`, getErrorMessage(stageError));
@@ -294,7 +319,7 @@ export function registerReportRoutes(
       // *** STAGE 1 CLEANUP: Strip rawText after successful completion ***
       if (stage === '1_informatiecheck' && stageExecution.stageOutput) {
         try {
-          const parsed = JSON.parse(stageExecution.stageOutput);
+          const parsed = parseJsonWithMarkdown(stageExecution.stageOutput);
           if (parsed.status === 'COMPLEET' && parsed.dossier) {
             console.log(`🧹 [${id}] Stage 1 COMPLEET - stripping rawText from dossierData`);
             // Replace dossierData with structured data from AI (no rawText)
@@ -316,7 +341,7 @@ export function registerReportRoutes(
       // *** STAGE 2 UPDATE: Update dossierData with corrected data from origineel_dossier ***
       if (stage === '2_complexiteitscheck' && stageExecution.stageOutput) {
         try {
-          const parsed = JSON.parse(stageExecution.stageOutput);
+          const parsed = parseJsonWithMarkdown(stageExecution.stageOutput);
           if (parsed.next_action === 'PROCEED_TO_GENERATION' && parsed.origineel_dossier) {
             console.log(`🔄 [${id}] Stage 2 COMPLEET - updating dossierData with corrected data from origineel_dossier`);
             // Update dossierData with the corrected/enriched data from stage 2

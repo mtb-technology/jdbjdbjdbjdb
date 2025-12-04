@@ -16,12 +16,6 @@ export interface SimpleFeedbackProcessorProps {
   stageName: string;
   rawFeedback: string;
   onProcessingComplete?: (result: ProcessFeedbackResponse) => void;
-  // Manual mode support
-  manualMode?: "ai" | "manual";
-  onToggleManualMode?: (mode: "ai" | "manual") => void;
-  manualContent?: string;
-  onManualContentChange?: (content: string) => void;
-  onManualExecute?: () => void;
 }
 
 /**
@@ -71,20 +65,6 @@ export type BulkActionSeverity = "critical" | "important" | "suggestion" | "all"
 export interface AIStatusIndicatorProps {
   aiStatus: AIServiceStatus | undefined;
   onShowDetails: (message: string) => void;
-}
-
-/**
- * Props for ManualModePanel component
- */
-export interface ManualModePanelProps {
-  manualMode: "ai" | "manual";
-  onToggleManualMode: (mode: "ai" | "manual") => void;
-  manualContent: string;
-  onManualContentChange: (content: string) => void;
-  onManualExecute: () => void;
-  promptPreviewData: PromptPreviewResponse | undefined;
-  onCopyPrompt: () => void;
-  copied: boolean;
 }
 
 /**

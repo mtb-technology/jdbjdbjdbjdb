@@ -139,11 +139,18 @@ export class AIError extends Error {
     return new AIError(message, ERROR_CODES.VALIDATION_FAILED, 400);
   }
 
-  static timeout(message: string = 'Request timeout') {
+  static timeout(model: string, timeoutMs?: number) {
+    const message = timeoutMs
+      ? `Request to ${model} timed out after ${timeoutMs}ms`
+      : `Request to ${model} timed out`;
     return new AIError(message, ERROR_CODES.AI_SERVICE_UNAVAILABLE, 504, { isRetryable: true });
   }
 
   static circuitBreakerOpen(message: string = 'Circuit breaker open') {
     return new AIError(message, ERROR_CODES.AI_SERVICE_UNAVAILABLE, 503, { isRetryable: true });
+  }
+
+  static cancelled(model: string) {
+    return new AIError(`Request to ${model} was cancelled`, ERROR_CODES.AI_SERVICE_UNAVAILABLE, 499, { isRetryable: false });
   }
 }

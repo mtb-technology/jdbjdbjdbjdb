@@ -79,7 +79,7 @@ export function useFeedbackMutations({
       onClearInstructions();
 
       // Invalidate queries to refresh data
-      queryClient.invalidateQueries({ queryKey: ["/api/reports", reportId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
 
       toast({
         title: "Feedback verwerkt",

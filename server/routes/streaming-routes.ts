@@ -9,6 +9,9 @@ import { storage } from "../storage";
 import type { DossierData, BouwplanData, StageId } from "@shared/schema";
 import type { SubstepDefinition } from "@shared/streaming-types";
 
+// Track active AbortControllers per session voor graceful cancellation
+const activeAbortControllers = new Map<string, AbortController>();
+
 export function registerStreamingRoutes(
   app: Express,
   sseHandler: SSEHandler,
@@ -62,32 +65,47 @@ export function registerStreamingRoutes(
         canRetry: false
       }];
 
+      // Maak AbortController voor graceful cancellation bij client disconnect
+      const sessionKey = `${reportId}-${stageId}`;
+      const abortController = new AbortController();
+      activeAbortControllers.set(sessionKey, abortController);
+
       sessionManager.createSession(reportId, stageId, simpleSubsteps);
 
       // Start execution in background
       setTimeout(async () => {
         try {
+          // Check of al geabort voordat we beginnen
+          if (abortController.signal.aborted) {
+            console.log(`🛑 [${reportId}-${stageId}] Stage was aborted before execution`);
+            return;
+          }
+
           // Update progress to show we're executing
           sessionManager.updateSubstepProgress(reportId, stageId, 'execute', 50, 'In uitvoering...');
-          sseHandler.broadcast(reportId, stageId, {
-            type: 'step_progress',
-            stageId,
-            substepId: 'execute',
-            percentage: 50,
-            message: `${stageId} wordt uitgevoerd...`,
-            timestamp: new Date().toISOString()
-          });
-
-          // Progress callback for deep research - broadcasts to SSE
-          const onProgress = (progress: { stage: string; message: string; progress: number }) => {
+          if (!abortController.signal.aborted) {
             sseHandler.broadcast(reportId, stageId, {
-              type: 'research_progress',
+              type: 'step_progress',
               stageId,
-              researchStage: progress.stage,
-              percentage: progress.progress,
-              message: progress.message,
+              substepId: 'execute',
+              percentage: 50,
+              message: `${stageId} wordt uitgevoerd...`,
               timestamp: new Date().toISOString()
             });
+          }
+
+          // Progress callback for deep research - broadcasts to SSE (met abort check)
+          const onProgress = (progress: { stage: string; message: string; progress: number }) => {
+            if (!abortController.signal.aborted) {
+              sseHandler.broadcast(reportId, stageId, {
+                type: 'research_progress',
+                stageId,
+                researchStage: progress.stage,
+                percentage: progress.progress,
+                message: progress.message,
+                timestamp: new Date().toISOString()
+              });
+            }
           };
 
           // For Stage 1 (informatiecheck): Include attachment extracted text AND vision attachments
@@ -142,8 +160,16 @@ export function registerStreamingRoutes(
             customInput,
             reportId,
             onProgress,
-            visionAttachments.length > 0 ? visionAttachments : undefined
+            visionAttachments.length > 0 ? visionAttachments : undefined,
+            undefined, // reportDepth
+            abortController.signal // AbortSignal voor graceful cancellation
           );
+
+          // Check of geabort tijdens uitvoering
+          if (abortController.signal.aborted) {
+            console.log(`🛑 [${reportId}-${stageId}] Stage was aborted during execution`);
+            return;
+          }
 
           // Update stage results
           const updatedStageResults = {
@@ -180,7 +206,7 @@ export function registerStreamingRoutes(
           }
 
           // Handle reviewer stages (4a-4g) - broadcast feedback ready event
-          if (stageId.startsWith('4')) {
+          if (stageId.startsWith('4') && !abortController.signal.aborted) {
             sseHandler.broadcast(reportId, stageId, {
               type: 'stage_complete',
               stageId: stageId,
@@ -199,21 +225,31 @@ export function registerStreamingRoutes(
           // Complete the session
           sessionManager.completeStage(reportId, stageId, result.stageOutput, result.conceptReport, result.prompt);
 
-          // Broadcast completion
-          sseHandler.broadcast(reportId, stageId, {
-            type: 'stage_complete',
-            stageId,
-            substepId: 'execute',
-            percentage: 100,
-            message: `${stageId} voltooid`,
-            timestamp: new Date().toISOString()
-          });
+          // Broadcast completion (alleen als niet geabort)
+          if (!abortController.signal.aborted) {
+            sseHandler.broadcast(reportId, stageId, {
+              type: 'stage_complete',
+              stageId,
+              substepId: 'execute',
+              percentage: 100,
+              message: `${stageId} voltooid`,
+              timestamp: new Date().toISOString()
+            });
+          }
 
           console.log(`✅ [${reportId}-${stageId}] Simple streaming stage completed`);
 
         } catch (error: any) {
+          // Check of dit een abort error is
+          if (abortController.signal.aborted) {
+            console.log(`🛑 [${reportId}-${stageId}] Stage was aborted`);
+            return;
+          }
           console.error(`❌ [${reportId}-${stageId}] Streaming stage failed:`, error);
           sessionManager.errorStage(reportId, stageId, error.message, true);
+        } finally {
+          // Cleanup de AbortController
+          activeAbortControllers.delete(sessionKey);
         }
       }, 100);
 
@@ -275,7 +311,16 @@ export function registerStreamingRoutes(
     }
 
     try {
-      // Simply mark session as cancelled
+      // Abort de lopende AI call
+      const sessionKey = `${reportId}-${stageId}`;
+      const controller = activeAbortControllers.get(sessionKey);
+      if (controller) {
+        controller.abort();
+        activeAbortControllers.delete(sessionKey);
+        console.log(`🛑 [${reportId}-${stageId}] AbortController triggered`);
+      }
+
+      // Mark session as cancelled
       sessionManager.errorStage(reportId, stageId, 'Cancelled by user', true);
       console.log(`🛑 [${reportId}-${stageId}] Stage execution cancelled`);
 

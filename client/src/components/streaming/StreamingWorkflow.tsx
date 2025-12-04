@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Play, Square, RotateCcw, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { SimpleFeedbackProcessor } from "@/components/workflow/SimpleFeedbackProcessor";
+import { ResearchProgressStepper } from "./ResearchProgressStepper";
 import { logger } from "@/lib/logger";
 import { getErrorMessage } from "@/types/api";
 import type {
@@ -34,11 +35,17 @@ export function StreamingWorkflow({
   const [streamingContent, setStreamingContent] = useState<string>("");
   const [retryCount, setRetryCount] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [researchProgress, setResearchProgress] = useState<{
+    stage: string;
+    percentage: number;
+    message: string;
+  } | null>(null);
 
   // Start streaming execution
   const startExecution = useCallback(async () => {
     try {
       logger.streaming(reportId, stageId, 'Starting streaming execution');
+      setResearchProgress(null); // Reset research progress on new execution
 
       const response = await fetch(`/api/reports/${reportId}/stage/${stageId}/stream`, {
         method: 'POST',
@@ -211,6 +218,11 @@ export function StreamingWorkflow({
       case 'research_progress':
         // Deep research progress update
         logger.streaming(reportId, stageId, `Research progress: ${event.researchStage} - ${event.percentage}%`);
+        setResearchProgress({
+          stage: event.researchStage,
+          percentage: event.percentage,
+          message: event.message
+        });
         setSession(prev => prev ? {
           ...prev,
           progress: {
@@ -229,6 +241,7 @@ export function StreamingWorkflow({
 
       case 'stage_complete':
         logger.streaming(reportId, stageId, 'Stage completed');
+        setResearchProgress(null); // Reset research progress on completion
 
         // Check for user action required (feedback instructions)
         if (event.data?.requiresUserAction && event.data?.actionType === 'feedback_instructions') {
@@ -267,8 +280,9 @@ export function StreamingWorkflow({
 
       case 'cancelled':
         logger.streaming(reportId, stageId, 'Stage cancelled');
-        setSession(prev => prev ? { 
-          ...prev, 
+        setResearchProgress(null); // Reset research progress on cancel
+        setSession(prev => prev ? {
+          ...prev,
           status: 'cancelled',
           endTime: new Date().toISOString()
         } : null);
@@ -401,19 +415,29 @@ export function StreamingWorkflow({
         {/* Overall progress */}
         {session && (
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span>Overall Progress</span>
-              <span>{session.progress.percentage}%</span>
-            </div>
-            <Progress 
-              value={session.progress.percentage} 
-              className="w-full"
-              data-testid={`progress-overall-${stageId}`}
-            />
-            {(session.progress.currentSubstep || (session.progress as any).message) && (
-              <p className="text-sm text-muted-foreground">
-                {(session.progress as any).message || `Current: ${session.progress.currentSubstep}`}
-              </p>
+            {researchProgress ? (
+              <ResearchProgressStepper
+                currentStage={researchProgress.stage}
+                percentage={researchProgress.percentage}
+                message={researchProgress.message}
+              />
+            ) : (
+              <>
+                <div className="flex items-center justify-between text-sm">
+                  <span>Overall Progress</span>
+                  <span>{session.progress.percentage}%</span>
+                </div>
+                <Progress
+                  value={session.progress.percentage}
+                  className="w-full"
+                  data-testid={`progress-overall-${stageId}`}
+                />
+                {(session.progress.currentSubstep || (session.progress as any).message) && (
+                  <p className="text-sm text-muted-foreground">
+                    {(session.progress as any).message || `Current: ${session.progress.currentSubstep}`}
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}

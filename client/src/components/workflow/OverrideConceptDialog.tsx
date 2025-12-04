@@ -51,7 +51,7 @@ export function OverrideConceptDialog({
       });
       
       // Invalidate queries to refresh data
-      queryClient.invalidateQueries({ queryKey: ['/api/reports', reportId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
       queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
       
       onClose();

@@ -160,9 +160,10 @@ function WorkflowManagerContent({
 
   // Execute stage mutation
   const executeStageM = useMutation({
-    mutationFn: async ({ reportId, stage, customInput }: { reportId: string; stage: string; customInput?: string }) => {
+    mutationFn: async ({ reportId, stage, customInput, reportDepth }: { reportId: string; stage: string; customInput?: string; reportDepth?: string }) => {
       const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
         customInput,
+        reportDepth,
       });
       const data = await response.json();
 

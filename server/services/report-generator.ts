@@ -424,7 +424,9 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     customInput?: string,
     jobId?: string,
     onProgress?: (progress: { stage: string; message: string; progress: number }) => void,
-    visionAttachments?: Array<{ mimeType: string; data: string; filename: string }>
+    visionAttachments?: Array<{ mimeType: string; data: string; filename: string }>,
+    reportDepth?: "concise" | "balanced" | "comprehensive",
+    signal?: AbortSignal
   ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
     // Generate the prompt using the new method
     const promptResult = await this.generatePromptForStage(
@@ -477,13 +479,15 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     }
     
     // Call the AI model using the factory with stage-specific timeout
-    const options: AIModelParameters & { jobId?: string } = {
+    const options: AIModelParameters & { jobId?: string; signal?: AbortSignal } = {
       jobId,
       useWebSearch,
       useGrounding,
       timeout: stageTimeout, // Pass stage-specific timeout
       onProgress, // Pass through for deep research progress updates
-      visionAttachments // Pass through for multimodal PDF/image processing
+      visionAttachments, // Pass through for multimodal PDF/image processing
+      reportDepth, // Pass through for Stage 3 deep research depth control
+      signal // Pass through for graceful cancellation
     };
 
     if (visionAttachments && visionAttachments.length > 0) {

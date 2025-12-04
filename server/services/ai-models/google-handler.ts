@@ -287,8 +287,11 @@ export class GoogleAIHandler extends BaseAIHandler {
       temperature: config.temperature || 1.0,
       maxOutputTokens: config.maxOutputTokens || 32768,
       timeout: 1800000, // 30 minutes
-      polishPrompt: (config as any).polishPrompt // Pass through polish instructions from stage config
+      polishPrompt: (config as any).polishPrompt, // Pass through polish instructions from stage config
+      reportDepth: options?.reportDepth || 'balanced'
     };
+
+    console.log(`[${jobId}] Using reportDepth: ${researchConfig.reportDepth}`);
 
     // Re-create orchestrator with custom config
     this.orchestrator = new ResearchOrchestrator(this.handlerApiKey, researchConfig);

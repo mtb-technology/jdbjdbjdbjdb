@@ -106,25 +106,7 @@ export const AI_MODELS = {
       maxRequestsPerMinute: 1000
     }
   },
-  'gemini-2.5-pro-deep-research': {
-    provider: 'google' as const,
-    handlerType: 'google-deep-research' as const,
-    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'useWebSearch'],
-    requiresResponsesAPI: true,
-    timeout: 900000, // 15 minutes for Deep Research
-    defaultConfig: {
-      temperature: 0.1,
-      topP: 0.95,
-      topK: 20,
-      maxOutputTokens: 32768 // Higher default for research outputs
-    },
-    limits: {
-      maxTokensPerRequest: 65535, // Aligned with Gemini 2.5 Pro limit
-      maxRequestsPerMinute: 30
-    }
-  },
-
-  // Gemini 3 Models
+  // Gemini 3 Models (uses our own ResearchOrchestrator for deep research)
   'gemini-3-pro-preview': {
     provider: 'google' as const,
     handlerType: 'google' as const,
@@ -218,34 +200,6 @@ export const AI_MODELS = {
     },
     requiresResponsesAPI: false,
     timeout: 600000 // 10 minutes
-  },
-  'o3-deep-research-2025-06-26': {
-    provider: 'openai' as const,
-    handlerType: 'openai-deep-research' as const,
-    supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
-    defaultConfig: {
-      maxOutputTokens: 16384
-    },
-    limits: {
-      maxTokensPerRequest: 200000,
-      maxRequestsPerMinute: 30
-    },
-    requiresResponsesAPI: true,
-    timeout: 600000 // 10 minutes
-  },
-  'o4-mini-deep-research-2025-06-26': {
-    provider: 'openai' as const,
-    handlerType: 'openai-deep-research' as const,
-    supportedParameters: ['maxOutputTokens', 'reasoning', 'verbosity', 'useWebSearch'],
-    defaultConfig: {
-      maxOutputTokens: 8192  // Default, will be increased for complex stages
-    },
-    limits: {
-      maxTokensPerRequest: 200000,
-      maxRequestsPerMinute: 100
-    },
-    requiresResponsesAPI: true,
-    timeout: 900000 // 15 minutes for Deep Research with web search
   }
 } as const;
 

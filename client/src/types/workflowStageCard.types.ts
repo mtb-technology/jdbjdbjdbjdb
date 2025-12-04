@@ -54,9 +54,13 @@ export interface WorkflowStageCardProps {
   // Controls
   canExecute: boolean;
   isProcessing: boolean;
-  onExecute: (customContext?: string) => void;
+  onExecute: (customContext?: string, reportDepth?: ReportDepth) => void;
   onForceContinue?: () => void;
   onResetStage?: () => void;
+
+  // Report depth for Stage 3
+  reportDepth?: ReportDepth;
+  onReportDepthChange?: (depth: ReportDepth) => void;
 
   // Progress
   progress?: StageProgress;
@@ -86,14 +90,11 @@ export interface WorkflowStageCardProps {
  * Props for StageCardHeader component
  */
 export interface StageCardHeaderProps {
-  stageKey: string;
   stageName: string;
   stageIcon: ReactNode;
   stageStatus: StageStatus;
   isExpanded: boolean;
   onToggleExpand: () => void;
-  outputPreview: string | null;
-  resultLabel: string;
   isProcessing: boolean;
   progress?: StageProgress;
   blockReason?: string;
@@ -115,9 +116,15 @@ export interface ManualModePanelProps {
 }
 
 /**
+ * Report depth levels for Stage 3 deep research.
+ */
+export type ReportDepth = "concise" | "balanced" | "comprehensive";
+
+/**
  * Props for StageActionButtons component
  */
 export interface StageActionButtonsProps {
+  stageKey: string;
   stageStatus: StageStatus;
   canExecute: boolean;
   isProcessing: boolean;
@@ -127,6 +134,9 @@ export interface StageActionButtonsProps {
   onCustomContextChange: (value: string) => void;
   onExecute: () => void;
   onResetStage?: () => void;
+  /** Report depth for Stage 3 */
+  reportDepth?: ReportDepth;
+  onReportDepthChange?: (depth: ReportDepth) => void;
 }
 
 /**
@@ -161,9 +171,4 @@ export interface StageOutputSectionProps {
   showFeedbackProcessor?: boolean;
   reportId?: string;
   onFeedbackProcessed?: (response: ProcessFeedbackResponse) => void;
-  manualMode?: ManualMode;
-  onToggleManualMode?: (mode: ManualMode) => void;
-  manualContent?: string;
-  onManualContentChange?: (content: string) => void;
-  onManualExecute?: () => void;
 }

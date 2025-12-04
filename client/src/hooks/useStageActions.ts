@@ -13,7 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { WorkflowState, WorkflowAction } from "@/components/workflow/WorkflowContext";
-import type { ExecuteStageMutation } from "@/components/workflow/types";
+import type { ExecuteStageMutation, ReportDepth } from "@/components/workflow/types";
 import type { ProcessFeedbackResponse } from "@shared/types/api";
 
 interface UseStageActionsProps {
@@ -23,7 +23,7 @@ interface UseStageActionsProps {
 }
 
 interface UseStageActionsReturn {
-  handleExecuteStage: (stageKey: string, customContext?: string) => void;
+  handleExecuteStage: (stageKey: string, customContext?: string, reportDepth?: ReportDepth) => void;
   handleResetStage: (stageKey: string) => Promise<void>;
   handleFeedbackProcessed: (stageKey: string, response: ProcessFeedbackResponse) => void;
   handleReloadPrompts: () => Promise<void>;
@@ -43,13 +43,14 @@ export function useStageActions({
    * Execute a workflow stage
    */
   const handleExecuteStage = useCallback(
-    (stageKey: string, customContext?: string) => {
+    (stageKey: string, customContext?: string, reportDepth?: ReportDepth) => {
       if (!state.currentReport) return;
 
       executeStageM.mutate({
         reportId: state.currentReport.id,
         stage: stageKey,
         customInput: customContext || state.customInput || undefined,
+        reportDepth,
       });
     },
     [state.currentReport, state.customInput, executeStageM]

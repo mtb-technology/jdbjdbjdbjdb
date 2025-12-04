@@ -59,7 +59,7 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
       
       // Invalidate queries to refresh data
       if (report) {
-        queryClient.invalidateQueries({ queryKey: ['/api/reports', report.id] });
+        queryClient.invalidateQueries({ queryKey: [`/api/reports/${report.id}`] });
         queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
       }
     },

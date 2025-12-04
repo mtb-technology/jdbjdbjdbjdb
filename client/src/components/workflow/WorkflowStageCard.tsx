@@ -32,7 +32,6 @@ import {
 
 // Utils
 import {
-  getOutputPreview,
   getResultLabel,
   supportsManualMode,
   getStatusCardClasses,
@@ -40,7 +39,7 @@ import {
 } from "@/utils/stageCardUtils";
 
 // Types
-import type { WorkflowStageCardProps } from "@/types/workflowStageCard.types";
+import type { WorkflowStageCardProps, ReportDepth } from "@/types/workflowStageCard.types";
 
 // Re-export props type for consumers
 export type { WorkflowStageCardProps } from "@/types/workflowStageCard.types";
@@ -61,6 +60,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   onExecute,
   onForceContinue,
   onResetStage,
+  reportDepth: externalReportDepth,
+  onReportDepthChange,
   progress,
   isInputCollapsed,
   isOutputCollapsed,
@@ -82,12 +83,13 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   const [isRawInputCollapsed, setIsRawInputCollapsed] = useState(true);
   const [customContext, setCustomContext] = useState("");
   const [showCustomContext, setShowCustomContext] = useState(false);
+  const [localReportDepth, setLocalReportDepth] = useState<ReportDepth>("balanced");
+
+  // Use external or local reportDepth
+  const reportDepth = externalReportDepth ?? localReportDepth;
+  const handleReportDepthChange = onReportDepthChange ?? setLocalReportDepth;
 
   // Calculated values
-  const outputPreview = useMemo(
-    () => getOutputPreview(stageResult, stageKey),
-    [stageResult, stageKey]
-  );
   const resultLabel = useMemo(() => getResultLabel(stageKey), [stageKey]);
   const hasManualMode = useMemo(() => supportsManualMode(stageKey), [stageKey]);
   const cardClasses = useMemo(
@@ -97,8 +99,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
   // Handlers
   const handleExecuteClick = useCallback(() => {
-    onExecute(customContext.trim() || undefined);
-  }, [onExecute, customContext]);
+    onExecute(customContext.trim() || undefined, reportDepth);
+  }, [onExecute, customContext, reportDepth]);
 
   const handleCopy = useCallback((text: string) => {
     copyToClipboard(text);
@@ -123,14 +125,11 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
       `}
     >
       <StageCardHeader
-        stageKey={stageKey}
         stageName={stageName}
         stageIcon={stageIcon}
         stageStatus={stageStatus}
         isExpanded={isExpanded}
         onToggleExpand={onToggleExpand}
-        outputPreview={outputPreview}
-        resultLabel={resultLabel}
         isProcessing={isProcessing}
         progress={progress}
         blockReason={blockReason}
@@ -163,6 +162,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
               {/* Action Buttons - Only show for AI mode or non-manual stages */}
               {(!hasManualMode || manualMode === "ai") && (
                 <StageActionButtons
+                  stageKey={stageKey}
                   stageStatus={stageStatus}
                   canExecute={canExecute}
                   isProcessing={isProcessing}
@@ -172,6 +172,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   onCustomContextChange={setCustomContext}
                   onExecute={handleExecuteClick}
                   onResetStage={onResetStage}
+                  reportDepth={reportDepth}
+                  onReportDepthChange={handleReportDepthChange}
                 />
               )}
 
@@ -204,11 +206,6 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   showFeedbackProcessor={showFeedbackProcessor}
                   reportId={reportId}
                   onFeedbackProcessed={onFeedbackProcessed}
-                  manualMode={manualMode}
-                  onToggleManualMode={onToggleManualMode}
-                  manualContent={manualContent}
-                  onManualContentChange={onManualContentChange}
-                  onManualExecute={onManualExecute}
                 />
               )}
             </CardContent>

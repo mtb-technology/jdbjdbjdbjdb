@@ -14,26 +14,84 @@ import type {
   ResearchReport,
   ResearchConfig,
   ResearchProgress,
-  Source
+  Source,
+  ReportDepth
 } from './types';
+
+/**
+ * Depth-specific configuration for research output
+ */
+interface DepthSettings {
+  executorWords: { min: number; max: number };
+  publisherSummaryWords: { min: number; max: number };
+  publisherAnalysisWords: { min: number; max: number };
+  publisherImplicationsWords: { min: number; max: number };
+  publisherConclusionWords: { min: number; max: number };
+  publisherTotalWords: number;
+  finalReportWords: { min: number; max: number };
+  thinkingLevel: 'high' | 'medium' | 'low';
+}
+
+const DEPTH_SETTINGS: Record<ReportDepth, DepthSettings> = {
+  concise: {
+    // Target: 3-5 pagina's (~1500-2500 woorden)
+    executorWords: { min: 400, max: 600 },
+    publisherSummaryWords: { min: 200, max: 400 },
+    publisherAnalysisWords: { min: 600, max: 1000 },
+    publisherImplicationsWords: { min: 200, max: 400 },
+    publisherConclusionWords: { min: 150, max: 250 },
+    publisherTotalWords: 1500,
+    finalReportWords: { min: 1500, max: 2500 },
+    thinkingLevel: 'low'
+  },
+  balanced: {
+    // Target: 6-10 pagina's (~3000-5000 woorden)
+    executorWords: { min: 600, max: 1000 },
+    publisherSummaryWords: { min: 400, max: 600 },
+    publisherAnalysisWords: { min: 1200, max: 2000 },
+    publisherImplicationsWords: { min: 400, max: 700 },
+    publisherConclusionWords: { min: 250, max: 400 },
+    publisherTotalWords: 3000,
+    finalReportWords: { min: 3000, max: 5000 },
+    thinkingLevel: 'medium'
+  },
+  comprehensive: {
+    // Target: 10-15 pagina's (~5000-7500 woorden)
+    executorWords: { min: 1000, max: 1500 },
+    publisherSummaryWords: { min: 600, max: 1000 },
+    publisherAnalysisWords: { min: 2000, max: 3000 },
+    publisherImplicationsWords: { min: 700, max: 1200 },
+    publisherConclusionWords: { min: 400, max: 600 },
+    publisherTotalWords: 5000,
+    finalReportWords: { min: 5000, max: 7500 },
+    thinkingLevel: 'high'
+  }
+};
 
 export class ResearchOrchestrator {
   private handler: GoogleAIHandler;
   private config: ResearchConfig;
+  private depthSettings: DepthSettings;
 
   constructor(apiKey: string, config: Partial<ResearchConfig> = {}) {
     // Pass true to skip deep research (prevent circular dependency)
     this.handler = new GoogleAIHandler(apiKey, true);
+    const reportDepth = config.reportDepth || 'balanced';
+    this.depthSettings = DEPTH_SETTINGS[reportDepth];
+
     this.config = {
       maxQuestions: 5,
       parallelExecutors: 3,
       useGrounding: true,
-      thinkingLevel: 'high',
+      thinkingLevel: this.depthSettings.thinkingLevel,
       temperature: 1.0,
       maxOutputTokens: 8192,
       timeout: 1800000, // 30 minutes
+      reportDepth,
       ...config
     };
+
+    console.log(`[ResearchOrchestrator] Initialized with depth: ${reportDepth}`);
   }
 
   /**
@@ -240,8 +298,9 @@ Geef ALLEEN de JSON array, geen andere tekst.`;
    */
   private async researchQuestion(question: ResearchQuestion): Promise<ResearchFinding> {
     const startTime = Date.now();
+    const { min: minWords, max: maxWords } = this.depthSettings.executorWords;
 
-    const researchPrompt = `Beantwoord de volgende onderzoeksvraag grondig en gedetailleerd. Gebruik de beschikbare web informatie om een compleet en accuraat antwoord te geven.
+    const researchPrompt = `Je bent een fiscaal onderzoeker die onderzoek doet voor een professioneel adviesrapport. Beantwoord de volgende onderzoeksvraag.
 
 ONDERZOEKSVRAAG:
 ${question.question}
@@ -249,13 +308,27 @@ ${question.question}
 VERWACHTE SCOPE:
 ${question.expectedScope}
 
-Geef een uitgebreid antwoord met:
-1. Directe beantwoording van de vraag
-2. Relevante details en context
-3. Specifieke feiten en cijfers waar mogelijk
-4. Bronvermeldingen waar van toepassing
+**VEREISTE DIEPGANG - Geef een antwoord van ${minWords}-${maxWords} woorden met:**
 
-Wees specifiek en uitgebreid - dit is onderzoek voor een professioneel rapport.`;
+1. **DIRECTE BEANTWOORDING**
+   - Kernantwoord op de vraag
+   - Relevante wettelijke bepalingen (artikelnummers, regelingen)
+   - Actuele tarieven, percentages, drempels
+
+2. **CONTEXT**
+   - Achtergrond en doel van de regeling
+   - Voorwaarden en uitzonderingen
+   - Recente wijzigingen in wetgeving (2024-2025)
+
+3. **PRAKTISCHE TOEPASSING**
+   - Concrete voorbeelden met cijfers waar relevant
+   - Valkuilen en aandachtspunten
+
+4. **BRONNEN**
+   - Noem expliciet elke bron die je gebruikt
+   - Geef waar mogelijk URLs of referenties
+
+**BELANGRIJK:** Dit onderzoek wordt gebruikt voor een professioneel fiscaal adviesrapport. Wees specifiek en concreet.`;
 
     try {
       const response = await this.handler.callInternal(
@@ -367,7 +440,8 @@ Betrouwbaarheid: ${(f.confidence * 100).toFixed(0)}%${sourcesText}`;
       })
       .join('\n\n');
 
-    const publisherPrompt = `Je bent een expert onderzoeksverslaggever. Synthetiseer de volgende onderzoeksbevindingen in een samenhangend, professioneel rapport.
+    const ds = this.depthSettings;
+    const publisherPrompt = `Je bent een expert onderzoeksverslaggever gespecialiseerd in fiscale rapportages. Synthetiseer de volgende onderzoeksbevindingen in een professioneel onderzoeksrapport.
 
 ORIGINELE ONDERZOEKSVRAAG:
 ${originalQuery}
@@ -375,28 +449,41 @@ ${originalQuery}
 ONDERZOEKSBEVINDINGEN:
 ${findingsContext}
 
-Schrijf een uitgebreid onderzoeksrapport met:
+**INSTRUCTIES VOOR HET ONDERZOEKSRAPPORT:**
 
-1. **SAMENVATTING** (2-3 alinea's)
-   - Kernantwoord op de hoofdvraag
-   - Belangrijkste bevindingen
-   - Algemene conclusies
+Dit tussenrapport dient als basis voor het eindrapport.
 
-2. **GEDETAILLEERDE ANALYSE**
-   - Integreer alle bevindingen in een coherent verhaal
-   - Behandel alle belangrijke aspecten uit de deelvragen
-   - Gebruik specifieke feiten en cijfers uit de bevindingen
-   - Toon verbanden en patronen tussen verschillende bevindingen
+**VEREISTE STRUCTUUR EN DIEPGANG:**
 
-3. **BRONVERMELDING**
-   - Refereer naar bronnen waar relevant
-   - Gebruik inline citaties (bijv. [Bron: ...])
+1. **SAMENVATTING** (${ds.publisherSummaryWords.min}-${ds.publisherSummaryWords.max} woorden)
+   - Kernantwoord op de hoofdvraag met concrete conclusies
+   - Belangrijkste bevindingen per deelgebied
+   - Concrete cijfers, percentages en bedragen waar beschikbaar
 
-4. **CONCLUSIE**
-   - Beantwoord de originele vraag direct en volledig
-   - Noem eventuele beperkingen of onzekerheden
+2. **ANALYSE PER ONDERWERP** (${ds.publisherAnalysisWords.min}-${ds.publisherAnalysisWords.max} woorden)
+   - Behandel elke bevinding in een eigen subsectie
+   - Wettelijke basis (artikelen, regelingen)
+   - Concrete voorbeelden uit de casus
+   - Vergelijk alternatieven waar relevant
 
-Schrijf in professionele, heldere Nederlandse taal. Het rapport moet zelfstandig leesbaar zijn zonder de originele bevindingen te kennen.`;
+3. **PRAKTISCHE IMPLICATIES** (${ds.publisherImplicationsWords.min}-${ds.publisherImplicationsWords.max} woorden)
+   - Concrete actiepunten
+   - Benodigde documentatie
+   - Valkuilen en aandachtspunten
+
+4. **BRONVERMELDING**
+   - Inline citaties bij claims [Bron: naam]
+   - Bronnenlijst aan het einde
+
+5. **CONCLUSIE** (${ds.publisherConclusionWords.min}-${ds.publisherConclusionWords.max} woorden)
+   - Directe beantwoording van de vraag
+   - Prioritering van aanbevelingen
+
+**SCHRIJFSTIJL:**
+- Professioneel en helder Nederlands
+- Gebruik tabellen voor vergelijkingen waar nuttig
+- Vermijd vage termen - wees SPECIFIEK
+- Het rapport moet MINSTENS ${ds.publisherTotalWords} woorden bevatten`;
 
     const response = await this.handler.callInternal(
       publisherPrompt,
@@ -473,12 +560,16 @@ Schrijf in professionele, heldere Nederlandse taal. Het rapport moet zelfstandig
 
     // The final synthesis prompt - uses the original query (which contains the prompt instructions)
     // and enriches it with research findings
+    const { min: minWords, max: maxWords } = this.depthSettings.finalReportWords;
+    const depthLabel = this.config.reportDepth === 'concise' ? 'beknopt' :
+                       this.config.reportDepth === 'comprehensive' ? 'uitgebreid' : 'gebalanceerd';
+
     const finalPrompt = `${originalQuery}
 
 ---
 ## AANVULLENDE ONDERZOEKSRESULTATEN (gebruik deze informatie bij het schrijven van het rapport)
 
-De volgende informatie is verzameld via diepgaand onderzoek met actuele bronnen. Integreer deze bevindingen in het rapport waar relevant:
+De volgende informatie is verzameld via onderzoek met actuele bronnen. Integreer deze bevindingen in het rapport waar relevant:
 
 ${researchContext}
 
@@ -489,11 +580,18 @@ ${researchReport.sources.map((s, i) => `${i + 1}. ${s.title}${s.url ? ` - ${s.ur
 
 ---
 
-**BELANGRIJKE INSTRUCTIE:** Schrijf nu het complete rapport volgens de instructies hierboven. Gebruik de onderzoeksresultaten om het rapport te verrijken met actuele, gefundeerde informatie. Het eindrapport moet:
+**BELANGRIJKE INSTRUCTIE:** Schrijf nu een ${depthLabel} rapport volgens de instructies hierboven. Dit is een professioneel fiscaal adviesrapport.
+
+**VEREISTE DIEPGANG EN LENGTE:**
+- Het rapport moet ${minWords}-${maxWords} woorden bevatten
+- Gebruik de onderzoeksresultaten waar relevant
+- Elk fiscaal standpunt moet worden onderbouwd met wettelijke basis
+
+**STRUCTUUR-EISEN:**
 1. De structuur van de originele prompt volgen
-2. De onderzoeksresultaten naadloos integreren in de relevante secties
-3. Professioneel en samenhangend zijn geschreven
-4. Eindigen met een apart hoofdstuk "Bronnen" waarin alle geraadpleegde bronnen worden vermeld
+2. De onderzoeksresultaten integreren in de relevante secties
+3. Professioneel en samenhangend geschreven
+4. Eindigen met een apart hoofdstuk "Bronnen"
 
 ${this.config.polishPrompt ? `---
 ## POLIJST INSTRUCTIES (pas dit toe op het eindrapport)

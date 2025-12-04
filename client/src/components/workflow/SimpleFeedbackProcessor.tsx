@@ -1,14 +1,8 @@
 /**
  * SimpleFeedbackProcessor Component
  *
- * Refactored from 829 lines to ~280 lines following Clean Code and SOLID principles.
- *
- * Changes:
- * - Extracted types to types/feedbackProcessor.types.ts
- * - Extracted retry utilities to utils/retryUtils.ts
- * - Extracted mutations to hooks/useFeedbackMutations.ts
- * - Extracted components: AIStatusIndicator, ManualModePanel, FeedbackTextMode,
- *   PromptPreviewModal, ProcessButtons
+ * Handles feedback review and processing for reviewer stages.
+ * Users can accept/reject individual proposals or provide text instructions.
  */
 
 import { useState, useMemo, useEffect, useCallback, memo } from "react";
@@ -24,7 +18,6 @@ import { useFeedbackMutations } from "@/hooks/useFeedbackMutations";
 // Extracted components
 import {
   AIStatusIndicator,
-  ManualModePanel,
   FeedbackTextMode,
   PromptPreviewModal,
   ProcessButtons,
@@ -54,11 +47,6 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
   stageName,
   rawFeedback,
   onProcessingComplete,
-  manualMode = "ai",
-  onToggleManualMode,
-  manualContent = "",
-  onManualContentChange,
-  onManualExecute,
 }: SimpleFeedbackProcessorProps) {
   // Local state
   const [userInstructions, setUserInstructions] = useState("");
@@ -278,23 +266,8 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {/* Manual Mode Toggle & Interface */}
-        {onToggleManualMode && onManualContentChange && onManualExecute && (
-          <ManualModePanel
-            manualMode={manualMode}
-            onToggleManualMode={onToggleManualMode}
-            manualContent={manualContent}
-            onManualContentChange={onManualContentChange}
-            onManualExecute={onManualExecute}
-            promptPreviewData={promptPreviewMutation.data}
-          />
-        )}
-
-        {/* Only show AI mode when in AI mode */}
-        {manualMode === "ai" && (
-          <>
-            {/* View Mode Tabs */}
-            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+        {/* View Mode Tabs */}
+        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="structured" className="flex items-center gap-2">
                   <List className="h-4 w-4" />
@@ -349,16 +322,14 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
               onProcess={handleProcess}
             />
 
-            {/* Success Message */}
-            {hasProcessed && (
-              <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
-                <p className="text-sm text-green-700 dark:text-green-300">
-                  ✅ Feedback succesvol verwerkt! Het concept rapport is bijgewerkt volgens jouw
-                  instructies.
-                </p>
-              </div>
-            )}
-          </>
+        {/* Success Message */}
+        {hasProcessed && (
+          <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+            <p className="text-sm text-green-700 dark:text-green-300">
+              ✅ Feedback succesvol verwerkt! Het concept rapport is bijgewerkt volgens jouw
+              instructies.
+            </p>
+          </div>
         )}
 
         {/* Prompt Preview Modal */}

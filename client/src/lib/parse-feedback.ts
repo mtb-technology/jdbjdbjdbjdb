@@ -55,9 +55,66 @@ export function parseFeedbackToProposals(
         console.log(`[parseFeedbackToProposals] Found bevindingen array with ${parsed.bevindingen.length} items`);
         const normalized = parsed.bevindingen
           .map((p: any, idx: number) => normalizeProposal(p, specialist, stageId, idx))
-          .filter((p: ChangeProposal | null): p is ChangeProposal => p !== null); // Filter out null values
+          .filter((p: ChangeProposal | null): p is ChangeProposal => p !== null);
         console.log(`[parseFeedbackToProposals] After filtering: ${normalized.length} valid proposals`);
         return normalized;
+      } else if (parsed.fiscaal_technische_validatie?.bevindingen && Array.isArray(parsed.fiscaal_technische_validatie.bevindingen)) {
+        // 4c ScenarioGatenAnalist nested format
+        console.log(`[parseFeedbackToProposals] Found nested fiscaal_technische_validatie.bevindingen with ${parsed.fiscaal_technische_validatie.bevindingen.length} items`);
+        const bevindingen = parsed.fiscaal_technische_validatie.bevindingen;
+        const proposals: ChangeProposal[] = [];
+
+        // Parse bevindingen
+        bevindingen.forEach((b: any, idx: number) => {
+          const severity: ChangeProposal['severity'] =
+            b.type_fout?.toLowerCase().includes('kritiek') || b.type_fout?.toLowerCase().includes('regel') ? 'critical' :
+            b.type_fout?.toLowerCase().includes('cijfer') || b.type_fout?.toLowerCase().includes('hallucinatie') ? 'important' :
+            'suggestion';
+
+          proposals.push({
+            id: `${stageId}-bevinding-${idx}`,
+            specialist,
+            changeType: 'modify',
+            section: b.locatie?.substring(0, 100) || `Bevinding ${b.nummer || idx + 1}`,
+            original: '',
+            proposed: b.correctie_aanbeveling || b.probleem || '',
+            reasoning: b.probleem || '',
+            severity
+          });
+        });
+
+        // Parse impliciete_aannames if present
+        if (parsed.impliciete_aannames && Array.isArray(parsed.impliciete_aannames)) {
+          parsed.impliciete_aannames.forEach((aanname: string, idx: number) => {
+            proposals.push({
+              id: `${stageId}-aanname-${idx}`,
+              specialist,
+              changeType: 'add',
+              section: 'Impliciete Aannames',
+              original: '',
+              proposed: aanname,
+              reasoning: 'Impliciete aanname geïdentificeerd door specialist',
+              severity: 'important'
+            });
+          });
+        }
+
+        // Parse grootste_risico if present
+        if (parsed.grootste_risico) {
+          proposals.push({
+            id: `${stageId}-risico`,
+            specialist,
+            changeType: 'add',
+            section: parsed.grootste_risico.titel || 'Grootste Risico',
+            original: '',
+            proposed: parsed.grootste_risico.omschrijving || '',
+            reasoning: 'Kritiek risico geïdentificeerd door specialist',
+            severity: 'critical'
+          });
+        }
+
+        console.log(`[parseFeedbackToProposals] Extracted ${proposals.length} items from nested structure`);
+        return proposals;
       }
     } catch (e) {
       console.error('[parseFeedbackToProposals] Failed to parse JSON feedback:', e);

@@ -63,6 +63,11 @@ export interface ResearchMetadata {
 }
 
 /**
+ * Report depth levels for controlling research detail
+ */
+export type ReportDepth = 'concise' | 'balanced' | 'comprehensive';
+
+/**
  * Configuration for research orchestrator
  */
 export interface ResearchConfig {
@@ -74,6 +79,7 @@ export interface ResearchConfig {
   maxOutputTokens?: number; // default: 8192
   timeout?: number; // milliseconds, default: 1800000 (30 min)
   polishPrompt?: string; // optional polish instructions for final synthesis
+  reportDepth?: ReportDepth; // default: balanced
 }
 
 /**

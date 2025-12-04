@@ -42,6 +42,10 @@ export interface AIModelParameters {
     data: string;      // base64 encoded file content
     filename: string;  // for logging purposes
   }>;
+  // Report depth for Stage 3 deep research
+  reportDepth?: "concise" | "balanced" | "comprehensive";
+  // AbortSignal for graceful cancellation
+  signal?: AbortSignal;
 }
 
 export interface CircuitBreakerState {
@@ -152,24 +156,42 @@ export abstract class BaseAIHandler {
   private async callWithTimeout(prompt: string, config: AiConfig, options?: AIModelParameters): Promise<AIModelResponse> {
     const timeout = options?.timeout || this.defaultTimeout;
     const controller = new AbortController();
-    
+    const externalSignal = options?.signal;
+
+    // Als extern signal al geabort is, stop direct
+    if (externalSignal?.aborted) {
+      throw AIError.cancelled(this.modelName);
+    }
+
+    // Link extern signal aan interne controller
+    const abortHandler = () => controller.abort();
+    externalSignal?.addEventListener('abort', abortHandler);
+
     // Set up timeout
     const timeoutId = setTimeout(() => {
       controller.abort();
     }, timeout);
-    
+
     try {
       const response = await this.callInternal(prompt, config, { ...options, signal: controller.signal });
       clearTimeout(timeoutId);
       return response;
     } catch (error: any) {
       clearTimeout(timeoutId);
-      
+
+      // Check of geabort door extern signal (user cancellation)
+      if (externalSignal?.aborted) {
+        throw AIError.cancelled(this.modelName);
+      }
+
+      // Check of geabort door timeout
       if (controller.signal.aborted) {
         throw AIError.timeout(this.modelName, timeout);
       }
-      
+
       throw error;
+    } finally {
+      externalSignal?.removeEventListener('abort', abortHandler);
     }
   }
 

@@ -71,14 +71,11 @@ function getStatusBadge(stageStatus: StageStatus) {
 }
 
 export const StageCardHeader = memo(function StageCardHeader({
-  stageKey,
   stageName,
   stageIcon,
   stageStatus,
   isExpanded,
   onToggleExpand,
-  outputPreview,
-  resultLabel,
   isProcessing,
   progress,
   blockReason,
@@ -117,21 +114,6 @@ export const StageCardHeader = memo(function StageCardHeader({
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               {stageName}
             </CardTitle>
-            {/* Output Preview in Collapsed State */}
-            {!isExpanded && stageStatus === "completed" && outputPreview && (
-              <p className="text-xs text-jdb-text-body mt-1 truncate max-w-md">
-                <span className="text-jdb-success font-medium">
-                  {resultLabel}:
-                </span>{" "}
-                <span className="text-jdb-text-subtle">{outputPreview}</span>
-              </p>
-            )}
-            {!isExpanded && stageStatus !== "completed" && (
-              <p className="text-xs text-jdb-text-subtle mt-1">{stageKey}</p>
-            )}
-            {isExpanded && (
-              <p className="text-xs text-jdb-text-subtle mt-1">{stageKey}</p>
-            )}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">

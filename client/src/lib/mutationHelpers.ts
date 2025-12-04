@@ -86,7 +86,7 @@ export function handleStageCompletion(
   // Invalidate queries to refresh UI
   queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
   if (currentReport?.id) {
-    queryClient.invalidateQueries({ queryKey: ['/api/reports', currentReport.id] });
+    queryClient.invalidateQueries({ queryKey: [`/api/reports/${currentReport.id}`] });
   }
 
   // Show completion toast
@@ -151,7 +151,7 @@ export function handleSubstepCompletion(
   // Invalidate queries
   queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
   if (currentReport?.id) {
-    queryClient.invalidateQueries({ queryKey: ['/api/reports', currentReport.id] });
+    queryClient.invalidateQueries({ queryKey: [`/api/reports/${currentReport.id}`] });
   }
 
   // Show completion toast

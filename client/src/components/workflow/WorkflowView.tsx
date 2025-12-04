@@ -50,7 +50,7 @@ import {
 import { isInformatieCheckComplete, getStage2BlockReason } from "@/lib/workflowParsers";
 
 // Types
-import type { SimplifiedWorkflowViewProps } from "./types";
+import type { SimplifiedWorkflowViewProps, ReportDepth } from "./types";
 
 export const WorkflowView = memo(function WorkflowView({
   state,
@@ -253,7 +253,7 @@ export const WorkflowView = memo(function WorkflowView({
                         stage1Result={state.stageResults["1_informatiecheck"]}
                         canExecute={canExecute}
                         isProcessing={isProcessing}
-                        onExecute={(customContext) => handleExecuteStage(stage.key, customContext)}
+                        onExecute={(customContext, reportDepth) => handleExecuteStage(stage.key, customContext, reportDepth)}
                         onResetStage={() => handleResetStage(stage.key)}
                         isInputCollapsed={isSectionCollapsed(stage.key, "input")}
                         isOutputCollapsed={isSectionCollapsed(stage.key, "output")}

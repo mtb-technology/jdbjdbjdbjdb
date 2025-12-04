@@ -91,11 +91,6 @@ export const StageOutputSection = memo(function StageOutputSection({
   showFeedbackProcessor,
   reportId,
   onFeedbackProcessed,
-  manualMode,
-  onToggleManualMode,
-  manualContent,
-  onManualContentChange,
-  onManualExecute,
 }: StageOutputSectionProps) {
   const [showRawOutput, setShowRawOutput] = useState(false);
 
@@ -160,11 +155,6 @@ export const StageOutputSection = memo(function StageOutputSection({
                 stageName={stageName}
                 rawFeedback={stageResult}
                 onProcessingComplete={onFeedbackProcessed}
-                manualMode={manualMode}
-                onToggleManualMode={onToggleManualMode}
-                manualContent={manualContent}
-                onManualContentChange={onManualContentChange}
-                onManualExecute={onManualExecute}
               />
               <RawOutputToggle
                 stageResult={stageResult}

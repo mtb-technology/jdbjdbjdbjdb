@@ -60,12 +60,12 @@ export function getResultLabel(stageKey: string): string {
 }
 
 /**
- * Stages that support manual mode
+ * Stages that support manual mode (Deep Research)
+ * Only stage 3 uses Deep Research pipeline - reviewer stages (4a, 4b, etc.)
+ * use direct Gemini calls with grounding, not deep research.
  */
 const MANUAL_MODE_STAGES = [
   "3_generatie",
-  "4a_BronnenSpecialist",
-  "4b_FiscaalTechnischSpecialist",
 ];
 
 /**

@@ -169,6 +169,7 @@ export class AIConfigResolver {
       topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
       topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 20,
       maxOutputTokens: baseMaxTokens,
+      thinkingLevel: stageAiConfig?.thinkingLevel ?? globalAiConfig?.thinkingLevel ?? 'high',
       reasoning: stageAiConfig?.reasoning ?? globalAiConfig?.reasoning,
       verbosity: stageAiConfig?.verbosity ?? globalAiConfig?.verbosity
     };
