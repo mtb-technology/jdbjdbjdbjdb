@@ -16,7 +16,7 @@
  * - Delegates UI rendering to extracted components
  */
 
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useCallback } from "react";
 

@@ -3,8 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, FileDown, Loader2, CheckCircle, Eye } from "lucide-react";
+import { Download, FileDown, Loader2, CheckCircle, Eye, FileText, Globe, File } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
 interface ExportDialogProps {
@@ -43,13 +43,15 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
     setExportSuccess(false);
 
     try {
-      // Use new HTML-to-PDF endpoint for PDF format
+      // Use dedicated export endpoints for PDF and Word formats
       let response: Response;
 
       if (settings.format === "pdf") {
         response = await fetch(`/api/reports/${reportId}/export-pdf`);
+      } else if (settings.format === "word") {
+        response = await fetch(`/api/reports/${reportId}/export-docx`);
       } else {
-        // Fallback to old endpoint for other formats
+        // Fallback to old endpoint for other formats (HTML)
         const queryParams = new URLSearchParams({
           includeTOC: settings.includeTOC.toString(),
           includeSources: settings.includeSources.toString(),
@@ -129,22 +131,50 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Export Format */}
+          {/* Export Format - Clickable buttons */}
           <div className="space-y-2">
             <Label>Formaat</Label>
-            <Select
-              value={settings.format}
-              onValueChange={(value: ExportFormat) => setSettings({ ...settings, format: value })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pdf">📄 PDF (Aanbevolen)</SelectItem>
-                <SelectItem value="word">📝 Word (.docx)</SelectItem>
-                <SelectItem value="html">🌐 HTML</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setSettings({ ...settings, format: "pdf" })}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+                  settings.format === "pdf"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/50 hover:bg-muted/50"
+                )}
+              >
+                <File className="h-6 w-6" />
+                <span className="text-xs font-medium">PDF</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettings({ ...settings, format: "word" })}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+                  settings.format === "word"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/50 hover:bg-muted/50"
+                )}
+              >
+                <FileText className="h-6 w-6" />
+                <span className="text-xs font-medium">Word</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettings({ ...settings, format: "html" })}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+                  settings.format === "html"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/50 hover:bg-muted/50"
+                )}
+              >
+                <Globe className="h-6 w-6" />
+                <span className="text-xs font-medium">HTML</span>
+              </button>
+            </div>
           </div>
 
           {/* Export Options */}

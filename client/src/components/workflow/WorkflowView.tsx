@@ -19,8 +19,7 @@
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import Confetti from "react-confetti";
+import { motion, useReducedMotion } from "framer-motion";
 import { Eye } from "lucide-react";
 import { useState, useEffect, useCallback, memo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -136,21 +135,7 @@ export const WorkflowView = memo(function WorkflowView({
   }, [state.currentReport?.id, queryClient]);
 
   return (
-    <>
-      {/* Celebration Confetti */}
-      <AnimatePresence>
-        {isWorkflowComplete(state.stageResults) && (
-          <Confetti
-            width={typeof window !== "undefined" ? window.innerWidth : 1200}
-            height={typeof window !== "undefined" ? window.innerHeight : 800}
-            recycle={false}
-            numberOfPieces={200}
-            gravity={0.3}
-          />
-        )}
-      </AnimatePresence>
-
-      <div className="space-y-6 max-w-full overflow-hidden">
+    <div className="space-y-6 max-w-full overflow-hidden">
         {/* Progress Header */}
         <WorkflowProgressHeader
           stageResults={state.stageResults}
@@ -300,7 +285,6 @@ export const WorkflowView = memo(function WorkflowView({
             </Card>
           </motion.div>
         </div>
-      </div>
-    </>
+    </div>
   );
 });

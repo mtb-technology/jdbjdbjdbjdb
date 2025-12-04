@@ -42,6 +42,7 @@ export const PROMPT_STAGES: readonly PromptStage[] = [
   { key: "4e_DeAdvocaat", label: "4e. De Advocaat", description: "Review juridisch → JSON feedback", type: "reviewer" },
   { key: "4f_HoofdCommunicatie", label: "4f. Hoofd Communicatie", description: "Review communicatie en klantgerichtheid → JSON feedback", type: "reviewer" },
   { key: "editor", label: "Editor (Chirurgische Redacteur)", description: "Past wijzigingen van reviewers toe op rapport", type: "generator" },
+  { key: "adjustment", label: "Rapport Aanpassen", description: "Post-workflow aanpassingen op verzoek van fiscalist", type: "generator" },
 ] as const;
 
 /**

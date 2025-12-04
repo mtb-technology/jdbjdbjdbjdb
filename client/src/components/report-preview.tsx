@@ -188,8 +188,27 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
     }
   });
 
-  // Sort by stage order (3_generatie, 4a_, 4b_, etc.)
-  availableVersions.sort((a, b) => a.stageId.localeCompare(b.stageId));
+  // Sort by stage order: numbered stages first (3_generatie, 4a_, 4b_, etc.), then adjustment stages last
+  const getStageOrder = (stageId: string): number => {
+    // Adjustment stages always come last
+    if (stageId.startsWith('adjustment')) {
+      // Extract number from adjustment_1, adjustment_2, etc.
+      const num = parseInt(stageId.split('_')[1] || '1', 10);
+      return 1000 + num; // High number to sort after all regular stages
+    }
+    // Regular stages: extract the number prefix for sorting
+    const match = stageId.match(/^(\d+)/);
+    if (match) {
+      const stageNum = parseInt(match[1], 10);
+      // For stages like 4a, 4b, etc., add a small offset based on the letter
+      const letterMatch = stageId.match(/^\d+([a-z])/i);
+      const letterOffset = letterMatch ? (letterMatch[1].toLowerCase().charCodeAt(0) - 96) * 0.1 : 0;
+      return stageNum + letterOffset;
+    }
+    return 999; // Unknown stages before adjustments but after numbered stages
+  };
+
+  availableVersions.sort((a, b) => getStageOrder(a.stageId) - getStageOrder(b.stageId));
 
   // Determine which content to display
   let displayContent = report.generatedContent || '';

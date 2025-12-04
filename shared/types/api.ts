@@ -203,10 +203,53 @@ export const expressModeRequestSchema = z.object({
   autoAccept: z.boolean().default(true), // Auto-accept all feedback
 });
 
+// ===== RAPPORT AANPASSEN (POST-WORKFLOW ADJUSTMENTS) =====
+
+// Request to generate an adjustment proposal
+export const adjustReportRequestSchema = z.object({
+  instruction: z.string()
+    .min(10, "Instructie moet minimaal 10 karakters bevatten")
+    .max(10000, "Instructie mag niet langer zijn dan 10000 karakters"),
+  // Optional: specify which version to adjust (default: latest)
+  baseVersion: z.string().optional()
+});
+
+// Response with proposed adjustment (not yet committed)
+export const adjustReportResponseSchema = z.object({
+  success: z.boolean(),
+  adjustmentId: z.string(), // e.g., "adjustment_1"
+  proposedContent: z.string(), // The new version (not yet committed)
+  previousContent: z.string(), // For diff comparison
+  metadata: z.object({
+    version: z.number(),
+    instruction: z.string(),
+    createdAt: z.string()
+  })
+});
+
+// Request to accept an adjustment proposal
+export const acceptAdjustmentRequestSchema = z.object({
+  adjustmentId: z.string(),
+  proposedContent: z.string(),
+  instruction: z.string() // For audit trail
+});
+
+// Response after accepting adjustment
+export const acceptAdjustmentResponseSchema = z.object({
+  success: z.boolean(),
+  newVersion: z.number(),
+  stageId: z.string(),
+  message: z.string()
+});
+
 export type OverrideConceptRequest = z.infer<typeof overrideConceptRequestSchema>;
 export type PromoteSnapshotRequest = z.infer<typeof promoteSnapshotRequestSchema>;
 export type StepBackResponse = z.infer<typeof stepBackResponseSchema>;
 export type ExpressModeRequest = z.infer<typeof expressModeRequestSchema>;
+export type AdjustReportRequest = z.infer<typeof adjustReportRequestSchema>;
+export type AdjustReportResponse = z.infer<typeof adjustReportResponseSchema>;
+export type AcceptAdjustmentRequest = z.infer<typeof acceptAdjustmentRequestSchema>;
+export type AcceptAdjustmentResponse = z.infer<typeof acceptAdjustmentResponseSchema>;
 
 export type ReportListResponse = z.infer<typeof reportListResponseSchema>;
 export type ReportDetailResponse = z.infer<typeof reportDetailResponseSchema>;

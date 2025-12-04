@@ -25,14 +25,16 @@
       background: white;
     }
 
-    /* ========== COLORS ========== */
+    /* ========== COLORS - Jan de Belastingman Huisstijl ========== */
     :root {
-      --primary: #003366;
-      --accent: #007BBF;
-      --text: #333333;
-      --muted: #666666;
-      --light: #f5f5f5;
-      --border: #e0e0e0;
+      --primary: #4f46e5;       /* JDB primary indigo/purple */
+      --primary-dark: #21468b;  /* JDB dark blue accent */
+      --accent: #4f46e5;        /* Accent same as primary */
+      --text: #1f2937;          /* Darker text for better readability */
+      --muted: #6b7280;         /* Gray-500 */
+      --light: #f8fafc;         /* Slightly cooler light background */
+      --border: #e5e7eb;        /* Gray-200 */
+      --gold: #fbbf24;          /* JDB yellow accent */
     }
 
     /* ========== LAYOUT ========== */
@@ -50,35 +52,36 @@
     .title-block {
       margin-bottom: 30px;
       padding-bottom: 20px;
-      border-bottom: 2px solid var(--primary);
+      border-bottom: 3px solid var(--primary);
     }
 
     .document-type {
-      font-size: 24pt;
+      font-size: 22pt;
       font-weight: 700;
       color: var(--primary);
-      letter-spacing: 1px;
-      margin-bottom: 5px;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
     }
 
     .document-subtitle {
       font-size: 11pt;
-      color: var(--muted);
-      font-weight: 400;
+      color: var(--primary-dark);
+      font-weight: 500;
     }
 
     .logo {
-      max-height: 50px;
-      max-width: 200px;
-      margin-bottom: 15px;
+      max-height: 60px;
+      max-width: 220px;
+      margin-bottom: 20px;
     }
 
     /* ========== META BLOCK ========== */
     .meta-block {
       margin-bottom: 35px;
-      padding: 20px;
-      background: var(--light);
+      padding: 20px 25px;
+      background: linear-gradient(135deg, var(--light) 0%, #eef2ff 100%);
       border-left: 4px solid var(--primary);
+      border-radius: 0 8px 8px 0;
     }
 
     .meta-row {
@@ -91,11 +94,13 @@
     }
 
     .meta-label {
-      width: 80px;
+      width: 85px;
       font-weight: 600;
-      color: var(--muted);
+      color: var(--primary-dark);
       font-size: 10pt;
       flex-shrink: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
     }
 
     .meta-value {
@@ -104,7 +109,8 @@
     }
 
     .meta-value.client-name {
-      font-weight: 600;
+      font-weight: 700;
+      color: var(--primary);
     }
 
     /* ========== CONTENT TYPOGRAPHY ========== */

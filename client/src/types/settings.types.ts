@@ -32,7 +32,8 @@ export type StageKey =
   | "4c_ScenarioGatenAnalist"
   | "4e_DeAdvocaat"
   | "4f_HoofdCommunicatie"
-  | "editor";
+  | "editor"
+  | "adjustment";
 
 /**
  * Stage type for workflow stages

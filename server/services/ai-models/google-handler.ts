@@ -336,15 +336,6 @@ export class GoogleAIHandler extends BaseAIHandler {
   private formatDeepResearchReport(report: any): string {
     // The synthesis now contains the final polished report
     // Just return it directly - it's already properly formatted
-    let content = report.synthesis;
-
-    // Add metadata footer (subtle, at the end)
-    content += `\n\n---\n`;
-    content += `_Rapport gegenereerd met deep research | `;
-    content += `${report.metadata.questionsGenerated} onderzoeksvragen | `;
-    content += `${report.metadata.sourcesConsulted} bronnen | `;
-    content += `${Math.round(report.metadata.duration / 1000)}s_\n`;
-
-    return content;
+    return report.synthesis;
   }
 }

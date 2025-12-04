@@ -14,6 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { AppHeader } from "@/components/app-header";
 import { celebrateExport } from "@/lib/confetti";
 import { EmptyState } from "@/components/ui/empty-state";
+import { STAGE_ORDER } from "@shared/constants";
 
 interface Case {
   id: string;
@@ -307,18 +308,18 @@ function Cases() {
   const getStatusText = useCallback((status: string, report?: any) => {
     switch (status) {
       case "draft": return "Concept";
-      case "processing": 
+      case "processing":
       case "generated": {
         // Calculate progress based on completed stages for both processing and generated
         if (report?.stageResults) {
           const completedStages = Object.keys(report.stageResults).length;
-          const totalStages = 10; // 10 workflow stages (removed 4d_DeVertaler, renamed 4f to 4f_HoofdCommunicatie)
+          const totalStages = STAGE_ORDER.length;
           const percentage = Math.round((completedStages / totalStages) * 100);
-          
+
           if (completedStages >= 3) {
-            return `Stap ${completedStages}/10 (${percentage}%)`;
+            return `Stap ${completedStages}/${totalStages} (${percentage}%)`;
           } else if (completedStages > 0) {
-            return `Wordt gegenereerd... ${completedStages}/10`;
+            return `Wordt gegenereerd... ${completedStages}/${totalStages}`;
           }
         }
         // Fallback for processing without stage results yet

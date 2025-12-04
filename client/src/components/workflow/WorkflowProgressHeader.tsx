@@ -5,13 +5,14 @@
  * Extracted from lines 437-571 of WorkflowView.tsx.
  */
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { motion, useReducedMotion } from "framer-motion";
-import { CheckCircle, Clock, Workflow, RefreshCw } from "lucide-react";
+import { CheckCircle, Clock, Workflow, RefreshCw, Pencil } from "lucide-react";
 import { ExpressModeButton } from "./ExpressModeButton";
+import { ReportAdjustmentDialog } from "./ReportAdjustmentDialog";
 import { WORKFLOW_STAGES } from "./constants";
 import { countCompletedStages } from "@/utils/workflowUtils";
 
@@ -41,6 +42,7 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
   onExpressComplete,
 }: WorkflowProgressHeaderProps) {
   const shouldReduceMotion = useReducedMotion();
+  const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState(false);
 
   const completedCount = countCompletedStages(stageResults, conceptReportVersions);
 
@@ -124,8 +126,32 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
                   />
                 </motion.div>
               )}
+
+              {/* Rapport Aanpassen Button */}
+              {reportId && hasStage3 && (
+                <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
+                  <Button
+                    onClick={() => setIsAdjustmentDialogOpen(true)}
+                    variant="outline"
+                    size="sm"
+                    className="text-sm font-medium"
+                  >
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Rapport Aanpassen
+                  </Button>
+                </motion.div>
+              )}
             </div>
           </div>
+
+          {/* Adjustment Dialog */}
+          {reportId && (
+            <ReportAdjustmentDialog
+              reportId={reportId}
+              isOpen={isAdjustmentDialogOpen}
+              onOpenChange={setIsAdjustmentDialogOpen}
+            />
+          )}
 
           {/* Progress Bar */}
           <motion.div

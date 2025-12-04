@@ -4,7 +4,7 @@ import Highlight from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import Placeholder from '@tiptap/extension-placeholder';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { TipTapContent } from '@shared/document-types';
 
 interface DocumentEditorProps {
@@ -29,6 +29,8 @@ export function DocumentEditor({
   className = '',
   highlightedRanges = []
 }: DocumentEditorProps) {
+  const initialContentSet = useRef(false);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -41,7 +43,7 @@ export function DocumentEditor({
         placeholder,
       }),
     ],
-    content: typeof content === 'string' ? content : content,
+    content: '',
     editable: !readOnly,
     editorProps: {
       attributes: {
@@ -49,11 +51,22 @@ export function DocumentEditor({
       },
     },
     onUpdate: ({ editor }) => {
-      if (onChange) {
+      if (onChange && initialContentSet.current) {
         onChange(editor.getJSON() as TipTapContent);
       }
     },
   });
+
+  // Update editor content when prop changes
+  useEffect(() => {
+    if (!editor || !content) return;
+
+    // Only set content once to avoid cursor jumping
+    if (!initialContentSet.current) {
+      editor.commands.setContent(content);
+      initialContentSet.current = true;
+    }
+  }, [editor, content]);
 
   // Apply highlights for pending changes
   useEffect(() => {

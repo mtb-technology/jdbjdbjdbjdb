@@ -20,7 +20,7 @@ import { SourceValidator } from "../services/source-validator";
 import { dossierSchema, bouwplanSchema } from "@shared/schema";
 import type { DossierData, BouwplanData, StageId, PromptConfig } from "@shared/schema";
 import { STAGE_ORDER, REVIEW_STAGES, getLatestConceptText } from "@shared/constants";
-import { createReportRequestSchema, processFeedbackRequestSchema, overrideConceptRequestSchema, promoteSnapshotRequestSchema, expressModeRequestSchema } from "@shared/types/api";
+import { createReportRequestSchema, processFeedbackRequestSchema, overrideConceptRequestSchema, promoteSnapshotRequestSchema, expressModeRequestSchema, adjustReportRequestSchema, acceptAdjustmentRequestSchema } from "@shared/types/api";
 import { ReportProcessor } from "../services/report-processor";
 import { SSEHandler } from "../services/streaming/sse-handler";
 import { StreamingSessionManager } from "../services/streaming/streaming-session-manager";
@@ -1766,5 +1766,322 @@ Gebruik bullet points. Max 150 woorden.
         error.message || 'Er is een fout opgetreden bij het genereren van de PDF'
       );
     }
+  }));
+
+  /**
+   * Export report as Word document (.docx)
+   * GET /api/reports/:id/export-docx
+   *
+   * Generates a Word document from the report content.
+   * Uses the same HTML template as PDF for consistent styling.
+   */
+  app.get("/api/reports/:id/export-docx", asyncHandler(async (req: Request, res: Response) => {
+    const reportId = req.params.id;
+
+    if (!reportId) {
+      throw ServerError.validation('Report ID is required', 'Rapport ID is verplicht');
+    }
+
+    // Fetch the report
+    const report = await storage.getReport(reportId);
+
+    if (!report) {
+      throw ServerError.notFound('Report not found');
+    }
+
+    // Import and use DOCX generator
+    const { getDocxGenerator } = await import('../services/docx-generator.js');
+    const docxGenerator = getDocxGenerator();
+
+    try {
+      const docxBuffer = await docxGenerator.generateDocx(report);
+      const filename = docxGenerator.generateFilename(report);
+
+      // Set headers for DOCX download
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', docxBuffer.length);
+
+      res.send(docxBuffer);
+
+      console.log(`📄 DOCX exported for report ${reportId}:`, {
+        filename,
+        size: docxBuffer.length,
+        clientName: report.clientName
+      });
+
+    } catch (error: any) {
+      console.error(`❌ DOCX generation failed for report ${reportId}:`, error);
+      throw ServerError.internal(
+        'DOCX generation failed',
+        error.message || 'Er is een fout opgetreden bij het genereren van het Word document'
+      );
+    }
+  }));
+
+  /**
+   * Get TipTap-formatted content for editor
+   * GET /api/reports/:id/tiptap-content
+   *
+   * Converts markdown content to TipTap JSON format for the editor
+   */
+  app.get("/api/reports/:id/tiptap-content", asyncHandler(async (req: Request, res: Response) => {
+    const reportId = req.params.id;
+
+    if (!reportId) {
+      throw ServerError.validation('Report ID is required', 'Rapport ID is verplicht');
+    }
+
+    const report = await storage.getReport(reportId);
+
+    if (!report) {
+      throw ServerError.notFound('Report not found');
+    }
+
+    // If documentState already exists, return it
+    if (report.documentState && Object.keys(report.documentState).length > 0) {
+      return res.json(report.documentState);
+    }
+
+    // Get markdown content from conceptReportVersions
+    const versions = report.conceptReportVersions as any;
+    let markdownContent = '';
+
+    if (versions?.latest?.pointer) {
+      const latestSnapshot = versions[versions.latest.pointer];
+      if (latestSnapshot?.content) {
+        markdownContent = latestSnapshot.content;
+      }
+    }
+
+    // Fallback to generatedContent
+    if (!markdownContent && report.generatedContent) {
+      markdownContent = report.generatedContent;
+    }
+
+    if (!markdownContent) {
+      return res.json({
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Geen content beschikbaar' }] }]
+      });
+    }
+
+    // Import TextStyler and convert markdown to TipTap
+    const { TextStyler } = await import('../services/text-styler.js');
+    const reportGenerator = new ReportGenerator();
+    const textStyler = new TextStyler(reportGenerator);
+
+    const tipTapContent = textStyler.markdownToTipTap(markdownContent);
+
+    res.json(tipTapContent);
+  }));
+
+  /**
+   * Save document state (TipTap content)
+   * PATCH /api/reports/:id/document-state
+   *
+   * Saves the TipTap editor content to the database
+   */
+  app.patch("/api/reports/:id/document-state", asyncHandler(async (req: Request, res: Response) => {
+    const reportId = req.params.id;
+    const { documentState } = req.body;
+
+    if (!reportId) {
+      throw ServerError.validation('Report ID is required', 'Rapport ID is verplicht');
+    }
+
+    if (!documentState) {
+      throw ServerError.validation('Document state is required', 'Document state is verplicht');
+    }
+
+    const report = await storage.getReport(reportId);
+
+    if (!report) {
+      throw ServerError.notFound('Report not found');
+    }
+
+    // Update the report with new document state
+    await storage.updateReport(reportId, {
+      documentState: documentState
+    });
+
+    console.log(`📝 Document state saved for report ${reportId}`);
+
+    res.json(createApiSuccessResponse({ success: true }));
+  }));
+
+  // ============================================================
+  // RAPPORT AANPASSEN (POST-WORKFLOW ADJUSTMENTS)
+  // ============================================================
+
+  /**
+   * POST /api/reports/:id/adjust
+   * Generate an adjustment proposal based on user instruction
+   *
+   * This does NOT commit the change - it returns a proposed version
+   * that the user can preview (with diff) and then accept or reject.
+   */
+  app.post("/api/reports/:id/adjust", asyncHandler(async (req: Request, res: Response) => {
+    const { id: reportId } = req.params;
+
+    console.log(`✏️ [${reportId}] Adjustment requested`);
+
+    // Validate request
+    const validatedData = adjustReportRequestSchema.parse(req.body);
+    const { instruction } = validatedData;
+
+    // Get report
+    const report = await storage.getReport(reportId);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Get the latest concept report content
+    const previousContent = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
+
+    if (!previousContent) {
+      throw ServerError.business(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Geen concept rapport gevonden om aan te passen. Voer eerst de generatie stap uit.'
+      );
+    }
+
+    // Count existing adjustments to generate unique ID
+    const conceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
+    const existingAdjustments = Object.keys(conceptVersions).filter(k => k.startsWith('adjustment_'));
+    const adjustmentNumber = existingAdjustments.length + 1;
+    const adjustmentId = `adjustment_${adjustmentNumber}`;
+
+    // Get adjustment prompt from config - NO FALLBACK, must be configured
+    const activeConfig = await storage.getActivePromptConfig();
+
+    // Debug: log what we got from config
+    console.log(`🔍 [${reportId}] Active config ID: ${activeConfig?.id}`);
+    console.log(`🔍 [${reportId}] Config keys:`, activeConfig?.config ? Object.keys(activeConfig.config as object) : 'no config');
+
+    const adjustmentConfig = (activeConfig?.config as PromptConfig)?.adjustment;
+
+    // Debug: log adjustment config
+    console.log(`🔍 [${reportId}] Adjustment config exists: ${!!adjustmentConfig}`);
+    console.log(`🔍 [${reportId}] Adjustment prompt length: ${adjustmentConfig?.prompt?.length || 0}`);
+
+    // Require prompt to be configured - no defaults
+    if (!adjustmentConfig?.prompt || adjustmentConfig.prompt.trim().length === 0) {
+      throw ServerError.business(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Adjustment prompt niet geconfigureerd. Ga naar Instellingen → Rapport Aanpassen en vul de prompt in.'
+      );
+    }
+
+    // Replace placeholders in prompt
+    const adjustmentPrompt = adjustmentConfig.prompt
+      .replace(/{HUIDIGE_RAPPORT}/g, previousContent)
+      .replace(/{INSTRUCTIE}/g, instruction);
+
+    console.log(`📝 [${reportId}] Adjustment prompt loaded from config (${adjustmentConfig.prompt.length} chars)`);
+
+    // Get AI config from adjustment stage settings, or global config
+    const stageAiConfig = adjustmentConfig.aiConfig;
+    const globalAiConfig = (activeConfig?.config as PromptConfig)?.aiConfig;
+
+    // Require AI config - no defaults
+    if (!stageAiConfig?.provider && !globalAiConfig?.provider) {
+      throw ServerError.business(
+        ERROR_CODES.VALIDATION_FAILED,
+        'AI configuratie niet gevonden. Configureer de AI instellingen in Instellingen.'
+      );
+    }
+
+    // Build AI config from stage or global settings
+    const aiConfig = {
+      provider: (stageAiConfig?.provider || globalAiConfig?.provider) as 'google' | 'openai',
+      model: stageAiConfig?.model || globalAiConfig?.model || 'gemini-2.5-pro',
+      temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.3,
+      topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
+      topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 40,
+      maxOutputTokens: stageAiConfig?.maxOutputTokens ?? globalAiConfig?.maxOutputTokens ?? 65536
+    };
+
+    console.log(`📝 [${reportId}] Using AI config:`, aiConfig.provider, aiConfig.model);
+
+    // Call AI to generate adjusted report
+    const aiFactory = AIModelFactory.getInstance();
+    const response = await aiFactory.callModel(
+      aiConfig,
+      adjustmentPrompt,
+      {
+        timeout: 300000, // 5 minutes
+        jobId: `adjust-${reportId}-${adjustmentNumber}`
+      }
+    );
+
+    const proposedContent = response.content;
+
+    console.log(`✅ [${reportId}] Adjustment proposal generated: ${adjustmentId} (${proposedContent.length} chars)`);
+
+    // Return the proposal (NOT committed yet)
+    res.json(createApiSuccessResponse({
+      success: true,
+      adjustmentId,
+      proposedContent,
+      previousContent,
+      metadata: {
+        version: adjustmentNumber,
+        instruction,
+        createdAt: new Date().toISOString()
+      }
+    }, 'Aanpassing voorstel gegenereerd - controleer de wijzigingen en accepteer of wijs af'));
+  }));
+
+  /**
+   * POST /api/reports/:id/adjust/accept
+   * Accept a previously generated adjustment proposal
+   *
+   * This commits the proposed content as a new version in conceptReportVersions.
+   */
+  app.post("/api/reports/:id/adjust/accept", asyncHandler(async (req: Request, res: Response) => {
+    const { id: reportId } = req.params;
+
+    console.log(`✅ [${reportId}] Accepting adjustment`);
+
+    // Validate request
+    const validatedData = acceptAdjustmentRequestSchema.parse(req.body);
+    const { adjustmentId, proposedContent, instruction } = validatedData;
+
+    // Get report
+    const report = await storage.getReport(reportId);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Create snapshot for the adjustment
+    const snapshot = await reportProcessor.createSnapshot(
+      reportId,
+      adjustmentId as StageId,
+      proposedContent
+    );
+
+    // Update concept versions with the new adjustment
+    const updatedVersions = await reportProcessor.updateConceptVersions(
+      reportId,
+      adjustmentId as StageId,
+      snapshot
+    );
+
+    // Update report with new version and content
+    await storage.updateReport(reportId, {
+      conceptReportVersions: updatedVersions,
+      generatedContent: proposedContent, // Update preview content
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ [${reportId}] Adjustment ${adjustmentId} accepted - v${snapshot.v}`);
+
+    res.json(createApiSuccessResponse({
+      success: true,
+      newVersion: snapshot.v,
+      stageId: adjustmentId,
+      message: `Aanpassing succesvol toegepast - nieuwe versie ${snapshot.v}`
+    }, 'Aanpassing geaccepteerd'));
   }));
 }

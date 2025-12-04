@@ -426,6 +426,7 @@ export const promptConfigSchema = z.object({
   "4e_DeAdvocaat": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
   "4f_HoofdCommunicatie": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "editor": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }), // Chirurgische Redacteur - past wijzigingen toe
+  "adjustment": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }), // Rapport Aanpassen - post-workflow adjustments
   "6_change_summary": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   aiConfig: aiConfigSchema.optional(),
 });
