@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Clock, Trash2, FolderOpen, MessageSquare } from "lucide-react";
+import { Clock, Trash2, FolderOpen, AlertCircle, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { nl } from "date-fns/locale";
 import type { FollowUpSession } from "@shared/schema";
@@ -19,9 +19,11 @@ export const SessionSidebar = memo(function SessionSidebar({
   currentSessionId,
 }: SessionSidebarProps) {
   // Fetch all sessions
-  const { data: sessions = [], isLoading, refetch } = useQuery<FollowUpSession[]>({
+  const { data: sessions = [], isLoading, isError, refetch } = useQuery<FollowUpSession[]>({
     queryKey: ["/api/follow-up/sessions"],
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
+    retry: 2,
+    staleTime: 60000, // Cache for 1 minute
   });
 
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
@@ -73,6 +75,34 @@ export const SessionSidebar = memo(function SessionSidebar({
         <CardContent>
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="w-80 h-full">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FolderOpen className="h-4 w-4" />
+            Sessies
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-8 text-sm text-muted-foreground">
+            <AlertCircle className="h-8 w-8 text-destructive mb-2" />
+            <p>Kon sessies niet laden</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              className="mt-3"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Opnieuw proberen
+            </Button>
           </div>
         </CardContent>
       </Card>

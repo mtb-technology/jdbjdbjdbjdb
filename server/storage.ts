@@ -465,8 +465,10 @@ export class DatabaseStorage implements IStorage {
     return session || undefined;
   }
 
-  async getAllFollowUpSessions(): Promise<FollowUpSession[]> {
-    return await db.select().from(followUpSessions).orderBy(desc(followUpSessions.createdAt));
+  async getAllFollowUpSessions(limit: number = 50): Promise<FollowUpSession[]> {
+    return await db.select().from(followUpSessions)
+      .orderBy(desc(followUpSessions.createdAt))
+      .limit(limit);
   }
 
   async getFollowUpSessionWithThreads(id: string): Promise<(FollowUpSession & { threads: FollowUpThread[] }) | undefined> {
