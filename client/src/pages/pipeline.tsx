@@ -272,7 +272,7 @@ const Pipeline = memo(function Pipeline() {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".pdf,.txt"
+                      accept=".pdf,.txt,.jpg,.jpeg,.png"
                       multiple
                       onChange={handleFileSelect}
                       className="hidden"
@@ -288,7 +288,7 @@ const Pipeline = memo(function Pipeline() {
                       {isUploading ? (
                         <><Loader2 className="h-4 w-4 animate-spin" /> Verwerken...</>
                       ) : (
-                        <><Upload className="h-4 w-4" /> Upload PDF/TXT</>
+                        <><Upload className="h-4 w-4" /> Upload Bestanden</>
                       )}
                     </Button>
                   </div>
@@ -330,7 +330,7 @@ const Pipeline = memo(function Pipeline() {
                   onChange={(e) => setRawText(e.target.value)}
                   placeholder={pendingFiles.length > 0
                     ? "Optioneel: voeg hier extra context of notities toe bij de geüploade bestanden..."
-                    : `Upload PDF/TXT bestanden hierboven, of plak hier tekst:
+                    : `Upload bestanden hierboven (PDF, TXT, JPG, PNG), of plak hier tekst:
 
 • Klantsituatie en concrete vraag
 • Email correspondentie

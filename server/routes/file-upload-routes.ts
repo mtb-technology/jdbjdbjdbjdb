@@ -29,18 +29,21 @@ const upload = multer({
     fileSize: 25 * 1024 * 1024, // 25MB max file size (increased for larger PDFs)
   },
   fileFilter: (req, file, cb) => {
-    // Accept PDF, TXT, and common document formats
+    // Accept PDF, TXT, images, and common document formats
     const allowedTypes = [
       'application/pdf',
       'text/plain',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/octet-stream' // Browsers sometimes send this for PDFs
+      'application/octet-stream', // Browsers sometimes send this for PDFs
+      'image/jpeg',
+      'image/png',
+      'image/jpg'
     ];
 
     // Check file extension as fallback for octet-stream
     const ext = file.originalname.toLowerCase().split('.').pop();
-    const allowedExtensions = ['pdf', 'txt', 'doc', 'docx'];
+    const allowedExtensions = ['pdf', 'txt', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
 
     // ✅ FIX: Be more lenient with file type checking
     // Accept if EITHER mime type is in allowed list OR extension is allowed
@@ -122,6 +125,55 @@ fileUploadRouter.post(
                        `Type: Tekst bestand\n` +
                        `Geëxtraheerd: ${new Date().toLocaleString('nl-NL')}\n\n` +
                        extractedText;
+      } else if (file.mimetype.startsWith('image/') || ['jpg', 'jpeg', 'png'].includes(ext || '')) {
+        // Image files - use Gemini Vision to extract text/analyze content
+        console.log(`🖼️ Processing image: ${file.originalname} (${file.size} bytes)`);
+        try {
+          const factory = AIModelFactory.getInstance();
+          const handler = factory.getHandler('gemini-2.5-flash');
+          if (!handler) {
+            throw new Error('Gemini handler not available for image OCR');
+          }
+
+          const base64Data = file.buffer.toString('base64');
+          const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+
+          const ocrResult = await handler.call(
+            `Analyseer deze afbeelding en extraheer ALLE relevante informatie. Als het een document of scan is, extraheer dan alle tekst. Als het een screenshot of foto is, beschrijf dan de relevante inhoud. Return de geëxtraheerde tekst/informatie zonder extra commentaar.`,
+            {
+              model: 'gemini-2.5-flash',
+              temperature: 0.1,
+              maxOutputTokens: 32768,
+              topP: 0.95,
+              topK: 40,
+              provider: 'google'
+            },
+            {
+              jobId: `image-extract-${Date.now()}`,
+              visionAttachments: [{
+                mimeType,
+                data: base64Data,
+                filename: file.originalname
+              }]
+            }
+          );
+
+          if (ocrResult.content && ocrResult.content.trim().length > 10) {
+            extractedText = `=== DOCUMENT: ${file.originalname} ===\n` +
+                           `Type: Afbeelding (${mimeType})\n` +
+                           `Geëxtraheerd: ${new Date().toLocaleString('nl-NL')}\n\n` +
+                           ocrResult.content;
+            console.log(`✅ Image OCR successful: ${extractedText.length} chars extracted`);
+          } else {
+            throw new Error('Geen tekst gevonden in afbeelding');
+          }
+        } catch (ocrError: any) {
+          console.error(`❌ Image OCR failed for ${file.originalname}:`, ocrError.message);
+          throw ServerError.validation(
+            `Image OCR failed: ${ocrError.message}`,
+            `Kon geen tekst uit afbeelding halen: ${ocrError.message}`
+          );
+        }
       } else if (file.mimetype === 'application/msword' ||
                  file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         // For DOCX, we'd need mammoth.js or similar
@@ -516,6 +568,52 @@ fileUploadRouter.post(
         } else if (isTXT) {
           extractedText = file.buffer.toString('utf-8');
           console.log(`📎 [${reportId}] TXT file read: ${extractedText.length} chars`);
+        } else if (file.mimetype.startsWith('image/') || ['jpg', 'jpeg', 'png'].includes(ext || '')) {
+          // Image files - use Gemini Vision to extract text/analyze content
+          console.log(`📎 [${reportId}] 🖼️ Processing image: ${file.originalname}`);
+          needsVisionOCR = true;
+
+          try {
+            const factory = AIModelFactory.getInstance();
+            const handler = factory.getHandler('gemini-2.5-flash');
+            if (!handler) {
+              throw new Error('Gemini handler not available for image OCR');
+            }
+
+            const base64Data = file.buffer.toString('base64');
+            const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+
+            const ocrResult = await handler.call(
+              `Analyseer deze afbeelding en extraheer ALLE relevante informatie. Als het een document of scan is, extraheer dan alle tekst. Als het een screenshot of foto is, beschrijf dan de relevante inhoud. Return de geëxtraheerde tekst/informatie zonder extra commentaar.`,
+              {
+                model: 'gemini-2.5-flash',
+                temperature: 0.1,
+                maxOutputTokens: 32768,
+                topP: 0.95,
+                topK: 40,
+                provider: 'google'
+              },
+              {
+                jobId: `image-ocr-${reportId}-${file.originalname}`,
+                visionAttachments: [{
+                  mimeType,
+                  data: base64Data,
+                  filename: file.originalname
+                }]
+              }
+            );
+
+            if (ocrResult.content && ocrResult.content.trim().length > 10) {
+              extractedText = ocrResult.content;
+              console.log(`📎 [${reportId}] ✅ Image OCR successful: ${extractedText.length} chars extracted from ${file.originalname}`);
+            } else {
+              console.warn(`📎 [${reportId}] ⚠️ Image OCR returned minimal text for ${file.originalname}`);
+              extractedText = `[Afbeelding: ${file.originalname}]`;
+            }
+          } catch (ocrError: any) {
+            console.error(`📎 [${reportId}] ❌ Image OCR failed for ${file.originalname}:`, ocrError.message);
+            extractedText = `[Afbeelding: ${file.originalname} - OCR niet beschikbaar]`;
+          }
         }
 
         console.log(`📎 [${reportId}] Converting to base64...`);
