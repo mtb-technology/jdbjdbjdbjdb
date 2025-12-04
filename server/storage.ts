@@ -261,10 +261,17 @@ export class DatabaseStorage implements IStorage {
     // Ensure dossier_number column and sequence exist (runs once per server start)
     await this.ensureDossierNumberMigration();
 
-    // Get next dossier number from sequence
-    const result = await db.execute(sql`SELECT nextval('dossier_number_seq')`);
-    const nextval = (result as any)[0]?.nextval;
-    const dossierNumber = parseInt(String(nextval), 10);
+    // Get next dossier number from sequence - cast to integer for proper handling
+    const result = await db.execute(sql`SELECT nextval('dossier_number_seq')::integer as nextval`);
+    const rows = result as any;
+    const nextval = rows?.rows?.[0]?.nextval ?? rows?.[0]?.nextval;
+    const dossierNumber = typeof nextval === 'number' ? nextval : parseInt(String(nextval), 10);
+
+    // Safety check - if we still get NaN, throw a clear error
+    if (isNaN(dossierNumber)) {
+      console.error('❌ [Storage] Failed to get next dossier number:', { result, nextval });
+      throw new Error('Kon geen dossiernummer genereren. Neem contact op met support.');
+    }
 
     // Format title with dossier number: "D-0001 - [original title or client name]"
     const formattedNumber = String(dossierNumber).padStart(4, '0');
