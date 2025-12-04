@@ -18,8 +18,8 @@ import { DEFAULT_FISCAL_ASSISTANT_PROMPT } from "@/pages/follow-up-assistant";
 // Available AI models - matching the server configuration
 const AI_MODELS = {
   google: [
-    { value: "gemini-3-pro-preview", label: "Gemini 3 Pro (Nieuwste - Thinking)" },
-    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Beste kwaliteit)" },
+    { value: "gemini-3-pro-preview", label: "Gemini 3 Pro (High Thinking - geen grounding/research)" },
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Beste kwaliteit - snel)" },
     { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Snelste)" },
   ],
   openai: [
@@ -85,7 +85,7 @@ export const AssistantSettingsModal = memo(function AssistantSettingsModal({
                     <Brain className="h-4 w-4" />
                     <div>
                       <div className="font-medium">Google AI (Gemini)</div>
-                      <div className="text-xs text-muted-foreground">Grounding & Research</div>
+                      <div className="text-xs text-muted-foreground">Thinking models</div>
                     </div>
                   </div>
                 </SelectItem>

@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { promises as fs } from "fs";
 import * as path from "path";
+import multer from "multer";
 import { storage } from "./storage";
 import { ReportGenerator } from "./services/report-generator";
 import { SourceValidator } from "./services/source-validator";
@@ -9,6 +10,7 @@ import { PDFGenerator } from "./services/pdf-generator";
 import { TextStyler } from "./services/text-styler";
 import { AIHealthService } from "./services/ai-models/health-service";
 import { AIMonitoringService } from "./services/ai-models/monitoring";
+import { AIModelFactory } from "./services/ai-models/ai-model-factory";
 import { checkDatabaseConnection } from "./db";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema, insertFollowUpSessionSchema, insertFollowUpThreadSchema } from "@shared/schema";
 import type { DossierData, BouwplanData, StageId, ConceptReportVersions, PromptConfig } from "@shared/schema";
@@ -326,6 +328,198 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     res.json(createApiSuccessResponse(parsedResult, "Concept antwoord succesvol gegenereerd"));
   }));
+
+  // Dynamic PDF parser import for simple email endpoint
+  let pdfParseFunc: any = null;
+  async function getPdfParse() {
+    if (!pdfParseFunc) {
+      const module = await import('pdf-parse');
+      pdfParseFunc = (module as any).PDFParse || (module as any).default || module;
+    }
+    return pdfParseFunc;
+  }
+
+  // Configure multer for simple email file uploads
+  const simpleEmailUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+    fileFilter: (req, file, cb) => {
+      const ext = file.originalname.toLowerCase().split('.').pop();
+      const allowedExtensions = ['pdf', 'txt', 'jpg', 'jpeg', 'png'];
+      if (allowedExtensions.includes(ext || '')) {
+        cb(null, true);
+      } else {
+        cb(new Error(`Bestandstype niet ondersteund: ${file.mimetype}`));
+      }
+    }
+  });
+
+  // Simple Email Assistant - Generate AI response with attachments (no dossier/rapport needed)
+  app.post("/api/assistant/simple-email",
+    simpleEmailUpload.array('files', 10),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { emailThread, systemPrompt, model } = req.body;
+
+      // Validate inputs
+      if (!emailThread || emailThread.trim().length === 0) {
+        throw new ServerError(
+          ERROR_CODES.VALIDATION_FAILED,
+          "Email thread is verplicht",
+          400
+        );
+      }
+
+      const files = req.files as Express.Multer.File[] || [];
+      const attachmentNames: string[] = [];
+      const attachmentTexts: string[] = [];
+      const visionAttachments: { mimeType: string; data: string; filename: string }[] = [];
+
+      console.log(`📧 [SimpleEmail] Processing ${files.length} attachments`);
+
+      // Process uploaded files
+      for (const file of files) {
+        attachmentNames.push(file.originalname);
+
+        const ext = file.originalname.toLowerCase().split('.').pop();
+        const isPDF = file.mimetype === 'application/pdf' ||
+                      (file.mimetype === 'application/octet-stream' && ext === 'pdf');
+        const isTXT = file.mimetype === 'text/plain' ||
+                      (file.mimetype === 'application/octet-stream' && ext === 'txt');
+        const isImage = file.mimetype.startsWith('image/') ||
+                        ['jpg', 'jpeg', 'png'].includes(ext || '');
+
+        let extractedText = "";
+        let needsVision = false;
+
+        if (isImage) {
+          // Images always go to vision
+          const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+          visionAttachments.push({
+            mimeType,
+            data: file.buffer.toString('base64'),
+            filename: file.originalname
+          });
+          console.log(`📧 [SimpleEmail] Image added to vision: ${file.originalname}`);
+        } else if (isPDF) {
+          try {
+            const PDFParseClass = await getPdfParse();
+            const parser = new PDFParseClass({ data: file.buffer });
+            const result = await parser.getText();
+            const pages = Array.isArray(result.pages) ? result.pages.length :
+                         (typeof result.pages === 'object' ? Object.keys(result.pages).length : 1);
+            extractedText = result.text || "";
+
+            // Detect scanned PDFs (low text content)
+            const charsPerPage = extractedText.length / Math.max(pages, 1);
+            if (charsPerPage < 100 && pages > 0) {
+              needsVision = true;
+              console.log(`📧 [SimpleEmail] Scanned PDF detected: ${file.originalname}`);
+            }
+          } catch (err: any) {
+            console.warn(`📧 [SimpleEmail] PDF parse failed: ${file.originalname}`, err.message);
+            needsVision = true;
+          }
+
+          // If scanned or parse failed, use Vision
+          if (needsVision || extractedText.length < 100) {
+            visionAttachments.push({
+              mimeType: 'application/pdf',
+              data: file.buffer.toString('base64'),
+              filename: file.originalname
+            });
+            console.log(`📧 [SimpleEmail] Added to vision: ${file.originalname}`);
+          }
+        } else if (isTXT) {
+          extractedText = file.buffer.toString('utf-8');
+        }
+
+        if (extractedText.trim().length > 0) {
+          attachmentTexts.push(`\n=== BIJLAGE: ${file.originalname} ===\n${extractedText}`);
+        }
+      }
+
+      // Build the user prompt
+      const userPrompt = `## Email Thread:
+${emailThread}
+
+${attachmentNames.length > 0 ? `## Bijlages (${attachmentNames.length} documenten):
+${attachmentTexts.length > 0 ? attachmentTexts.join('\n\n') : 'Documenten worden via vision geanalyseerd.'}` : '## Bijlages: Geen bijlages meegestuurd'}
+
+Analyseer de email thread${attachmentNames.length > 0 ? ' en bijlages' : ''} en genereer een professioneel concept-antwoord als JSON.`;
+
+      // Build full prompt for debug
+      const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+
+      console.log(`📧 [SimpleEmail] Calling AI model: ${model} with ${visionAttachments.length} vision attachments`);
+
+      // Call AI model
+      const factory = AIModelFactory.getInstance();
+      const result = await factory.callModel(
+        {
+          provider: 'google',
+          model: model || 'gemini-3-pro-preview',
+          temperature: 0.3,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 8192,
+          thinkingLevel: 'medium'
+        },
+        `${systemPrompt}\n\n${userPrompt}`,
+        {
+          jobId: `simple-email-${Date.now()}`,
+          visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
+        }
+      );
+
+      console.log(`📧 [SimpleEmail] AI response received: ${result.content.length} chars`);
+
+      // Parse JSON from response
+      let parsedResult;
+      try {
+        let jsonText = result.content.match(/```json\s*([\s\S]*?)\s*```/)?.[1];
+        if (!jsonText) {
+          jsonText = result.content.match(/\{[\s\S]*\}/)?.[0];
+        }
+        if (!jsonText && result.content.trim().startsWith('{')) {
+          jsonText = result.content.trim();
+        }
+
+        if (!jsonText) {
+          throw new Error('No JSON found in AI response');
+        }
+
+        parsedResult = JSON.parse(jsonText);
+      } catch (parseError: any) {
+        console.error(`📧 [SimpleEmail] JSON parse error:`, parseError.message);
+        console.error(`📧 [SimpleEmail] Raw response:`, result.content.substring(0, 500));
+        throw new ServerError(
+          ERROR_CODES.AI_PROCESSING_FAILED,
+          'Kon AI response niet parsen. Probeer opnieuw.',
+          500
+        );
+      }
+
+      // Validate structure
+      if (!parsedResult.analyse || !parsedResult.concept_email) {
+        throw new ServerError(
+          ERROR_CODES.AI_RESPONSE_INVALID,
+          "AI antwoord heeft niet de verwachte structuur",
+          500
+        );
+      }
+
+      // Add debug info to response
+      parsedResult._debug = {
+        promptSent: fullPrompt,
+        attachmentNames,
+        visionAttachmentCount: visionAttachments.length
+      };
+
+      console.log(`📧 [SimpleEmail] Sending response with _debug: ${!!parsedResult._debug}, promptLength: ${fullPrompt.length}`);
+
+      res.json(createApiSuccessResponse(parsedResult, "Concept antwoord succesvol gegenereerd"));
+    })
+  );
 
   // Follow-up session management endpoints
 
