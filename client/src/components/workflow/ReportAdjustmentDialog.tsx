@@ -47,6 +47,8 @@ interface ReportAdjustmentDialogProps {
   reportId: string;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Callback when adjustments are successfully applied - use to refresh editor content */
+  onAdjustmentApplied?: () => void;
 }
 
 // Developer Tools Panel for debugging prompts
@@ -358,6 +360,7 @@ export const ReportAdjustmentDialog = memo(function ReportAdjustmentDialog({
   reportId,
   isOpen,
   onOpenChange,
+  onAdjustmentApplied,
 }: ReportAdjustmentDialogProps) {
   const {
     stage,
@@ -383,6 +386,10 @@ export const ReportAdjustmentDialog = memo(function ReportAdjustmentDialog({
   // Sync external open state with hook
   const handleOpenChange = (open: boolean) => {
     if (!open) {
+      // If dialog is closing after successful application, trigger refresh callback
+      if (stage === "complete" && onAdjustmentApplied) {
+        onAdjustmentApplied();
+      }
       closeDialog();
     }
     onOpenChange(open);

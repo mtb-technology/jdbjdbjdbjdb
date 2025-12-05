@@ -27,6 +27,8 @@ interface WorkflowProgressHeaderProps {
   reportId?: string;
   hasStage3: boolean;
   onExpressComplete: () => void;
+  /** Callback when report adjustments are applied - use to refresh editor content */
+  onAdjustmentApplied?: () => void;
 }
 
 export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
@@ -40,6 +42,7 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
   reportId,
   hasStage3,
   onExpressComplete,
+  onAdjustmentApplied,
 }: WorkflowProgressHeaderProps) {
   const shouldReduceMotion = useReducedMotion();
   const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState(false);
@@ -150,6 +153,7 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
               reportId={reportId}
               isOpen={isAdjustmentDialogOpen}
               onOpenChange={setIsAdjustmentDialogOpen}
+              onAdjustmentApplied={onAdjustmentApplied}
             />
           )}
 

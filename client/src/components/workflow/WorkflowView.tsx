@@ -134,6 +134,15 @@ export const WorkflowView = memo(function WorkflowView({
     }
   }, [state.currentReport?.id, queryClient]);
 
+  // Adjustment applied handler - refresh report data
+  const handleAdjustmentApplied = useCallback(() => {
+    if (state.currentReport?.id) {
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
+      // Reload the page to refresh the editor with new content
+      window.location.reload();
+    }
+  }, [state.currentReport?.id, queryClient]);
+
   return (
     <div className="space-y-6 max-w-full overflow-hidden">
         {/* Progress Header */}
@@ -148,6 +157,7 @@ export const WorkflowView = memo(function WorkflowView({
           reportId={state.currentReport?.id}
           hasStage3={hasStage3}
           onExpressComplete={handleExpressComplete}
+          onAdjustmentApplied={handleAdjustmentApplied}
         />
 
         {/* Workflow Layout with Sidebar */}

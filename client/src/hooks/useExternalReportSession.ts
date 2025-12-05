@@ -13,6 +13,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { ExternalReportSession, ExternalReportAdjustment } from "@shared/schema";
 import type { AdjustmentItem } from "@shared/types/api";
+import type { AdjustmentStatus, ReviewableAdjustment, DebugInfo } from "@/types/adjustment.types";
+
+// Re-export for backward compatibility
+export type { AdjustmentStatus, ReviewableAdjustment, DebugInfo } from "@/types/adjustment.types";
 
 export type ExternalReportStage =
   | "input"      // Initial: paste report + instruction
@@ -20,27 +24,6 @@ export type ExternalReportStage =
   | "review"     // User reviews each adjustment
   | "applying"   // AI is applying accepted adjustments
   | "complete";  // Adjustments applied, show result
-
-export type AdjustmentStatus = "pending" | "accepted" | "modified" | "rejected";
-
-export interface ReviewableAdjustment extends AdjustmentItem {
-  status: AdjustmentStatus;
-  modifiedNieuw?: string; // If user modified the "nieuw" value
-}
-
-export interface DebugInfo {
-  promptUsed: string;
-  promptLength: number;
-  aiConfig: {
-    provider: string;
-    model: string;
-    temperature?: number;
-    topP?: number;
-    topK?: number;
-    maxOutputTokens?: number;
-  };
-  stage: string;
-}
 
 interface UseExternalReportSessionReturn {
   // Session list

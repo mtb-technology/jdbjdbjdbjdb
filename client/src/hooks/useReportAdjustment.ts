@@ -10,36 +10,13 @@
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import type { AdjustmentItem } from "@shared/types/api";
+import type { AdjustmentStatus, ReviewableAdjustment, DebugInfo } from "@/types/adjustment.types";
+
+// Re-export for backward compatibility
+export type { AdjustmentStatus, ReviewableAdjustment, DebugInfo } from "@/types/adjustment.types";
 
 export type AdjustmentStage = "input" | "analyzing" | "review" | "applying" | "complete";
-export type AdjustmentStatus = "pending" | "accepted" | "modified" | "rejected";
-
-export interface AdjustmentItem {
-  id: string;
-  context: string;
-  oud: string;
-  nieuw: string;
-  reden: string;
-}
-
-export interface ReviewableAdjustment extends AdjustmentItem {
-  status: AdjustmentStatus;
-  modifiedNieuw?: string;
-}
-
-export interface DebugInfo {
-  promptUsed: string;
-  promptLength: number;
-  aiConfig: {
-    provider: string;
-    model: string;
-    temperature?: number;
-    topP?: number;
-    topK?: number;
-    maxOutputTokens?: number;
-  };
-  stage: string;
-}
 
 interface AdjustmentProposal {
   adjustmentId: string;
