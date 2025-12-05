@@ -52,7 +52,25 @@ if (!envResult.success) {
 
 const env = envResult.data;
 
-// AI Model configuraties
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LAYER 1: MODEL CAPABILITIES
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Statische metadata over wat elk AI model KAN doen.
+ * Dit is NIET de runtime configuratie - zie AIConfigResolver voor dat.
+ *
+ * Elke entry definieert:
+ * - provider: welke AI provider (google/openai)
+ * - handlerType: welke handler class te gebruiken
+ * - supportedParameters: welke config params dit model accepteert
+ * - timeout: max wachttijd voor dit model
+ * - defaultConfig: standaard parameter waarden
+ * - limits: harde limieten van de provider
+ *
+ * @see docs/ARCHITECTURE.md voor het 3-layer config model
+ * @see AIConfigResolver voor Layer 3 (runtime config)
+ */
 export const AI_MODELS = {
   // Google AI Models
   'gemini-2.5-pro': {
@@ -231,13 +249,25 @@ export const SOURCE_VALIDATION = {
   maxRetries: 2
 } as const;
 
-// Report generator configuratie
+/**
+ * Report Generator Configuration
+ *
+ * Stage-specific overrides for timeout and token limits.
+ *
+ * NOTE: maxTokens here acts as a MINIMUM FLOOR for stage output.
+ * If the database AI config has lower maxOutputTokens, these values
+ * will override it. This ensures stages like '3_generatie' always
+ * have sufficient output capacity regardless of database config.
+ *
+ * The actual token limit used is: max(stageMaxTokens, aiConfig.maxOutputTokens)
+ * @see server/services/report-generator.ts for usage
+ */
 export const REPORT_CONFIG = {
   stages: {
     '1_informatiecheck': {
       name: 'Informatie Check',
       timeout: 60000,
-      maxTokens: 4096
+      maxTokens: 4096  // Floor for output tokens
     },
     '2_complexiteitscheck': {
       name: 'Complexiteits Check',

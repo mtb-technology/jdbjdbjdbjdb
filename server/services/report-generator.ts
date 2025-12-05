@@ -463,11 +463,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const stageConfigFromReport = getStageConfig(stageName as keyof typeof REPORT_CONFIG.stages);
     const stageTimeout = stageConfigFromReport?.timeout;
     const stageMaxTokens = stageConfigFromReport?.maxTokens;
-    
-    // Override AI config with stage-specific limits if defined
+
+    // Apply stage maxTokens as MINIMUM FLOOR (ensures sufficient output capacity)
+    // This protects against database configs with too-low maxOutputTokens values
     if (stageMaxTokens && stageMaxTokens > aiConfig.maxOutputTokens) {
       aiConfig.maxOutputTokens = stageMaxTokens;
-      console.log(`📏 [${jobId}] Applied stage maxTokens: ${stageMaxTokens} for ${stageName}`);
+      console.log(`📏 [${jobId}] Applied stage maxTokens floor: ${stageMaxTokens} for ${stageName}`);
     }
     
     // Call the AI model using the factory with stage-specific timeout

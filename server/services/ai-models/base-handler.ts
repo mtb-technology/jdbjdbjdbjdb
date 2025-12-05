@@ -519,13 +519,13 @@ export abstract class BaseAIHandler {
         console.log(`🔄 Circuit breaker for ${this.modelName} transitioning to half-open state`);
         this.monitoring.updateCircuitBreakerState(modelKey, 'half-open');
       } else {
-        throw AIError.circuitBreakerOpen(this.modelName, 'Circuit breaker is open');
+        throw AIError.circuitBreakerOpen(`Circuit breaker is open for ${this.modelName}`);
       }
     }
     
     if (this.circuitBreaker.state === 'half-open' && 
         (this.circuitBreaker.successCount || 0) >= this.halfOpenMaxRequests) {
-      throw AIError.circuitBreakerOpen(this.modelName, 'Circuit breaker half-open request limit exceeded');
+      throw AIError.circuitBreakerOpen(`Circuit breaker half-open request limit exceeded for ${this.modelName}`);
     }
   }
 
@@ -666,15 +666,15 @@ export abstract class BaseAIHandler {
   // Response validation
   protected validateResponse(response: AIModelResponse): void {
     if (!response) {
-      throw AIError.invalidResponse(this.modelName, 'Response is null or undefined');
+      throw AIError.invalidResponse(`${this.modelName}: Response is null or undefined`);
     }
 
     if (!response.content || typeof response.content !== 'string') {
-      throw AIError.invalidResponse(this.modelName, 'Response content is missing or invalid');
+      throw AIError.invalidResponse(`${this.modelName}: Response content is missing or invalid`);
     }
 
     if (response.content.trim() === '') {
-      throw AIError.invalidResponse(this.modelName, 'Response content is empty');
+      throw AIError.invalidResponse(`${this.modelName}: Response content is empty`);
     }
 
     if (typeof response.duration !== 'number' || response.duration < 0) {
@@ -712,9 +712,8 @@ export abstract class BaseAIHandler {
       return new AIError(
         error.message || 'Validation error',
         'VALIDATION_FAILED' as any,
-        false,
-        undefined,
-        { originalError: this.sanitizeErrorText(error.message), originalName: error.name }
+        400,
+        { isRetryable: false, details: { originalError: this.sanitizeErrorText(error.message), originalName: error.name } }
       );
     }
 
@@ -722,9 +721,8 @@ export abstract class BaseAIHandler {
     return new AIError(
       error.message || 'Unknown error occurred',
       'EXTERNAL_API_ERROR' as any,
-      false,
-      undefined,
-      { originalError: this.sanitizeErrorText(error.message), originalName: error.name }
+      500,
+      { isRetryable: false, details: { originalError: this.sanitizeErrorText(error.message), originalName: error.name } }
     );
   }
 

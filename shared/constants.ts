@@ -47,17 +47,10 @@ export const REVIEW_STAGES = [
   '4f_HoofdCommunicatie'
 ] as const;
 
-/**
- * Timeout waarden in milliseconden
- */
-export const TIMEOUTS = {
-  /** Stage execution timeout (5 minuten) */
-  STAGE_EXECUTION: 300_000,
-  /** Deep research timeout (30 minuten) */
-  DEEP_RESEARCH: 1_800_000,
-  /** File upload timeout (5 minuten) */
-  FILE_UPLOAD: 300_000,
-} as const;
+// NOTE: Timeouts zijn verplaatst naar server/config/constants.ts
+// Dit bestand bevat alleen shared constanten voor client EN server (stage names, etc.)
+// Server-side timeouts horen niet in shared code.
+// @see server/config/constants.ts voor TIMEOUTS
 
 /**
  * Helper functie om stage naam op te halen

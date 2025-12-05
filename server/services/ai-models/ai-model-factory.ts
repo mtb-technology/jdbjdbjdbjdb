@@ -12,9 +12,16 @@ import { TIMEOUTS } from "../../config/constants";
 
 export type { AIModelParameters } from "./base-handler";
 
+/**
+ * Type-safe handler types.
+ * Als je een nieuw handler type toevoegt, voeg het hier toe.
+ * TypeScript zal dan compile-time errors geven als handlerType in AI_MODELS niet klopt.
+ */
+export type HandlerType = "google" | "openai-standard" | "openai-reasoning" | "openai-gpt5";
+
 export interface ModelInfo {
   provider: "google" | "openai";
-  handlerType: "google" | "openai-standard" | "openai-reasoning" | "openai-gpt5";
+  handlerType: HandlerType;
   supportedParameters: string[];
   requiresResponsesAPI?: boolean;
   timeout?: number;
@@ -27,9 +34,11 @@ export interface ModelInfo {
 
 export class AIModelFactory {
   private static instance: AIModelFactory;
-  private handlers: Map<string, BaseAIHandler> = new Map();
+  private handlers: Map<HandlerType, BaseAIHandler> = new Map();
   private modelRegistry: Map<string, ModelInfo> = new Map();
-  private circuitBreaker: Map<string, { failures: number; lastFailure: number; isOpen: boolean }> = new Map();
+  // Note: Circuit breaker logic is handled by BaseAIHandler per-handler instance.
+  // This map only tracks handler initialization failures (not runtime call failures).
+  private initializationFailures: Set<HandlerType> = new Set();
 
   private constructor() {
     this.initializeModelRegistry();
@@ -65,7 +74,7 @@ export class AIModelFactory {
 
     // Validate and initialize handlers with better error tracking
     const initializeHandler = (
-      type: string, 
+      type: HandlerType,
       Handler: new (key: string, ...args: any[]) => BaseAIHandler,
       apiKey?: string,
       ...args: any[]
@@ -81,12 +90,7 @@ export class AIModelFactory {
         console.log(`✅ ${type} handler initialized`);
       } catch (error) {
         console.error(`❌ Failed to initialize ${type} handler:`, error);
-        // Track initialization failure in circuit breaker
-        this.circuitBreaker.set(type, {
-          failures: 1,
-          lastFailure: Date.now(),
-          isOpen: true
-        });
+        this.initializationFailures.add(type);
       }
     };
 
@@ -118,12 +122,6 @@ export class AIModelFactory {
       initializeHandler("openai-gpt5", OpenAIGPT5Handler, openaiApiKey);
     } else {
       console.warn('⚠️ OpenAI API key not configured');
-      // Track missing OpenAI configuration
-      this.circuitBreaker.set('openai', {
-        failures: 1,
-        lastFailure: Date.now(),
-        isOpen: true
-      });
     }
   }
 
@@ -206,53 +204,20 @@ export class AIModelFactory {
       });
     }
 
-    // Check circuit breaker
-    const breaker = this.circuitBreaker.get(config.model) || { failures: 0, lastFailure: 0, isOpen: false };
-
-    // Reset circuit after 60 seconds
-    if (breaker.isOpen && Date.now() - breaker.lastFailure > 60000) {
-      breaker.isOpen = false;
-      breaker.failures = 0;
-      console.log(`🔄 Circuit breaker reset for ${config.model}`);
+    // Pass model-specific timeout to handler via options
+    // Use longer timeout for grounding requests (10 min vs 2 min)
+    let timeoutMs = modelInfo.timeout || 120000;
+    if (options?.useGrounding) {
+      timeoutMs = TIMEOUTS.AI_GROUNDING;
+      console.log(`⏱️ Using extended timeout for grounding request: ${timeoutMs}ms`);
     }
+    const optionsWithTimeout = {
+      ...options,
+      timeout: timeoutMs
+    };
 
-    if (breaker.isOpen) {
-      throw new Error(`Circuit breaker OPEN for ${config.model} - too many failures`);
-    }
-
-    try {
-      // Pass model-specific timeout to handler via options
-      // Use longer timeout for grounding requests (10 min vs 2 min)
-      let timeoutMs = modelInfo.timeout || 120000;
-      if (options?.useGrounding) {
-        timeoutMs = TIMEOUTS.AI_GROUNDING;
-        console.log(`⏱️ Using extended timeout for grounding request: ${timeoutMs}ms`);
-      }
-      const optionsWithTimeout = {
-        ...options,
-        timeout: timeoutMs
-      };
-
-      const result = await handler.call(finalPrompt, filteredConfig, optionsWithTimeout);
-      
-      // Reset failures on success
-      breaker.failures = 0;
-      this.circuitBreaker.set(config.model, breaker);
-      
-      return result;
-    } catch (error: any) {
-      // Update circuit breaker
-      breaker.failures++;
-      breaker.lastFailure = Date.now();
-      
-      if (breaker.failures >= 3) {
-        breaker.isOpen = true;
-        console.error(`🚫 Circuit breaker OPENED for ${config.model} after ${breaker.failures} failures`);
-      }
-      
-      this.circuitBreaker.set(config.model, breaker);
-      throw error;
-    }
+    // Circuit breaker logic is handled by BaseAIHandler.call()
+    return handler.call(finalPrompt, filteredConfig, optionsWithTimeout);
   }
 
   private filterConfigForModel(config: AiConfig, modelInfo: ModelInfo): AiConfig {

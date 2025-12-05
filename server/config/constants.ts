@@ -15,8 +15,15 @@
 
 /**
  * Timeout configurations for various operations
+ *
+ * SINGLE SOURCE OF TRUTH voor alle timeouts in de applicatie.
+ * Voorheen stonden sommige timeouts in shared/constants.ts - die zijn hier geconsolideerd.
+ *
+ * @see docs/ARCHITECTURE.md voor timeout documentatie
  */
 export const TIMEOUTS = {
+  // === AI Operation Timeouts ===
+
   /** Standard AI request timeout (2 minutes) */
   AI_REQUEST: 120_000,
 
@@ -28,6 +35,19 @@ export const TIMEOUTS = {
 
   /** Grounding requests may be slow (10 minutes) */
   AI_GROUNDING: 600_000,
+
+  /** Deep research workflow timeout (30 minutes) - gemini-3-pro-preview */
+  AI_DEEP_RESEARCH: 1_800_000,
+
+  // === Stage/Workflow Timeouts ===
+
+  /** Default stage execution timeout (5 minutes) */
+  STAGE_DEFAULT: 300_000,
+
+  /** File upload timeout (5 minutes) */
+  FILE_UPLOAD: 300_000,
+
+  // === Infrastructure Timeouts ===
 
   /** Circuit breaker recovery wait time (1 minute) */
   CIRCUIT_BREAKER_RECOVERY: 60_000,

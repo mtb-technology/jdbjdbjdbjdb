@@ -143,7 +143,7 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
           console.warn(`[${jobId}] Extracted content from GPT-5 response using fallback regex`);
         } else if (result?.status === 'incomplete') {
           const reason = result?.incomplete_details?.reason || 'unknown';
-          throw AIError.invalidResponse('GPT-5', `Incomplete response: ${reason}. Try increasing max_output_tokens.`);
+          throw AIError.invalidResponse(`GPT-5: Incomplete response: ${reason}. Try increasing max_output_tokens.`);
         } else {
           // Return a minimal valid response instead of throwing
           content = `GPT-5 response processing error. Status: ${result?.status || 'unknown'}. Please retry.`;

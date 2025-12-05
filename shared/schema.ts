@@ -307,6 +307,23 @@ export const aiProviderSchema = z.enum(["google", "openai"]);
 export const googleModelSchema = z.enum(["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview"]);
 export const openaiModelSchema = z.enum(["gpt-5", "gpt-4o", "gpt-4o-mini", "o3-mini", "o3", "o3-deep-research-2025-06-26", "o4-mini-deep-research-2025-06-26"]);
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LAYER 2: STAGE/OPERATION CONFIG (Database Schema)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dit schema definieert de runtime AI configuratie die in de database wordt
+ * opgeslagen (prompt_configs tabel). Per-stage of per-operation overrides.
+ *
+ * Dit is NIET hetzelfde als AI_MODELS in server/config/index.ts (Layer 1).
+ * Layer 1 = statische model capabilities
+ * Layer 2 = dynamische runtime configuratie (dit schema)
+ * Layer 3 = merged config (AIConfigResolver)
+ *
+ * @see docs/ARCHITECTURE.md voor het 3-layer config model
+ * @see server/config/index.ts voor Layer 1 (Model Capabilities)
+ * @see server/services/ai-config-resolver.ts voor Layer 3 (Runtime Resolver)
+ */
 export const aiConfigSchema = z.object({
   provider: aiProviderSchema
     .default("google")

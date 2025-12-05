@@ -55,7 +55,7 @@ export class OpenAIStandardHandler extends BaseAIHandler {
       const content = response.choices[0]?.message?.content || "";
 
       if (!content) {
-        throw AIError.invalidResponse('OpenAI Standard', `Empty response from ${config.model}`);
+        throw AIError.invalidResponse(`OpenAI Standard: Empty response from ${config.model}`);
       }
 
       const result: AIModelResponse = {
