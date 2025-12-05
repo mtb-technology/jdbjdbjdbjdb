@@ -1015,3 +1015,65 @@ export const insertBox3ValidatorSessionSchema = createInsertSchema(box3Validator
     body: z.string()
   }).nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
+
+// ===== EXTERNAL REPORT SESSIONS =====
+/**
+ * ## EXTERNAL REPORT SESSIONS TABLE
+ *
+ * **Verantwoordelijkheid**: Sessies voor het aanpassen van externe rapporten
+ *
+ * Fiscalisten kunnen bestaande rapporten (niet uit ons systeem) plakken,
+ * feedback geven, en een aangepaste versie krijgen met diff preview.
+ *
+ * Flow:
+ * 1. Fiscalist plakt bestaand rapport
+ * 2. Geeft instructie/feedback
+ * 3. AI genereert aangepaste versie
+ * 4. Diff preview wordt getoond
+ * 5. Na acceptatie wordt HTML preview beschikbaar
+ */
+export const externalReportSessions = pgTable("external_report_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(), // Sessie titel (bijv. "Rapport Klant X")
+  originalContent: text("original_content").notNull(), // Originele tekst (paste)
+  currentContent: text("current_content"), // Huidige versie na aanpassingen
+  adjustmentCount: integer("adjustment_count").default(0), // Aantal aanpassingen
+  lastInstruction: text("last_instruction"), // Laatste instructie
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  createdAtIdx: index("external_report_sessions_created_at_idx").on(table.createdAt),
+}));
+
+// External Report Adjustment History
+export const externalReportAdjustments = pgTable("external_report_adjustments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => externalReportSessions.id, { onDelete: 'cascade' }),
+  version: integer("version").notNull(), // 1, 2, 3, etc.
+  instruction: text("instruction").notNull(), // Instructie van fiscalist
+  previousContent: text("previous_content").notNull(), // Content voor aanpassing
+  newContent: text("new_content").notNull(), // Content na aanpassing
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  sessionIdIdx: index("external_report_adjustments_session_id_idx").on(table.sessionId),
+}));
+
+// Types
+export type ExternalReportSession = typeof externalReportSessions.$inferSelect;
+export type InsertExternalReportSession = typeof externalReportSessions.$inferInsert;
+export type ExternalReportAdjustment = typeof externalReportAdjustments.$inferSelect;
+export type InsertExternalReportAdjustment = typeof externalReportAdjustments.$inferInsert;
+
+// Zod schemas
+export const insertExternalReportSessionSchema = createInsertSchema(externalReportSessions, {
+  title: z.string().min(1, "Titel is verplicht"),
+  originalContent: z.string().min(10, "Rapport moet minimaal 10 karakters bevatten"),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
+export const insertExternalReportAdjustmentSchema = createInsertSchema(externalReportAdjustments, {
+  sessionId: z.string().uuid("Ongeldige session ID"),
+  version: z.number().int().positive(),
+  instruction: z.string().min(10, "Instructie moet minimaal 10 karakters bevatten"),
+  previousContent: z.string().min(1),
+  newContent: z.string().min(1),
+}).omit({ id: true, createdAt: true });

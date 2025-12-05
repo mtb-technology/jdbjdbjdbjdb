@@ -30,8 +30,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { AppHeader } from "@/components/app-header";
 import { AssistantSettingsModal } from "@/components/assistant/AssistantSettingsModal";
+import { SimpleEmailSettingsModal } from "@/components/assistant/SimpleEmailSettingsModal";
 import { SessionSidebar } from "@/components/assistant/SessionSidebar";
-import type { FollowUpSession, FollowUpThread } from "@shared/schema";
+import { ExternalReportTab } from "@/components/assistant/ExternalReportTab";
+import type { FollowUpSession, FollowUpThread, ExternalReportSession } from "@shared/schema";
 
 interface PendingFile {
   file: File;
@@ -171,7 +173,7 @@ function stripMarkdown(text: string): string {
 
 const FollowUpAssistant = memo(function FollowUpAssistant() {
   // Tab state
-  const [activeTab, setActiveTab] = useState<"rapport" | "simpel">("rapport");
+  const [activeTab, setActiveTab] = useState<"rapport" | "simpel" | "extern">("rapport");
 
   // === Rapport-based tab state ===
   const [dossierInput, setDossierInput] = useState("");
@@ -190,9 +192,13 @@ const FollowUpAssistant = memo(function FollowUpAssistant() {
   const [isSavingSession, setIsSavingSession] = useState(false);
   const [sessionThreads, setSessionThreads] = useState<FollowUpThread[]>([]);
 
-  // Local settings state (independent from main app settings)
+  // Local settings state for "Met Rapport" tab
   const [aiModel, setAiModel] = useState("gemini-3-pro-preview");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_FISCAL_ASSISTANT_PROMPT);
+
+  // Local settings state for "Simpele Email" tab
+  const [simpleAiModel, setSimpleAiModel] = useState("gemini-3-pro-preview");
+  const [simpleSettingsOpen, setSimpleSettingsOpen] = useState(false);
 
   // === Simple email tab state ===
   const [simpleEmailThread, setSimpleEmailThread] = useState("");
@@ -211,6 +217,10 @@ const FollowUpAssistant = memo(function FollowUpAssistant() {
   const [simpleCopied, setSimpleCopied] = useState(false);
   const [simpleBodyCopied, setSimpleBodyCopied] = useState(false);
   const [simpleSubjectCopied, setSimpleSubjectCopied] = useState(false);
+
+  // === External report tab state ===
+  const [externalSessionIdToLoad, setExternalSessionIdToLoad] = useState<string | undefined>();
+  const [currentExternalSessionId, setCurrentExternalSessionId] = useState<string | undefined>();
 
   const { toast } = useToast();
 
@@ -573,7 +583,7 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
       const formData = new FormData();
       formData.append("emailThread", simpleEmailThread);
       formData.append("systemPrompt", simpleSystemPrompt);
-      formData.append("model", aiModel);
+      formData.append("model", simpleAiModel);
 
       // Add files
       for (const pf of simplePendingFiles) {
@@ -694,7 +704,7 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
         body: JSON.stringify({
           systemPrompt: "Je bent een e-mail editor die aanpassingen maakt op basis van gebruikersfeedback. Genereer ALLEEN JSON zonder extra tekst.",
           userInput: refinementPrompt,
-          model: aiModel,
+          model: simpleAiModel,
         }),
       });
 
@@ -744,6 +754,24 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
     setTimeout(() => setSimpleCopied(false), 2000);
   }, []);
 
+  // Handler for loading external sessions from sidebar
+  const handleLoadExternalSession = useCallback((session: ExternalReportSession) => {
+    setExternalSessionIdToLoad(session.id);
+    toast({
+      title: "Sessie geladen",
+      description: `Externe rapport sessie "${session.title}" is geladen.`,
+    });
+  }, [toast]);
+
+  // Callback when external session changes in the tab
+  const handleExternalSessionChange = useCallback((sessionId: string | undefined) => {
+    setCurrentExternalSessionId(sessionId);
+    // Clear the "to load" state once loaded
+    if (sessionId) {
+      setExternalSessionIdToLoad(undefined);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-background">
 
@@ -766,21 +794,12 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
                   </p>
                 </div>
 
-                <Button
-                  onClick={() => setSettingsOpen(true)}
-                  variant="outline"
-                  size="sm"
-                  id="open-settings-modal-btn"
-                >
-                  <SettingsIcon className="h-4 w-4 mr-2" />
-                  Instellingen
-                </Button>
               </div>
             </div>
 
             {/* Tabs for different modes */}
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "rapport" | "simpel")} className="mb-6">
-              <TabsList className="grid w-full grid-cols-2">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "rapport" | "simpel" | "extern")} className="mb-6">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="rapport" className="flex items-center gap-2">
                   <FileText className="h-4 w-4" />
                   Met Rapport
@@ -789,10 +808,26 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
                   <MessageSquare className="h-4 w-4" />
                   Simpele Email
                 </TabsTrigger>
+                <TabsTrigger value="extern" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Extern Rapport
+                </TabsTrigger>
               </TabsList>
 
               {/* Tab 1: Met Rapport (existing functionality) */}
               <TabsContent value="rapport" className="mt-6">
+                {/* Tab-specific settings button */}
+                <div className="flex justify-end mb-4">
+                  <Button
+                    onClick={() => setSettingsOpen(true)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <SettingsIcon className="h-4 w-4 mr-2" />
+                    Instellingen
+                  </Button>
+                </div>
+
                 {/* Session Management */}
                 <Card className="mb-6">
                   <CardHeader>
@@ -1122,6 +1157,18 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
 
               {/* Tab 2: Simpele Email (new functionality) */}
               <TabsContent value="simpel" className="mt-6">
+                {/* Tab-specific settings button */}
+                <div className="flex justify-end mb-4">
+                  <Button
+                    onClick={() => setSimpleSettingsOpen(true)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <SettingsIcon className="h-4 w-4 mr-2" />
+                    Instellingen
+                  </Button>
+                </div>
+
                 <Card className="mb-6">
                   <CardHeader>
                     <CardTitle className="flex items-center text-base">
@@ -1476,20 +1523,42 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
                   </Card>
                 )}
               </TabsContent>
+
+              {/* Tab 3: Extern Rapport (paste & adjust existing reports) */}
+              <TabsContent value="extern" className="mt-6">
+                {/* Tab-specific settings button - links to central settings */}
+                <div className="flex justify-end mb-4">
+                  <Button
+                    onClick={() => window.location.href = "/settings"}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <SettingsIcon className="h-4 w-4 mr-2" />
+                    Centrale Instellingen
+                  </Button>
+                </div>
+
+                <ExternalReportTab
+                  sessionIdToLoad={externalSessionIdToLoad}
+                  onSessionChange={handleExternalSessionChange}
+                />
+              </TabsContent>
             </Tabs>
           </div>
 
-          {/* Session Sidebar */}
+          {/* Unified Session Sidebar - shows different sessions based on active tab */}
           <aside className="w-80 flex-shrink-0">
             <SessionSidebar
               onLoadSession={handleLoadSession}
-              currentSessionId={currentSessionId}
+              onLoadExternalSession={handleLoadExternalSession}
+              currentSessionId={activeTab === "extern" ? currentExternalSessionId : currentSessionId}
+              activeTab={activeTab}
             />
           </aside>
         </div>
       </div>
 
-      {/* Settings Modal */}
+      {/* Settings Modal for "Met Rapport" tab */}
       <AssistantSettingsModal
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
@@ -1497,6 +1566,16 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
         setAiModel={setAiModel}
         systemPrompt={systemPrompt}
         setSystemPrompt={setSystemPrompt}
+      />
+
+      {/* Settings Modal for "Simpele Email" tab */}
+      <SimpleEmailSettingsModal
+        open={simpleSettingsOpen}
+        onOpenChange={setSimpleSettingsOpen}
+        aiModel={simpleAiModel}
+        setAiModel={setSimpleAiModel}
+        systemPrompt={simpleSystemPrompt}
+        setSystemPrompt={setSimpleSystemPrompt}
       />
     </div>
   );

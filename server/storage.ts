@@ -1,5 +1,5 @@
-import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession } from "@shared/schema";
-import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions } from "@shared/schema";
+import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession, type ExternalReportSession, type InsertExternalReportSession, type ExternalReportAdjustment, type InsertExternalReportAdjustment } from "@shared/schema";
+import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions, externalReportSessions, externalReportAdjustments } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql } from "drizzle-orm";
 import * as fs from "fs";
@@ -57,6 +57,17 @@ export interface IStorage {
   createBox3ValidatorSession(session: InsertBox3ValidatorSession): Promise<Box3ValidatorSession>;
   updateBox3ValidatorSession(id: string, data: Partial<Box3ValidatorSession>): Promise<Box3ValidatorSession | undefined>;
   deleteBox3ValidatorSession(id: string): Promise<void>;
+
+  // External Report Sessions
+  getExternalReportSession(id: string): Promise<ExternalReportSession | undefined>;
+  getAllExternalReportSessions(): Promise<ExternalReportSession[]>;
+  createExternalReportSession(session: InsertExternalReportSession): Promise<ExternalReportSession>;
+  updateExternalReportSession(id: string, data: Partial<ExternalReportSession>): Promise<ExternalReportSession | undefined>;
+  deleteExternalReportSession(id: string): Promise<void>;
+
+  // External Report Adjustments
+  createExternalReportAdjustment(adjustment: InsertExternalReportAdjustment): Promise<ExternalReportAdjustment>;
+  getAdjustmentsForSession(sessionId: string): Promise<ExternalReportAdjustment[]>;
 }
 
 // Flag to track if dossier number migration has been checked
@@ -585,6 +596,47 @@ export class DatabaseStorage implements IStorage {
 
   async deleteBox3ValidatorSession(id: string): Promise<void> {
     await db.delete(box3ValidatorSessions).where(eq(box3ValidatorSessions.id, id));
+  }
+
+  // External Report Session methods
+  async getExternalReportSession(id: string): Promise<ExternalReportSession | undefined> {
+    const [session] = await db.select().from(externalReportSessions).where(eq(externalReportSessions.id, id));
+    return session || undefined;
+  }
+
+  async getAllExternalReportSessions(): Promise<ExternalReportSession[]> {
+    return await db.select().from(externalReportSessions).orderBy(desc(externalReportSessions.createdAt));
+  }
+
+  async createExternalReportSession(insertSession: InsertExternalReportSession): Promise<ExternalReportSession> {
+    const [session] = await db.insert(externalReportSessions).values(insertSession).returning();
+    return session;
+  }
+
+  async updateExternalReportSession(id: string, updateData: Partial<ExternalReportSession>): Promise<ExternalReportSession | undefined> {
+    const [updated] = await db
+      .update(externalReportSessions)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(externalReportSessions.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteExternalReportSession(id: string): Promise<void> {
+    // Cascade delete will handle adjustments automatically
+    await db.delete(externalReportSessions).where(eq(externalReportSessions.id, id));
+  }
+
+  // External Report Adjustment methods
+  async createExternalReportAdjustment(insertAdjustment: InsertExternalReportAdjustment): Promise<ExternalReportAdjustment> {
+    const [adjustment] = await db.insert(externalReportAdjustments).values(insertAdjustment).returning();
+    return adjustment;
+  }
+
+  async getAdjustmentsForSession(sessionId: string): Promise<ExternalReportAdjustment[]> {
+    return await db.select().from(externalReportAdjustments)
+      .where(eq(externalReportAdjustments.sessionId, sessionId))
+      .orderBy(externalReportAdjustments.version);
   }
 
   /**

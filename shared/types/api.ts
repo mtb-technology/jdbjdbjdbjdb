@@ -251,6 +251,40 @@ export type AdjustReportResponse = z.infer<typeof adjustReportResponseSchema>;
 export type AcceptAdjustmentRequest = z.infer<typeof acceptAdjustmentRequestSchema>;
 export type AcceptAdjustmentResponse = z.infer<typeof acceptAdjustmentResponseSchema>;
 
+// ===== EXTERNAL REPORT SESSIONS =====
+
+// Create external report session
+export const createExternalReportSessionSchema = z.object({
+  title: z.string().min(1, "Titel is verplicht").max(200),
+  originalContent: z.string().min(10, "Rapport moet minimaal 10 karakters bevatten")
+});
+
+// Request adjustment for external report
+export const externalReportAdjustRequestSchema = z.object({
+  instruction: z.string()
+    .min(10, "Instructie moet minimaal 10 karakters bevatten")
+    .max(10000, "Instructie mag niet langer zijn dan 10000 karakters")
+});
+
+// Response with proposed adjustment
+export const externalReportAdjustResponseSchema = z.object({
+  success: z.boolean(),
+  proposedContent: z.string(),
+  previousContent: z.string(),
+  version: z.number()
+});
+
+// Accept adjustment
+export const externalReportAcceptSchema = z.object({
+  proposedContent: z.string(),
+  instruction: z.string()
+});
+
+export type CreateExternalReportSession = z.infer<typeof createExternalReportSessionSchema>;
+export type ExternalReportAdjustRequest = z.infer<typeof externalReportAdjustRequestSchema>;
+export type ExternalReportAdjustResponse = z.infer<typeof externalReportAdjustResponseSchema>;
+export type ExternalReportAcceptRequest = z.infer<typeof externalReportAcceptSchema>;
+
 export type ReportListResponse = z.infer<typeof reportListResponseSchema>;
 export type ReportDetailResponse = z.infer<typeof reportDetailResponseSchema>;
 export type StageExecutionResponse = z.infer<typeof stageExecutionResponseSchema>;
