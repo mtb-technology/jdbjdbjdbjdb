@@ -415,8 +415,15 @@ export const stageConfigSchema = z.object({
   path: ["useWebSearch"]
 });
 
+// Schema voor tool-specifieke AI configuratie (zonder prompt)
+export const toolAiConfigSchema = z.object({
+  aiConfig: aiConfigSchema.optional(),
+  description: z.string().optional(), // Voor UI weergave
+});
+
 // Multi-stage prompting workflow schema
 export const promptConfigSchema = z.object({
+  // === RAPPORT STAGES ===
   "1_informatiecheck": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "2_complexiteitscheck": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "3_generatie": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
@@ -426,8 +433,15 @@ export const promptConfigSchema = z.object({
   "4e_DeAdvocaat": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
   "4f_HoofdCommunicatie": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "editor": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }), // Chirurgische Redacteur - past wijzigingen toe
-  "adjustment": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }), // Rapport Aanpassen - post-workflow adjustments
+  "adjustment": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: true }), // Rapport Aanpassen - genereert JSON aanpassingen (zoals reviewers)
   "6_change_summary": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+
+  // === TOOLS (alleen AI config, geen prompts) ===
+  "test_ai": toolAiConfigSchema.optional(), // AI Test functionaliteit
+  "follow_up_assistant": toolAiConfigSchema.optional(), // Email assistant
+  "box3_validator": toolAiConfigSchema.optional(), // Box3 fiscaal validator
+
+  // === GLOBAL DEFAULTS ===
   aiConfig: aiConfigSchema.optional(),
 });
 

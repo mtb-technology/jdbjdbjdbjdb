@@ -52,32 +52,29 @@ export class ReportGenerator {
 
   // Test method for AI functionality
   async testAI(prompt: string, customConfig?: Partial<AiConfig>): Promise<string> {
-    // ✅ FIX: Get defaults from global config instead of hardcoding
-    const promptConfig = await storage.getActivePromptConfig();
-    const globalConfig: any = promptConfig?.config || {};
-    const testConfig = globalConfig['test_ai'] || globalConfig.aiConfig || {};
+    // Haal config uit database via AIConfigResolver - GEEN hardcoded defaults
+    const promptConfigRecord = await storage.getActivePromptConfig();
+    if (!promptConfigRecord?.config) {
+      throw ServerError.validation(
+        'No active prompt config',
+        'Geen actieve prompt configuratie gevonden. Configureer dit in Settings.'
+      );
+    }
 
-    const defaultConfig: AiConfig = {
-      provider: testConfig.provider ?? "google",
-      model: testConfig.model ?? "gemini-2.5-pro",
-      temperature: testConfig.temperature ?? 0.1,
-      topP: testConfig.topP ?? 0.95,
-      topK: testConfig.topK ?? 20,
-      maxOutputTokens: testConfig.maxOutputTokens ?? 2048
-    };
+    const promptConfig = promptConfigRecord.config as PromptConfig;
+    const baseConfig = this.configResolver.resolveForOperation('test_ai', promptConfig, 'test-ai');
 
-    // ✅ Merge custom config to allow overriding defaults (especially maxOutputTokens)
+    // Merge custom config als override (bijv. voor specifieke maxOutputTokens)
     const finalConfig: AiConfig = {
-      ...defaultConfig,
+      ...baseConfig,
       ...customConfig
     };
 
-    console.log(`🚀 [testAI] Using AI config:`, {
+    console.log(`🚀 [testAI] Using AI config from database:`, {
       provider: finalConfig.provider,
       model: finalConfig.model,
       maxOutputTokens: finalConfig.maxOutputTokens,
-      temperature: finalConfig.temperature,
-      topP: finalConfig.topP
+      temperature: finalConfig.temperature
     });
 
     try {
@@ -89,7 +86,7 @@ export class ReportGenerator {
     } catch (error: any) {
       console.error('Test AI error:', error);
       throw ServerError.ai(
-        'AI service test mislukt. Controleer de AI configuratie.',
+        'AI service test mislukt. Controleer de AI configuratie in Settings.',
         { prompt: prompt.substring(0, 100), error: error.message }
       );
     }
@@ -100,44 +97,42 @@ export class ReportGenerator {
     systemPrompt: string;
     userPrompt: string;
     model: string;
-    customConfig?: Partial<AiConfig>; // ✅ NEW: Allow config override
+    customConfig?: Partial<AiConfig>;
   }): Promise<string> {
     const { systemPrompt, userPrompt, model, customConfig } = params;
 
-    // Determine provider from model name
+    // Haal config uit database via AIConfigResolver - GEEN hardcoded defaults
+    const promptConfigRecord = await storage.getActivePromptConfig();
+    if (!promptConfigRecord?.config) {
+      throw ServerError.validation(
+        'No active prompt config',
+        'Geen actieve prompt configuratie gevonden. Configureer dit in Settings.'
+      );
+    }
+
+    const promptConfig = promptConfigRecord.config as PromptConfig;
+    const baseConfig = this.configResolver.resolveForOperation('follow_up_assistant', promptConfig, 'follow-up-assistant');
+
+    // Bepaal provider van meegegeven model (override)
     const provider = model.startsWith("gpt") || model.startsWith("o3") ? "openai" : "google";
 
-    // ✅ FIX: Get config from global settings or use customConfig
-    const promptConfig = await storage.getActivePromptConfig();
-    const globalConfig: any = promptConfig?.config || {};
-    const assistantConfig = globalConfig['follow_up_assistant'] || globalConfig.aiConfig || {};
-
+    // Merge: base config + model override + custom config
     const aiConfig: AiConfig = {
+      ...baseConfig,
       provider,
       model,
-      temperature: assistantConfig.temperature ?? 0.1,
-      topP: assistantConfig.topP ?? 0.95,
-      topK: assistantConfig.topK ?? 20,
-      maxOutputTokens: assistantConfig.maxOutputTokens ?? 8192,
-      ...customConfig // ✅ Allow override
+      ...customConfig
     };
 
-    console.log('🤖 [generateWithCustomPrompt] Using AI config:', {
+    console.log('🤖 [generateWithCustomPrompt] Using AI config from database:', {
       provider: aiConfig.provider,
       model: aiConfig.model,
       maxOutputTokens: aiConfig.maxOutputTokens,
-      temperature: aiConfig.temperature,
-      thinkingLevel: aiConfig.thinkingLevel
+      temperature: aiConfig.temperature
     });
 
     try {
-      // Build the full prompt (system + user)
       const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
-
-      console.log('🤖 [generateWithCustomPrompt] Calling model factory with:', {
-        promptLength: fullPrompt.length,
-        jobId: "follow-up-assistant"
-      });
 
       const response = await this.modelFactory.callModel(aiConfig, fullPrompt, {
         jobId: "follow-up-assistant"
@@ -150,16 +145,13 @@ export class ReportGenerator {
       console.error('❌ [generateWithCustomPrompt] Model call failed:', {
         errorType: error.constructor.name,
         message: error.message,
-        code: error.code,
-        statusCode: error.statusCode,
-        stack: error.stack?.split('\n').slice(0, 3).join('\n')
+        code: error.code
       });
       throw ServerError.ai(
-        'AI kon geen antwoord genereren. Controleer de configuratie en probeer het opnieuw.',
+        'AI kon geen antwoord genereren. Controleer de configuratie in Settings.',
         {
           model,
           error: error.message,
-          errorCode: error.code,
           provider: aiConfig.provider
         }
       );

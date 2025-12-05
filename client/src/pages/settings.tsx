@@ -17,7 +17,8 @@ import { useState, useEffect, memo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings as SettingsIcon, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Save, RefreshCw } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 
 // Types and constants
@@ -37,6 +38,8 @@ import {
   GlobalAiConfigCard,
   PipelineHeader,
   WorkflowInfoCard,
+  ToolAiConfigCard,
+  TOOL_CONFIGS,
 } from "@/components/settings";
 
 type StageConfigKey = keyof Omit<PromptConfig, "aiConfig">;
@@ -148,19 +151,82 @@ const Settings = memo(function Settings() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Tab: Algemeen */}
+          {/* Tab: Algemeen - Tool AI Configuraties */}
           <TabsContent value="general" className="space-y-6">
-            <Card>
+            {/* Header with save button */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Tool AI Configuraties</h2>
+                <p className="text-sm text-muted-foreground">
+                  Configureer AI settings per tool. Als een tool geen eigen configuratie heeft, wordt de globale default gebruikt.
+                </p>
+              </div>
+              <Button
+                onClick={handleSave}
+                disabled={isSaving}
+                data-testid="button-save-general"
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {isSaving ? "Opslaan..." : "Opslaan"}
+              </Button>
+            </div>
+
+            {/* Tool Config Cards */}
+            <div className="grid gap-6">
+              {TOOL_CONFIGS.map((tool) => (
+                <ToolAiConfigCard
+                  key={tool.key}
+                  toolKey={tool.key}
+                  title={tool.title}
+                  description={tool.description}
+                  icon={tool.icon}
+                  aiConfig={(activeConfig as any)?.[tool.key]}
+                  globalAiConfig={aiConfig}
+                  onAiConfigChange={(toolKey, field, value) => {
+                    if (!activeConfig) return;
+                    setActiveConfig({
+                      ...activeConfig,
+                      [toolKey]: {
+                        ...((activeConfig as any)[toolKey] || {}),
+                        aiConfig: {
+                          ...(((activeConfig as any)[toolKey] as any)?.aiConfig || aiConfig),
+                          [field]: value,
+                        },
+                      },
+                    });
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Global Default (read-only reference) */}
+            <Card className="border-dashed">
               <CardHeader>
-                <CardTitle className="text-lg">Algemene Instellingen</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Globale Default Configuratie
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Deze configuratie wordt gebruikt als fallback. Wijzig in de "Rapport Pipeline" tab.
+                </p>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <SettingsIcon className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                  <h3 className="text-lg font-medium text-muted-foreground mb-2">Komt Binnenkort</h3>
-                  <p className="text-sm text-muted-foreground max-w-md">
-                    Hier komen toekomstige algemene instellingen zoals notificaties, gebruikersvoorkeuren en meer.
-                  </p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Provider:</span>
+                    <span className="ml-2 font-medium">{aiConfig.provider}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Model:</span>
+                    <span className="ml-2 font-medium">{aiConfig.model}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Temperature:</span>
+                    <span className="ml-2 font-medium">{aiConfig.temperature}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Max Tokens:</span>
+                    <span className="ml-2 font-medium">{aiConfig.maxOutputTokens}</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>

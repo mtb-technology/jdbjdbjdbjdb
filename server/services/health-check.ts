@@ -1,11 +1,17 @@
 /**
  * Health Check Service voor system monitoring
+ *
+ * BELANGRIJK: AI config voor health checks komt uit database (prompt_configs).
+ * Er zijn geen hardcoded defaults - als config ontbreekt, faalt de health check
+ * met een duidelijke melding.
  */
 
 import { checkDatabaseConnection } from '../db';
 import { AIModelFactory } from './ai-models/ai-model-factory';
 import { SourceValidator } from './source-validator';
+import { AIConfigResolver } from './ai-config-resolver';
 import { config } from '../config';
+import { storage } from '../storage';
 
 export interface HealthCheckResult {
   service: string;
@@ -18,10 +24,12 @@ export interface HealthCheckResult {
 export class HealthCheckService {
   private readonly sourceValidator: SourceValidator;
   private readonly aiModelFactory: AIModelFactory;
+  private readonly configResolver: AIConfigResolver;
 
   constructor() {
     this.sourceValidator = new SourceValidator();
     this.aiModelFactory = AIModelFactory.getInstance();
+    this.configResolver = new AIConfigResolver();
   }
 
   async checkDatabase(): Promise<HealthCheckResult> {
@@ -65,39 +73,67 @@ export class HealthCheckService {
     const results: HealthCheckResult[] = [];
     const supportedModels = this.aiModelFactory.getSupportedModels();
 
+    // Haal AI config uit database - GEEN hardcoded fallbacks
+    let aiConfig;
+    try {
+      const activeConfig = await storage.getActivePromptConfig();
+      if (!activeConfig?.config) {
+        throw new Error('Geen actieve prompt configuratie gevonden in database');
+      }
+      const promptConfig = activeConfig.config as { aiConfig?: any; test_ai?: any };
+
+      // Gebruik test_ai config als die bestaat, anders global aiConfig
+      aiConfig = this.configResolver.resolveForOperation('test_ai', promptConfig, 'health-check');
+    } catch (error) {
+      // Als we geen config kunnen laden, return een error result
+      return [{
+        service: 'ai-config',
+        healthy: false,
+        responseTime: 0,
+        details: {
+          error: error instanceof Error ? error.message : 'Kon AI configuratie niet laden',
+          hint: 'Configureer AI settings in de Settings pagina'
+        },
+        lastChecked: new Date()
+      }];
+    }
+
     // Check Google AI Service
-    const googleModels = supportedModels.filter(model => 
+    const googleModels = supportedModels.filter(model =>
       this.aiModelFactory.getModelInfo(model)?.provider === 'google'
     );
-    
+
     if (googleModels.length > 0) {
       const startTime = Date.now();
-      
+
       try {
-        const handler = this.aiModelFactory.getHandler('gemini-2.5-flash');
+        // Gebruik model uit config, of eerste beschikbare Google model
+        const testModel = aiConfig.provider === 'google' ? aiConfig.model : googleModels[0];
+        const handler = this.aiModelFactory.getHandler(testModel);
+
         if (handler) {
-          // Simple test prompt
+          // Test met config uit database (met lage maxOutputTokens voor snelle test)
           await handler.call('Test connectie', {
+            ...aiConfig,
             provider: 'google',
-            model: 'gemini-2.5-flash',
-            temperature: 0.7,
-            topP: 1.0,
-            topK: 40,
-            maxOutputTokens: 10
+            model: testModel,
+            maxOutputTokens: 10 // Override voor snelle health check
           });
-          
+
           results.push({
             service: 'google-ai',
             healthy: true,
             responseTime: Date.now() - startTime,
             details: {
               supportedModels: googleModels,
-              provider: 'google'
+              provider: 'google',
+              testedModel: testModel,
+              configSource: 'database'
             },
             lastChecked: new Date()
           });
         } else {
-          throw new Error('Google AI handler niet gevonden');
+          throw new Error(`Google AI handler niet gevonden voor model: ${testModel}`);
         }
       } catch (error) {
         results.push({
@@ -115,38 +151,41 @@ export class HealthCheckService {
     }
 
     // Check OpenAI Service
-    const openaiModels = supportedModels.filter(model => 
+    const openaiModels = supportedModels.filter(model =>
       this.aiModelFactory.getModelInfo(model)?.provider === 'openai'
     );
-    
+
     if (openaiModels.length > 0) {
       const startTime = Date.now();
-      
+
       try {
-        const handler = this.aiModelFactory.getHandler('gpt-4o-mini');
+        // Gebruik model uit config, of eerste beschikbare OpenAI model
+        const testModel = aiConfig.provider === 'openai' ? aiConfig.model : openaiModels[0];
+        const handler = this.aiModelFactory.getHandler(testModel);
+
         if (handler) {
-          // Simple test prompt
+          // Test met config uit database (met lage maxOutputTokens voor snelle test)
           await handler.call('Test connectie', {
+            ...aiConfig,
             provider: 'openai',
-            model: 'gpt-4o-mini',
-            temperature: 0.7,
-            topP: 1.0,
-            topK: 40,
-            maxOutputTokens: 10
+            model: testModel,
+            maxOutputTokens: 10 // Override voor snelle health check
           });
-          
+
           results.push({
             service: 'openai',
             healthy: true,
             responseTime: Date.now() - startTime,
             details: {
               supportedModels: openaiModels,
-              provider: 'openai'
+              provider: 'openai',
+              testedModel: testModel,
+              configSource: 'database'
             },
             lastChecked: new Date()
           });
         } else {
-          throw new Error('OpenAI handler niet gevonden');
+          throw new Error(`OpenAI handler niet gevonden voor model: ${testModel}`);
         }
       } catch (error) {
         results.push({

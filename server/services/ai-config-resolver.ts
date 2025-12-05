@@ -1,14 +1,12 @@
 import type { AiConfig } from "@shared/schema";
-import { REPORT_CONFIG } from "../config/index";
 
 /**
  * AIConfigResolver - Centralized AI Configuration Resolution
  *
- * Eliminates code duplication by providing a single source of truth for:
- * - Model selection based on stage complexity
- * - Config fallback logic (stage → global → defaults)
- * - Provider-specific token limits
- * - Token adjustment based on model type
+ * BELANGRIJK: Alle AI configuratie MOET uit de database komen (prompt_configs).
+ * Er zijn GEEN hardcoded defaults - als config ontbreekt, krijg je een error.
+ * Dit voorkomt "schaduw logica" waar de code andere waarden gebruikt dan wat
+ * in Settings staat geconfigureerd.
  *
  * Usage:
  *   const resolver = new AIConfigResolver();
@@ -21,32 +19,16 @@ import { REPORT_CONFIG } from "../config/index";
  */
 export class AIConfigResolver {
   /**
-   * Token requirements per model type and stage
+   * Provider-specific maximum token limits (API limieten, geen defaults)
    */
-  private static readonly TOKEN_REQUIREMENTS = {
-    'deep-research': {
-      '3_generatie': 32768,       // Deep research needs large output for comprehensive reports
-      '4a_BronnenSpecialist': 32768,
-      'default': 24576
-    },
-    'gpt-4o': {
-      'default': 16384
-    },
-    'default': {
-      'default': 4096
-    }
+  private static readonly PROVIDER_MAX_LIMITS = {
+    'google': 65536,
+    'openai': 200000
   } as const;
 
   /**
-   * Provider-specific maximum token limits
-   */
-  private static readonly PROVIDER_LIMITS = {
-    'google': 32768,
-    'openai': 200000 // OpenAI has much higher limits
-  } as const;
-
-  /**
-   * Resolve complete AI configuration for a specific stage
+   * Resolve complete AI configuration for a specific stage.
+   * GEEN hardcoded defaults - config moet in database staan.
    */
   resolveForStage(
     stageName: string,
@@ -57,205 +39,175 @@ export class AIConfigResolver {
     const stageAiConfig = stageConfig?.aiConfig;
     const globalAiConfig = globalConfig?.aiConfig;
 
-    // Step 1: Determine optimal model
-    const selectedModel = this.selectOptimalModel(stageName, stageAiConfig, globalAiConfig);
+    // VALIDATION: Er MOET een aiConfig zijn (stage of global)
+    if (!stageAiConfig && !globalAiConfig) {
+      throw new Error(
+        `AI configuratie ontbreekt voor stage "${stageName}". ` +
+        `Configureer AI settings in de Settings pagina.`
+      );
+    }
 
-    // Step 2: Determine provider
-    const provider = this.resolveProvider(stageAiConfig, globalAiConfig, selectedModel);
+    // Bepaal welke config te gebruiken (stage override of global)
+    const baseConfig = stageAiConfig || globalAiConfig!;
 
-    // Step 3: Build base config with fallbacks
-    const baseConfig = this.buildBaseConfig(stageAiConfig, globalAiConfig, selectedModel, provider);
+    // VALIDATION: Vereiste velden moeten aanwezig zijn
+    this.validateRequiredFields(baseConfig, stageName);
 
-    // Step 4: Apply provider-specific limits
-    const configWithLimits = this.applyProviderLimits(baseConfig, provider);
+    // Merge stage config over global config (stage heeft prioriteit)
+    const mergedConfig = this.mergeConfigs(stageAiConfig, globalAiConfig!);
 
-    // Step 5: Apply stage-specific token adjustments
-    const finalConfig = this.applyTokenAdjustments(configWithLimits, stageName, selectedModel, jobId);
+    // Bepaal provider (uit config of infer van model)
+    const provider = this.resolveProvider(mergedConfig);
 
-    // Step 6: Enable deep research for Stage 3 if using Gemini 3 Pro
-    const configWithDeepResearch = this.enableDeepResearchIfNeeded(finalConfig, stageName, stageAiConfig, stageConfig?.polishPrompt);
+    // Apply provider max limits (API limieten, niet defaults)
+    const configWithLimits = this.applyProviderLimits(mergedConfig, provider);
+
+    // Enable deep research for Stage 3 if using Gemini 3 Pro
+    const finalConfig = this.enableDeepResearchIfNeeded(
+      configWithLimits,
+      stageName,
+      stageAiConfig,
+      stageConfig?.polishPrompt
+    );
 
     // Log for debugging
     if (jobId) {
       console.log(`📊 [${jobId}] AIConfigResolver resolved:`, {
         stage: stageName,
-        model: configWithDeepResearch.model,
-        provider: configWithDeepResearch.provider,
-        maxTokens: configWithDeepResearch.maxOutputTokens,
-        useDeepResearch: (configWithDeepResearch as any).useDeepResearch,
-        hasPolishPrompt: !!(configWithDeepResearch as any).polishPrompt,
-        isHybridSelection: !stageAiConfig?.model && !globalAiConfig?.model
+        model: finalConfig.model,
+        provider: finalConfig.provider,
+        temperature: finalConfig.temperature,
+        maxTokens: finalConfig.maxOutputTokens,
+        useDeepResearch: (finalConfig as any).useDeepResearch,
+        source: stageAiConfig ? 'stage-specific' : 'global'
       });
     }
 
-    return configWithDeepResearch;
+    return finalConfig;
   }
 
   /**
-   * Select optimal model based on stage complexity
-   * Implements hybrid workflow strategy
+   * Resolve config for non-stage operations (test_ai, follow_up_assistant, etc.)
+   * Haalt config uit een specifieke key in de prompt config.
    */
-  private selectOptimalModel(
-    stageName: string,
-    stageAiConfig?: AiConfig,
-    globalAiConfig?: AiConfig
-  ): string {
-    // Explicit configuration takes precedence
-    if (stageAiConfig?.model) return stageAiConfig.model;
-    if (globalAiConfig?.model) return globalAiConfig.model;
+  resolveForOperation(
+    operationKey: string,
+    promptConfig: { [key: string]: any; aiConfig?: AiConfig },
+    jobId?: string
+  ): AiConfig {
+    // Zoek eerst naar operation-specifieke config, dan global aiConfig
+    const operationConfig = promptConfig[operationKey]?.aiConfig || promptConfig[operationKey];
+    const globalConfig = promptConfig.aiConfig;
 
-    // Hybrid workflow logic based on stage complexity
-    switch (stageName) {
-      case '1_informatiecheck':
-      case '2_complexiteitscheck':
-        return REPORT_CONFIG.simpleTaskModel; // Fast automated checks
+    // Check of we een bruikbare config hebben
+    const config = this.isValidAiConfig(operationConfig) ? operationConfig : globalConfig;
 
-      case '3_generatie':
-        return REPORT_CONFIG.complexTaskModel; // Powerful for large reports
-
-      case '4a_BronnenSpecialist':
-      case '4b_FiscaalTechnischSpecialist':
-        return REPORT_CONFIG.reviewerModel; // Balanced for critical reviews
-
-      case '4c_ScenarioGatenAnalist':
-      case '4e_DeAdvocaat':
-      case '4f_HoofdCommunicatie':
-        return REPORT_CONFIG.simpleTaskModel; // Fast for routine reviews
-
-      case '6_change_summary':
-        return REPORT_CONFIG.simpleTaskModel; // Fast for analysis
-
-      default:
-        return REPORT_CONFIG.defaultModel;
+    if (!config || !this.isValidAiConfig(config)) {
+      throw new Error(
+        `AI configuratie ontbreekt voor "${operationKey}". ` +
+        `Configureer dit in de Settings pagina onder de juiste sectie.`
+      );
     }
+
+    this.validateRequiredFields(config, operationKey);
+
+    const provider = this.resolveProvider(config);
+    const configWithLimits = this.applyProviderLimits(config, provider);
+
+    if (jobId) {
+      console.log(`📊 [${jobId}] AIConfigResolver resolved for ${operationKey}:`, {
+        model: configWithLimits.model,
+        provider: configWithLimits.provider,
+        temperature: configWithLimits.temperature,
+        maxTokens: configWithLimits.maxOutputTokens
+      });
+    }
+
+    return configWithLimits;
+  }
+
+  /**
+   * Check of een object een geldige AiConfig is
+   */
+  private isValidAiConfig(config: any): config is AiConfig {
+    return config &&
+           typeof config === 'object' &&
+           typeof config.model === 'string' &&
+           config.model.length > 0;
+  }
+
+  /**
+   * Valideer dat vereiste velden aanwezig zijn in de config
+   */
+  private validateRequiredFields(config: AiConfig, context: string): void {
+    const requiredFields: (keyof AiConfig)[] = ['model', 'temperature', 'maxOutputTokens'];
+    const missingFields = requiredFields.filter(field => config[field] === undefined || config[field] === null);
+
+    if (missingFields.length > 0) {
+      throw new Error(
+        `AI configuratie voor "${context}" mist vereiste velden: ${missingFields.join(', ')}. ` +
+        `Configureer deze in de Settings pagina.`
+      );
+    }
+  }
+
+  /**
+   * Merge stage config over global config (stage heeft prioriteit)
+   */
+  private mergeConfigs(stageConfig: AiConfig | undefined, globalConfig: AiConfig): AiConfig {
+    if (!stageConfig) return { ...globalConfig };
+
+    return {
+      provider: stageConfig.provider ?? globalConfig.provider,
+      model: stageConfig.model ?? globalConfig.model,
+      temperature: stageConfig.temperature ?? globalConfig.temperature,
+      topP: stageConfig.topP ?? globalConfig.topP,
+      topK: stageConfig.topK ?? globalConfig.topK,
+      maxOutputTokens: stageConfig.maxOutputTokens ?? globalConfig.maxOutputTokens,
+      thinkingLevel: stageConfig.thinkingLevel ?? globalConfig.thinkingLevel,
+      reasoning: stageConfig.reasoning ?? globalConfig.reasoning,
+      verbosity: stageConfig.verbosity ?? globalConfig.verbosity
+    };
   }
 
   /**
    * Resolve provider from config or infer from model name
    */
-  private resolveProvider(
-    stageAiConfig?: AiConfig,
-    globalAiConfig?: AiConfig,
-    model?: string
-  ): 'google' | 'openai' {
-    if (stageAiConfig?.provider) return stageAiConfig.provider;
-    if (globalAiConfig?.provider) return globalAiConfig.provider;
+  private resolveProvider(config: AiConfig): 'google' | 'openai' {
+    if (config.provider) return config.provider;
 
     // Infer from model name
-    return model?.startsWith('gpt') || model?.startsWith('o3') || model?.startsWith('o4')
+    const model = config.model || '';
+    return model.startsWith('gpt') || model.startsWith('o3') || model.startsWith('o4')
       ? 'openai'
       : 'google';
   }
 
   /**
-   * Build base configuration with proper fallbacks
-   */
-  private buildBaseConfig(
-    stageAiConfig: AiConfig | undefined,
-    globalAiConfig: AiConfig | undefined,
-    model: string,
-    provider: 'google' | 'openai'
-  ): AiConfig {
-    const baseMaxTokens = Math.max(
-      stageAiConfig?.maxOutputTokens ?? 8192,
-      globalAiConfig?.maxOutputTokens ?? 8192,
-      8192
-    );
-
-    return {
-      provider,
-      model,
-      temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.1,
-      topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
-      topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 20,
-      maxOutputTokens: baseMaxTokens,
-      thinkingLevel: stageAiConfig?.thinkingLevel ?? globalAiConfig?.thinkingLevel ?? 'high',
-      reasoning: stageAiConfig?.reasoning ?? globalAiConfig?.reasoning,
-      verbosity: stageAiConfig?.verbosity ?? globalAiConfig?.verbosity
-    };
-  }
-
-  /**
-   * Apply provider-specific maximum token limits
+   * Apply provider-specific maximum token limits (API limieten, niet defaults)
+   * Dit voorkomt dat we meer tokens vragen dan de API aankan.
    */
   private applyProviderLimits(config: AiConfig, provider: 'google' | 'openai'): AiConfig {
-    const limit = AIConfigResolver.PROVIDER_LIMITS[provider];
+    const limit = AIConfigResolver.PROVIDER_MAX_LIMITS[provider];
 
-    return {
-      ...config,
-      maxOutputTokens: Math.min(config.maxOutputTokens, limit)
-    };
-  }
-
-  /**
-   * Apply stage and model-specific token adjustments
-   */
-  private applyTokenAdjustments(
-    config: AiConfig,
-    stageName: string,
-    model: string,
-    jobId?: string
-  ): AiConfig {
-    let adjustedTokens = config.maxOutputTokens;
-
-    // Deep Research models need more tokens for comprehensive reports
-    if (model.includes('deep-research')) {
-      const requirements = AIConfigResolver.TOKEN_REQUIREMENTS['deep-research'];
-
-      // Stage-specific token requirements
-      let stageRequirement: number;
-      if (stageName === '3_generatie') {
-        stageRequirement = requirements['3_generatie'];
-      } else if (stageName === '4a_BronnenSpecialist') {
-        stageRequirement = requirements['4a_BronnenSpecialist'];
-      } else {
-        stageRequirement = requirements.default;
-      }
-
-      adjustedTokens = Math.max(config.maxOutputTokens, stageRequirement);
-
-      if (jobId) {
-        console.log(`📦 [${jobId}] Increased tokens for Deep Research (${stageName}): ${adjustedTokens}`);
-      }
-
+    // Alleen limiteren als config meer vraagt dan API aankan
+    if (config.maxOutputTokens > limit) {
+      console.warn(
+        `⚠️ maxOutputTokens (${config.maxOutputTokens}) overschrijdt ${provider} limiet (${limit}). ` +
+        `Wordt beperkt tot ${limit}.`
+      );
       return {
         ...config,
-        maxOutputTokens: adjustedTokens
+        maxOutputTokens: limit
       };
     }
 
-    // Only adjust for reviewer stages (4a-4f) for non-deep-research models
-    if (!stageName.startsWith('4')) {
-      return config;
-    }
-    // GPT-4o also benefits from more tokens
-    else if (model.includes('gpt-4o')) {
-      const requirements = AIConfigResolver.TOKEN_REQUIREMENTS['gpt-4o'];
-      adjustedTokens = Math.max(config.maxOutputTokens, requirements.default);
-
-      if (jobId) {
-        console.log(`🎯 [${jobId}] Increased tokens for GPT-4o: ${adjustedTokens}`);
-      }
-    }
-    // Fallback for other models
-    else if (config.maxOutputTokens < 4096) {
-      const requirements = AIConfigResolver.TOKEN_REQUIREMENTS.default;
-      adjustedTokens = Math.max(config.maxOutputTokens, requirements.default);
-
-      if (jobId) {
-        console.log(`📈 [${jobId}] Applied minimum tokens: ${adjustedTokens}`);
-      }
-    }
-
-    return {
-      ...config,
-      maxOutputTokens: adjustedTokens
-    };
+    return config;
   }
 
   /**
-   * Enable deep research for Stage 3 when using Gemini 3 Pro
-   * Deep research is automatically enabled unless explicitly disabled
+   * Enable deep research for Stage 3 when using Gemini 3 Pro.
+   * Deep research settings komen uit config, niet hardcoded.
    */
   private enableDeepResearchIfNeeded(
     config: AiConfig,
@@ -278,15 +230,16 @@ export class AIConfigResolver {
       return config;
     }
 
-    // Enable deep research with default settings
+    // Enable deep research - settings komen uit stageAiConfig
+    // Als niet geconfigureerd, gebruik defaults die in Settings UI staan
     return {
       ...config,
       useDeepResearch: true,
-      useGrounding: true, // Deep research requires grounding
-      maxQuestions: (stageAiConfig as any)?.maxQuestions || 5,
-      parallelExecutors: (stageAiConfig as any)?.parallelExecutors || 3,
-      thinkingLevel: config.thinkingLevel || 'high',
-      polishPrompt: polishPrompt // Pass through polish instructions from stage config
+      useGrounding: (stageAiConfig as any)?.useGrounding ?? true,
+      maxQuestions: (stageAiConfig as any)?.maxQuestions,
+      parallelExecutors: (stageAiConfig as any)?.parallelExecutors,
+      thinkingLevel: config.thinkingLevel,
+      polishPrompt: polishPrompt
     } as any;
   }
 }

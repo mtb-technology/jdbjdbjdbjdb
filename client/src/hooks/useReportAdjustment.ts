@@ -2,19 +2,48 @@
  * useReportAdjustment Hook
  *
  * Manages the state and API calls for the "Rapport Aanpassen" feature.
- * Handles the flow: input → processing → preview → accept/reject
+ * Two-step flow (same as External Report tab):
+ * 1. Input instruction → AI generates JSON adjustments
+ * 2. Review each adjustment (accept/edit/reject) → AI applies accepted changes
  */
 
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import type { AdjustReportResponse, AcceptAdjustmentResponse } from "@shared/types/api";
 
-export type AdjustmentStage = "input" | "processing" | "preview";
+export type AdjustmentStage = "input" | "analyzing" | "review" | "applying" | "complete";
+export type AdjustmentStatus = "pending" | "accepted" | "modified" | "rejected";
+
+export interface AdjustmentItem {
+  id: string;
+  context: string;
+  oud: string;
+  nieuw: string;
+  reden: string;
+}
+
+export interface ReviewableAdjustment extends AdjustmentItem {
+  status: AdjustmentStatus;
+  modifiedNieuw?: string;
+}
+
+export interface DebugInfo {
+  promptUsed: string;
+  promptLength: number;
+  aiConfig: {
+    provider: string;
+    model: string;
+    temperature?: number;
+    topP?: number;
+    topK?: number;
+    maxOutputTokens?: number;
+  };
+  stage: string;
+}
 
 interface AdjustmentProposal {
   adjustmentId: string;
-  proposedContent: string;
+  adjustments: AdjustmentItem[];
   previousContent: string;
   instruction: string;
   createdAt: string;
@@ -26,17 +55,27 @@ interface UseReportAdjustmentReturn {
   stage: AdjustmentStage;
   instruction: string;
   proposal: AdjustmentProposal | null;
+  proposedAdjustments: ReviewableAdjustment[];
+  resultContent: string | null;
+  appliedCount: number;
   error: string | null;
-  isProcessing: boolean;
-  isAccepting: boolean;
+  isAnalyzing: boolean;
+  isApplying: boolean;
+
+  // Debug info
+  analyzeDebugInfo: DebugInfo | null;
+  applyDebugInfo: DebugInfo | null;
 
   // Actions
   openDialog: () => void;
   closeDialog: () => void;
   setInstruction: (text: string) => void;
   generateProposal: () => Promise<void>;
-  acceptProposal: () => Promise<void>;
-  rejectProposal: () => void;
+  setAdjustmentStatus: (id: string, status: AdjustmentStatus, modifiedNieuw?: string) => void;
+  acceptAll: () => void;
+  rejectAll: () => void;
+  applyAdjustments: () => Promise<void>;
+  goBackToInput: () => void;
 }
 
 export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn {
@@ -47,10 +86,15 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
   const [stage, setStage] = useState<AdjustmentStage>("input");
   const [instruction, setInstruction] = useState("");
   const [proposal, setProposal] = useState<AdjustmentProposal | null>(null);
+  const [proposedAdjustments, setProposedAdjustments] = useState<ReviewableAdjustment[]>([]);
+  const [resultContent, setResultContent] = useState<string | null>(null);
+  const [appliedCount, setAppliedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [analyzeDebugInfo, setAnalyzeDebugInfo] = useState<DebugInfo | null>(null);
+  const [applyDebugInfo, setApplyDebugInfo] = useState<DebugInfo | null>(null);
 
-  // Generate adjustment mutation
-  const generateMutation = useMutation({
+  // Generate adjustment mutation (Step 1: Analyze)
+  const analyzeMutation = useMutation({
     mutationFn: async (instructionText: string) => {
       const response = await apiRequest(
         "POST",
@@ -58,55 +102,89 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
         { instruction: instructionText }
       );
       const json = await response.json();
-      // API returns { success: true, data: {...} } format
-      const data = json.data as AdjustReportResponse;
-      return data;
+      return json.data as {
+        adjustmentId: string;
+        adjustments: AdjustmentItem[];
+        previousContent: string;
+        metadata: { instruction: string; createdAt: string; version: number };
+        _debug?: DebugInfo;
+      };
     },
     onSuccess: (data) => {
+      // Convert to reviewable adjustments with pending status
+      const adjustments = data.adjustments || [];
+      const reviewable: ReviewableAdjustment[] = adjustments.map(adj => ({
+        ...adj,
+        status: "pending" as AdjustmentStatus
+      }));
+      setProposedAdjustments(reviewable);
       setProposal({
         adjustmentId: data.adjustmentId,
-        proposedContent: data.proposedContent,
+        adjustments: adjustments,
         previousContent: data.previousContent,
-        instruction: data.metadata.instruction,
-        createdAt: data.metadata.createdAt,
+        instruction: data.metadata?.instruction || "",
+        createdAt: data.metadata?.createdAt || new Date().toISOString(),
       });
-      setStage("preview");
+      setStage("review");
       setError(null);
+      if (data._debug) {
+        setAnalyzeDebugInfo(data._debug);
+      }
     },
     onError: (err: Error) => {
-      setError(err.message || "Er is een fout opgetreden bij het genereren van de aanpassing");
+      setError(err.message || "Er is een fout opgetreden bij het analyseren");
       setStage("input");
     },
   });
 
-  // Accept adjustment mutation
-  const acceptMutation = useMutation({
+  // Apply adjustment mutation (Step 2: Apply via Editor)
+  const applyMutation = useMutation({
     mutationFn: async () => {
-      if (!proposal) throw new Error("Geen voorstel om te accepteren");
+      if (!proposal) throw new Error("Geen voorstel om toe te passen");
+
+      // Only send accepted/modified adjustments
+      const toApply = proposedAdjustments
+        .filter(adj => adj.status === "accepted" || adj.status === "modified")
+        .map(adj => ({
+          id: adj.id,
+          context: adj.context,
+          oud: adj.oud,
+          nieuw: adj.status === "modified" && adj.modifiedNieuw ? adj.modifiedNieuw : adj.nieuw,
+          reden: adj.reden
+        }));
 
       const response = await apiRequest(
         "POST",
-        `/api/reports/${reportId}/adjust/accept`,
+        `/api/reports/${reportId}/adjust/apply`,
         {
-          adjustmentId: proposal.adjustmentId,
-          proposedContent: proposal.proposedContent,
+          adjustments: toApply,
           instruction: proposal.instruction,
+          adjustmentId: proposal.adjustmentId
         }
       );
       const json = await response.json();
-      // API returns { success: true, data: {...} } format
-      const data = json.data as AcceptAdjustmentResponse;
-      return data;
+      return json.data as {
+        newContent: string;
+        appliedCount: number;
+        newVersion: number;
+        _debug?: DebugInfo;
+      };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       // Invalidate report query to refresh data
       queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
 
-      // Reset state and close dialog
-      resetState();
+      setResultContent(data.newContent);
+      setAppliedCount(data.appliedCount);
+      setStage("complete");
+      setError(null);
+      if (data._debug) {
+        setApplyDebugInfo(data._debug);
+      }
     },
     onError: (err: Error) => {
-      setError(err.message || "Er is een fout opgetreden bij het accepteren van de aanpassing");
+      setError(err.message || "Er is een fout opgetreden bij het toepassen");
+      setStage("review");
     },
   });
 
@@ -116,7 +194,12 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
     setStage("input");
     setInstruction("");
     setProposal(null);
+    setProposedAdjustments([]);
+    setResultContent(null);
+    setAppliedCount(0);
     setError(null);
+    setAnalyzeDebugInfo(null);
+    setApplyDebugInfo(null);
   }, []);
 
   // Open dialog
@@ -131,27 +214,58 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
     resetState();
   }, [resetState]);
 
-  // Generate proposal
+  // Generate proposal (Step 1)
   const generateProposal = useCallback(async () => {
     if (!instruction.trim() || instruction.length < 10) {
       setError("Instructie moet minimaal 10 karakters bevatten");
       return;
     }
 
-    setStage("processing");
+    setStage("analyzing");
     setError(null);
-    await generateMutation.mutateAsync(instruction);
-  }, [instruction, generateMutation]);
+    await analyzeMutation.mutateAsync(instruction);
+  }, [instruction, analyzeMutation]);
 
-  // Accept proposal
-  const acceptProposal = useCallback(async () => {
-    await acceptMutation.mutateAsync();
-  }, [acceptMutation]);
+  // Set adjustment status
+  const setAdjustmentStatus = useCallback((id: string, status: AdjustmentStatus, modifiedNieuw?: string) => {
+    setProposedAdjustments(prev => prev.map(adj =>
+      adj.id === id
+        ? { ...adj, status, modifiedNieuw: modifiedNieuw ?? adj.modifiedNieuw }
+        : adj
+    ));
+  }, []);
 
-  // Reject proposal (go back to input)
-  const rejectProposal = useCallback(() => {
+  // Accept all adjustments
+  const acceptAll = useCallback(() => {
+    setProposedAdjustments(prev => prev.map(adj => ({ ...adj, status: "accepted" as AdjustmentStatus })));
+  }, []);
+
+  // Reject all adjustments
+  const rejectAll = useCallback(() => {
+    setProposedAdjustments(prev => prev.map(adj => ({ ...adj, status: "rejected" as AdjustmentStatus })));
+  }, []);
+
+  // Apply adjustments (Step 2)
+  const applyAdjustments = useCallback(async () => {
+    const acceptedCount = proposedAdjustments.filter(
+      adj => adj.status === "accepted" || adj.status === "modified"
+    ).length;
+
+    if (acceptedCount === 0) {
+      setError("Selecteer minimaal één aanpassing om toe te passen");
+      return;
+    }
+
+    setStage("applying");
+    setError(null);
+    await applyMutation.mutateAsync();
+  }, [proposedAdjustments, applyMutation]);
+
+  // Go back to input (from review)
+  const goBackToInput = useCallback(() => {
     setStage("input");
     setProposal(null);
+    setProposedAdjustments([]);
     setError(null);
     // Keep instruction so user can modify it
   }, []);
@@ -162,16 +276,26 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
     stage,
     instruction,
     proposal,
+    proposedAdjustments,
+    resultContent,
+    appliedCount,
     error,
-    isProcessing: generateMutation.isPending,
-    isAccepting: acceptMutation.isPending,
+    isAnalyzing: analyzeMutation.isPending,
+    isApplying: applyMutation.isPending,
+
+    // Debug info
+    analyzeDebugInfo,
+    applyDebugInfo,
 
     // Actions
     openDialog,
     closeDialog,
     setInstruction,
     generateProposal,
-    acceptProposal,
-    rejectProposal,
+    setAdjustmentStatus,
+    acceptAll,
+    rejectAll,
+    applyAdjustments,
+    goBackToInput,
   };
 }

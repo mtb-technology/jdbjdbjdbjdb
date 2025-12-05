@@ -274,16 +274,68 @@ export const externalReportAdjustResponseSchema = z.object({
   version: z.number()
 });
 
-// Accept adjustment
+// Accept adjustment (legacy)
 export const externalReportAcceptSchema = z.object({
   proposedContent: z.string(),
   instruction: z.string()
+});
+
+// New two-step flow schemas
+
+// Step 1: Analyze - generates JSON with proposed adjustments
+export const externalReportAnalyzeRequestSchema = z.object({
+  instruction: z.string()
+    .min(10, "Instructie moet minimaal 10 karakters bevatten")
+    .max(10000, "Instructie mag niet langer zijn dan 10000 karakters")
+});
+
+// Single adjustment item in the analysis response
+export const adjustmentItemSchema = z.object({
+  id: z.string(), // Generated ID for tracking
+  context: z.string(), // Location in report (e.g., "Paragraaf Box 3")
+  oud: z.string(), // Exact text to replace
+  nieuw: z.string(), // Replacement text
+  reden: z.string() // Reason for change
+});
+
+// Step 1 response: array of adjustments
+export const externalReportAnalyzeResponseSchema = z.object({
+  success: z.boolean(),
+  adjustments: z.array(adjustmentItemSchema),
+  instruction: z.string(),
+  version: z.number()
+});
+
+// Step 2: Apply - user sends accepted/modified adjustments
+export const externalReportApplyRequestSchema = z.object({
+  adjustments: z.array(z.object({
+    id: z.string(),
+    context: z.string(),
+    oud: z.string(),
+    nieuw: z.string(),
+    reden: z.string(),
+    status: z.enum(["accepted", "modified"]) // Only accepted/modified items are sent
+  })),
+  instruction: z.string() // Original instruction for history
+});
+
+// Step 2 response: final adjusted report
+export const externalReportApplyResponseSchema = z.object({
+  success: z.boolean(),
+  newContent: z.string(),
+  appliedCount: z.number(),
+  version: z.number()
 });
 
 export type CreateExternalReportSession = z.infer<typeof createExternalReportSessionSchema>;
 export type ExternalReportAdjustRequest = z.infer<typeof externalReportAdjustRequestSchema>;
 export type ExternalReportAdjustResponse = z.infer<typeof externalReportAdjustResponseSchema>;
 export type ExternalReportAcceptRequest = z.infer<typeof externalReportAcceptSchema>;
+export type AdjustmentItem = z.infer<typeof adjustmentItemSchema>;
+export type ExternalReportAnalyzeRequest = z.infer<typeof externalReportAnalyzeRequestSchema>;
+export type ExternalReportAnalyzeResponse = z.infer<typeof externalReportAnalyzeResponseSchema>;
+export type ExternalReportApplyRequest = z.infer<typeof externalReportApplyRequestSchema>;
+export type ExternalReportApplyResponse = z.infer<typeof externalReportApplyResponseSchema>;
 
 export type ReportListResponse = z.infer<typeof reportListResponseSchema>;
 export type ReportDetailResponse = z.infer<typeof reportDetailResponseSchema>;

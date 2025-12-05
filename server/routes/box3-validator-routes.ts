@@ -4,7 +4,12 @@ import { asyncHandler, ServerError } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { storage } from "../storage";
 import { AIModelFactory } from "../services/ai-models/ai-model-factory";
+import { AIConfigResolver } from "../services/ai-config-resolver";
 import { box3ValidationResultSchema, insertBox3ValidatorSessionSchema } from "@shared/schema";
+import type { PromptConfig } from "@shared/schema";
+
+// Shared config resolver
+const configResolver = new AIConfigResolver();
 
 export const box3ValidatorRouter = Router();
 
@@ -214,20 +219,23 @@ ${attachmentTexts.length > 0 ? attachmentTexts.join('\n\n') : 'Geen tekst-extrac
 
 Analyseer alle bovenstaande input en geef je validatie als JSON.`;
 
-    console.log(`📋 [Box3Validator] Calling Gemini 3 Pro with ${visionAttachments.length} vision attachments`);
+    console.log(`📋 [Box3Validator] Calling AI with ${visionAttachments.length} vision attachments`);
 
-    // Call Gemini 3 Pro with high thinking
+    // Get AI config via AIConfigResolver - GEEN hardcoded defaults
+    // Box3 validator gebruikt global aiConfig (geen aparte stage config)
+    const activeConfig = await storage.getActivePromptConfig();
+    const promptConfig = activeConfig?.config as PromptConfig;
+
+    const aiConfig = configResolver.resolveForOperation(
+      'box3_validator',
+      promptConfig,
+      `box3-validator-${Date.now()}`
+    );
+
+    // Call AI with config from database
     const factory = AIModelFactory.getInstance();
     const result = await factory.callModel(
-      {
-        provider: 'google',
-        model: 'gemini-3-pro-preview',
-        temperature: 0.1,
-        topP: 0.95,
-        topK: 20,
-        maxOutputTokens: 16384,
-        thinkingLevel: 'high'
-      },
+      aiConfig,
       `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
       {
         jobId: `box3-validator-${Date.now()}`,
@@ -471,20 +479,23 @@ ${attachmentTexts.length > 0 ? attachmentTexts.join('\n\n') : 'Geen tekst-extrac
 
 Analyseer alle bovenstaande input en geef je validatie als JSON.`;
 
-    console.log(`📋 [Box3Validator] Re-validating with Gemini 3 Pro: ${visionAttachments.length} vision attachments`);
+    console.log(`📋 [Box3Validator] Re-validating with ${visionAttachments.length} vision attachments`);
 
-    // Call Gemini 3 Pro with high thinking
+    // Get AI config via AIConfigResolver - GEEN hardcoded defaults
+    // Box3 validator gebruikt global aiConfig (geen aparte stage config)
+    const activeConfig = await storage.getActivePromptConfig();
+    const promptConfig = activeConfig?.config as PromptConfig;
+
+    const aiConfig = configResolver.resolveForOperation(
+      'box3_validator',
+      promptConfig,
+      `box3-revalidate-${Date.now()}`
+    );
+
+    // Call AI with config from database
     const factory = AIModelFactory.getInstance();
     const result = await factory.callModel(
-      {
-        provider: 'google',
-        model: 'gemini-3-pro-preview',
-        temperature: 0.1,
-        topP: 0.95,
-        topK: 20,
-        maxOutputTokens: 16384,
-        thinkingLevel: 'high'
-      },
+      aiConfig,
       `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
       {
         jobId: `box3-revalidate-${Date.now()}`,

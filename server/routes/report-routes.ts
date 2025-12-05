@@ -26,6 +26,7 @@ import { SSEHandler } from "../services/streaming/sse-handler";
 import { StreamingSessionManager } from "../services/streaming/streaming-session-manager";
 import { PromptBuilder } from "../services/prompt-builder";
 import { AIModelFactory } from "../services/ai-models/ai-model-factory";
+import { AIConfigResolver } from "../services/ai-config-resolver";
 import { z } from "zod";
 import { ServerError, asyncHandler, getErrorMessage, isErrorWithMessage } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
@@ -1980,31 +1981,18 @@ Gebruik bullet points. Max 150 woorden.
 
     console.log(`📝 [${reportId}] Adjustment prompt loaded from config (${adjustmentConfig.prompt.length} chars)`);
 
-    // Get AI config from adjustment stage settings, or global config
-    const stageAiConfig = adjustmentConfig.aiConfig;
-    const globalAiConfig = (activeConfig?.config as PromptConfig)?.aiConfig;
+    // Get AI config via AIConfigResolver - GEEN hardcoded defaults
+    const configResolver = new AIConfigResolver();
+    const aiConfig = configResolver.resolveForStage(
+      'adjustment',
+      adjustmentConfig ? { aiConfig: adjustmentConfig.aiConfig } : undefined,
+      { aiConfig: (activeConfig?.config as PromptConfig)?.aiConfig },
+      `adjust-${reportId}`
+    );
 
-    // Require AI config - no defaults
-    if (!stageAiConfig?.provider && !globalAiConfig?.provider) {
-      throw ServerError.business(
-        ERROR_CODES.VALIDATION_FAILED,
-        'AI configuratie niet gevonden. Configureer de AI instellingen in Instellingen.'
-      );
-    }
+    console.log(`📝 [${reportId}] Using AI config from database:`, aiConfig.provider, aiConfig.model);
 
-    // Build AI config from stage or global settings
-    const aiConfig = {
-      provider: (stageAiConfig?.provider || globalAiConfig?.provider) as 'google' | 'openai',
-      model: stageAiConfig?.model || globalAiConfig?.model || 'gemini-2.5-pro',
-      temperature: stageAiConfig?.temperature ?? globalAiConfig?.temperature ?? 0.3,
-      topP: stageAiConfig?.topP ?? globalAiConfig?.topP ?? 0.95,
-      topK: stageAiConfig?.topK ?? globalAiConfig?.topK ?? 40,
-      maxOutputTokens: stageAiConfig?.maxOutputTokens ?? globalAiConfig?.maxOutputTokens ?? 65536
-    };
-
-    console.log(`📝 [${reportId}] Using AI config:`, aiConfig.provider, aiConfig.model);
-
-    // Call AI to generate adjusted report
+    // Call AI to generate JSON adjustments (like reviewers)
     const aiFactory = AIModelFactory.getInstance();
     const response = await aiFactory.callModel(
       aiConfig,
@@ -2015,34 +2003,206 @@ Gebruik bullet points. Max 150 woorden.
       }
     );
 
-    const proposedContent = response.content;
+    // Parse JSON response from AI (same as external-report-routes)
+    let adjustments: Array<{ context: string; oud: string; nieuw: string; reden: string }> = [];
+    try {
+      // Extract JSON from response (may be wrapped in markdown code blocks)
+      let jsonStr = response.content;
+      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1].trim();
+      }
 
-    console.log(`✅ [${reportId}] Adjustment proposal generated: ${adjustmentId} (${proposedContent.length} chars)`);
+      const parsed = JSON.parse(jsonStr);
+      adjustments = parsed.aanpassingen || parsed.adjustments || [];
 
-    // Return the proposal (NOT committed yet)
+      // Add IDs to each adjustment
+      adjustments = adjustments.map((adj, idx) => ({
+        id: `adj-${reportId}-${adjustmentNumber}-${idx}`,
+        ...adj
+      }));
+    } catch (parseError) {
+      console.error(`❌ [${reportId}] Failed to parse AI response as JSON:`, parseError);
+      console.error(`❌ [${reportId}] Raw AI response:`, response.content.substring(0, 500));
+      // Return empty adjustments with debug info so user can see what went wrong
+      res.json(createApiSuccessResponse({
+        success: true,
+        adjustmentId,
+        adjustments: [],
+        previousContent,
+        metadata: {
+          version: adjustmentNumber,
+          instruction,
+          createdAt: new Date().toISOString()
+        },
+        _debug: {
+          promptUsed: adjustmentPrompt,
+          promptLength: adjustmentPrompt.length,
+          aiConfig,
+          stage: "adjustment",
+          parseError: String(parseError),
+          rawResponse: response.content.substring(0, 2000) // First 2000 chars of raw response
+        }
+      }, 'AI response kon niet worden geparsed als JSON - bekijk Developer Tools voor details'));
+      return;
+    }
+
+    console.log(`✅ [${reportId}] Adjustment analysis complete: ${adjustments.length} adjustments proposed`);
+
+    // Return JSON adjustments for review (NOT committed yet)
     res.json(createApiSuccessResponse({
       success: true,
       adjustmentId,
-      proposedContent,
+      adjustments,
       previousContent,
       metadata: {
         version: adjustmentNumber,
         instruction,
         createdAt: new Date().toISOString()
+      },
+      // Debug info: include prompt details
+      _debug: {
+        promptUsed: adjustmentPrompt,
+        promptLength: adjustmentPrompt.length,
+        aiConfig,
+        stage: "adjustment"
       }
-    }, 'Aanpassing voorstel gegenereerd - controleer de wijzigingen en accepteer of wijs af'));
+    }, `${adjustments.length} aanpassingen gevonden - beoordeel en pas toe`));
+  }));
+
+  /**
+   * POST /api/reports/:id/adjust/apply
+   * Step 2: Apply accepted adjustments using Editor prompt (Chirurgische Redacteur)
+   *
+   * This takes the reviewed adjustments and uses the Editor to apply them to the report.
+   */
+  app.post("/api/reports/:id/adjust/apply", asyncHandler(async (req: Request, res: Response) => {
+    const { id: reportId } = req.params;
+
+    console.log(`✏️ [${reportId}] Applying adjustments`);
+
+    // Validate request - expect adjustments array and instruction
+    const { adjustments, instruction, adjustmentId } = req.body;
+
+    if (!adjustments || !Array.isArray(adjustments) || adjustments.length === 0) {
+      throw ServerError.business(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Geen aanpassingen om toe te passen. Selecteer minimaal één aanpassing.'
+      );
+    }
+
+    // Get report
+    const report = await storage.getReport(reportId);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Get the latest concept report content
+    const currentContent = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
+    if (!currentContent) {
+      throw ServerError.business(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Geen concept rapport gevonden om aan te passen.'
+      );
+    }
+
+    // Get editor prompt from config (Chirurgische Redacteur)
+    const activeConfig = await storage.getActivePromptConfig();
+    const editorConfig = (activeConfig?.config as PromptConfig)?.editor;
+
+    if (!editorConfig?.prompt || editorConfig.prompt.trim().length === 0) {
+      throw ServerError.business(
+        ERROR_CODES.VALIDATION_FAILED,
+        'Editor (Chirurgische Redacteur) prompt niet geconfigureerd. Ga naar Instellingen en vul de "Editor" prompt in.'
+      );
+    }
+
+    // Format adjustments for the editor prompt (same format as reviewer feedback)
+    const adjustmentsText = adjustments.map((adj: { context: string; oud: string; nieuw: string; reden: string }, idx: number) =>
+      `${idx + 1}. [${adj.context}]\n   OUD: "${adj.oud}"\n   NIEUW: "${adj.nieuw}"\n   REDEN: ${adj.reden}`
+    ).join('\n\n');
+
+    // Replace placeholders (editor prompt uses these placeholders)
+    const editorPrompt = editorConfig.prompt
+      .replace(/{HUIDIGE_RAPPORT}/g, currentContent)
+      .replace(/{CONCEPT_RAPPORT}/g, currentContent)
+      .replace(/{AANPASSINGEN}/g, adjustmentsText)
+      .replace(/{FEEDBACK}/g, adjustmentsText)
+      .replace(/{AANTAL_AANPASSINGEN}/g, String(adjustments.length));
+
+    // Get AI config via AIConfigResolver - GEEN hardcoded defaults
+    const editorConfigResolver = new AIConfigResolver();
+    const aiConfig = editorConfigResolver.resolveForStage(
+      'editor',
+      editorConfig ? { aiConfig: editorConfig.aiConfig } : undefined,
+      { aiConfig: (activeConfig?.config as PromptConfig)?.aiConfig },
+      `apply-${reportId}`
+    );
+
+    console.log(`✏️ [${reportId}] Applying ${adjustments.length} adjustments with ${aiConfig.provider}/${aiConfig.model}`);
+
+    // Call AI (Editor)
+    const aiFactory = AIModelFactory.getInstance();
+    const response = await aiFactory.callModel(
+      aiConfig,
+      editorPrompt,
+      {
+        timeout: 300000, // 5 minutes
+        jobId: `adjust-apply-${reportId}`
+      }
+    );
+
+    const newContent = response.content;
+
+    // Create snapshot for the adjustment
+    const snapshot = await reportProcessor.createSnapshot(
+      reportId,
+      adjustmentId as StageId,
+      newContent
+    );
+
+    // Update concept versions with the new adjustment
+    const updatedVersions = await reportProcessor.updateConceptVersions(
+      reportId,
+      adjustmentId as StageId,
+      snapshot
+    );
+
+    // Update report with new version and content
+    await storage.updateReport(reportId, {
+      conceptReportVersions: updatedVersions,
+      generatedContent: newContent, // Update preview content
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ [${reportId}] Applied ${adjustments.length} adjustments - v${snapshot.v}`);
+
+    res.json(createApiSuccessResponse({
+      success: true,
+      newContent,
+      appliedCount: adjustments.length,
+      newVersion: snapshot.v,
+      stageId: adjustmentId,
+      // Debug info
+      _debug: {
+        promptUsed: editorPrompt,
+        promptLength: editorPrompt.length,
+        aiConfig,
+        stage: "editor"
+      }
+    }, `${adjustments.length} aanpassingen toegepast - nieuwe versie ${snapshot.v}`));
   }));
 
   /**
    * POST /api/reports/:id/adjust/accept
-   * Accept a previously generated adjustment proposal
+   * LEGACY: Accept a previously generated adjustment proposal (direct content)
    *
-   * This commits the proposed content as a new version in conceptReportVersions.
+   * Kept for backwards compatibility. New flow uses /adjust/apply instead.
    */
   app.post("/api/reports/:id/adjust/accept", asyncHandler(async (req: Request, res: Response) => {
     const { id: reportId } = req.params;
 
-    console.log(`✅ [${reportId}] Accepting adjustment`);
+    console.log(`✅ [${reportId}] Accepting adjustment (legacy)`);
 
     // Validate request
     const validatedData = acceptAdjustmentRequestSchema.parse(req.body);

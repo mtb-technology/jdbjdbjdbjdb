@@ -11,3 +11,4 @@ export { StageConfigCard } from "./StageConfigCard";
 export { GlobalAiConfigCard } from "./GlobalAiConfigCard";
 export { PipelineHeader } from "./PipelineHeader";
 export { WorkflowInfoCard } from "./WorkflowInfoCard";
+export { ToolAiConfigCard, TOOL_CONFIGS } from "./ToolAiConfigCard";

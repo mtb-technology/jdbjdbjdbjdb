@@ -9,6 +9,7 @@ import {
 } from '@shared/schema';
 import { storage } from '../storage';
 import { getActivePromptConfig } from '../storage';
+import { AIConfigResolver } from './ai-config-resolver';
 
 // Temporary AI handler interface - will integrate with existing AI system
 interface AIHandler {
@@ -139,17 +140,25 @@ export class ReportProcessor {
     // Get active prompt config for editor prompt and AI settings
     const promptConfig = await getActivePromptConfig();
     const editorConfig = promptConfig.editor;
-    const aiConfig = editorConfig?.aiConfig || promptConfig.aiConfig;
+
+    // Gebruik AIConfigResolver - GEEN hardcoded defaults
+    const configResolver = new AIConfigResolver();
+    const aiConfig = configResolver.resolveForStage(
+      'editor',
+      editorConfig ? { aiConfig: editorConfig.aiConfig } : undefined,
+      { aiConfig: promptConfig.aiConfig },
+      'report-processor-merge'
+    );
 
     // Build prompt using LEGACY prompt building (should be replaced with PromptBuilder)
     const prompt = await this.buildMergePrompt(input, editorConfig?.prompt);
 
-    // Use AI config from editor or fallback to global config
+    // Use AI config from database - geen fallbacks
     const response = await this.aiHandler.generateContent({
       prompt,
-      temperature: aiConfig?.temperature ?? 0.1,
-      topP: aiConfig?.topP ?? 0.9,
-      maxOutputTokens: aiConfig?.maxOutputTokens ?? 32768
+      temperature: aiConfig.temperature,
+      topP: aiConfig.topP ?? 0.95,
+      maxOutputTokens: aiConfig.maxOutputTokens
     });
 
     if (!response.content) {
@@ -437,18 +446,25 @@ ${feedback}
   }> {
     console.log(`🏭 [ReportProcessor] Processing ${stageId} with pre-built prompt (${preBuiltPrompt.length} chars)`);
 
-    // Get AI config
+    // Get AI config via AIConfigResolver - GEEN hardcoded defaults
     const promptConfig = await getActivePromptConfig();
     const parsedConfig = promptConfig as any;
     const editorConfig = parsedConfig.editor || parsedConfig['5_feedback_verwerker'];
-    const aiConfig = editorConfig?.aiConfig || parsedConfig.aiConfig;
 
-    // Call AI with pre-built prompt
+    const configResolver = new AIConfigResolver();
+    const aiConfig = configResolver.resolveForStage(
+      'editor',
+      editorConfig ? { aiConfig: editorConfig.aiConfig } : undefined,
+      { aiConfig: parsedConfig.aiConfig },
+      'report-processor-prebuilt'
+    );
+
+    // Call AI with pre-built prompt - config uit database
     const response = await this.aiHandler.generateContent({
       prompt: preBuiltPrompt,
-      temperature: aiConfig?.temperature ?? 0.1,
-      topP: aiConfig?.topP ?? 0.9,
-      maxOutputTokens: aiConfig?.maxOutputTokens ?? 32768
+      temperature: aiConfig.temperature,
+      topP: aiConfig.topP ?? 0.95,
+      maxOutputTokens: aiConfig.maxOutputTokens
     });
 
     if (!response.content) {
