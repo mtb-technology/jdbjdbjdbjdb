@@ -11,6 +11,7 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import type { WorkflowState, WorkflowAction } from "@/components/workflow/WorkflowContext";
 import type { ExecuteStageMutation, ReportDepth } from "@/components/workflow/types";
@@ -132,7 +133,9 @@ export function useStageActions({
         title: "Feedback verwerkt",
         description: `Feedback voor ${stageKey} is succesvol verwerkt - versie ${response?.newVersion || "onbekend"}`,
       });
-      queryClient.invalidateQueries({ queryKey: ["report", state.currentReport?.id] });
+      if (state.currentReport?.id) {
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
+      }
     },
     [dispatch, toast, queryClient, state.currentReport?.id]
   );
@@ -149,8 +152,7 @@ export function useStageActions({
       dispatch({ type: "CLEAR_STAGE_PROMPTS" });
 
       // Invalidate prompt settings cache
-      queryClient.invalidateQueries({ queryKey: ["prompt-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/settings/prompts"] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.prompts.all() });
 
       toast({
         title: "Prompts herladen",

@@ -6,6 +6,7 @@
 
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import { retryWithBackoff, getErrorMessage } from "@/utils/retryUtils";
 import type { ProcessFeedbackRequest, ProcessFeedbackResponse } from "@shared/types/api";
@@ -34,7 +35,7 @@ export function useFeedbackMutations({
 
   // Fetch AI service status
   const { data: aiStatus } = useQuery<AIServiceStatus>({
-    queryKey: ["ai-status"],
+    queryKey: QUERY_KEYS.ai.status(),
     queryFn: async () => {
       const response = await fetch("/api/health/ai");
       if (!response.ok) throw new Error("Failed to fetch AI status");
@@ -79,7 +80,7 @@ export function useFeedbackMutations({
       onClearInstructions();
 
       // Invalidate queries to refresh data
-      queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(reportId) });
 
       toast({
         title: "Feedback verwerkt",

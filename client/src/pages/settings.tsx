@@ -15,6 +15,7 @@
 
 import { useState, useEffect, memo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,7 @@ const Settings = memo(function Settings() {
 
   // Query
   const { data: activePromptConfig, isLoading, refetch } = useQuery<PromptConfigRecord>({
-    queryKey: ["/api/prompts/active"],
+    queryKey: QUERY_KEYS.prompts.active(),
     staleTime: 0,
     gcTime: 0,
     refetchOnMount: "always",

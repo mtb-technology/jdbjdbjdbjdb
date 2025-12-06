@@ -149,9 +149,10 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
     // Override res.status to track status codes
     res.status = function(code: number) {
       if (code >= 400) {
-        // On error status, reject the promise
+        // On error status, just mark as complete - don't reject (avoids crash)
         cleanup();
-        rejectRequest!(new Error(`Request failed with status ${code}`));
+        // Silently resolve to avoid unhandled rejection crash
+        resolveRequest!();
       }
       return originalStatus(code);
     };

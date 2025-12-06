@@ -69,7 +69,7 @@ const initialState: WorkflowState = {
   customInput: "",
   viewMode: "stage",
   editingStage: null,
-  expandedSteps: ["1_informatiecheck", "2_complexiteitscheck", "3_generatie"],
+  expandedSteps: ["1a_informatiecheck", "1b_informatiecheck_email", "2_complexiteitscheck", "3_generatie"],
   manualMode: "ai",
   manualContent: "",
   manualModes: {},
@@ -303,7 +303,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
       
       // Calculate proper stage index based on completed stages (same logic as initialization)
       const WORKFLOW_STAGES = [
-        { key: "1_informatiecheck" },
+        { key: "1a_informatiecheck" },
+        { key: "1b_informatiecheck_email" },
         { key: "2_complexiteitscheck" },
         { key: "3_generatie" },
         { key: "4a_BronnenSpecialist" },

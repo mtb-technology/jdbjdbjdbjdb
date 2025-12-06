@@ -23,7 +23,7 @@ export function getOutputPreview(
     .trim();
 
   // Stage-specific preview extraction
-  if (stageKey === "1_informatiecheck") {
+  if (stageKey === "1a_informatiecheck") {
     const klantMatch = cleaned.match(/Klant[^:]*:\s*([^,\n]+)/i);
     if (klantMatch) {
       return `Klant: ${klantMatch[1].trim().substring(0, 60)}`;
@@ -41,7 +41,8 @@ export function getOutputPreview(
  * Stage-specific result labels
  */
 const RESULT_LABELS: Record<string, string> = {
-  "1_informatiecheck": "Dossieranalyse",
+  "1a_informatiecheck": "Dossieranalyse",
+  "1b_informatiecheck_email": "Email concept",
   "2_complexiteitscheck": "Bouwplan",
   "3_generatie": "Concept rapport",
   "4a_BronnenSpecialist": "Bronnen feedback",

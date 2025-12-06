@@ -11,6 +11,7 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiData } from "@/types/settings.types";
 
@@ -134,7 +135,7 @@ export function usePromptBackup(
         });
 
         // Refresh the data
-        queryClient.invalidateQueries({ queryKey: ["/api/prompts/active"] });
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.prompts.active() });
         refetch();
       } catch (error) {
         console.error("Restore failed:", error);

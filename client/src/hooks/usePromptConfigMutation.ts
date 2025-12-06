@@ -10,6 +10,7 @@
 import { useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import type { PromptConfig, AiConfig, PromptConfigRecord } from "@shared/schema";
 import type { MutationContext } from "@/types/settings.types";
@@ -63,14 +64,14 @@ export function usePromptConfigMutation(
     },
     onMutate: async (newData) => {
       // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ["/api/prompts/active"] });
-      await queryClient.cancelQueries({ queryKey: ["/api/prompts"] });
+      await queryClient.cancelQueries({ queryKey: QUERY_KEYS.prompts.active() });
+      await queryClient.cancelQueries({ queryKey: QUERY_KEYS.prompts.all() });
 
       // Snapshot previous values
-      const previousData = queryClient.getQueryData(["/api/prompts/active"]);
+      const previousData = queryClient.getQueryData(QUERY_KEYS.prompts.active());
 
       // Optimistically update
-      queryClient.setQueryData(["/api/prompts/active"], (old: PromptConfigRecord | undefined) => ({
+      queryClient.setQueryData(QUERY_KEYS.prompts.active(), (old: PromptConfigRecord | undefined) => ({
         ...old,
         config: newData.config,
       }));
@@ -80,7 +81,7 @@ export function usePromptConfigMutation(
     onError: (err, _newData, context) => {
       // Rollback on error
       if (context?.previousData) {
-        queryClient.setQueryData(["/api/prompts/active"], context.previousData);
+        queryClient.setQueryData(QUERY_KEYS.prompts.active(), context.previousData);
       }
 
       toast({
@@ -90,8 +91,7 @@ export function usePromptConfigMutation(
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/prompts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/prompts/active"] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.prompts.all() });
       toast({
         title: "Configuratie opgeslagen",
         description: "Prompt configuratie is succesvol bijgewerkt.",
@@ -119,9 +119,9 @@ export function usePromptConfigMutation(
       });
 
       // Make sure we have the latest data before saving
-      const currentConfig = queryClient.getQueryData(["/api/prompts/active"]);
+      const currentConfig = queryClient.getQueryData(QUERY_KEYS.prompts.active());
       if (!currentConfig) {
-        await queryClient.fetchQuery({ queryKey: ["/api/prompts/active"] });
+        await queryClient.fetchQuery({ queryKey: QUERY_KEYS.prompts.active() });
       }
 
       // Save with optimistic updates and error handling

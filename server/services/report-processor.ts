@@ -359,8 +359,7 @@ ${feedback}
       "4b_FiscaalTechnischSpecialist",
       "4c_ScenarioGatenAnalist",
       "4e_DeAdvocaat",
-      "4f_HoofdCommunicatie",
-      "5_eindredactie"
+      "4f_HoofdCommunicatie"
     ];
 
     const currentIndex = stageOrder.indexOf(stageId);
@@ -588,7 +587,6 @@ ${feedback}
       case '4c_ScenarioGatenAnalist': value = versions['4c_ScenarioGatenAnalist']; break;
       case '4e_DeAdvocaat': value = versions['4e_DeAdvocaat']; break;
       case '4f_HoofdCommunicatie': value = versions['4f_HoofdCommunicatie']; break;
-      case '5_eindredactie': value = versions['5_eindredactie']; break;
       default: return null;
     }
 
@@ -619,8 +617,7 @@ ${feedback}
       case '4c_ScenarioGatenAnalist': versions['4c_ScenarioGatenAnalist'] = snapshot; break;
       case '4e_DeAdvocaat': versions['4e_DeAdvocaat'] = snapshot; break;
       case '4f_HoofdCommunicatie': versions['4f_HoofdCommunicatie'] = snapshot; break;
-      case '5_eindredactie': versions['5_eindredactie'] = snapshot; break;
-      default: 
+      default:
         console.warn(`⚠️ [ReportProcessor] Cannot set snapshot for unknown stage: ${stageId}`);
     }
     

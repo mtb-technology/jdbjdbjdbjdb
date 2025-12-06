@@ -9,6 +9,8 @@ import type {
   PendingChanges,
   SpecialistChanges,
   DocumentSnapshot,
+  DocumentSnapshots,
+  ChangeStatus,
 } from "@shared/document-types";
 
 export const documentRouter = Router();
@@ -87,9 +89,9 @@ documentRouter.post(
     };
 
     await storage.updateReport(reportId, {
-      pendingChanges: updatedChanges as any,
+      pendingChanges: updatedChanges,
       updatedAt: new Date(),
-    });
+    } as Parameters<typeof storage.updateReport>[1]);
 
     res.json({
       success: true,
@@ -146,9 +148,9 @@ documentRouter.post(
     }
 
     await storage.updateReport(reportId, {
-      pendingChanges: pendingChanges as any,
+      pendingChanges: pendingChanges,
       updatedAt: new Date(),
-    });
+    } as Parameters<typeof storage.updateReport>[1]);
 
     res.json({
       success: true,
@@ -196,7 +198,7 @@ documentRouter.post(
       if (change.status === 'pending') {
         return {
           ...change,
-          status: newStatus as any,
+          status: newStatus as ChangeStatus,
           ...(action === 'accept' && { appliedAt: now }),
         };
       }
@@ -207,9 +209,9 @@ documentRouter.post(
     pendingChanges[specialistId].reviewedAt = now;
 
     await storage.updateReport(reportId, {
-      pendingChanges: pendingChanges as any,
+      pendingChanges: pendingChanges,
       updatedAt: new Date(),
-    });
+    } as Parameters<typeof storage.updateReport>[1]);
 
     const changesCount = pendingChanges[specialistId].changes.filter(
       c => c.status === newStatus
@@ -267,7 +269,7 @@ documentRouter.post(
     }
 
     // Create snapshot
-    const snapshots = (report.documentSnapshots as any) || {};
+    const snapshots = (report.documentSnapshots as DocumentSnapshots) || {};
     const snapshotId = `snapshot-${Date.now()}`;
     snapshots[snapshotId] = {
       stageId: report.currentStage || '',
@@ -277,10 +279,10 @@ documentRouter.post(
     };
 
     await storage.updateReport(reportId, {
-      pendingChanges: pendingChanges as any,
+      pendingChanges: pendingChanges,
       documentSnapshots: snapshots,
       updatedAt: new Date(),
-    });
+    } as Parameters<typeof storage.updateReport>[1]);
 
     res.json({
       success: true,

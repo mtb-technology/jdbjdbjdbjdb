@@ -33,7 +33,7 @@ export interface StagePromptConfig {
  * // ... herhaalt voor elke stage
  *
  * // Nieuw (DRY):
- * const stage1Prompt = promptBuilder.build("1_informatiecheck", stageConfig, () =>
+ * const stage1Prompt = promptBuilder.build("1a_informatiecheck", stageConfig, () =>
  *   promptBuilder.buildInformatieCheckData(dossier)
  * );
  * ```
@@ -70,8 +70,8 @@ export interface StagePromptConfig {
  * ```typescript
  * const promptBuilder = new PromptBuilder();
  *
- * // Voor Stage 1 (Informatiecheck)
- * const stage1Prompt = promptBuilder.build("1_informatiecheck", stageConfig, () =>
+ * // Voor Stage 1a (Informatiecheck Analyse)
+ * const stage1Prompt = promptBuilder.build("1a_informatiecheck", stageConfig, () =>
  *   promptBuilder.buildInformatieCheckData(dossier)
  * );
  *
@@ -202,10 +202,18 @@ export class PromptBuilder {
   }
 
   /**
+   * Extract data for Stage 1b: Informatie Email (only runs if 1a returns INCOMPLEET)
+   * Passes the 1a analysis result to the email generator
+   */
+  buildInformatieEmailData(previousStageResults: Record<string, string>): string {
+    return previousStageResults?.['1a_informatiecheck'] || '{}';
+  }
+
+  /**
    * Extract data for Stage 2: Complexiteitscheck
    */
   buildComplexiteitsCheckData(previousStageResults: Record<string, string>): string {
-    return previousStageResults?.['1_informatiecheck'] || '{}';
+    return previousStageResults?.['1a_informatiecheck'] || '{}';
   }
 
   /**

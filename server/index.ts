@@ -5,6 +5,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { errorHandler } from "./middleware/errorHandler";
 import { config, validateConfig } from "./config";
 import { checkDatabaseConnection } from "./db";
+import { initializeDossierSequence } from "./storage";
 
 const app = express();
 
@@ -127,6 +128,9 @@ app.use((req, res, next) => {
       console.warn('⚠️ Continuing in production mode...');
     }
   }
+
+  // Initialize dossier number sequence (syncs with max existing value)
+  await initializeDossierSequence();
 
   const server = await registerRoutes(app);
 

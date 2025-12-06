@@ -87,7 +87,8 @@ export const StageOutputSection = memo(function StageOutputSection({
   onCopy,
   copied,
   stage1Result,
-  onForceContinue,
+  emailOutput,
+  isGeneratingEmail,
   showFeedbackProcessor,
   reportId,
   onFeedbackProcessed,
@@ -133,10 +134,11 @@ export const StageOutputSection = memo(function StageOutputSection({
       {!isOutputCollapsed && (
         <div className="px-4 py-4 bg-jdb-bg/50 dark:bg-jdb-border/5 border-t border-jdb-border overflow-hidden max-w-full space-y-3">
           {/* Special viewers for specific stages */}
-          {stageKey === "1_informatiecheck" && (
+          {stageKey === "1a_informatiecheck" && (
             <InformatieCheckViewer
               rawOutput={stageResult}
-              onForceContinue={onForceContinue}
+              emailOutput={emailOutput}
+              isGeneratingEmail={isGeneratingEmail}
             />
           )}
           {stageKey === "2_complexiteitscheck" && (
@@ -165,7 +167,7 @@ export const StageOutputSection = memo(function StageOutputSection({
           )}
 
           {/* Default output display for non-reviewer stages (stage 3 etc) */}
-          {!["1_informatiecheck", "2_complexiteitscheck"].includes(stageKey) &&
+          {!["1a_informatiecheck", "1b_informatiecheck_email", "2_complexiteitscheck"].includes(stageKey) &&
             !showFeedbackProcessor && (
               <div className="bg-white dark:bg-gray-900 p-3 rounded border border-gray-300 dark:border-gray-700 font-mono text-xs overflow-x-auto overflow-y-auto max-h-96 w-full max-w-full">
                 <pre

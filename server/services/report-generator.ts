@@ -25,7 +25,8 @@ export class ReportGenerator {
 
   private getStageDisplayName(stageName: string): string {
     const stageNames: Record<string, string> = {
-      '1_informatiecheck': 'Informatie Check',
+      '1a_informatiecheck': 'Informatie Analyse',
+      '1b_informatiecheck_email': 'Email Generatie',
       '2_complexiteitscheck': 'Complexiteits Check',
       '3_generatie': 'Rapport Generatie',
       '4a_BronnenSpecialist': 'Bronnen Specialist Review',
@@ -92,14 +93,15 @@ export class ReportGenerator {
     }
   }
 
-  // Generate content with custom prompt (for Follow-up Assistant)
+  // Generate content with custom prompt (for Follow-up Assistant, Dossier Context, etc.)
   async generateWithCustomPrompt(params: {
     systemPrompt: string;
     userPrompt: string;
     model: string;
     customConfig?: Partial<AiConfig>;
+    operationId?: string; // Optional: for logging clarity (e.g., "dossier-context", "follow-up-assistant")
   }): Promise<string> {
-    const { systemPrompt, userPrompt, model, customConfig } = params;
+    const { systemPrompt, userPrompt, model, customConfig, operationId = "custom-prompt" } = params;
 
     // Haal config uit database via AIConfigResolver - GEEN hardcoded defaults
     const promptConfigRecord = await storage.getActivePromptConfig();
@@ -111,7 +113,7 @@ export class ReportGenerator {
     }
 
     const promptConfig = promptConfigRecord.config as PromptConfig;
-    const baseConfig = this.configResolver.resolveForOperation('follow_up_assistant', promptConfig, 'follow-up-assistant');
+    const baseConfig = this.configResolver.resolveForOperation('follow_up_assistant', promptConfig, operationId);
 
     // Bepaal provider van meegegeven model (override)
     const provider = model.startsWith("gpt") || model.startsWith("o3") ? "openai" : "google";
@@ -124,7 +126,7 @@ export class ReportGenerator {
       ...customConfig
     };
 
-    console.log('🤖 [generateWithCustomPrompt] Using AI config from database:', {
+    console.log(`🤖 [${operationId}] Using AI config from database:`, {
       provider: aiConfig.provider,
       model: aiConfig.model,
       maxOutputTokens: aiConfig.maxOutputTokens,
@@ -135,14 +137,14 @@ export class ReportGenerator {
       const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
       const response = await this.modelFactory.callModel(aiConfig, fullPrompt, {
-        jobId: "follow-up-assistant"
+        jobId: operationId
       });
 
-      console.log('✅ [generateWithCustomPrompt] Model call succeeded, response length:', response.content.length);
+      console.log(`✅ [${operationId}] Model call succeeded, response length:`, response.content.length);
 
       return response.content;
     } catch (error: any) {
-      console.error('❌ [generateWithCustomPrompt] Model call failed:', {
+      console.error(`❌ [${operationId}] Model call failed:`, {
         errorType: error.constructor.name,
         message: error.message,
         code: error.code
@@ -324,8 +326,11 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     let prompt: string | { systemPrompt: string; userInput: string };
 
     switch (stageName) {
-      case "1_informatiecheck":
+      case "1a_informatiecheck":
         prompt = this.buildInformatieCheckPrompt(dossier, bouwplan, currentDate, stageConfig);
+        break;
+      case "1b_informatiecheck_email":
+        prompt = this.buildInformatieEmailPrompt(dossier, bouwplan, currentDate, stageConfig, previousStageResults);
         break;
       case "2_complexiteitscheck":
         prompt = this.buildComplexiteitsCheckPrompt(dossier, bouwplan, currentDate, stageConfig, previousStageResults);
@@ -624,10 +629,24 @@ ${errorGuidance}
     currentDate: string,
     stageConfig?: StagePromptConfig
   ): { systemPrompt: string; userInput: string } {
-    this.validateStagePrompt("1_informatiecheck", stageConfig);
+    this.validateStagePrompt("1a_informatiecheck", stageConfig);
     // After validation, stageConfig is guaranteed to exist
-    return this.promptBuilder.build("1_informatiecheck", stageConfig!, () =>
+    return this.promptBuilder.build("1a_informatiecheck", stageConfig!, () =>
       this.promptBuilder.buildInformatieCheckData(dossier)
+    );
+  }
+
+  private buildInformatieEmailPrompt(
+    dossier: DossierData,
+    bouwplan: BouwplanData,
+    currentDate: string,
+    stageConfig?: StagePromptConfig,
+    previousStageResults?: Record<string, string>
+  ): { systemPrompt: string; userInput: string } {
+    this.validateStagePrompt("1b_informatiecheck_email", stageConfig);
+    // Pass 1a result to email generator
+    return this.promptBuilder.build("1b_informatiecheck_email", stageConfig!, () =>
+      this.promptBuilder.buildInformatieEmailData(previousStageResults || {})
     );
   }
 

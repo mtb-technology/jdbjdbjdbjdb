@@ -24,7 +24,8 @@ export type StageConfigField = keyof Omit<StageConfig, "aiConfig">;
  * Stage keys from PROMPT_STAGES
  */
 export type StageKey =
-  | "1_informatiecheck"
+  | "1a_informatiecheck"
+  | "1b_informatiecheck_email"
   | "2_complexiteitscheck"
   | "3_generatie"
   | "4a_BronnenSpecialist"

@@ -7,13 +7,12 @@
 
 import type { Express, Request, Response } from "express";
 import { AIHealthService } from "../services/ai-models/health-service";
-import { AIMonitoringService } from "../services/ai-models/monitoring";
 import { checkDatabaseConnection } from "../db";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 
 export function registerHealthRoutes(app: Express): void {
-  const healthService = new AIHealthService(AIMonitoringService.getInstance());
+  const healthService = new AIHealthService();
 
   // Start periodic health checks and run immediate warm-up (non-blocking)
   healthService.startPeriodicHealthChecks();

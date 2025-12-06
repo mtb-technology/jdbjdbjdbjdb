@@ -6,6 +6,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import type { Box3ValidatorSession } from "@shared/schema";
 import type { SessionLight } from "@/types/box3Validator.types";
@@ -22,7 +23,7 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
 
   // Fetch sessions list
   const { data: sessions, refetch: refetchSessions } = useQuery<SessionLight[]>({
-    queryKey: ["box3-validator-sessions"],
+    queryKey: QUERY_KEYS.box3.sessions(),
     queryFn: async () => {
       const res = await fetch("/api/box3-validator/sessions");
       const data = await res.json();

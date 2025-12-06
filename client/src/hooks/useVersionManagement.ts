@@ -8,6 +8,7 @@
 import { useMemo, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import { STAGE_NAMES, getLatestConceptText } from "@shared/constants";
 import type { VersionCheckpoint } from "@/types/caseDetail.types";
@@ -170,17 +171,17 @@ export function useVersionManagement({
 
         if (data.report) {
           queryClient.setQueryData(
-            [`/api/reports/${reportId}`],
+            QUERY_KEYS.reports.detail(reportId),
             data.report
           );
         }
 
         queryClient.invalidateQueries({
-          queryKey: ["/api/cases"],
+          queryKey: QUERY_KEYS.cases.all(),
           exact: false,
         });
         queryClient.invalidateQueries({
-          queryKey: [`/api/reports/${reportId}`],
+          queryKey: QUERY_KEYS.reports.detail(reportId),
         });
       } catch (error: unknown) {
         console.error("Failed to restore version:", error);
@@ -229,17 +230,17 @@ export function useVersionManagement({
 
         if (data.report) {
           queryClient.setQueryData(
-            [`/api/reports/${reportId}`],
+            QUERY_KEYS.reports.detail(reportId),
             data.report
           );
         }
 
         queryClient.invalidateQueries({
-          queryKey: ["/api/cases"],
+          queryKey: QUERY_KEYS.cases.all(),
           exact: false,
         });
         queryClient.invalidateQueries({
-          queryKey: [`/api/reports/${reportId}`],
+          queryKey: QUERY_KEYS.reports.detail(reportId),
         });
       } catch (error: unknown) {
         console.error("Failed to delete version:", error);

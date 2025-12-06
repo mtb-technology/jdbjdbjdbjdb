@@ -7,11 +7,6 @@ import {
   Target,
   MessageSquare,
   UserCheck,
-  PenTool,
-  CheckCircle,
-  FileText,
-  GitCompare,
-  Edit3
 } from "lucide-react";
 
 export interface WorkflowStage {
@@ -29,12 +24,14 @@ export interface WorkflowStage {
 
 export const WORKFLOW_STAGES: WorkflowStage[] = [
   {
-    key: "1_informatiecheck",
-    label: "1. Informatiecheck",
-    description: "Ruwe tekst → Gestructureerde informatie",
+    key: "1a_informatiecheck",
+    label: "1a. Informatie Analyse",
+    description: "Dossier analyse → JSON check (COMPLEET/INCOMPLEET). Bij INCOMPLEET wordt automatisch een concept email gegenereerd.",
     icon: FileSearch,
     type: "generator",
   },
+  // NOTE: 1b_informatiecheck_email is NOT in UI stages - it runs automatically when 1a returns INCOMPLEET
+  // The email output is shown inline in the 1a stage card
   {
     key: "2_complexiteitscheck",
     label: "2. Complexiteitscheck",

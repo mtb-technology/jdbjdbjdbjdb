@@ -108,11 +108,11 @@ export function registerStreamingRoutes(
             }
           };
 
-          // For Stage 1 (informatiecheck): Include attachment extracted text AND vision attachments
+          // For Stage 1a (informatiecheck analyse): Include attachment extracted text AND vision attachments
           let dossierWithAttachments = report.dossierData as DossierData;
           let visionAttachments: Array<{ mimeType: string; data: string; filename: string }> = [];
 
-          if (stageId === '1_informatiecheck') {
+          if (stageId === '1a_informatiecheck') {
             const attachments = await storage.getAttachmentsForReport(reportId);
             if (attachments.length > 0) {
               // Separate attachments into text-extracted and vision-needed
@@ -130,7 +130,7 @@ export function registerStreamingRoutes(
                   ...dossierWithAttachments,
                   rawText: existingRawText + attachmentTexts
                 };
-                console.log(`📎 [${reportId}] Stage 1: Added ${textAttachments.length} text attachment(s) to dossier`);
+                console.log(`📎 [${reportId}] Stage 1a: Added ${textAttachments.length} text attachment(s) to dossier`);
               }
 
               // Prepare scanned PDFs for Gemini Vision OCR
@@ -140,7 +140,7 @@ export function registerStreamingRoutes(
                   data: att.fileData, // base64 encoded
                   filename: att.filename
                 }));
-                console.log(`📄 [${reportId}] Stage 1: Sending ${visionNeededAttachments.length} scanned PDF(s) to Gemini Vision for OCR`);
+                console.log(`📄 [${reportId}] Stage 1a: Sending ${visionNeededAttachments.length} scanned PDF(s) to Gemini Vision for OCR`);
               }
 
               // Mark all attachments as used in this stage

@@ -19,6 +19,7 @@ import {
   Play,
 } from "lucide-react";
 import { WORKFLOW_STAGES, type WorkflowStage } from "@/components/workflow/constants";
+import { isInformatieCheckComplete } from "@/lib/workflowParsers";
 
 /**
  * Stage status types used by WorkflowStageCard
@@ -52,7 +53,7 @@ export const STAGE_GROUPS: StageGroupConfig[] = [
   {
     key: "intake",
     label: "Intake",
-    filter: (s) => ["1_informatiecheck", "2_complexiteitscheck"].includes(s.key),
+    filter: (s) => ["1a_informatiecheck", "1b_informatiecheck_email", "2_complexiteitscheck"].includes(s.key),
     getDisplayName: (s) => s.label.replace(/^\d+[a-z]?\.\s*/, ""),
   },
   {
@@ -84,7 +85,8 @@ export const STAGE_GROUPS: StageGroupConfig[] = [
  * Stage icon color mapping - Using JdB brand colors
  */
 const STAGE_ICON_COLORS: Record<string, string> = {
-  "1_informatiecheck": "text-jdb-blue-primary",
+  "1a_informatiecheck": "text-jdb-blue-primary",
+  "1b_informatiecheck_email": "text-jdb-blue-primary",
   "2_complexiteitscheck": "text-purple-600",
   "3_generatie": "text-jdb-success",
   "4a_BronnenSpecialist": "text-jdb-gold",
@@ -99,7 +101,8 @@ const STAGE_ICON_COLORS: Record<string, string> = {
  * Stage icon component mapping
  */
 const STAGE_ICONS: Record<string, typeof FileText> = {
-  "1_informatiecheck": FileText,
+  "1a_informatiecheck": FileText,
+  "1b_informatiecheck_email": FileText,
   "2_complexiteitscheck": Activity,
   "3_generatie": Wand2,
   "4a_BronnenSpecialist": Users,
@@ -173,11 +176,26 @@ export function canExecuteStage(
   stageResults: Record<string, string>,
   conceptReportVersions: Record<string, unknown>
 ): boolean {
-  // First stage can always execute
+  // First stage (1a) can always execute
   if (stageIndex === 0) return true;
 
+  const currentStage = WORKFLOW_STAGES[stageIndex];
   const prevStage = WORKFLOW_STAGES[stageIndex - 1];
   if (!prevStage) return false;
+
+  // Special case: Stage 1b (email generation) can only execute if 1a is INCOMPLEET
+  if (currentStage?.key === "1b_informatiecheck_email") {
+    const stage1aResult = stageResults["1a_informatiecheck"];
+    // Can execute 1b only if 1a exists AND is INCOMPLEET
+    return !!stage1aResult && !isInformatieCheckComplete(stage1aResult);
+  }
+
+  // Special case: Stage 2 requires 1a to be COMPLEET (skips 1b if complete)
+  if (currentStage?.key === "2_complexiteitscheck") {
+    const stage1aResult = stageResults["1a_informatiecheck"];
+    // Can execute stage 2 only if 1a is COMPLEET
+    return isInformatieCheckComplete(stage1aResult);
+  }
 
   const hasPrevStageResult = !!stageResults[prevStage.key];
   const hasPrevConceptReport = !!conceptReportVersions[prevStage.key];
@@ -211,7 +229,7 @@ export function countCompletedStages(
   // Count how many of stages 1-3 are NOT yet in stageResults but should be counted
   let extraStages = 0;
   if (hasStage3) {
-    ["1_informatiecheck", "2_complexiteitscheck", "3_generatie"].forEach((stageKey) => {
+    ["1a_informatiecheck", "1b_informatiecheck_email", "2_complexiteitscheck", "3_generatie"].forEach((stageKey) => {
       if (!completedStageKeys.includes(stageKey)) {
         extraStages++;
       }

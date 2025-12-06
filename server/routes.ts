@@ -9,7 +9,6 @@ import { SourceValidator } from "./services/source-validator";
 import { PDFGenerator } from "./services/pdf-generator";
 import { TextStyler } from "./services/text-styler";
 import { AIHealthService } from "./services/ai-models/health-service";
-import { AIMonitoringService } from "./services/ai-models/monitoring";
 import { AIModelFactory } from "./services/ai-models/ai-model-factory";
 import { checkDatabaseConnection } from "./db";
 import { dossierSchema, bouwplanSchema, insertPromptConfigSchema, insertFollowUpSessionSchema, insertFollowUpThreadSchema } from "@shared/schema";
@@ -50,7 +49,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const sourceValidator = new SourceValidator();
   const pdfGenerator = new PDFGenerator();
   const textStyler = new TextStyler(reportGenerator);
-  const healthService = new AIHealthService(AIMonitoringService.getInstance());
+  const healthService = new AIHealthService();
   const sseHandler = new SSEHandler();
   const sessionManager = StreamingSessionManager.getInstance();
   const promptBuilder = new PromptBuilder();

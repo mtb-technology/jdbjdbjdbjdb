@@ -160,7 +160,8 @@ export default function BatchProcessing() {
 
       // Step 2: Execute all pipeline stages
       const stages = [
-        '1_informatiecheck',
+        '1a_informatiecheck',
+        '1b_informatiecheck_email', // Only runs if 1a returns INCOMPLEET
         '2_complexiteitscheck',
         '3_generatie',
         '4a_BronnenSpecialist',

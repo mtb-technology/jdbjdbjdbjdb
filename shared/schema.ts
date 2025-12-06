@@ -70,12 +70,12 @@ export const users = pgTable("users", {
  *
  * **Concept Versioning** (het evoluerende rapport):
  * - `conceptReportVersions`: Versie geschiedenis per stage (voor step-back)
- * - `generatedContent`: Legacy veld (werd gebruikt voor finaal rapport)
+ * - `generatedContent`: Huidige rapport content voor preview/export
  *
- * **Future: Rich Document System** (TipTap-based):
+ * **Rich Document System** (TipTap-based):
  * - `documentState`: TipTap JSON voor WYSIWYG editing
- * - `pendingChanges`: Change proposals van specialists
- * - `documentSnapshots`: Audit trail van document wijzigingen
+ * - `pendingChanges`: Change proposals van specialists (actief gebruikt)
+ * - `documentSnapshots`: Audit trail van document wijzigingen (actief gebruikt)
  *
  * **Status Tracking**:
  * - `currentStage`: Waar staat het rapport nu? (bv. "4a_BronnenSpecialist")
@@ -105,7 +105,7 @@ export const reports = pgTable("reports", {
   // Dossier context summary - AI-generated summary for quick reference
   dossierContextSummary: text("dossier_context_summary"), // Compact summary of case context
 
-  currentStage: text("current_stage").default("1_informatiecheck"),
+  currentStage: text("current_stage").default("1a_informatiecheck"),
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -133,7 +133,8 @@ export const reports = pgTable("reports", {
  * ### Structuur van `config` veld:
  * ```typescript
  * {
- *   "1_informatiecheck": { prompt: "...", useGrounding: false },
+ *   "1a_informatiecheck": { prompt: "...", useGrounding: false },
+ *   "1b_informatiecheck_email": { prompt: "...", useGrounding: false },
  *   "2_complexiteitscheck": { prompt: "...", useGrounding: false },
  *   "4a_BronnenSpecialist": { prompt: "...", useGrounding: true },
  *   // ... etc voor alle stages
@@ -441,7 +442,8 @@ export const toolAiConfigSchema = z.object({
 // Multi-stage prompting workflow schema
 export const promptConfigSchema = z.object({
   // === RAPPORT STAGES ===
-  "1_informatiecheck": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
+  "1a_informatiecheck": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }), // Analyse only - JSON output
+  "1b_informatiecheck_email": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }), // Email generation - only runs if 1a returns INCOMPLEET
   "2_complexiteitscheck": stageConfigSchema.default({ prompt: "", useGrounding: false, useWebSearch: false }),
   "3_generatie": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
   "4a_BronnenSpecialist": stageConfigSchema.default({ prompt: "", useGrounding: true, useWebSearch: false }),
@@ -631,15 +633,15 @@ export type ReportStage = z.infer<typeof reportStageSchema>;
  * Elke stage kan een snapshot van het concept rapport opslaan.
  */
 export const stageIdSchema = z.enum([
-  "1_informatiecheck",
-  "2_bouwplananalyse",
+  "1a_informatiecheck",
+  "1b_informatiecheck_email",
+  "2_complexiteitscheck",
   "3_generatie",
   "4a_BronnenSpecialist",
   "4b_FiscaalTechnischSpecialist",
   "4c_ScenarioGatenAnalist",
   "4e_DeAdvocaat",
-  "4f_HoofdCommunicatie",
-  "5_eindredactie"
+  "4f_HoofdCommunicatie"
 ]);
 
 // Individual concept report snapshot for a specific stage
@@ -758,7 +760,14 @@ export const informatieCheckOutputSchema = z.object({
     errorMap: () => ({ message: "Status moet 'COMPLEET' of 'INCOMPLEET' zijn" })
   }),
 
-  // Voor INCOMPLEET status - e-mail naar klant
+  // Voor INCOMPLEET status - lijst van ontbrekende informatie
+  ontbrekende_info: z.array(z.object({
+    item: z.string(),
+    reden: z.string(),
+    prioriteit: z.enum(["KRITIEK", "BELANGRIJK", "OPTIONEEL"]).optional()
+  })).optional(),
+
+  // Voor INCOMPLEET status - e-mail naar klant (nu in apart 1b stage)
   email_subject: z.string().optional(),
   email_body: z.string().optional(), // HTML formatted email body
 
@@ -773,16 +782,16 @@ export const informatieCheckOutputSchema = z.object({
       overige_info: z.array(z.string())
     })
   }).optional()
-}).strict()
+})
 .refine((data) => {
-  // Validation: INCOMPLEET must have email fields
+  // Validation: INCOMPLEET must have ontbrekende_info (email now generated in separate 1b stage)
   if (data.status === "INCOMPLEET") {
-    return !!data.email_subject && !!data.email_body;
+    return !!data.ontbrekende_info && data.ontbrekende_info.length > 0;
   }
   return true;
 }, {
-  message: "INCOMPLEET status vereist email_subject en email_body",
-  path: ["email_subject"]
+  message: "INCOMPLEET status vereist ontbrekende_info array",
+  path: ["ontbrekende_info"]
 })
 .refine((data) => {
   // Validation: COMPLEET must have dossier field

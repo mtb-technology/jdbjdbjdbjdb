@@ -126,7 +126,7 @@ export function registerReportRoutes(
       generatedContent: null,
       stageResults: {},
       conceptReportVersions: {},
-      currentStage: "1_informatiecheck",
+      currentStage: "1a_informatiecheck",
       status: "processing",
     });
 
@@ -212,11 +212,11 @@ export function registerReportRoutes(
         throw new Error("Rapport niet gevonden");
       }
 
-      // For Stage 1 (informatiecheck): Include attachment extracted text AND vision attachments
+      // For Stage 1a (informatiecheck analyse): Include attachment extracted text AND vision attachments
       let dossierWithAttachments = report.dossierData as DossierData;
       let visionAttachments: Array<{ mimeType: string; data: string; filename: string }> = [];
 
-      if (stage === '1_informatiecheck') {
+      if (stage === '1a_informatiecheck') {
         const attachments = await storage.getAttachmentsForReport(id);
         if (attachments.length > 0) {
           // Separate attachments into text-extracted and vision-needed
@@ -234,7 +234,7 @@ export function registerReportRoutes(
               ...dossierWithAttachments,
               rawText: existingRawText + attachmentTexts
             };
-            console.log(`📎 [${id}] Stage 1: Added ${textAttachments.length} text attachment(s) to dossier`);
+            console.log(`📎 [${id}] Stage 1a: Added ${textAttachments.length} text attachment(s) to dossier`);
           }
 
           // Prepare scanned PDFs for Gemini Vision OCR
@@ -244,7 +244,7 @@ export function registerReportRoutes(
               data: att.fileData, // base64 encoded
               filename: att.filename
             }));
-            console.log(`📄 [${id}] Stage 1: Sending ${visionNeededAttachments.length} scanned PDF(s) to Gemini Vision for OCR`);
+            console.log(`📄 [${id}] Stage 1a: Sending ${visionNeededAttachments.length} scanned PDF(s) to Gemini Vision for OCR`);
           }
 
           // Mark all attachments as used in this stage
@@ -317,12 +317,12 @@ export function registerReportRoutes(
         updateData.status = 'generated'; // Mark as having first version
       }
 
-      // *** STAGE 1 CLEANUP: Strip rawText after successful completion ***
-      if (stage === '1_informatiecheck' && stageExecution.stageOutput) {
+      // *** STAGE 1a CLEANUP: Strip rawText after successful completion ***
+      if (stage === '1a_informatiecheck' && stageExecution.stageOutput) {
         try {
           const parsed = parseJsonWithMarkdown(stageExecution.stageOutput);
           if (parsed.status === 'COMPLEET' && parsed.dossier) {
-            console.log(`🧹 [${id}] Stage 1 COMPLEET - stripping rawText from dossierData`);
+            console.log(`🧹 [${id}] Stage 1a COMPLEET - stripping rawText from dossierData`);
             // Replace dossierData with structured data from AI (no rawText)
             updateData.dossierData = {
               klant: {
@@ -334,7 +334,7 @@ export function registerReportRoutes(
             };
           }
         } catch (parseError) {
-          console.warn(`⚠️ [${id}] Could not parse Stage 1 output for rawText cleanup:`, parseError);
+          console.warn(`⚠️ [${id}] Could not parse Stage 1a output for rawText cleanup:`, parseError);
           // Don't fail the request - just log warning
         }
       }
@@ -1587,7 +1587,7 @@ export function registerReportRoutes(
     }
 
     // Get Stage 1 output (if available)
-    const stage1Output = (report.stageResults as any)?.["1_informatiecheck"] || "";
+    const stage1Output = (report.stageResults as any)?.["1a_informatiecheck"] || "";
 
     // Build prompt template with placeholder replacement
     let promptTemplate = customPrompt || `Je bent een fiscaal assistent. Maak een compacte samenvatting van deze casus voor snelle referentie.
@@ -1621,7 +1621,8 @@ Gebruik bullet points. Max 150 woorden.
           temperature: 1.0, // Keep default for Gemini 3
           maxOutputTokens: 2000, // Plenty of room for thinking + summary (can optimize later)
           thinkingLevel: "low" // Fast thinking for simple summarization tasks
-        }
+        },
+        operationId: "dossier-context"
       });
     } catch (error: any) {
       console.error(`❌ [${id}] Dossier context generation failed:`, {

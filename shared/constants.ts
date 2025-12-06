@@ -10,7 +10,8 @@
  * Mappen van stage ID naar Nederlandse weergavenaam
  */
 export const STAGE_NAMES: Record<string, string> = {
-  '1_informatiecheck': 'Informatie Check',
+  '1a_informatiecheck': 'Informatie Analyse',
+  '1b_informatiecheck_email': 'Email Generatie',
   '2_complexiteitscheck': 'Complexiteits Check',
   '3_generatie': 'Basis Rapport',
   '4a_BronnenSpecialist': 'Bronnen Review',
@@ -26,7 +27,8 @@ export const STAGE_NAMES: Record<string, string> = {
  * Gebruikt voor cascading deletes en navigatie
  */
 export const STAGE_ORDER = [
-  '1_informatiecheck',
+  '1a_informatiecheck',
+  '1b_informatiecheck_email', // Only runs if 1a returns INCOMPLEET
   '2_complexiteitscheck',
   '3_generatie',
   '4a_BronnenSpecialist',

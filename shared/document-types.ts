@@ -91,3 +91,14 @@ export interface SpecialistChangeProposal {
   summary: string;
   totalChanges: number;
 }
+
+/**
+ * Type-safe update payload for document-related fields.
+ * Use this instead of `as any` casts in document routes.
+ */
+export interface DocumentFieldsUpdate {
+  pendingChanges?: PendingChanges;
+  documentSnapshots?: DocumentSnapshots;
+  documentState?: TipTapContent;
+  updatedAt?: Date;
+}

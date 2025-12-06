@@ -33,7 +33,8 @@ export const AI_MODELS: AiModelsByProvider = {
  * Prompt stages configuration
  */
 export const PROMPT_STAGES: readonly PromptStage[] = [
-  { key: "1_informatiecheck", label: "1. Informatiecheck", description: "Validatie en opslag dossier", type: "generator" },
+  { key: "1a_informatiecheck", label: "1a. Informatie Analyse", description: "Dossier analyse - JSON output (geen email)", type: "generator" },
+  { key: "1b_informatiecheck_email", label: "1b. Email Generatie", description: "Alleen bij INCOMPLEET - genereert email naar klant", type: "generator" },
   { key: "2_complexiteitscheck", label: "2. Complexiteitscheck", description: "Validatie en opslag bouwplan", type: "generator" },
   { key: "3_generatie", label: "3. Generatie", description: "Basis rapport generatie", type: "generator" },
   { key: "4a_BronnenSpecialist", label: "4a. Bronnen Specialist", description: "Review bronnen → JSON feedback", type: "reviewer" },

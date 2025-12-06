@@ -13,6 +13,7 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import type { WorkflowState, WorkflowAction } from "@/components/workflow/WorkflowContext";
 
@@ -187,8 +188,7 @@ export function useManualModeHandlers({
       });
 
       // Invalidate query to trigger reload
-      queryClient.invalidateQueries({ queryKey: ["report", state.currentReport.id] });
-      queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
     } catch (error) {
       console.error("Failed to save manual content:", error);
       toast({
@@ -241,8 +241,7 @@ export function useManualModeHandlers({
         });
 
         // Invalidate query to trigger reload
-        queryClient.invalidateQueries({ queryKey: ["report", state.currentReport.id] });
-        queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
 
         // Auto-scroll to feedback processor after a short delay
         setTimeout(() => {

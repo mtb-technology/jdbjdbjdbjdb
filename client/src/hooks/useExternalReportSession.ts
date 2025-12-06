@@ -11,6 +11,7 @@
 import { useState, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import type { ExternalReportSession, ExternalReportAdjustment } from "@shared/schema";
 import type { AdjustmentItem } from "@shared/types/api";
 import type { AdjustmentStatus, ReviewableAdjustment, DebugInfo } from "@/types/adjustment.types";
@@ -94,13 +95,13 @@ export function useExternalReportSession(): UseExternalReportSessionReturn {
 
   // Fetch all sessions
   const { data: sessions = [], isLoading: isLoadingSessions } = useQuery({
-    queryKey: ["/api/external-reports"],
+    queryKey: QUERY_KEYS.externalReports.list(),
     refetchOnWindowFocus: false,
   });
 
   // Fetch current session details
   const { data: currentSession, isLoading: isLoadingSession } = useQuery({
-    queryKey: ["/api/external-reports", currentSessionId],
+    queryKey: currentSessionId ? QUERY_KEYS.externalReports.detail(currentSessionId) : QUERY_KEYS.externalReports.all(),
     enabled: !!currentSessionId,
     refetchOnWindowFocus: false,
   });
@@ -116,7 +117,7 @@ export function useExternalReportSession(): UseExternalReportSessionReturn {
       return json.data as ExternalReportSession;
     },
     onSuccess: (session) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/external-reports"] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.externalReports.all() });
       setCurrentSessionId(session.id);
       setError(null);
     },
@@ -180,10 +181,12 @@ export function useExternalReportSession(): UseExternalReportSessionReturn {
       return json.data as { newContent: string; appliedCount: number; version: number; _debug?: DebugInfo };
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/external-reports"] });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/external-reports", currentSessionId],
-      });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.externalReports.all() });
+      if (currentSessionId) {
+        queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.externalReports.detail(currentSessionId),
+        });
+      }
       setResultContent(data.newContent);
       setAppliedCount(data.appliedCount);
       setStage("complete");
@@ -205,7 +208,7 @@ export function useExternalReportSession(): UseExternalReportSessionReturn {
       await apiRequest("DELETE", `/api/external-reports/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/external-reports"] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.externalReports.all() });
       if (currentSessionId) {
         setCurrentSessionId(null);
         reset();
@@ -256,7 +259,7 @@ export function useExternalReportSession(): UseExternalReportSessionReturn {
       const createJson = await createResponse.json();
       const session = createJson.data as ExternalReportSession;
 
-      queryClient.invalidateQueries({ queryKey: ["/api/external-reports"] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.externalReports.all() });
       setCurrentSessionId(session.id);
 
       // Step 2: Analyze immediately

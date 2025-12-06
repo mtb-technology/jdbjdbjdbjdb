@@ -72,6 +72,7 @@ export interface IStorage {
 
 // Flag to track if dossier number migration has been checked
 let dossierNumberMigrationChecked = false;
+let sequenceSyncChecked = false;
 
 /**
  * Extract client name from dossier_context_summary text
@@ -175,6 +176,10 @@ export class DatabaseStorage implements IStorage {
           WHERE dossier_number IS NOT NULL
             AND title NOT LIKE 'D-____% - %';
 
+          -- Always sync sequence with max dossier_number to prevent unique constraint violations
+          -- This handles cases where reports were deleted or sequence got out of sync
+          PERFORM setval('dossier_number_seq', COALESCE((SELECT MAX(dossier_number) FROM reports), 0));
+
         END $$;
       `);
       console.log('✅ [Storage] Dossier number schema verified');
@@ -268,33 +273,86 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  /**
+   * Sync dossier_number_seq with actual max dossier_number (runs once per server start)
+   */
+  private async syncDossierSequence(): Promise<void> {
+    if (sequenceSyncChecked) return;
+
+    try {
+      // First get the current max to log it
+      const maxResult = await db.execute(sql`SELECT COALESCE(MAX(dossier_number), 0) as max_num FROM reports`);
+      const maxRows = maxResult as any;
+      const currentMax = maxRows?.rows?.[0]?.max_num ?? maxRows?.[0]?.max_num ?? 0;
+
+      // Set sequence to current max (nextval will return max+1)
+      await db.execute(sql`
+        SELECT setval('dossier_number_seq', ${currentMax})
+      `);
+      console.log(`✅ [Storage] Dossier sequence synced: set to ${currentMax} (next will be ${currentMax + 1})`);
+      sequenceSyncChecked = true;
+    } catch (error) {
+      console.error('⚠️ [Storage] Failed to sync dossier sequence:', error);
+      // Don't set flag to true so it can retry on next create
+    }
+  }
+
   async createReport(insertReport: InsertReport): Promise<Report> {
     // Ensure dossier_number column and sequence exist (runs once per server start)
     await this.ensureDossierNumberMigration();
 
-    // Get next dossier number from sequence - cast to integer for proper handling
-    const result = await db.execute(sql`SELECT nextval('dossier_number_seq')::integer as nextval`);
-    const rows = result as any;
-    const nextval = rows?.rows?.[0]?.nextval ?? rows?.[0]?.nextval;
-    const dossierNumber = typeof nextval === 'number' ? nextval : parseInt(String(nextval), 10);
+    // Sync sequence with actual max dossier_number (runs once per server start)
+    await this.syncDossierSequence();
 
-    // Safety check - if we still get NaN, throw a clear error
-    if (isNaN(dossierNumber)) {
-      console.error('❌ [Storage] Failed to get next dossier number:', { result, nextval });
-      throw new Error('Kon geen dossiernummer genereren. Neem contact op met support.');
+    // Try to create report with retry on constraint violation
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Get next dossier number from sequence - cast to integer for proper handling
+        const result = await db.execute(sql`SELECT nextval('dossier_number_seq')::integer as nextval`);
+        const rows = result as any;
+        const nextval = rows?.rows?.[0]?.nextval ?? rows?.[0]?.nextval;
+        const dossierNumber = typeof nextval === 'number' ? nextval : parseInt(String(nextval), 10);
+
+        // Safety check - if we still get NaN, throw a clear error
+        if (isNaN(dossierNumber)) {
+          console.error('❌ [Storage] Failed to get next dossier number:', { result, nextval });
+          throw new Error('Kon geen dossiernummer genereren. Neem contact op met support.');
+        }
+
+        // Format title with dossier number: "D-0001 - [original title or client name]"
+        const formattedNumber = String(dossierNumber).padStart(4, '0');
+        const baseTitle = insertReport.title || insertReport.clientName;
+        const title = `D-${formattedNumber} - ${baseTitle}`;
+
+        const [report] = await db.insert(reports).values({
+          ...insertReport,
+          dossierNumber,
+          title,
+        }).returning();
+        return report;
+      } catch (error: any) {
+        // Check for unique constraint violation on dossier_number
+        if (error?.code === '23505' && error?.constraint?.includes('dossier_number')) {
+          console.warn(`⚠️ [Storage] Dossier number collision (attempt ${attempt}/${maxRetries}), re-syncing sequence...`);
+
+          // Reset sync flag and re-sync sequence
+          sequenceSyncChecked = false;
+          await this.syncDossierSequence();
+
+          if (attempt === maxRetries) {
+            console.error('❌ [Storage] Max retries reached for dossier number generation');
+            throw error;
+          }
+          continue; // Retry with new sequence value
+        }
+        // For other errors, throw immediately
+        throw error;
+      }
     }
 
-    // Format title with dossier number: "D-0001 - [original title or client name]"
-    const formattedNumber = String(dossierNumber).padStart(4, '0');
-    const baseTitle = insertReport.title || insertReport.clientName;
-    const title = `D-${formattedNumber} - ${baseTitle}`;
-
-    const [report] = await db.insert(reports).values({
-      ...insertReport,
-      dossierNumber,
-      title,
-    }).returning();
-    return report;
+    // This should never be reached, but TypeScript needs it
+    throw new Error('Kon geen rapport aanmaken na meerdere pogingen');
   }
 
   async updateReport(id: string, updateData: Partial<Report>): Promise<Report | undefined> {
@@ -373,7 +431,7 @@ export class DatabaseStorage implements IStorage {
   private validatePromptConfig(config: PromptConfigRecord): void {
     const configData = config.config as any;
     const criticalStages = [
-      '1_informatiecheck',
+      '1a_informatiecheck',
       '2_complexiteitscheck',
       '3_generatie',
       'editor'  // Editor is CRITICAL for feedback processing
@@ -444,7 +502,8 @@ export class DatabaseStorage implements IStorage {
       name: "Default Fiscal Analysis",
       isActive: true,
       config: {
-        "1_informatiecheck": { prompt: "", useGrounding: false },
+        "1a_informatiecheck": { prompt: "", useGrounding: false },
+        "1b_informatiecheck_email": { prompt: "", useGrounding: false },
         "2_complexiteitscheck": { prompt: "", useGrounding: false },
         "3_generatie": { prompt: "", useGrounding: true },
         "4a_BronnenSpecialist": { prompt: "", useGrounding: true },
@@ -698,6 +757,31 @@ export class DatabaseStorage implements IStorage {
 }
 
 export const storage = new DatabaseStorage();
+
+/**
+ * Force sync dossier sequence on server startup
+ * Call this early in the server boot process
+ */
+export async function initializeDossierSequence() {
+  // Reset the flag to ensure fresh sync
+  sequenceSyncChecked = false;
+
+  try {
+    // Get current max to log it
+    const maxResult = await db.execute(sql`SELECT COALESCE(MAX(dossier_number), 0) as max_num FROM reports`);
+    const maxRows = maxResult as any;
+    const currentMax = maxRows?.rows?.[0]?.max_num ?? maxRows?.[0]?.max_num ?? 0;
+
+    // Set sequence to current max (nextval will return max+1)
+    await db.execute(sql`
+      SELECT setval('dossier_number_seq', ${currentMax})
+    `);
+    console.log(`✅ [Storage] Dossier sequence initialized: set to ${currentMax} (next will be ${currentMax + 1})`);
+    sequenceSyncChecked = true;
+  } catch (error) {
+    console.error('⚠️ [Storage] Failed to initialize dossier sequence:', error);
+  }
+}
 
 /**
  * Helper function to get active prompt config

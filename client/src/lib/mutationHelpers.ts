@@ -7,6 +7,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import type { ToastFunction } from '@/hooks/use-toast';
+import { QUERY_KEYS } from './queryKeys';
 
 export interface StageCompletionData {
   stage: string;
@@ -84,15 +85,29 @@ export function handleStageCompletion(
   }
 
   // Invalidate queries to refresh UI
-  queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
+  queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
   if (currentReport?.id) {
-    queryClient.invalidateQueries({ queryKey: [`/api/reports/${currentReport.id}`] });
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(currentReport.id) });
   }
 
-  // Show completion toast
+  // Show completion toast with friendly stage names
+  const stageDisplayNames: Record<string, string> = {
+    "1a_informatiecheck": "Informatie Analyse",
+    "1b_informatiecheck_email": "Concept email",
+    "2_complexiteitscheck": "Complexiteitscheck",
+    "3_generatie": "Rapport Generatie",
+    "4a_BronnenSpecialist": "Bronnen Review",
+    "4b_FiscaalTechnischSpecialist": "Fiscaal Technisch Review",
+    "4c_ScenarioGatenAnalist": "Scenario Analyse",
+    "4e_DeAdvocaat": "Juridisch Review",
+    "4f_HoofdCommunicatie": "Communicatie Review",
+  };
+
+  const displayName = stageDisplayNames[variables.stage] || variables.stage;
+
   toast({
     title: "Stap voltooid",
-    description: `${variables.stage} is succesvol uitgevoerd.`,
+    description: `${displayName} is succesvol uitgevoerd.`,
   });
 }
 
@@ -149,9 +164,9 @@ export function handleSubstepCompletion(
   }
 
   // Invalidate queries
-  queryClient.invalidateQueries({ queryKey: ['/api/reports'] });
+  queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
   if (currentReport?.id) {
-    queryClient.invalidateQueries({ queryKey: [`/api/reports/${currentReport.id}`] });
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(currentReport.id) });
   }
 
   // Show completion toast

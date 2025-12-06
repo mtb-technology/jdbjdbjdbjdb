@@ -3,26 +3,28 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Copy, CheckCircle2, XCircle, ChevronDown, ChevronUp, Lock, AlertTriangle, ChevronRight } from "lucide-react";
+import { Copy, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle, Mail, Loader2 } from "lucide-react";
 import type { InformatieCheckOutput } from "@shared/schema";
 import { parseInformatieCheckOutput } from "@/lib/workflowParsers";
 import DOMPurify from "isomorphic-dompurify";
 
 interface InformatieCheckViewerProps {
-  /** Raw AI output from Stage 1 (Informatiecheck) */
+  /** Raw AI output from Stage 1a (Informatiecheck) */
   rawOutput: string;
-  /** Callback to force continue even if incomplete */
-  onForceContinue?: () => void;
+  /** Raw AI output from Stage 1b (Email generation) - shown inline when INCOMPLEET */
+  emailOutput?: string;
+  /** Whether email generation is in progress */
+  isGeneratingEmail?: boolean;
 }
 
 /**
  * Displays structured output for Stage 1 (Informatiecheck)
  * Shows either:
- * - Email interface for INCOMPLEET status (missing information)
+ * - Missing info + email interface for INCOMPLEET status
  * - Dossier summary for COMPLEET status (complete information)
  */
-export function InformatieCheckViewer({ rawOutput, onForceContinue }: InformatieCheckViewerProps) {
-  const [copiedField, setCopiedField] = useState<string | null>(null);
+export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmail }: InformatieCheckViewerProps) {
+  const [copiedEmail, setCopiedEmail] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
 
   const parsedOutput = parseInformatieCheckOutput(rawOutput);
@@ -42,162 +44,232 @@ export function InformatieCheckViewer({ rawOutput, onForceContinue }: Informatie
     );
   }
 
-  // Copy to clipboard with HTML support
-  const copyToClipboard = async (text: string, field: string, isHtml: boolean = false) => {
+  // Copy email to clipboard as rich HTML (preserves bold, formatting) for mail clients
+  const copyEmailToClipboard = async (htmlText: string) => {
     try {
-      if (isHtml && navigator.clipboard.write) {
-        // Rich text copy (HTML) - for email body
-        const htmlBlob = new Blob([text], { type: 'text/html' });
-        const plainBlob = new Blob([text.replace(/<[^>]*>/g, '')], { type: 'text/plain' });
-        const clipboardItem = new ClipboardItem({
+      // Create plain text fallback
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = htmlText;
+      let plainText = tempDiv.innerText || tempDiv.textContent || '';
+      plainText = plainText.replace(/\n{3,}/g, '\n\n').trim();
+
+      // Use clipboard API to write both HTML and plain text
+      // This allows mail clients to paste rich formatted content
+      const htmlBlob = new Blob([htmlText], { type: 'text/html' });
+      const textBlob = new Blob([plainText], { type: 'text/plain' });
+
+      await navigator.clipboard.write([
+        new ClipboardItem({
           'text/html': htmlBlob,
-          'text/plain': plainBlob
-        });
-        await navigator.clipboard.write([clipboardItem]);
-      } else {
-        // Plain text copy
-        await navigator.clipboard.writeText(text);
-      }
-      setCopiedField(field);
-      setTimeout(() => setCopiedField(null), 2000);
+          'text/plain': textBlob,
+        }),
+      ]);
+
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
-      // Fallback: plain text only
-      await navigator.clipboard.writeText(text);
-      setCopiedField(field);
-      setTimeout(() => setCopiedField(null), 2000);
+      // Fallback to plain text if clipboard API fails
+      console.error('Rich copy failed, falling back to plain text:', err);
+      try {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = htmlText;
+        const plainText = tempDiv.innerText || '';
+        await navigator.clipboard.writeText(plainText);
+        setCopiedEmail(true);
+        setTimeout(() => setCopiedEmail(false), 2000);
+      } catch (fallbackErr) {
+        console.error('Copy failed:', fallbackErr);
+      }
     }
   };
 
-  // INTERFACE_INCOMPLEET: Show email action
+  // INTERFACE_INCOMPLEET: Show missing information and prompt to generate email
   if (parsedOutput.status === "INCOMPLEET") {
+    // Support both field names for backwards compatibility
+    const ontbrekendeInfo = (parsedOutput as any).ontbrekende_informatie || (parsedOutput as any).ontbrekende_info || [];
+
     return (
       <div className="space-y-4">
         {/* Status Header */}
-        <div className="flex items-center gap-3 p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <XCircle className="h-6 w-6 text-red-600 dark:text-red-400" />
+        <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+          <XCircle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
           <div className="flex-1">
-            <h3 className="font-semibold text-red-900 dark:text-red-100">
-              Stap 1: Informatiecheck - INCOMPLEET
+            <h3 className="font-semibold text-amber-900 dark:text-amber-100">
+              Stap 1a: Informatie Analyse - INCOMPLEET
             </h3>
-            <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-              De AI heeft vastgesteld dat er informatie ontbreekt. De workflow is gepauzeerd.
-              Verstuur de onderstaande e-mail naar de klant.
+            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+              De AI heeft vastgesteld dat er informatie ontbreekt. Bekijk hieronder wat er mist.
             </p>
           </div>
         </div>
 
-        {/* Email Action Block */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Verstuur E-mail naar Klant</CardTitle>
-            <CardDescription>
-              Kopieer het onderwerp en de body naar je e-mailclient (Gmail, Outlook, etc.)
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Email Subject */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">
-                E-mail Onderwerp
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  className="flex-1 px-3 py-2 bg-muted/50 border border-input rounded-md text-sm font-mono"
-                  value={parsedOutput.email_subject || ""}
-                  readOnly
-                  disabled
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copyToClipboard(parsedOutput.email_subject || "", "subject")}
-                  className="shrink-0"
-                >
-                  {copiedField === "subject" ? (
-                    <>
-                      <CheckCircle2 className="h-4 w-4 mr-1" />
-                      Gekopieerd
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-4 w-4 mr-1" />
-                      Kopieer
-                    </>
-                  )}
-                </Button>
+        {/* Missing Information Block - Compact Table View */}
+        <div className="border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <span className="font-medium text-sm text-amber-900 dark:text-amber-100">
+              Ontbrekende Informatie
+            </span>
+            <Badge variant="outline" className="text-xs bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700">
+              {ontbrekendeInfo.length} items
+            </Badge>
+          </div>
+          <div className="divide-y divide-amber-100 dark:divide-amber-900/50">
+            {ontbrekendeInfo.map((item: any, idx: number) => (
+              <div key={idx} className="px-4 py-2.5 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
+                <div className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-medium flex items-center justify-center mt-0.5">
+                    {idx + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="font-medium text-sm text-amber-900 dark:text-amber-100">
+                        {item.onderwerp || item.item || "Ontbrekend item"}
+                      </span>
+                      {item.reden && (
+                        <span className="text-xs text-amber-700 dark:text-amber-300">
+                          — {item.reden}
+                        </span>
+                      )}
+                    </div>
+                    {item.actie_voor_klant && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1">
+                        <span className="font-medium">→</span>
+                        <span>{item.actie_voor_klant}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            ))}
+          </div>
 
-            {/* Email Body Preview */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">
-                E-mail Inhoud (Preview)
-              </label>
+          {/* Fallback: Show old email fields if present (backward compat) */}
+          {ontbrekendeInfo.length === 0 && parsedOutput.email_body && (
+            <div className="px-4 py-3 border-t border-amber-200 dark:border-amber-800">
+              <p className="text-xs text-muted-foreground mb-2">Geen gestructureerde ontbrekende info gevonden:</p>
               <div
-                className="p-4 bg-white dark:bg-gray-900 border border-input rounded-lg max-h-[400px] overflow-y-auto"
+                className="p-3 bg-white dark:bg-gray-900 border border-input rounded text-sm"
                 dangerouslySetInnerHTML={{
                   __html: DOMPurify.sanitize(parsedOutput.email_body || "", {
-                    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+                    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li'],
                     ALLOWED_ATTR: []
                   })
                 }}
               />
             </div>
+          )}
+        </div>
 
-            {/* Copy Email Body Button */}
-            <Button
-              variant="default"
-              className="w-full"
-              onClick={() => copyToClipboard(parsedOutput.email_body || "", "body", true)}
-            >
-              {copiedField === "body" ? (
-                <>
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  E-mail Body Gekopieerd (met opmaak)
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4 mr-2" />
-                  Kopieer E-mail Body (met opmaak)
-                </>
-              )}
-            </Button>
-
-            <p className="text-xs text-muted-foreground text-center">
-              De opmaak (vet, bullets, etc.) blijft behouden wanneer je plakt in Gmail of Outlook
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Navigation Blocked */}
-        <Alert>
-          <Lock className="h-4 w-4" />
-          <AlertDescription className="space-y-3">
-            <p>
-              De volgende stap (2. Complexiteitscheck) is geblokkeerd totdat de klant de ontbrekende informatie aanlevert.
-              Voer deze stap opnieuw uit nadat je de informatie hebt ontvangen.
-            </p>
-            {onForceContinue && (
-              <div className="flex items-center gap-2 pt-2 border-t">
-                <AlertTriangle className="h-4 w-4 text-amber-500" />
-                <p className="text-xs flex-1">
-                  Als je toch wilt doorgaan zonder de ontbrekende informatie:
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onForceContinue}
-                  className="ml-auto"
-                >
-                  <ChevronRight className="h-3 w-3 mr-1" />
-                  Forceer Doorgaan
-                </Button>
+        {/* Email Section - Generated from 1b */}
+        {isGeneratingEmail && (
+          <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                <div>
+                  <p className="font-medium text-blue-900 dark:text-blue-100">Email wordt gegenereerd...</p>
+                  <p className="text-sm text-blue-700 dark:text-blue-300">Een concept email voor de klant wordt automatisch opgesteld.</p>
+                </div>
               </div>
-            )}
-          </AlertDescription>
-        </Alert>
+            </CardContent>
+          </Card>
+        )}
+
+        {emailOutput && !isGeneratingEmail && (() => {
+          // Clean up email output - handle various AI output formats
+          let cleanedEmail = emailOutput;
+          let emailSubject = "";
+
+          // Try to parse as JSON first (format: {"email_subject": "...", "email_body": "..."})
+          try {
+            // Strip markdown code fences if present
+            const jsonCandidate = emailOutput
+              .replace(/^```json\s*/i, '')
+              .replace(/^```\s*/gm, '')
+              .replace(/```\s*$/g, '')
+              .trim();
+
+            // Check if it looks like JSON
+            if (jsonCandidate.startsWith('{')) {
+              const parsed = JSON.parse(jsonCandidate);
+              if (parsed.email_body) {
+                cleanedEmail = parsed.email_body;
+                emailSubject = parsed.email_subject || "";
+              }
+            }
+          } catch {
+            // Not JSON, continue with string cleanup
+          }
+
+          // If still contains markdown fences, strip them
+          cleanedEmail = cleanedEmail
+            .replace(/^```html\s*/i, '')
+            .replace(/^```\s*/gm, '')
+            .replace(/```\s*$/g, '')
+            .trim();
+
+          return (
+          <Card className="border-blue-200 dark:border-blue-800">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Mail className="h-5 w-5 text-blue-600" />
+                Concept Email naar Klant
+              </CardTitle>
+              <CardDescription>
+                Kopieer deze email en verstuur naar de klant om de ontbrekende informatie op te vragen.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {emailSubject && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-700">
+                  <p className="text-sm">
+                    <span className="font-medium text-blue-700 dark:text-blue-300">Onderwerp:</span>{" "}
+                    <span className="text-blue-900 dark:text-blue-100">{emailSubject}</span>
+                  </p>
+                </div>
+              )}
+              <div
+                className="p-4 bg-white dark:bg-gray-900 border border-input rounded-lg max-h-[300px] overflow-y-auto text-sm prose prose-sm dark:prose-invert max-w-none"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(cleanedEmail, {
+                    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'h1', 'h2', 'h3'],
+                    ALLOWED_ATTR: []
+                  })
+                }}
+              />
+              <Button
+                onClick={() => copyEmailToClipboard(cleanedEmail)}
+                variant="outline"
+                className="w-full"
+              >
+                {copiedEmail ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
+                    Gekopieerd!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Kopieer Email
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        );
+        })()}
+
+        {!emailOutput && !isGeneratingEmail && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <p>
+                <strong>Wachten op email generatie...</strong> De concept email wordt automatisch gegenereerd.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Raw JSON Toggle */}
         <Card className="border-dashed">
@@ -238,7 +310,7 @@ export function InformatieCheckViewer({ rawOutput, onForceContinue }: Informatie
           <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
           <div className="flex-1">
             <h3 className="font-semibold text-green-900 dark:text-green-100">
-              Stap 1: Informatiecheck - COMPLEET
+              Stap 1a: Informatie Analyse - COMPLEET
             </h3>
             <p className="text-sm text-green-700 dark:text-green-300 mt-1">
               De AI heeft een volledig dossier opgebouwd. Het dossier is klaar voor de volgende stap.

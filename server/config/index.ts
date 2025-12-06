@@ -264,10 +264,15 @@ export const SOURCE_VALIDATION = {
  */
 export const REPORT_CONFIG = {
   stages: {
-    '1_informatiecheck': {
-      name: 'Informatie Check',
+    '1a_informatiecheck': {
+      name: 'Informatie Analyse',
       timeout: 60000,
       maxTokens: 4096  // Floor for output tokens
+    },
+    '1b_informatiecheck_email': {
+      name: 'Email Generatie',
+      timeout: 60000,
+      maxTokens: 4096
     },
     '2_complexiteitscheck': {
       name: 'Complexiteits Check',

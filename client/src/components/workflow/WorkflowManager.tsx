@@ -190,17 +190,33 @@ function WorkflowManagerContent({
       const stageResult = data.stageResult || data.stageOutput || "";
       const updatedReport = data.report;
 
-      // Auto-trigger dossier context generation after Stage 1 completes
-      if (variables.stage === "1_informatiecheck" && updatedReport?.id) {
-        console.log('📋 Stage 1 completed - triggering dossier context generation');
-        try {
-          await apiRequest("POST", `/api/reports/${updatedReport.id}/dossier-context`, {});
-          // Invalidate to refresh the panel
-          queryClient.invalidateQueries({ queryKey: [`/api/reports/${updatedReport.id}`] });
-        } catch (error) {
-          console.error('Failed to generate dossier context:', error);
-          // Don't block workflow on failure
+      // Auto-trigger dossier context generation after Stage 1a completes
+      if (variables.stage === "1a_informatiecheck" && updatedReport?.id) {
+        // Check completion status FIRST, before any async operations
+        const isComplete = isInformatieCheckComplete(stageResult);
+
+        // Auto-trigger stage 1b (email generation) IMMEDIATELY if 1a is INCOMPLEET
+        if (!isComplete) {
+          console.log('📧 Stage 1a is INCOMPLEET - auto-triggering stage 1b (email generation)');
+          dispatch({ type: "SET_STAGE_PROCESSING", stage: "1b_informatiecheck_email", isProcessing: true });
+
+          // Execute 1b in background - don't wait
+          executeStageM.mutate({
+            reportId: updatedReport.id,
+            stage: "1b_informatiecheck_email",
+            customInput: undefined,
+          });
         }
+
+        // Trigger dossier context in background (don't block with await)
+        console.log('📋 Stage 1a completed - triggering dossier context generation');
+        apiRequest("POST", `/api/reports/${updatedReport.id}/dossier-context`, {})
+          .then(() => {
+            queryClient.invalidateQueries({ queryKey: [`/api/reports/${updatedReport.id}`] });
+          })
+          .catch((error) => {
+            console.error('Failed to generate dossier context:', error);
+          });
       }
       
       // Only auto-advance if we're still on the same stage that was executed
@@ -216,9 +232,27 @@ function WorkflowManagerContent({
         // Calculate next index using a temporary state with updated results
         const tempCurrentIndex = state.currentStageIndex;
         const tempCurrentStage = WORKFLOW_STAGES[tempCurrentIndex];
-        
+
         let nextIndex = tempCurrentIndex;
-        if (tempCurrentStage.key === "1_informatiecheck") nextIndex = tempCurrentIndex + 1;
+        if (tempCurrentStage.key === "1a_informatiecheck") {
+          // Stage 1a completes - check if COMPLEET or INCOMPLEET
+          // Note: 1b email generation is auto-triggered in background, no UI stage change needed
+          const isComplete = isInformatieCheckComplete(stageResult);
+          if (isComplete) {
+            // COMPLEET: Go to stage 2
+            nextIndex = WORKFLOW_STAGES.findIndex(s => s.key === "2_complexiteitscheck");
+            console.log(`✅ Stage 1a is COMPLEET - advancing to stage 2 (index ${nextIndex})`);
+          } else {
+            // INCOMPLEET: Stay at stage 1a, 1b runs in background and shows inline
+            nextIndex = tempCurrentIndex;
+            console.log(`📧 Stage 1a is INCOMPLEET - staying at 1a, email generates in background`);
+          }
+        }
+        else if (variables.stage === "1b_informatiecheck_email") {
+          // 1b completed in background - no stage change needed, result shows inline in 1a
+          nextIndex = state.currentStageIndex;
+          console.log(`📧 Stage 1b email generated - displayed inline in stage 1a`);
+        }
         else if (tempCurrentStage.key === "2_complexiteitscheck") nextIndex = tempCurrentIndex + 1;
         else if (tempCurrentStage.key === "3_generatie") {
           nextIndex = WORKFLOW_STAGES.findIndex(s => s.key === "4a_BronnenSpecialist");
@@ -361,7 +395,17 @@ function WorkflowManagerContent({
       .map(s => s.key);
     
     // Linear flow for initial stages
-    if (currentStage.key === "1_informatiecheck") return currentIndex + 1;
+    if (currentStage.key === "1a_informatiecheck") {
+      // Check if stage 1a is complete to determine next stage
+      const stage1aResult = state.stageResults["1a_informatiecheck"];
+      const isComplete = isInformatieCheckComplete(stage1aResult);
+      if (isComplete) {
+        // COMPLEET: go to stage 2
+        return WORKFLOW_STAGES.findIndex(s => s.key === "2_complexiteitscheck");
+      }
+      // INCOMPLEET: stay at 1a (1b runs in background and shows inline)
+      return currentIndex;
+    }
     if (currentStage.key === "2_complexiteitscheck") return currentIndex + 1;
     if (currentStage.key === "3_generatie") {
       return WORKFLOW_STAGES.findIndex(s => s.key === "4a_BronnenSpecialist");
@@ -421,23 +465,37 @@ function WorkflowManagerContent({
         ? Math.max(...completedStages.map(stage => WORKFLOW_STAGES.findIndex(s => s.key === stage)))
         : -1;
 
-      // Check if stage 1 is INCOMPLEET - if so, stay at stage 1
+      // Check if stage 1 is INCOMPLEET - if so, stay at stage 1a
       let newStageIndex = Math.min(lastCompletedIndex + 1, WORKFLOW_STAGES.length - 1);
 
       const stageResults = existingReport.stageResults as Record<string, string> || {};
-      const stage1Result = stageResults["1_informatiecheck"];
+      const stage1aResult = stageResults["1a_informatiecheck"];
 
-      // If stage 1 exists and is INCOMPLEET, stay at stage 1 (index 0)
-      if (stage1Result && !isInformatieCheckComplete(stage1Result)) {
-        console.log(`⚠️ Stage 1 is INCOMPLEET - staying at stage 1`);
-        newStageIndex = 0; // Force to stage 1
+      // If stage 1a exists and is INCOMPLEET, stay at stage 1a (email shows inline)
+      if (stage1aResult && !isInformatieCheckComplete(stage1aResult)) {
+        console.log(`⚠️ Stage 1a is INCOMPLEET - staying at stage 1a (email shown inline)`);
+        newStageIndex = 0; // Stay at stage 1a
+
+        // Auto-trigger 1b if it hasn't been run yet
+        const stage1bResult = stageResults["1b_informatiecheck_email"];
+        if (!stage1bResult) {
+          console.log('📧 Stage 1b not yet run - auto-triggering email generation');
+          dispatch({ type: "SET_STAGE_PROCESSING", stage: "1b_informatiecheck_email", isProcessing: true });
+
+          // Execute 1b in background
+          executeStageM.mutate({
+            reportId: existingReport.id,
+            stage: "1b_informatiecheck_email",
+            customInput: undefined,
+          });
+        }
       }
 
       console.log(`🔄 Stage index calculation:`, {
         completedStages,
         lastCompletedIndex,
         newStageIndex,
-        stage1Complete: stage1Result ? isInformatieCheckComplete(stage1Result) : 'N/A',
+        stage1aComplete: stage1aResult ? isInformatieCheckComplete(stage1aResult) : 'N/A',
         workflowStages: WORKFLOW_STAGES.map(s => s.key)
       });
 

@@ -1,8 +1,13 @@
+/**
+ * AI Health Service
+ *
+ * Provides health checking for AI services (Google AI, OpenAI).
+ * Simplified version - just validates API keys and tracks basic health status.
+ */
+
 import { AIError } from "@shared/errors";
 import { GoogleAIHandler } from "./google-handler";
 import { OpenAIStandardHandler } from "./openai-standard-handler";
-import { AIMonitoringService } from "./monitoring";
-import type { AIMetrics } from "./monitoring";
 import type { AiConfig } from "@shared/schema";
 
 export interface HealthCheckResult {
@@ -11,12 +16,6 @@ export interface HealthCheckResult {
   responseTime?: number;
   error?: string;
   lastChecked: number;
-  metadata?: {
-    apiKeyValid?: boolean;
-    circuitBreakerState?: string;
-    errorRate?: number;
-    avgResponseTime?: number;
-  };
 }
 
 export interface SystemHealthStatus {
@@ -32,13 +31,12 @@ export interface SystemHealthStatus {
 }
 
 export class AIHealthService {
-  private monitoring: AIMonitoringService;
   private lastHealthCheck: Map<string, HealthCheckResult> = new Map();
   private healthCheckInterval: number = 60000; // 1 minute
   private healthCheckTimeout: number = 10000; // 10 seconds
 
-  constructor(monitoring: AIMonitoringService) {
-    this.monitoring = monitoring;
+  constructor() {
+    // No dependencies needed
   }
 
   // Validate API key by making a minimal test call
@@ -110,57 +108,27 @@ export class AIHealthService {
 
   // Perform health check for a specific service
   async checkServiceHealth(provider: string, apiKey: string): Promise<HealthCheckResult> {
-    const startTime = Date.now();
     const serviceKey = provider;
 
     try {
       // Validate API key with timeout
       const keyValidation = await Promise.race([
         this.validateAPIKey(provider, apiKey),
-        new Promise<{ valid: boolean; error: string }>((_, reject) => 
+        new Promise<{ valid: boolean; error: string }>((_, reject) =>
           setTimeout(() => reject(new Error('Health check timeout')), this.healthCheckTimeout)
         )
       ]);
 
-      // Get monitoring metrics for this service
-      const allMetrics = this.monitoring.getMetrics() as Record<string, AIMetrics>;
-      
-      // Find metrics for this provider's models
-      const providerMetrics = Object.entries(allMetrics)
-        .filter(([key]) => key.startsWith(`${provider}-`));
-      
-      let avgResponseTime = 0;
-      let errorRate = 0;
-      let totalRequests = 0;
-      let totalErrors = 0;
-
-      providerMetrics.forEach(([_, serviceMetrics]) => {
-        totalRequests += serviceMetrics.totalRequests;
-        totalErrors += serviceMetrics.failedRequests;
-        if (serviceMetrics.averageResponseTime > 0) {
-          avgResponseTime += serviceMetrics.averageResponseTime;
-        }
-      });
-
-      if (providerMetrics.length > 0) {
-        avgResponseTime = avgResponseTime / providerMetrics.length;
-        errorRate = totalRequests > 0 ? (totalErrors / totalRequests) * 100 : 0;
-      }
-
-      // Get circuit breaker state for primary model
-      const primaryModelKey = provider === 'google' ? 'google-gemini-2.5-flash' : 'openai-gpt-4o-mini';
-      const primaryMetrics = allMetrics[primaryModelKey];
-      const circuitBreakerState = primaryMetrics?.circuitBreakerStates?.[primaryModelKey] || 'closed';
-
-      // Determine overall health status
+      // Determine health status based on API key validation
       let status: 'healthy' | 'unhealthy' | 'degraded' = 'healthy';
-      
+
       if (!keyValidation.valid) {
-        status = 'unhealthy';
-      } else if (circuitBreakerState === 'open') {
-        status = 'unhealthy';
-      } else if (circuitBreakerState === 'half-open' || errorRate > 10) {
-        status = 'degraded';
+        // Rate limit errors mean key is probably valid but temporarily blocked
+        if (keyValidation.error?.includes('rate limit')) {
+          status = 'degraded';
+        } else {
+          status = 'unhealthy';
+        }
       }
 
       const result: HealthCheckResult = {
@@ -168,13 +136,7 @@ export class AIHealthService {
         status,
         responseTime: 'responseTime' in keyValidation ? keyValidation.responseTime : undefined,
         error: keyValidation.error,
-        lastChecked: Date.now(),
-        metadata: {
-          apiKeyValid: keyValidation.valid,
-          circuitBreakerState,
-          errorRate: Math.round(errorRate * 100) / 100,
-          avgResponseTime: Math.round(avgResponseTime)
-        }
+        lastChecked: Date.now()
       };
 
       this.lastHealthCheck.set(serviceKey, result);
@@ -185,10 +147,7 @@ export class AIHealthService {
         service: `${provider.charAt(0).toUpperCase() + provider.slice(1)} AI`,
         status: 'unhealthy',
         error: error.message || 'Health check failed',
-        lastChecked: Date.now(),
-        metadata: {
-          apiKeyValid: false
-        }
+        lastChecked: Date.now()
       };
 
       this.lastHealthCheck.set(serviceKey, result);
@@ -308,7 +267,7 @@ export class AIHealthService {
     const errors: string[] = [];
     const config = process.env;
 
-    const healthService = new AIHealthService(new AIMonitoringService());
+    const healthService = new AIHealthService();
 
     // Check Google AI key if provided
     if (config.GOOGLE_AI_API_KEY) {
