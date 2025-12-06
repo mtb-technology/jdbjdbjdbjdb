@@ -55,8 +55,11 @@ export interface WorkflowStageCardProps {
   canExecute: boolean;
   isProcessing: boolean;
   onExecute: (customContext?: string, reportDepth?: ReportDepth) => void;
-  onForceContinue?: () => void;
   onResetStage?: () => void;
+
+  // Stage 1a/1b email generation
+  emailOutput?: string;
+  isGeneratingEmail?: boolean;
 
   // Report depth for Stage 3
   reportDepth?: ReportDepth;
@@ -84,6 +87,11 @@ export interface WorkflowStageCardProps {
   manualContent?: string;
   onManualContentChange?: (content: string) => void;
   onManualExecute?: () => void;
+
+  // Express Mode inline - for stages 2+
+  showExpressMode?: boolean;
+  hasStage3?: boolean;
+  onExpressComplete?: () => void;
 }
 
 /**
@@ -137,6 +145,11 @@ export interface StageActionButtonsProps {
   /** Report depth for Stage 3 */
   reportDepth?: ReportDepth;
   onReportDepthChange?: (depth: ReportDepth) => void;
+  /** Express Mode props - show inline Express button */
+  reportId?: string;
+  showExpressMode?: boolean;
+  hasStage3?: boolean;
+  onExpressComplete?: () => void;
 }
 
 /**
@@ -166,7 +179,9 @@ export interface StageOutputSectionProps {
   copied: boolean;
   // Special stage props
   stage1Result?: string;
-  onForceContinue?: () => void;
+  // Stage 1a/1b email generation props
+  emailOutput?: string;
+  isGeneratingEmail?: boolean;
   // Feedback processor props
   showFeedbackProcessor?: boolean;
   reportId?: string;

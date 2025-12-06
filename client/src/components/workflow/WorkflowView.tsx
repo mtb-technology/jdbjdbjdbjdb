@@ -204,6 +204,9 @@ export const WorkflowView = memo(function WorkflowView({
                   const rawStageStatus = getStageStatus(index);
                   const isProcessing = state.stageProcessing[stage.key];
 
+                  // Keep stage 1a expanded when it has results (so user can see the email)
+                  const shouldKeep1aExpanded = stage.key === "1a_informatiecheck" && !!stageResult;
+
                   // Check feedback ready status for reviewer stages
                   const isReviewer = isReviewerStage(stage.key);
                   const hasFeedback = !!state.stageResults[stage.key];
@@ -216,9 +219,9 @@ export const WorkflowView = memo(function WorkflowView({
                   // Block reason for Stage 2
                   let blockReason: string | undefined | null;
                   if (stage.key === "2_complexiteitscheck") {
-                    const stage1Result = state.stageResults["1_informatiecheck"];
-                    if (!isInformatieCheckComplete(stage1Result)) {
-                      blockReason = getStage2BlockReason(stage1Result);
+                    const stage1aResult = state.stageResults["1a_informatiecheck"];
+                    if (!isInformatieCheckComplete(stage1aResult)) {
+                      blockReason = getStage2BlockReason(stage1aResult);
                     }
                   }
 
@@ -234,6 +237,12 @@ export const WorkflowView = memo(function WorkflowView({
                   const hasRawFeedback = !!substepResults.review || !!stageResult;
                   const showFeedbackProcessor = isReviewer && hasRawFeedback;
 
+                  // Show Express Mode button on stage 2 (when completed), stage 3, and review stages
+                  const showExpressModeOnStage =
+                    (stage.key === "2_complexiteitscheck" && stageStatus === "completed") ||
+                    stage.key === "3_generatie" ||
+                    isReviewer;
+
                   return (
                     <div key={stage.key} id={`stage-${stage.key}`}>
                       <WorkflowStageCard
@@ -241,13 +250,13 @@ export const WorkflowView = memo(function WorkflowView({
                         stageName={stage.label}
                         stageIcon={createStageIcon(stage.key)}
                         stageStatus={stageStatus}
-                        isExpanded={expandedStages.has(stage.key) || isActive}
+                        isExpanded={expandedStages.has(stage.key) || isActive || shouldKeep1aExpanded}
                         onToggleExpand={() => toggleStageExpansion(stage.key)}
                         stageResult={stageResult}
                         stagePrompt={stagePrompt}
                         conceptVersion={conceptVersion}
                         reportId={state.currentReport?.id}
-                        stage1Result={state.stageResults["1_informatiecheck"]}
+                        stage1Result={state.stageResults["1a_informatiecheck"]}
                         canExecute={canExecute}
                         isProcessing={isProcessing}
                         onExecute={(customContext, reportDepth) => handleExecuteStage(stage.key, customContext, reportDepth)}
@@ -261,14 +270,13 @@ export const WorkflowView = memo(function WorkflowView({
                         showFeedbackProcessor={showFeedbackProcessor}
                         onFeedbackProcessed={(response) => handleFeedbackProcessed(stage.key, response)}
                         blockReason={blockReason || undefined}
-                        onForceContinue={
-                          stage.key === "1_informatiecheck"
-                            ? () => {
-                                dispatch({ type: "SET_CURRENT_STAGE_INDEX", index: index + 1 });
-                                toggleStageExpansion("2_complexiteitscheck");
-                              }
-                            : undefined
-                        }
+                        // Email props for stage 1a (from auto-triggered 1b)
+                        emailOutput={stage.key === "1a_informatiecheck" ? state.stageResults["1b_informatiecheck_email"] : undefined}
+                        isGeneratingEmail={stage.key === "1a_informatiecheck" ? state.stageProcessing["1b_informatiecheck_email"] : undefined}
+                        // Express Mode props - show inline button on stage 2+
+                        showExpressMode={showExpressModeOnStage}
+                        hasStage3={hasStage3}
+                        onExpressComplete={handleExpressComplete}
                         // Manual mode props for stage 3
                         {...(stage.key === "3_generatie"
                           ? {

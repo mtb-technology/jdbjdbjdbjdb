@@ -21,6 +21,7 @@ import {
   Scale,
   BookOpen,
 } from "lucide-react";
+import { ExpressModeButton } from "../ExpressModeButton";
 import type { StageActionButtonsProps, ReportDepth } from "@/types/workflowStageCard.types";
 
 /**
@@ -186,9 +187,15 @@ export const StageActionButtons = memo(function StageActionButtons({
   onResetStage,
   reportDepth = "balanced",
   onReportDepthChange,
+  reportId,
+  showExpressMode,
+  hasStage3,
+  onExpressComplete,
 }: StageActionButtonsProps) {
   // Check if this is Stage 3 (generatie)
   const isStage3 = stageKey === "3_generatie";
+  // Check if this is Stage 2 (complexiteitscheck)
+  const isStage2 = stageKey === "2_complexiteitscheck";
 
   return (
     <div className="space-y-3">
@@ -237,6 +244,16 @@ export const StageActionButtons = memo(function StageActionButtons({
             </>
           )}
         </Button>
+
+        {/* Express Mode Button - Show for Stage 2 (completed) or Stage 3+ */}
+        {showExpressMode && reportId && onExpressComplete && (
+          <ExpressModeButton
+            reportId={reportId}
+            onComplete={onExpressComplete}
+            includeGeneration={isStage2 || (isStage3 && !hasStage3)}
+            hasStage3={hasStage3}
+          />
+        )}
 
         {/* Reset Stage Button - Only show if stage is completed and onResetStage is provided */}
         {stageStatus === "completed" && onResetStage && (

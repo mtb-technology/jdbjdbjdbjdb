@@ -58,7 +58,6 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   canExecute,
   isProcessing,
   onExecute,
-  onForceContinue,
   onResetStage,
   reportDepth: externalReportDepth,
   onReportDepthChange,
@@ -77,6 +76,11 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   manualContent = "",
   onManualContentChange,
   onManualExecute,
+  emailOutput,
+  isGeneratingEmail,
+  showExpressMode,
+  hasStage3,
+  onExpressComplete,
 }: WorkflowStageCardProps) {
   // Local UI state
   const [copied, setCopied] = useState(false);
@@ -174,6 +178,10 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   onResetStage={onResetStage}
                   reportDepth={reportDepth}
                   onReportDepthChange={handleReportDepthChange}
+                  reportId={reportId}
+                  showExpressMode={showExpressMode}
+                  hasStage3={hasStage3}
+                  onExpressComplete={onExpressComplete}
                 />
               )}
 
@@ -202,7 +210,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   onCopy={handleCopy}
                   copied={copied}
                   stage1Result={stage1Result}
-                  onForceContinue={onForceContinue}
+                  emailOutput={emailOutput}
+                  isGeneratingEmail={isGeneratingEmail}
                   showFeedbackProcessor={showFeedbackProcessor}
                   reportId={reportId}
                   onFeedbackProcessed={onFeedbackProcessed}
