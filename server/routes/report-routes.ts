@@ -1180,7 +1180,9 @@ export function registerReportRoutes(
     const { id } = req.params;
     const validatedData = expressModeRequestSchema.parse(req.body);
 
-    console.log(`🚀 [${id}] Express Mode started`);
+    console.log(`🚀 [${id}] Express Mode started`, { includeGeneration: validatedData.includeGeneration });
+
+    const expressStartTime = Date.now();
 
     // Get report
     let report = await storage.getReport(id);
@@ -1188,41 +1190,74 @@ export function registerReportRoutes(
       throw ServerError.notFound("Report");
     }
 
-    // Check if stage 3 is completed (has concept report)
-    // Check conceptReportVersions (new versioning), generatedContent (legacy), or stageResults (legacy)
+    // Check prerequisites based on mode
     const conceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
-    const stageResults = (report.stageResults as Record<string, any>) || {};
-    const hasStage3 =
-      conceptVersions['3_generatie'] ||
-      conceptVersions['latest'] ||
-      report.generatedContent || // Legacy: direct content field
-      (stageResults['3_generatie']?.conceptReport);
+    const stageResultsData = (report.stageResults as Record<string, any>) || {};
 
-    if (!hasStage3) {
-      console.log(`❌ [${id}] Express Mode validation failed: No stage 3 concept found`, {
-        hasConceptVersions: !!report.conceptReportVersions,
-        conceptVersionKeys: Object.keys(conceptVersions),
-        hasGeneratedContent: !!report.generatedContent,
-        generatedContentLength: report.generatedContent?.toString().length,
-        hasStageResults: !!report.stageResults,
-        stageResultKeys: Object.keys(stageResults),
-        has3generatie: !!stageResults['3_generatie'],
-        has3generatieConceptReport: !!stageResults['3_generatie']?.conceptReport
-      });
-      throw ServerError.business(
-        ERROR_CODES.VALIDATION_FAILED,
-        'Stage 3 (Generatie) moet eerst voltooid zijn voordat Express Mode kan worden gebruikt'
-      );
+    if (validatedData.includeGeneration) {
+      // For includeGeneration mode, we need stage 2 (complexiteitscheck) completed
+      const hasStage2 = !!stageResultsData['2_complexiteitscheck'];
+      if (!hasStage2) {
+        throw ServerError.business(
+          ERROR_CODES.VALIDATION_FAILED,
+          'Stage 2 (Complexiteitscheck) moet eerst voltooid zijn voordat Express Mode met Generatie kan worden gebruikt'
+        );
+      }
+    } else {
+      // Standard mode: need stage 3 completed
+      const hasStage3 =
+        conceptVersions['3_generatie'] ||
+        conceptVersions['latest'] ||
+        report.generatedContent ||
+        (stageResultsData['3_generatie']?.conceptReport);
+
+      if (!hasStage3) {
+        console.log(`❌ [${id}] Express Mode validation failed: No stage 3 concept found`, {
+          hasConceptVersions: !!report.conceptReportVersions,
+          conceptVersionKeys: Object.keys(conceptVersions),
+          hasGeneratedContent: !!report.generatedContent,
+          generatedContentLength: report.generatedContent?.toString().length,
+          hasStageResults: !!report.stageResults,
+          stageResultKeys: Object.keys(stageResultsData),
+          has3generatie: !!stageResultsData['3_generatie'],
+          has3generatieConceptReport: !!stageResultsData['3_generatie']?.conceptReport
+        });
+        throw ServerError.business(
+          ERROR_CODES.VALIDATION_FAILED,
+          'Stage 3 (Generatie) moet eerst voltooid zijn voordat Express Mode kan worden gebruikt'
+        );
+      }
     }
 
-    // Default stages: all review stages (4a-4f)
-    const stages = validatedData.stages || [
+    // Build stages list
+    let stages: string[] = [];
+
+    if (validatedData.includeGeneration) {
+      // Include generation stage first
+      stages.push('3_generatie');
+    }
+
+    // Add review stages
+    const reviewStages = validatedData.stages || [
       '4a_BronnenSpecialist',
       '4b_FiscaalTechnischSpecialist',
       '4c_ScenarioGatenAnalist',
       '4e_DeAdvocaat',
       '4f_HoofdCommunicatie'
     ];
+    stages = stages.concat(reviewStages);
+
+    // Import summarizer for change tracking
+    const { summarizeFeedback } = await import('../utils/feedback-summarizer');
+
+    // Track stage summaries for final report
+    const stageSummaries: Array<{
+      stageId: string;
+      stageName: string;
+      changesCount: number;
+      changes: Array<{ type: string; description: string; severity: string; section?: string }>;
+      processingTimeMs?: number;
+    }> = [];
 
     // Set response headers for SSE
     res.setHeader('Content-Type', 'text/event-stream');
@@ -1240,6 +1275,7 @@ export function registerReportRoutes(
         const stageId = stages[i];
         const stageNumber = i + 1;
         const totalStages = stages.length;
+        const stageStartTime = Date.now();
 
         // Send start event
         sendEvent({
@@ -1252,130 +1288,215 @@ export function registerReportRoutes(
         });
 
         try {
-          // Step 1: Execute review stage (generate feedback)
-          sendEvent({
-            type: 'step_progress',
-            stageId,
-            substepId: 'review',
-            percentage: 25,
-            message: `Generating review feedback for ${stageId}...`,
-            timestamp: new Date().toISOString()
-          });
+          // Stage 3 (generatie) is different - it generates the report directly
+          // Reviewer stages (4a-4f) generate feedback that needs to be processed
+          const isGenerationStage = stageId === '3_generatie';
 
-          const stageExecution = await reportGenerator.executeStage(
-            stageId,
-            report.dossierData as DossierData,
-            report.bouwplanData as BouwplanData,
-            report.stageResults as Record<string, string> || {},
-            report.conceptReportVersions as Record<string, string> || {},
-            undefined,
-            id
-          );
-
-          // Update stageResults with the feedback
-          const updatedStageResults = {
-            ...(report.stageResults as Record<string, string> || {}),
-            [stageId]: stageExecution.stageOutput
-          };
-
-          await storage.updateReport(id, {
-            stageResults: updatedStageResults,
-            currentStage: stageId as StageId
-          });
-
-          sendEvent({
-            type: 'step_complete',
-            stageId,
-            substepId: 'review',
-            percentage: 50,
-            message: `Review feedback generated for ${stageId}`,
-            timestamp: new Date().toISOString()
-          });
-
-          // Step 2: Auto-accept and process feedback
-          if (validatedData.autoAccept) {
+          if (isGenerationStage) {
+            // Stage 3: Generate the concept report
             sendEvent({
               type: 'step_progress',
               stageId,
-              substepId: 'process_feedback',
-              percentage: 75,
-              message: `Auto-processing feedback for ${stageId}...`,
+              substepId: 'generate',
+              percentage: 50,
+              message: `Generating concept report...`,
               timestamp: new Date().toISOString()
             });
 
-            // Parse feedback JSON
-            let feedbackJSON;
-            try {
-              feedbackJSON = JSON.parse(stageExecution.stageOutput);
-            } catch (e) {
-              feedbackJSON = stageExecution.stageOutput;
-            }
-
-            // Get latest concept report
-            let latestConceptText = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
-
-            // Legacy fallback: use generatedContent if no versioned concept found
-            if (!latestConceptText && report.generatedContent) {
-              latestConceptText = report.generatedContent.toString();
-            }
-
-            if (!latestConceptText) {
-              throw new Error('No concept report found to process feedback');
-            }
-
-            // Get Editor prompt
-            const activeConfig = await storage.getActivePromptConfig();
-            if (!activeConfig || !activeConfig.config) {
-              throw new Error('No active Editor prompt configuration found');
-            }
-
-            const parsedConfig = activeConfig.config as PromptConfig;
-            const editorPromptConfig = parsedConfig.editor || (parsedConfig as any)['5_feedback_verwerker'];
-
-            // Build Editor prompt
-            const promptBuilder = new PromptBuilder();
-            const { systemPrompt, userInput } = promptBuilder.build(
-              'editor',
-              editorPromptConfig,
-              () => ({
-                BASISTEKST: latestConceptText,
-                WIJZIGINGEN_JSON: feedbackJSON
-              })
+            const stageExecution = await reportGenerator.executeStage(
+              stageId,
+              report.dossierData as DossierData,
+              report.bouwplanData as BouwplanData,
+              report.stageResults as Record<string, string> || {},
+              report.conceptReportVersions as Record<string, string> || {},
+              undefined,
+              id
             );
 
-            const combinedPrompt = `${systemPrompt}\n\n### USER INPUT:\n${userInput}`;
+            // Update stageResults
+            const updatedStageResults = {
+              ...(report.stageResults as Record<string, string> || {}),
+              [stageId]: stageExecution.stageOutput
+            };
 
-            // Process with Editor prompt
-            const processingResult = await reportProcessor.processStageWithPrompt(
-              id,
-              stageId as StageId,
-              combinedPrompt,
-              feedbackJSON
-            );
+            // Store the generated report as first concept version
+            const existingConceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
+            const timestamp = new Date().toISOString();
+            const newConceptVersions = {
+              ...existingConceptVersions,
+              '3_generatie': {
+                content: stageExecution.stageOutput,
+                v: 1,
+                timestamp,
+                source: 'express_mode_generation'
+              },
+              latest: {
+                pointer: '3_generatie',
+                v: 1
+              },
+              history: [
+                ...(existingConceptVersions.history || []),
+                { stageId: '3_generatie', v: 1, timestamp }
+              ]
+            };
+
+            await storage.updateReport(id, {
+              stageResults: updatedStageResults,
+              conceptReportVersions: newConceptVersions,
+              generatedContent: stageExecution.stageOutput,
+              currentStage: stageId as StageId
+            });
 
             sendEvent({
               type: 'step_complete',
               stageId,
-              substepId: 'process_feedback',
+              substepId: 'generate',
               percentage: 100,
-              message: `Feedback processed - new concept v${processingResult.snapshot.v}`,
-              data: {
-                version: processingResult.snapshot.v
-              },
+              message: `Concept report generated`,
               timestamp: new Date().toISOString()
             });
 
             // Refresh report for next iteration
             report = await storage.getReport(id) || report;
+
+          } else {
+            // Reviewer stages (4a-4f): Generate feedback then process it
+
+            // Step 1: Execute review stage (generate feedback)
+            sendEvent({
+              type: 'step_progress',
+              stageId,
+              substepId: 'review',
+              percentage: 25,
+              message: `Generating review feedback for ${stageId}...`,
+              timestamp: new Date().toISOString()
+            });
+
+            const stageExecution = await reportGenerator.executeStage(
+              stageId,
+              report.dossierData as DossierData,
+              report.bouwplanData as BouwplanData,
+              report.stageResults as Record<string, string> || {},
+              report.conceptReportVersions as Record<string, string> || {},
+              undefined,
+              id
+            );
+
+            // Update stageResults with the feedback
+            const updatedStageResults = {
+              ...(report.stageResults as Record<string, string> || {}),
+              [stageId]: stageExecution.stageOutput
+            };
+
+            await storage.updateReport(id, {
+              stageResults: updatedStageResults,
+              currentStage: stageId as StageId
+            });
+
+            sendEvent({
+              type: 'step_complete',
+              stageId,
+              substepId: 'review',
+              percentage: 50,
+              message: `Review feedback generated for ${stageId}`,
+              timestamp: new Date().toISOString()
+            });
+
+            // Step 2: Auto-accept and process feedback
+            if (validatedData.autoAccept) {
+              sendEvent({
+                type: 'step_progress',
+                stageId,
+                substepId: 'process_feedback',
+                percentage: 75,
+                message: `Auto-processing feedback for ${stageId}...`,
+                timestamp: new Date().toISOString()
+              });
+
+              // Parse feedback JSON
+              let feedbackJSON;
+              try {
+                feedbackJSON = JSON.parse(stageExecution.stageOutput);
+              } catch (e) {
+                feedbackJSON = stageExecution.stageOutput;
+              }
+
+              // Get latest concept report
+              let latestConceptText = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
+
+              // Legacy fallback: use generatedContent if no versioned concept found
+              if (!latestConceptText && report.generatedContent) {
+                latestConceptText = report.generatedContent.toString();
+              }
+
+              if (!latestConceptText) {
+                throw new Error('No concept report found to process feedback');
+              }
+
+              // Get Editor prompt
+              const activeConfig = await storage.getActivePromptConfig();
+              if (!activeConfig || !activeConfig.config) {
+                throw new Error('No active Editor prompt configuration found');
+              }
+
+              const parsedConfig = activeConfig.config as PromptConfig;
+              const editorPromptConfig = parsedConfig.editor || (parsedConfig as any)['5_feedback_verwerker'];
+
+              // Build Editor prompt
+              const promptBuilder = new PromptBuilder();
+              const { systemPrompt, userInput } = promptBuilder.build(
+                'editor',
+                editorPromptConfig,
+                () => ({
+                  BASISTEKST: latestConceptText,
+                  WIJZIGINGEN_JSON: feedbackJSON
+                })
+              );
+
+              const combinedPrompt = `${systemPrompt}\n\n### USER INPUT:\n${userInput}`;
+
+              // Process with Editor prompt
+              const processingResult = await reportProcessor.processStageWithPrompt(
+                id,
+                stageId as StageId,
+                combinedPrompt,
+                feedbackJSON
+              );
+
+              sendEvent({
+                type: 'step_complete',
+                stageId,
+                substepId: 'process_feedback',
+                percentage: 100,
+                message: `Feedback processed - new concept v${processingResult.snapshot.v}`,
+                data: {
+                  version: processingResult.snapshot.v
+                },
+                timestamp: new Date().toISOString()
+              });
+
+              // Refresh report for next iteration
+              report = await storage.getReport(id) || report;
+
+              // Summarize feedback for this stage
+              const stageSummary = summarizeFeedback(
+                stageId,
+                stageExecution.stageOutput,
+                Date.now() - stageStartTime
+              );
+              stageSummaries.push(stageSummary);
+            }
           }
 
           // Send stage complete event
+          const stageProcessingTime = Date.now() - stageStartTime;
           sendEvent({
             type: 'stage_complete',
             stageId,
             stageNumber,
             totalStages,
             message: `${stageId} completed successfully`,
+            processingTimeMs: stageProcessingTime,
             timestamp: new Date().toISOString()
           });
 
@@ -1395,10 +1516,36 @@ export function registerReportRoutes(
         }
       }
 
+      // Get final report state for summary
+      const finalReport = await storage.getReport(id);
+      const finalConceptVersions = (finalReport?.conceptReportVersions as Record<string, any>) || {};
+      const latestPointer = finalConceptVersions.latest?.pointer;
+      const finalVersion = finalConceptVersions.latest?.v || 1;
+      const finalContent = latestPointer
+        ? (finalConceptVersions[latestPointer]?.content || finalReport?.generatedContent || '')
+        : (finalReport?.generatedContent || '');
+
+      // Calculate totals
+      const totalChanges = stageSummaries.reduce((sum, s) => sum + s.changesCount, 0);
+      const totalProcessingTimeMs = Date.now() - expressStartTime;
+
+      // Send summary event with all change data
+      sendEvent({
+        type: 'express_summary',
+        stages: stageSummaries,
+        totalChanges,
+        finalVersion,
+        totalProcessingTimeMs,
+        finalContent,
+        timestamp: new Date().toISOString()
+      });
+
       // Send final complete event
       sendEvent({
         type: 'express_complete',
         message: 'Express Mode completed successfully',
+        totalChanges,
+        finalVersion,
         timestamp: new Date().toISOString()
       });
 
@@ -1909,6 +2056,71 @@ Gebruik bullet points. Max 150 woorden.
     console.log(`📝 Document state saved for report ${reportId}`);
 
     res.json(createApiSuccessResponse({ success: true }));
+  }));
+
+  /**
+   * PATCH /api/reports/:id/concept-content
+   * Save manual edits to the concept report content
+   *
+   * This updates the conceptReportVersions with a new 'manual_edit' version
+   * and updates the latest pointer to point to it.
+   */
+  app.patch("/api/reports/:id/concept-content", asyncHandler(async (req: Request, res: Response) => {
+    const reportId = req.params.id;
+    const { content } = req.body;
+
+    if (!reportId) {
+      throw ServerError.validation('Report ID is required', 'Rapport ID is verplicht');
+    }
+
+    if (!content || typeof content !== 'string') {
+      throw ServerError.validation('Content is required', 'Content is verplicht');
+    }
+
+    const report = await storage.getReport(reportId);
+    if (!report) {
+      throw ServerError.notFound('Report not found');
+    }
+
+    // Get current concept versions
+    const existingVersions = (report.conceptReportVersions as Record<string, any>) || {};
+    const currentLatest = existingVersions.latest;
+    const nextVersion = (currentLatest?.v || 0) + 1;
+    const timestamp = new Date().toISOString();
+
+    // Create new manual edit version
+    const stageId = `manual_edit_${nextVersion}`;
+    const updatedVersions = {
+      ...existingVersions,
+      [stageId]: {
+        content,
+        v: nextVersion,
+        timestamp,
+        source: 'manual_edit'
+      },
+      latest: {
+        pointer: stageId,
+        v: nextVersion
+      },
+      history: [
+        ...(existingVersions.history || []),
+        { stageId, v: nextVersion, timestamp }
+      ]
+    };
+
+    // Update the report
+    await storage.updateReport(reportId, {
+      conceptReportVersions: updatedVersions,
+      generatedContent: content // Also update legacy field for compatibility
+    });
+
+    console.log(`📝 Manual concept edit saved for report ${reportId} (v${nextVersion})`);
+
+    res.json(createApiSuccessResponse({
+      success: true,
+      version: nextVersion,
+      stageId
+    }));
   }));
 
   // ============================================================

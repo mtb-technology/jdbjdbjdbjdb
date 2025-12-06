@@ -25,7 +25,8 @@ interface WorkflowProgressHeaderProps {
   isReloadingPrompts: boolean;
   onReloadPrompts: () => void;
   reportId?: string;
-  hasStage3: boolean;
+  hasStage2: boolean; // Complexiteitscheck completed
+  hasStage3: boolean; // Generatie completed
   onExpressComplete: () => void;
   /** Callback when report adjustments are applied - use to refresh editor content */
   onAdjustmentApplied?: () => void;
@@ -40,6 +41,7 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
   isReloadingPrompts,
   onReloadPrompts,
   reportId,
+  hasStage2,
   hasStage3,
   onExpressComplete,
   onAdjustmentApplied,
@@ -119,13 +121,14 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
                 </Button>
               </motion.div>
 
-              {/* Express Mode Button */}
-              {reportId && (
+              {/* Express Mode Button - available after stage 2 OR stage 3 */}
+              {reportId && (hasStage2 || hasStage3) && (
                 <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
                   <ExpressModeButton
                     reportId={reportId}
                     onComplete={onExpressComplete}
-                    disabled={!hasStage3}
+                    includeGeneration={!hasStage3}
+                    hasStage3={hasStage3}
                   />
                 </motion.div>
               )}

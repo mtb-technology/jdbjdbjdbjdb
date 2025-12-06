@@ -89,6 +89,7 @@ export const WorkflowView = memo(function WorkflowView({
   const progressPercentage = calculateProgressPercentage(state.stageResults);
   const totalProcessingTime = calculateTotalProcessingTime(state.stageTimes);
   const conceptVersions = (state.currentReport?.conceptReportVersions as Record<string, unknown>) || {};
+  const hasStage2 = !!state.stageResults["2_complexiteitscheck"];
   const hasStage3 = !!conceptVersions["3_generatie"] || !!conceptVersions["latest"];
 
   // Auto-collapse stage 3 when completed and moved to next stage
@@ -155,6 +156,7 @@ export const WorkflowView = memo(function WorkflowView({
           isReloadingPrompts={isReloadingPrompts}
           onReloadPrompts={handleReloadPrompts}
           reportId={state.currentReport?.id}
+          hasStage2={hasStage2}
           hasStage3={hasStage3}
           onExpressComplete={handleExpressComplete}
           onAdjustmentApplied={handleAdjustmentApplied}

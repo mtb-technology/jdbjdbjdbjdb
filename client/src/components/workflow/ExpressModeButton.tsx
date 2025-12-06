@@ -1,16 +1,19 @@
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Zap, Loader2, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Zap, Loader2, CheckCircle, XCircle, AlertCircle, Play } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { Report } from "@shared/schema";
+import { ExpressModeResults } from "./ExpressModeResults";
+import type { ExpressModeSummary } from "@shared/types/api";
 
 interface ExpressModeButtonProps {
   reportId: string;
   onComplete?: () => void;
   disabled?: boolean;
+  includeGeneration?: boolean; // Start from stage 3 (after stage 2 completion)
+  hasStage3?: boolean; // Whether stage 3 is already completed
 }
 
 interface StageProgress {
@@ -18,32 +21,53 @@ interface StageProgress {
   stageNumber: number;
   totalStages: number;
   status: 'pending' | 'running' | 'completed' | 'error';
-  substep?: 'review' | 'process_feedback';
+  substep?: 'generate' | 'review' | 'process_feedback';
   percentage: number;
   message?: string;
   error?: string;
 }
 
-export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressModeButtonProps) {
+export function ExpressModeButton({
+  reportId,
+  onComplete,
+  disabled,
+  includeGeneration = false,
+  hasStage3 = true
+}: ExpressModeButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [stages, setStages] = useState<StageProgress[]>([]);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
+  const [summary, setSummary] = useState<ExpressModeSummary | null>(null);
+  const [showResults, setShowResults] = useState(false);
   const { toast } = useToast();
+
+  // Use ref to track summary across async operations (state updates are async)
+  const summaryRef = useRef<ExpressModeSummary | null>(null);
+
+  const handleCloseResults = useCallback(() => {
+    setShowResults(false);
+    setSummary(null);
+    summaryRef.current = null;
+    onComplete?.();
+  }, [onComplete]);
 
   const startExpressMode = async () => {
     setIsOpen(true);
     setIsRunning(true);
     setStages([]);
     setCurrentStageIndex(0);
+    setSummary(null);
+    summaryRef.current = null;
+    setShowResults(false);
 
     try {
-      console.log(`[ExpressMode] Starting for report ${reportId}...`);
+      console.log(`[ExpressMode] Starting for report ${reportId}...`, { includeGeneration });
 
       const response = await fetch(`/api/reports/${reportId}/express-mode`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ autoAccept: true }),
+        body: JSON.stringify({ autoAccept: true, includeGeneration }),
         credentials: 'include',
       });
 
@@ -91,15 +115,23 @@ export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressMod
 
       setIsRunning(false);
 
-      toast({
-        title: "Express Mode Voltooid",
-        description: "Alle review stages zijn succesvol verwerkt",
-      });
-
-      setTimeout(() => {
+      // If we have a summary, show the results view
+      // Otherwise fall back to the old behavior
+      // Use ref because state updates are async and not yet available here
+      if (summaryRef.current) {
         setIsOpen(false);
-        onComplete?.();
-      }, 2000);
+        setShowResults(true);
+      } else {
+        toast({
+          title: "Express Mode Voltooid",
+          description: "Alle review stages zijn succesvol verwerkt",
+        });
+
+        setTimeout(() => {
+          setIsOpen(false);
+          onComplete?.();
+        }, 2000);
+      }
 
     } catch (error: any) {
       console.error('Express Mode error:', error);
@@ -200,6 +232,20 @@ export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressMod
         setIsRunning(false);
         break;
 
+      case 'express_summary':
+        // Store the summary for the results view
+        // Update both state and ref (ref is used for immediate check after stream ends)
+        const summaryData: ExpressModeSummary = {
+          stages: event.stages || [],
+          totalChanges: event.totalChanges || 0,
+          finalVersion: event.finalVersion || 1,
+          totalProcessingTimeMs: event.totalProcessingTimeMs || 0,
+          finalContent: event.finalContent || '',
+        };
+        summaryRef.current = summaryData;
+        setSummary(summaryData);
+        break;
+
       case 'express_complete':
         setIsRunning(false);
         break;
@@ -230,6 +276,7 @@ export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressMod
 
   const getStageLabel = (stageId: string) => {
     const labels: Record<string, string> = {
+      '3_generatie': '3. Rapport Generatie',
       '4a_BronnenSpecialist': '4a. Bronnen Specialist',
       '4b_FiscaalTechnischSpecialist': '4b. Fiscaal Technisch',
       '4c_ScenarioGatenAnalist': '4c. Scenario Gaten',
@@ -241,6 +288,8 @@ export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressMod
 
   const getSubstepLabel = (substep?: string) => {
     switch (substep) {
+      case 'generate':
+        return 'Rapport genereren...';
       case 'review':
         return 'Review genereren...';
       case 'process_feedback':
@@ -253,6 +302,14 @@ export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressMod
   const overallProgress = stages.length > 0
     ? Math.round((stages.filter(s => s.status === 'completed').length / stages.length) * 100)
     : 0;
+
+  const buttonLabel = includeGeneration
+    ? 'Express Mode (vanaf Generatie)'
+    : 'Express Mode';
+
+  const dialogDescription = includeGeneration
+    ? 'Generatie (stap 3) en alle review stages (4a-4f) worden automatisch uitgevoerd'
+    : 'Alle review stages (4a-4f) worden automatisch uitgevoerd met auto-accept van alle feedback';
 
   return (
     <>
@@ -271,7 +328,7 @@ export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressMod
         ) : (
           <>
             <Zap className="h-4 w-4" />
-            Express Mode
+            {buttonLabel}
           </>
         )}
       </Button>
@@ -284,7 +341,7 @@ export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressMod
               Express Mode
             </DialogTitle>
             <DialogDescription>
-              Alle review stages (4a-4f) worden automatisch uitgevoerd met auto-accept van alle feedback
+              {dialogDescription}
             </DialogDescription>
           </DialogHeader>
 
@@ -353,6 +410,16 @@ export function ExpressModeButton({ reportId, onComplete, disabled }: ExpressMod
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Results View - shown after completion */}
+      {showResults && summary && (
+        <ExpressModeResults
+          reportId={reportId}
+          summary={summary}
+          onClose={handleCloseResults}
+          onSaveComplete={onComplete}
+        />
+      )}
     </>
   );
 }

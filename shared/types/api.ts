@@ -201,7 +201,38 @@ export const stepBackResponseSchema = z.object({
 export const expressModeRequestSchema = z.object({
   stages: z.array(z.string()).optional(), // Default: all review stages (4a-4f)
   autoAccept: z.boolean().default(true), // Auto-accept all feedback
+  includeGeneration: z.boolean().default(false), // Also run stage 3 (Generatie) first
 });
+
+// Express Mode Change Summary - per change
+export const expressModeChangeSchema = z.object({
+  type: z.enum(['add', 'modify', 'delete', 'restructure']),
+  description: z.string(),
+  severity: z.enum(['critical', 'important', 'suggestion']).default('suggestion'),
+  section: z.string().optional(), // e.g., "§2.3 Vermogen"
+});
+
+// Express Mode Stage Summary - per reviewer stage
+export const expressModeStageSummarySchema = z.object({
+  stageId: z.string(),
+  stageName: z.string(),
+  changesCount: z.number(),
+  changes: z.array(expressModeChangeSchema),
+  processingTimeMs: z.number().optional(),
+});
+
+// Express Mode Complete Summary - SSE event data
+export const expressModeSummarySchema = z.object({
+  stages: z.array(expressModeStageSummarySchema),
+  totalChanges: z.number(),
+  finalVersion: z.number(),
+  totalProcessingTimeMs: z.number(),
+  finalContent: z.string(), // The final report content for editing
+});
+
+export type ExpressModeChange = z.infer<typeof expressModeChangeSchema>;
+export type ExpressModeStageSummary = z.infer<typeof expressModeStageSummarySchema>;
+export type ExpressModeSummary = z.infer<typeof expressModeSummarySchema>;
 
 // ===== RAPPORT AANPASSEN (POST-WORKFLOW ADJUSTMENTS) =====
 
