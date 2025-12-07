@@ -360,24 +360,36 @@ export function ExpressModeResults({
                     <p className="text-sm mt-1">Het rapport was al van goede kwaliteit</p>
                   </div>
                 ) : (
-                  <Accordion type="multiple" defaultValue={summary.stages.map(s => s.stageId)} className="space-y-3">
+                  <Accordion type="multiple" defaultValue={summary.stages.filter(s => s.changesCount > 0).map(s => s.stageId)} className="space-y-3">
                     {summary.stages.map((stage) => (
                       <AccordionItem
                         key={stage.stageId}
                         value={stage.stageId}
-                        className="border rounded-lg px-4 bg-card/50"
+                        className={`border rounded-lg px-4 ${stage.changesCount === 0 ? 'bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-card/50'}`}
                       >
                         <AccordionTrigger className="hover:no-underline py-4">
                           <div className="flex items-center gap-3 flex-1">
-                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                              <span className="text-xs font-bold text-primary">
-                                {stage.changesCount}
-                              </span>
-                            </div>
+                            {stage.changesCount === 0 ? (
+                              <div className="h-8 w-8 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
+                                <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                              </div>
+                            ) : (
+                              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                <span className="text-xs font-bold text-primary">
+                                  {stage.changesCount}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex flex-col items-start gap-0.5">
                               <span className="font-semibold text-base">{stage.stageName}</span>
                               <span className="text-xs text-muted-foreground">
-                                {stage.changesCount} {stage.changesCount === 1 ? 'wijziging' : 'wijzigingen'}
+                                {stage.changesCount === 0 ? (
+                                  <span className="text-green-600 dark:text-green-400">Geen wijzigingen nodig</span>
+                                ) : (
+                                  <>
+                                    {stage.changesCount} {stage.changesCount === 1 ? 'wijziging' : 'wijzigingen'}
+                                  </>
+                                )}
                                 {stage.processingTimeMs ? ` • ${formatTime(stage.processingTimeMs)}` : ''}
                               </span>
                             </div>
@@ -385,7 +397,15 @@ export function ExpressModeResults({
                         </AccordionTrigger>
                         <AccordionContent>
                           <div className="space-y-3 pt-2">
-                            {stage.changes.map((change, idx) => {
+                            {stage.changesCount === 0 ? (
+                              <div className="flex items-center gap-2 p-4 bg-green-50/50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
+                                <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                                <div>
+                                  <p className="text-sm font-medium text-green-700 dark:text-green-300">Alles in orde</p>
+                                  <p className="text-xs text-green-600 dark:text-green-400">Deze specialist heeft geen wijzigingen voorgesteld - het rapport voldoet aan de kwaliteitseisen.</p>
+                                </div>
+                              </div>
+                            ) : (stage.changes.map((change, idx) => {
                               const changeKey = `${stage.stageId}-${idx}`;
                               const isRolledBack = rolledBackChanges.has(changeKey);
                               const isRollingBack = rollingBackChange === changeKey;
@@ -520,7 +540,7 @@ export function ExpressModeResults({
                                   )}
                                 </div>
                               );
-                            })}
+                            }))}
                           </div>
                         </AccordionContent>
                       </AccordionItem>

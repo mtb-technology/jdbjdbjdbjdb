@@ -700,19 +700,23 @@ function normalizeProposal(
     return null;
   }
 
-  // Map change type
+  // Map change type - support REPLACE, REWRITE (4e DeAdvocaat), ADD, DELETE, RESTRUCTURE
   const changeType = (data.change_type || data.changeType || data.type || 'REPLACE').toUpperCase();
   const mappedChangeType: ChangeProposal['changeType'] =
     changeType === 'ADD' || changeType === 'TOEVOEGEN' ? 'add' :
     changeType === 'DELETE' || changeType === 'VERWIJDER' ? 'delete' :
     changeType === 'RESTRUCTURE' || changeType === 'HERSTRUCTUREER' ? 'restructure' :
-    'modify';
+    'modify'; // REPLACE, REWRITE, and others map to 'modify'
 
-  // Map severity
+  // Map severity - handle 4e DeAdvocaat categories (Garantie/Beloftetaal, Te Definitief) and 4f HoofdCommunicatie
   const severityStr = (data.bevinding_categorie || data.probleem_categorie || data.severity || data.priority || 'suggestion').toLowerCase();
   const mappedSeverity: ChangeProposal['severity'] =
-    severityStr.includes('verouderd') || severityStr.includes('critical') || severityStr.includes('kritiek') ? 'critical' :
-    severityStr.includes('onnauwkeurig') || severityStr.includes('important') || severityStr.includes('belangrijk') || severityStr.includes('toon') ? 'important' :
+    // Critical: legal/guarantee risks, outdated info
+    severityStr.includes('verouderd') || severityStr.includes('critical') || severityStr.includes('kritiek') ||
+    severityStr.includes('garantie') || severityStr.includes('belofte') ? 'critical' :
+    // Important: definitiveness issues, inaccuracies, tone problems
+    severityStr.includes('onnauwkeurig') || severityStr.includes('important') || severityStr.includes('belangrijk') ||
+    severityStr.includes('toon') || severityStr.includes('definitief') || severityStr.includes('empathie') ? 'important' :
     'suggestion';
 
   // Extract proposed text - prioritize herschreven_tekst for 4f HoofdCommunicatie format
@@ -728,12 +732,19 @@ function normalizeProposal(
     return null;
   }
 
+  // Extract section (location in document) - use locatie_origineel for location, NOT for original text
+  const section = data.locatie_origineel || data.section || data.locatie || 'Algemeen';
+
+  // Extract original text - this should be the OLD text to be replaced, NOT the location
+  // Look for originele_tekst, oude_tekst, original, old fields - NEVER use locatie_origineel here
+  const original = data.originele_tekst || data.oude_tekst || data.original || data.old || '';
+
   return {
     id: data.bevinding_id || data.id || `${stageId}-${index}`,
     specialist: data.validator_naam || data.specialist || specialist,
     changeType: mappedChangeType,
-    section: data.locatie_origineel || data.section || 'Algemeen',
-    original: data.locatie_origineel || data.original || data.old || '',
+    section,
+    original,
     proposed,
     reasoning: data.analyse || data.instructie || data.reasoning || data.reason || data.rationale || 'Geen reden opgegeven',
     severity: mappedSeverity,
