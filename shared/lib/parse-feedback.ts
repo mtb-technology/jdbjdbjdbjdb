@@ -186,14 +186,15 @@ export function parseFeedbackToProposals(
         const ftv = parsed.fiscaal_technische_validatie;
         if (ftv) {
           // Check if status indicates no issues
-          const status = ftv.status?.toLowerCase() || '';
+          const status = (typeof ftv === 'object' && !Array.isArray(ftv) ? ftv.status?.toLowerCase() : '') || '';
           const hasNoIssues = status.includes('100% accuraat') ||
                              status.includes('geen fouten') ||
                              status.includes('accuraat bevonden');
 
-          // Parse bevindingen array
-          const bevindingen = Array.isArray(ftv.bevindingen) ? ftv.bevindingen :
-                             (ftv.bevindingen ? [ftv.bevindingen] : []);
+          // Parse bevindingen array - handle both nested { bevindingen: [...] } and direct array format
+          const bevindingen = Array.isArray(ftv) ? ftv :
+                             (Array.isArray(ftv.bevindingen) ? ftv.bevindingen :
+                             (ftv.bevindingen ? [ftv.bevindingen] : []));
 
           bevindingen.forEach((b: any, idx: number) => {
             // Skip empty or placeholder items
