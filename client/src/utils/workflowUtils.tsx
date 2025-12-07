@@ -227,9 +227,10 @@ export function countCompletedStages(
   const hasStage3 = conceptVersions["3_generatie"] || conceptVersions["latest"];
 
   // Count how many of stages 1-3 are NOT yet in stageResults but should be counted
+  // Note: 1b_informatiecheck_email is NOT included because it's not a UI stage
   let extraStages = 0;
   if (hasStage3) {
-    ["1a_informatiecheck", "1b_informatiecheck_email", "2_complexiteitscheck", "3_generatie"].forEach((stageKey) => {
+    ["1a_informatiecheck", "2_complexiteitscheck", "3_generatie"].forEach((stageKey) => {
       if (!completedStageKeys.includes(stageKey)) {
         extraStages++;
       }
@@ -241,9 +242,13 @@ export function countCompletedStages(
 
 /**
  * Calculate progress percentage
+ * Only count stages that are in WORKFLOW_STAGES (excludes 1b_informatiecheck_email)
  */
 export function calculateProgressPercentage(stageResults: Record<string, string>): number {
-  return Math.round((Object.keys(stageResults).length / WORKFLOW_STAGES.length) * 100);
+  const validStageCount = Object.keys(stageResults).filter((key) =>
+    WORKFLOW_STAGES.some((stage) => stage.key === key)
+  ).length;
+  return Math.min(100, Math.round((validStageCount / WORKFLOW_STAGES.length) * 100));
 }
 
 /**
