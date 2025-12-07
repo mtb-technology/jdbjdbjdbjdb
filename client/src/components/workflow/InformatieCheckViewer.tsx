@@ -3,10 +3,75 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Copy, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle, Mail, Loader2 } from "lucide-react";
 import type { InformatieCheckOutput } from "@shared/schema";
 import { parseInformatieCheckOutput } from "@/lib/workflowParsers";
 import DOMPurify from "isomorphic-dompurify";
+
+/**
+ * Collapsible item for missing information - shows title + short reason,
+ * expands to show full action for client
+ */
+function MissingInfoItem({ item, index }: { item: any; index: number }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const title = item.onderwerp || item.item || "Ontbrekend item";
+  const reason = item.reden;
+  const action = item.actie_voor_klant;
+
+  // If no action, don't make it collapsible
+  if (!action) {
+    return (
+      <div className="flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
+        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-medium flex items-center justify-center mt-0.5">
+          {index + 1}
+        </span>
+        <div className="flex-1 min-w-0">
+          <span className="font-medium text-sm">{title}</span>
+          {reason && (
+            <p className="text-xs text-muted-foreground mt-0.5">{reason}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <button className="w-full flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors text-left">
+          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-medium flex items-center justify-center mt-0.5">
+            {index + 1}
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm">{title}</span>
+              {isOpen ? (
+                <ChevronUp className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+              ) : (
+                <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+              )}
+            </div>
+            {reason && !isOpen && (
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{reason}</p>
+            )}
+          </div>
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="ml-8 pl-3 border-l-2 border-muted pb-2 space-y-1">
+          {reason && (
+            <p className="text-xs text-muted-foreground">{reason}</p>
+          )}
+          <p className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-1">
+            <span className="font-semibold">→</span>
+            <span>{action}</span>
+          </p>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
 interface InformatieCheckViewerProps {
   /** Raw AI output from Stage 1a (Informatiecheck) */
@@ -90,7 +155,7 @@ export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmai
 
     return (
       <div className="space-y-4">
-        {/* Status Header */}
+        {/* Status Header - Subtle amber accent */}
         <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
           <XCircle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
           <div className="flex-1">
@@ -103,63 +168,41 @@ export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmai
           </div>
         </div>
 
-        {/* Missing Information Block - Compact Table View */}
-        <div className="border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden">
-          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
-            <span className="font-medium text-sm text-amber-900 dark:text-amber-100">
-              Ontbrekende Informatie
-            </span>
-            <Badge variant="outline" className="text-xs bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700">
-              {ontbrekendeInfo.length} items
-            </Badge>
-          </div>
-          <div className="divide-y divide-amber-100 dark:divide-amber-900/50">
-            {ontbrekendeInfo.map((item: any, idx: number) => (
-              <div key={idx} className="px-4 py-2.5 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
-                <div className="flex items-start gap-3">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-medium flex items-center justify-center mt-0.5">
-                    {idx + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className="font-medium text-sm text-amber-900 dark:text-amber-100">
-                        {item.onderwerp || item.item || "Ontbrekend item"}
-                      </span>
-                      {item.reden && (
-                        <span className="text-xs text-amber-700 dark:text-amber-300">
-                          — {item.reden}
-                        </span>
-                      )}
-                    </div>
-                    {item.actie_voor_klant && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1">
-                        <span className="font-medium">→</span>
-                        <span>{item.actie_voor_klant}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Fallback: Show old email fields if present (backward compat) */}
-          {ontbrekendeInfo.length === 0 && parsedOutput.email_body && (
-            <div className="px-4 py-3 border-t border-amber-200 dark:border-amber-800">
-              <p className="text-xs text-muted-foreground mb-2">Geen gestructureerde ontbrekende info gevonden:</p>
-              <div
-                className="p-3 bg-white dark:bg-gray-900 border border-input rounded text-sm"
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(parsedOutput.email_body || "", {
-                    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li'],
-                    ALLOWED_ATTR: []
-                  })
-                }}
-              />
+        {/* Missing Information Block - Clean white/neutral design */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <CardTitle className="text-base">Ontbrekende Informatie</CardTitle>
+              <Badge variant="secondary" className="text-xs">
+                {ontbrekendeInfo.length} items
+              </Badge>
             </div>
-          )}
-        </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2">
+              {ontbrekendeInfo.map((item: any, idx: number) => (
+                <MissingInfoItem key={idx} item={item} index={idx} />
+              ))}
+            </div>
+
+            {/* Fallback: Show old email fields if present (backward compat) */}
+            {ontbrekendeInfo.length === 0 && parsedOutput.email_body && (
+              <div className="pt-3 border-t">
+                <p className="text-xs text-muted-foreground mb-2">Geen gestructureerde ontbrekende info gevonden:</p>
+                <div
+                  className="p-3 bg-muted/50 border border-input rounded text-sm"
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(parsedOutput.email_body || "", {
+                      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li'],
+                      ALLOWED_ATTR: []
+                    })
+                  }}
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Email Section - Generated from 1b */}
         {isGeneratingEmail && (

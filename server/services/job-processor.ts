@@ -13,6 +13,7 @@ import { ReportProcessor } from "./report-processor";
 import { PromptBuilder } from "./prompt-builder";
 import { getLatestConceptText } from "@shared/constants";
 import { summarizeFeedback } from "../utils/feedback-summarizer";
+import { notifyStageComplete, notifyExpressModeComplete, notifyJobFailed, isSlackEnabled } from "./slack-notifier";
 import type { Job, DossierData, BouwplanData, StageId, PromptConfig } from "@shared/schema";
 
 // Job types
@@ -504,6 +505,7 @@ class JobProcessor {
         }
 
         // Update stage as completed
+        const stageDuration = Date.now() - stageStartTime;
         await this.updateProgress(job.id, {
           currentStage: stageId,
           percentage: Math.round(((i + 1) / stages.length) * 100),
@@ -515,6 +517,24 @@ class JobProcessor {
             changesCount: stageSummaries.find(ss => ss.stageId === s)?.changesCount
           }))
         });
+
+        // Send Slack notification for stage completion
+        if (isSlackEnabled()) {
+          const stageSummary = stageSummaries.find(ss => ss.stageId === stageId);
+          await notifyStageComplete(
+            {
+              id: reportId,
+              dossierNumber: report.dossierNumber,
+              clientName: report.clientName || "Onbekend",
+            },
+            {
+              stageId,
+              stageName: stageSummary?.stageName || stageId,
+              changesCount: stageSummary?.changesCount,
+              durationMs: stageDuration,
+            }
+          );
+        }
 
       } catch (stageError: any) {
         console.error(`❌ [JobProcessor] Express Mode failed at ${stageId}:`, stageError);
@@ -531,6 +551,19 @@ class JobProcessor {
             error: idx === i ? stageError.message : undefined
           }))
         });
+
+        // Send Slack notification for failure
+        if (isSlackEnabled()) {
+          await notifyJobFailed(
+            {
+              id: reportId,
+              dossierNumber: report.dossierNumber,
+              clientName: report.clientName || "Onbekend",
+            },
+            stageId,
+            stageError.message || "Unknown error"
+          );
+        }
 
         throw stageError;
       }
@@ -568,6 +601,26 @@ class JobProcessor {
         changesCount: stageSummaries.find(ss => ss.stageId === s)?.changesCount
       }))
     });
+
+    // Send Slack notification for Express Mode completion
+    if (isSlackEnabled()) {
+      const jobDuration = Date.now() - (job.startedAt?.getTime() || Date.now());
+      await notifyExpressModeComplete(
+        {
+          id: reportId,
+          dossierNumber: finalReport?.dossierNumber || 0,
+          clientName: finalReport?.clientName || "Onbekend",
+        },
+        stageSummaries.map(s => ({
+          stageId: s.stageId,
+          stageName: s.stageName,
+          changesCount: s.changesCount,
+          durationMs: s.processingTimeMs || 0,
+        })),
+        totalChanges,
+        jobDuration
+      );
+    }
   }
 
   /**

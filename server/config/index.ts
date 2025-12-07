@@ -33,10 +33,14 @@ const envSchema = z.object({
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000), // 15 minutes
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
-  
+
   // AI Service limits
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().default(600000), // 10 minutes for complex reports
   AI_MAX_RETRIES: z.coerce.number().default(2),
+
+  // Slack notifications
+  SLACK_WEBHOOK_URL: z.string().url().optional(),
+  PORTAL_BASE_URL: z.string().url().optional(),
 });
 
 // Validate environment variables
