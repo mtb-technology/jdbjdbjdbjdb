@@ -869,6 +869,22 @@ export function registerReportRoutes(
 
       console.log(`✅ [${reportId}-${stageId}] Feedback processing completed using Editor prompt - v${processingResult.snapshot.v}`);
 
+      // Persist proposal decisions to substepResults for historical viewing
+      if (filteredChanges) {
+        const currentSubstepResults = (report.substepResults as Record<string, any>) || {};
+        await storage.updateReport(reportId, {
+          substepResults: {
+            ...currentSubstepResults,
+            [stageId]: {
+              ...currentSubstepResults[stageId],
+              processedAt: new Date().toISOString(),
+              proposalDecisions: feedbackJSON
+            }
+          }
+        });
+        console.log(`💾 [${reportId}-${stageId}] Saved proposal decisions to substepResults`);
+      }
+
       // Emit SSE event for feedback processing complete
       sseHandler.broadcast(reportId, stageId, {
         type: 'step_complete',

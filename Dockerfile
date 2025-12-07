@@ -30,6 +30,9 @@ COPY --from=builder /app/package*.json /app/
 COPY --from=builder /app/drizzle.config.ts /app/
 COPY --from=builder /app/shared /app/shared
 
+# Copy server templates (PDF templates, etc.)
+COPY --from=builder /app/server/templates /app/server/templates
+
 # Copy startup scripts
 COPY start.sh /start.sh
 COPY docker-entrypoint.sh /docker-entrypoint.sh

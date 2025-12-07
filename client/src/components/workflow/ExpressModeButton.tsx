@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Zap, Loader2, CheckCircle, XCircle, AlertCircle, Play } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ExpressModeResults } from "./ExpressModeResults";
+import { useCreateJob, useJobPolling, type JobProgress } from "@/hooks/useJobPolling";
 import type { ExpressModeSummary } from "@shared/types/api";
 
 interface ExpressModeButtonProps {
@@ -40,10 +41,81 @@ export function ExpressModeButton({
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [summary, setSummary] = useState<ExpressModeSummary | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const { toast } = useToast();
+  const { createExpressModeJob } = useCreateJob();
 
   // Use ref to track summary across async operations (state updates are async)
   const summaryRef = useRef<ExpressModeSummary | null>(null);
+
+  // Poll for job progress when we have an active job
+  const { job, progress } = useJobPolling({
+    jobId: currentJobId,
+    reportId,
+    onComplete: (completedJob) => {
+      console.log('[ExpressMode] Job completed:', completedJob);
+      setIsRunning(false);
+
+      // Build summary from job result
+      if (completedJob.result) {
+        const summaryData: ExpressModeSummary = {
+          stages: completedJob.result.stages || [],
+          totalChanges: completedJob.result.totalChanges || 0,
+          finalVersion: completedJob.result.finalVersion || 1,
+          totalProcessingTimeMs: 0, // Not tracked in job
+          finalContent: completedJob.result.finalContent || '',
+        };
+        summaryRef.current = summaryData;
+        setSummary(summaryData);
+        setIsOpen(false);
+        setShowResults(true);
+      } else {
+        toast({
+          title: "Express Mode Voltooid",
+          description: "Alle review stages zijn succesvol verwerkt",
+        });
+        setTimeout(() => {
+          setIsOpen(false);
+          onComplete?.();
+        }, 2000);
+      }
+
+      setCurrentJobId(null);
+    },
+    onError: (failedJob) => {
+      console.error('[ExpressMode] Job failed:', failedJob);
+      setIsRunning(false);
+      setCurrentJobId(null);
+      toast({
+        title: "Express Mode Gefaald",
+        description: failedJob.error || "Er is een fout opgetreden",
+        variant: "destructive",
+      });
+    },
+    enabled: !!currentJobId,
+  });
+
+  // Update UI stages from job progress
+  useEffect(() => {
+    if (progress?.stages) {
+      const mappedStages: StageProgress[] = progress.stages.map((s, index) => ({
+        stageId: s.stageId,
+        stageNumber: index + 1,
+        totalStages: progress.stages.length,
+        status: s.status === 'processing' ? 'running' : s.status === 'completed' ? 'completed' : s.status === 'failed' ? 'error' : 'pending',
+        percentage: s.percentage,
+        message: progress.currentStage === s.stageId ? progress.message : undefined,
+        error: s.error,
+      }));
+      setStages(mappedStages);
+
+      // Update current stage index
+      const currentIdx = progress.stages.findIndex(s => s.status === 'processing');
+      if (currentIdx >= 0) {
+        setCurrentStageIndex(currentIdx);
+      }
+    }
+  }, [progress]);
 
   const handleCloseResults = useCallback(() => {
     setShowResults(false);
@@ -62,202 +134,49 @@ export function ExpressModeButton({
     setShowResults(false);
 
     try {
-      console.log(`[ExpressMode] Starting for report ${reportId}...`, { includeGeneration });
+      console.log(`[ExpressMode] Starting background job for report ${reportId}...`, { includeGeneration });
 
-      const response = await fetch(`/api/reports/${reportId}/express-mode`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ autoAccept: true, includeGeneration }),
-        credentials: 'include',
+      // Create background job instead of SSE stream
+      const jobId = await createExpressModeJob(reportId, {
+        includeGeneration,
+        autoAccept: true,
       });
 
-      console.log(`[ExpressMode] Response received:`, {
-        ok: response.ok,
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries())
+      if (!jobId) {
+        throw new Error('Failed to create Express Mode job');
+      }
+
+      console.log(`[ExpressMode] Job created: ${jobId}`);
+      setCurrentJobId(jobId);
+
+      // Initialize default stages for UI
+      const defaultStages = includeGeneration
+        ? ['3_generatie', '4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', '4c_ScenarioGatenAnalist', '4e_DeAdvocaat', '4f_HoofdCommunicatie']
+        : ['4a_BronnenSpecialist', '4b_FiscaalTechnischSpecialist', '4c_ScenarioGatenAnalist', '4e_DeAdvocaat', '4f_HoofdCommunicatie'];
+
+      setStages(defaultStages.map((stageId, index) => ({
+        stageId,
+        stageNumber: index + 1,
+        totalStages: defaultStages.length,
+        status: 'pending',
+        percentage: 0,
+      })));
+
+      toast({
+        title: "Express Mode Gestart",
+        description: "Je kunt dit venster sluiten - de verwerking loopt door op de achtergrond",
       });
-
-      if (!response.ok) {
-        // Try to read error body
-        const errorText = await response.text();
-        console.error(`[ExpressMode] Error response:`, errorText);
-        throw new Error(`Failed to start Express Mode: ${response.status} - ${errorText.substring(0, 200)}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response body reader');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.trim() || !line.startsWith('data: ')) continue;
-
-          try {
-            const event = JSON.parse(line.substring(6));
-            handleSSEEvent(event);
-          } catch (e) {
-            console.error('Failed to parse SSE event:', e);
-          }
-        }
-      }
-
-      setIsRunning(false);
-
-      // If we have a summary, show the results view
-      // Otherwise fall back to the old behavior
-      // Use ref because state updates are async and not yet available here
-      if (summaryRef.current) {
-        setIsOpen(false);
-        setShowResults(true);
-      } else {
-        toast({
-          title: "Express Mode Voltooid",
-          description: "Alle review stages zijn succesvol verwerkt",
-        });
-
-        setTimeout(() => {
-          setIsOpen(false);
-          onComplete?.();
-        }, 2000);
-      }
 
     } catch (error: any) {
       console.error('Express Mode error:', error);
       setIsRunning(false);
+      setCurrentJobId(null);
 
       toast({
         title: "Express Mode Gefaald",
         description: error.message || "Er is een fout opgetreden",
         variant: "destructive",
       });
-    }
-  };
-
-  const handleSSEEvent = (event: any) => {
-    console.log('SSE Event:', event);
-
-    switch (event.type) {
-      case 'stage_start':
-        setStages(prev => {
-          const existingIndex = prev.findIndex(s => s.stageId === event.stageId);
-          const newStage: StageProgress = {
-            stageId: event.stageId,
-            stageNumber: event.stageNumber,
-            totalStages: event.totalStages,
-            status: 'running',
-            percentage: 0,
-            message: event.message,
-          };
-
-          if (existingIndex >= 0) {
-            const updated = [...prev];
-            updated[existingIndex] = newStage;
-            return updated;
-          }
-          return [...prev, newStage];
-        });
-        setCurrentStageIndex(event.stageNumber - 1);
-        break;
-
-      case 'step_progress':
-        setStages(prev =>
-          prev.map(stage =>
-            stage.stageId === event.stageId
-              ? {
-                  ...stage,
-                  substep: event.substepId,
-                  percentage: event.percentage,
-                  message: event.message,
-                }
-              : stage
-          )
-        );
-        break;
-
-      case 'step_complete':
-        setStages(prev =>
-          prev.map(stage =>
-            stage.stageId === event.stageId
-              ? {
-                  ...stage,
-                  substep: event.substepId,
-                  percentage: event.percentage,
-                  message: event.message,
-                }
-              : stage
-          )
-        );
-        break;
-
-      case 'stage_complete':
-        setStages(prev =>
-          prev.map(stage =>
-            stage.stageId === event.stageId
-              ? {
-                  ...stage,
-                  status: 'completed',
-                  percentage: 100,
-                  message: event.message,
-                }
-              : stage
-          )
-        );
-        break;
-
-      case 'stage_error':
-        setStages(prev =>
-          prev.map(stage =>
-            stage.stageId === event.stageId
-              ? {
-                  ...stage,
-                  status: 'error',
-                  error: event.error,
-                  message: `Error: ${event.error}`,
-                }
-              : stage
-          )
-        );
-        setIsRunning(false);
-        break;
-
-      case 'express_summary':
-        // Store the summary for the results view
-        // Update both state and ref (ref is used for immediate check after stream ends)
-        const summaryData: ExpressModeSummary = {
-          stages: event.stages || [],
-          totalChanges: event.totalChanges || 0,
-          finalVersion: event.finalVersion || 1,
-          totalProcessingTimeMs: event.totalProcessingTimeMs || 0,
-          finalContent: event.finalContent || '',
-        };
-        summaryRef.current = summaryData;
-        setSummary(summaryData);
-        break;
-
-      case 'express_complete':
-        setIsRunning(false);
-        break;
-
-      case 'express_error':
-        setIsRunning(false);
-        toast({
-          title: "Express Mode Gefaald",
-          description: event.error,
-          variant: "destructive",
-        });
-        break;
     }
   };
 
@@ -402,9 +321,27 @@ export function ExpressModeButton({
 
             {/* Status Message */}
             {isRunning && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Express Mode actief - dit kan enkele minuten duren...</span>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 text-sm text-blue-700">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="font-medium">Express Mode actief op de achtergrond</span>
+                </div>
+                <p className="text-xs text-blue-600 mt-1">
+                  Je kunt dit venster sluiten en later terugkomen - de verwerking loopt door.
+                </p>
+              </div>
+            )}
+
+            {/* Close button when running */}
+            {isRunning && (
+              <div className="flex justify-end pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsOpen(false)}
+                >
+                  Sluiten (verwerking loopt door)
+                </Button>
               </div>
             )}
           </div>

@@ -92,6 +92,7 @@ export const StageOutputSection = memo(function StageOutputSection({
   showFeedbackProcessor,
   reportId,
   onFeedbackProcessed,
+  substepResults,
 }: StageOutputSectionProps) {
   const [showRawOutput, setShowRawOutput] = useState(false);
 
@@ -157,6 +158,7 @@ export const StageOutputSection = memo(function StageOutputSection({
                 stageName={stageName}
                 rawFeedback={stageResult}
                 onProcessingComplete={onFeedbackProcessed}
+                savedDecisions={substepResults?.[stageKey]?.proposalDecisions}
               />
               <RawOutputToggle
                 stageResult={stageResult}

@@ -80,6 +80,7 @@ export interface WorkflowStageCardProps {
   showFeedbackProcessor?: boolean;
   onFeedbackProcessed?: (response: ProcessFeedbackResponse) => void;
   blockReason?: string;
+  substepResults?: Record<string, any>;
 
   // Manual mode
   manualMode?: ManualMode;
@@ -186,4 +187,6 @@ export interface StageOutputSectionProps {
   showFeedbackProcessor?: boolean;
   reportId?: string;
   onFeedbackProcessed?: (response: ProcessFeedbackResponse) => void;
+  // Substep results for persisted decisions
+  substepResults?: Record<string, any>;
 }

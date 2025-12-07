@@ -81,6 +81,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   showExpressMode,
   hasStage3,
   onExpressComplete,
+  substepResults,
 }: WorkflowStageCardProps) {
   // Local UI state
   const [copied, setCopied] = useState(false);
@@ -215,6 +216,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   showFeedbackProcessor={showFeedbackProcessor}
                   reportId={reportId}
                   onFeedbackProcessed={onFeedbackProcessed}
+                  substepResults={substepResults}
                 />
               )}
             </CardContent>

@@ -47,24 +47,53 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
   stageName,
   rawFeedback,
   onProcessingComplete,
+  savedDecisions,
 }: SimpleFeedbackProcessorProps) {
-  // Local state
+  // Local state - initialize hasProcessed based on savedDecisions
   const [userInstructions, setUserInstructions] = useState("");
-  const [hasProcessed, setHasProcessed] = useState(false);
+  const [hasProcessed, setHasProcessed] = useState(() => !!savedDecisions?.length);
   const [showPromptPreview, setShowPromptPreview] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("structured");
   const { toast } = useToast();
 
-  // Parse feedback into structured proposals
-  const [proposals, setProposals] = useState<ChangeProposal[]>(() =>
-    parseFeedbackToProposals(rawFeedback, stageName, stageId)
-  );
+  // Parse feedback into structured proposals, merging with saved decisions
+  const [proposals, setProposals] = useState<ChangeProposal[]>(() => {
+    const parsed = parseFeedbackToProposals(rawFeedback, stageName, stageId);
+    if (savedDecisions?.length) {
+      return parsed.map(p => {
+        const saved = savedDecisions.find(s => s.id === p.id);
+        if (saved) {
+          return {
+            ...p,
+            userDecision: saved.userDecision,
+            userNote: saved.userModified || saved.userNote,
+          };
+        }
+        return p;
+      });
+    }
+    return parsed;
+  });
 
-  // Sync proposals when rawFeedback changes
+  // Sync proposals when rawFeedback changes, preserving saved decisions
   useEffect(() => {
     const newProposals = parseFeedbackToProposals(rawFeedback, stageName, stageId);
-    setProposals(newProposals);
-  }, [rawFeedback, stageName, stageId]);
+    if (savedDecisions?.length) {
+      setProposals(newProposals.map(p => {
+        const saved = savedDecisions.find(s => s.id === p.id);
+        if (saved) {
+          return {
+            ...p,
+            userDecision: saved.userDecision,
+            userNote: saved.userModified || saved.userNote,
+          };
+        }
+        return p;
+      }));
+    } else {
+      setProposals(newProposals);
+    }
+  }, [rawFeedback, stageName, stageId, savedDecisions]);
 
   // Mutations hook
   const { aiStatus, processFeedbackMutation, promptPreviewMutation } =

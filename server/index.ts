@@ -6,6 +6,7 @@ import { errorHandler } from "./middleware/errorHandler";
 import { config, validateConfig } from "./config";
 import { checkDatabaseConnection } from "./db";
 import { initializeDossierSequence } from "./storage";
+import { startJobProcessor, stopJobProcessor } from "./services/job-processor";
 
 const app = express();
 
@@ -158,11 +159,33 @@ app.use((req, res, next) => {
   server.listen(port, "0.0.0.0", () => {
     console.log(`🚀 ✅ SERVER SUCCESSFULLY LISTENING ON PORT ${port}`);
     log(`serving on port ${port}`);
+
+    // Start the background job processor
+    startJobProcessor();
   });
 
   server.on('error', (error: any) => {
     console.error(`❌ SERVER ERROR:`, error);
     console.error(`❌ Failed to bind to port ${port}`);
     process.exit(1);
+  });
+
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('📴 SIGTERM received, shutting down gracefully...');
+    stopJobProcessor();
+    server.close(() => {
+      console.log('✅ Server closed');
+      process.exit(0);
+    });
+  });
+
+  process.on('SIGINT', () => {
+    console.log('📴 SIGINT received, shutting down gracefully...');
+    stopJobProcessor();
+    server.close(() => {
+      console.log('✅ Server closed');
+      process.exit(0);
+    });
   });
 })();

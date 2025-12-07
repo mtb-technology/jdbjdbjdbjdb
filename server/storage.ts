@@ -1,5 +1,5 @@
-import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession, type ExternalReportSession, type InsertExternalReportSession, type ExternalReportAdjustment, type InsertExternalReportAdjustment } from "@shared/schema";
-import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions, externalReportSessions, externalReportAdjustments } from "@shared/schema";
+import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession, type ExternalReportSession, type InsertExternalReportSession, type ExternalReportAdjustment, type InsertExternalReportAdjustment, type Job, type InsertJob } from "@shared/schema";
+import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions, externalReportSessions, externalReportAdjustments, jobs } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql } from "drizzle-orm";
 import * as fs from "fs";
@@ -68,6 +68,16 @@ export interface IStorage {
   // External Report Adjustments
   createExternalReportAdjustment(adjustment: InsertExternalReportAdjustment): Promise<ExternalReportAdjustment>;
   getAdjustmentsForSession(sessionId: string): Promise<ExternalReportAdjustment[]>;
+
+  // Jobs - Background task management
+  createJob(job: InsertJob): Promise<Job>;
+  getJob(id: string): Promise<Job | undefined>;
+  getJobsByStatus(status: string | string[]): Promise<Job[]>;
+  getJobsForReport(reportId: string, status?: string | string[]): Promise<Job[]>;
+  updateJobProgress(id: string, progress: Record<string, any>): Promise<Job | undefined>;
+  startJob(id: string): Promise<Job | undefined>;
+  completeJob(id: string, result: Record<string, any>): Promise<Job | undefined>;
+  failJob(id: string, error: string): Promise<Job | undefined>;
 }
 
 // Flag to track if dossier number migration has been checked
@@ -696,6 +706,97 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(externalReportAdjustments)
       .where(eq(externalReportAdjustments.sessionId, sessionId))
       .orderBy(externalReportAdjustments.version);
+  }
+
+  // ===== JOBS - Background Task Management =====
+
+  async createJob(insertJob: InsertJob): Promise<Job> {
+    const [job] = await db.insert(jobs).values(insertJob).returning();
+    console.log(`📋 [Jobs] Created job ${job.id} of type "${job.type}" for report ${job.reportId}`);
+    return job;
+  }
+
+  async getJob(id: string): Promise<Job | undefined> {
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
+    return job || undefined;
+  }
+
+  async getJobsByStatus(status: string | string[]): Promise<Job[]> {
+    const statuses = Array.isArray(status) ? status : [status];
+    return await db.select().from(jobs)
+      .where(sql`${jobs.status} = ANY(${statuses})`)
+      .orderBy(jobs.createdAt);
+  }
+
+  async getJobsForReport(reportId: string, status?: string | string[]): Promise<Job[]> {
+    if (status) {
+      const statuses = Array.isArray(status) ? status : [status];
+      return await db.select().from(jobs)
+        .where(and(
+          eq(jobs.reportId, reportId),
+          sql`${jobs.status} = ANY(${statuses})`
+        ))
+        .orderBy(desc(jobs.createdAt));
+    }
+    return await db.select().from(jobs)
+      .where(eq(jobs.reportId, reportId))
+      .orderBy(desc(jobs.createdAt));
+  }
+
+  async updateJobProgress(id: string, progress: Record<string, any>): Promise<Job | undefined> {
+    const [updated] = await db
+      .update(jobs)
+      .set({ progress: JSON.stringify(progress) })
+      .where(eq(jobs.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async startJob(id: string): Promise<Job | undefined> {
+    const [updated] = await db
+      .update(jobs)
+      .set({
+        status: 'processing',
+        startedAt: new Date()
+      })
+      .where(eq(jobs.id, id))
+      .returning();
+    if (updated) {
+      console.log(`▶️ [Jobs] Started job ${id}`);
+    }
+    return updated || undefined;
+  }
+
+  async completeJob(id: string, result: Record<string, any>): Promise<Job | undefined> {
+    const [updated] = await db
+      .update(jobs)
+      .set({
+        status: 'completed',
+        result,
+        completedAt: new Date()
+      })
+      .where(eq(jobs.id, id))
+      .returning();
+    if (updated) {
+      console.log(`✅ [Jobs] Completed job ${id}`);
+    }
+    return updated || undefined;
+  }
+
+  async failJob(id: string, error: string): Promise<Job | undefined> {
+    const [updated] = await db
+      .update(jobs)
+      .set({
+        status: 'failed',
+        error,
+        completedAt: new Date()
+      })
+      .where(eq(jobs.id, id))
+      .returning();
+    if (updated) {
+      console.error(`❌ [Jobs] Failed job ${id}: ${error}`);
+    }
+    return updated || undefined;
   }
 
   /**

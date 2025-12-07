@@ -29,6 +29,7 @@ import { WORKFLOW_STAGES } from "./constants";
 import { WorkflowStageCard } from "./WorkflowStageCard";
 import { StageGroupNavigator } from "./StageGroupNavigator";
 import { WorkflowProgressHeader } from "./WorkflowProgressHeader";
+import { ActiveJobsBanner } from "./ActiveJobsBanner";
 
 // Hooks
 import { useCollapsibleSections } from "@/hooks/useCollapsibleSections";
@@ -162,6 +163,14 @@ export const WorkflowView = memo(function WorkflowView({
           onAdjustmentApplied={handleAdjustmentApplied}
         />
 
+        {/* Active Jobs Banner - shows when background jobs are running */}
+        {state.currentReport?.id && (
+          <ActiveJobsBanner
+            reportId={state.currentReport.id}
+            onJobComplete={handleExpressComplete}
+          />
+        )}
+
         {/* Workflow Layout with Sidebar */}
         <div className="flex gap-4">
           {/* Sidebar Navigator */}
@@ -270,6 +279,7 @@ export const WorkflowView = memo(function WorkflowView({
                         showFeedbackProcessor={showFeedbackProcessor}
                         onFeedbackProcessed={(response) => handleFeedbackProcessed(stage.key, response)}
                         blockReason={blockReason || undefined}
+                        substepResults={state.currentReport?.substepResults as Record<string, any> | undefined}
                         // Email props for stage 1a (from auto-triggered 1b)
                         emailOutput={stage.key === "1a_informatiecheck" ? state.stageResults["1b_informatiecheck_email"] : undefined}
                         isGeneratingEmail={stage.key === "1a_informatiecheck" ? state.stageProcessing["1b_informatiecheck_email"] : undefined}

@@ -8,6 +8,16 @@ import type { ChangeProposal } from "@/components/workflow/ChangeProposalCard";
 import type { ProcessFeedbackResponse } from "@shared/types/api";
 
 /**
+ * Saved decision from database for a proposal
+ */
+export interface SavedProposalDecision {
+  id: string;
+  userDecision?: 'accept' | 'reject' | 'modify';
+  userNote?: string;
+  userModified?: string;
+}
+
+/**
  * Props for SimpleFeedbackProcessor
  */
 export interface SimpleFeedbackProcessorProps {
@@ -16,6 +26,7 @@ export interface SimpleFeedbackProcessorProps {
   stageName: string;
   rawFeedback: string;
   onProcessingComplete?: (result: ProcessFeedbackResponse) => void;
+  savedDecisions?: SavedProposalDecision[];
 }
 
 /**

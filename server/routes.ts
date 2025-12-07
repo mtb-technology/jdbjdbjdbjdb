@@ -25,6 +25,7 @@ import { registerHealthRoutes } from "./routes/health-routes";
 import { registerPromptRoutes } from "./routes/prompt-routes";
 import { registerCaseRoutes } from "./routes/case-routes";
 import { registerReportRoutes } from "./routes/report-routes";
+import { registerJobRoutes } from "./routes/job-routes";
 import { box3ValidatorRouter } from "./routes/box3-validator-routes";
 import { externalReportRouter } from "./routes/external-report-routes";
 import { z } from "zod";
@@ -83,6 +84,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     sseHandler,
     sessionManager
   });
+
+  // Job routes - background task management
+  registerJobRoutes(app);
 
   // Box 3 Validator micro-module
   app.use("/api/box3-validator", box3ValidatorRouter);

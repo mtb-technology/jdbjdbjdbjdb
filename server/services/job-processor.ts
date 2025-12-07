@@ -1,0 +1,608 @@
+/**
+ * Job Processor Service
+ *
+ * Background worker that processes jobs from the database queue.
+ * Handles both single stage executions and Express Mode (multi-stage).
+ *
+ * Jobs survive browser disconnects and server restarts.
+ */
+
+import { storage } from "../storage";
+import { ReportGenerator } from "./report-generator";
+import { ReportProcessor } from "./report-processor";
+import { PromptBuilder } from "./prompt-builder";
+import { getLatestConceptText } from "@shared/constants";
+import { summarizeFeedback } from "../utils/feedback-summarizer";
+import type { Job, DossierData, BouwplanData, StageId, PromptConfig } from "@shared/schema";
+
+// Job types
+export type JobType = "single_stage" | "express_mode" | "generation";
+
+// Progress structure stored in jobs.progress JSON
+export interface JobProgress {
+  currentStage: string;
+  percentage: number;
+  message: string;
+  stages: Array<{
+    stageId: string;
+    status: "pending" | "processing" | "completed" | "failed";
+    percentage: number;
+    changesCount?: number;
+    error?: string;
+  }>;
+}
+
+// Job configuration stored in jobs.result when job is created (input params)
+export interface SingleStageJobConfig {
+  stageId: string;
+  customInput?: string;
+}
+
+export interface ExpressModeJobConfig {
+  includeGeneration: boolean;
+  autoAccept: boolean;
+  stages?: string[];
+}
+
+class JobProcessor {
+  private isRunning = false;
+  private pollInterval = 3000; // 3 seconds
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private reportGenerator: ReportGenerator;
+  private reportProcessor: ReportProcessor;
+
+  constructor() {
+    this.reportGenerator = new ReportGenerator();
+
+    // Create AI handler for ReportProcessor using same approach as routes.ts
+    const aiHandler = {
+      generateContent: async (params: { prompt: string; temperature: number; topP: number; maxOutputTokens: number }) => {
+        const result = await this.reportGenerator.testAI(params.prompt, {
+          temperature: params.temperature,
+          topP: params.topP,
+          maxOutputTokens: params.maxOutputTokens
+        });
+        return { content: result };
+      }
+    };
+    this.reportProcessor = new ReportProcessor(aiHandler);
+  }
+
+  /**
+   * Start the job processor polling loop
+   */
+  start(): void {
+    if (this.isRunning) {
+      console.log("⚠️ [JobProcessor] Already running");
+      return;
+    }
+
+    this.isRunning = true;
+    console.log("🚀 [JobProcessor] Started - polling for jobs every", this.pollInterval, "ms");
+
+    this.pollTimer = setInterval(() => this.pollForJobs(), this.pollInterval);
+
+    // Also poll immediately on start
+    this.pollForJobs();
+  }
+
+  /**
+   * Stop the job processor
+   */
+  stop(): void {
+    if (!this.isRunning) return;
+
+    this.isRunning = false;
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+    console.log("🛑 [JobProcessor] Stopped");
+  }
+
+  /**
+   * Poll for queued jobs and process them
+   */
+  private async pollForJobs(): Promise<void> {
+    if (!this.isRunning) return;
+
+    try {
+      // Get all queued jobs
+      const queuedJobs = await storage.getJobsByStatus("queued");
+
+      if (queuedJobs.length > 0) {
+        console.log(`📋 [JobProcessor] Found ${queuedJobs.length} queued job(s)`);
+      }
+
+      // Process jobs one at a time (sequential for now)
+      for (const job of queuedJobs) {
+        await this.processJob(job);
+      }
+    } catch (error) {
+      console.error("❌ [JobProcessor] Error polling for jobs:", error);
+    }
+  }
+
+  /**
+   * Process a single job
+   */
+  private async processJob(job: Job): Promise<void> {
+    const startTime = Date.now();
+    console.log(`▶️ [JobProcessor] Processing job ${job.id} (type: ${job.type})`);
+
+    try {
+      // Mark job as processing
+      await storage.startJob(job.id);
+
+      // Get the job config from result field (stored at creation time)
+      const config = job.result as Record<string, any> || {};
+
+      switch (job.type) {
+        case "single_stage":
+          await this.processSingleStage(job, config as SingleStageJobConfig);
+          break;
+        case "express_mode":
+          await this.processExpressMode(job, config as ExpressModeJobConfig);
+          break;
+        default:
+          throw new Error(`Unknown job type: ${job.type}`);
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ [JobProcessor] Job ${job.id} completed in ${duration}ms`);
+
+    } catch (error: any) {
+      console.error(`❌ [JobProcessor] Job ${job.id} failed:`, error);
+      await storage.failJob(job.id, error.message || "Unknown error");
+    }
+  }
+
+  /**
+   * Process a single stage job
+   */
+  private async processSingleStage(job: Job, config: SingleStageJobConfig): Promise<void> {
+    const { stageId, customInput } = config;
+    const reportId = job.reportId!;
+
+    // Update progress
+    await this.updateProgress(job.id, {
+      currentStage: stageId,
+      percentage: 0,
+      message: `Starting ${stageId}...`,
+      stages: [{ stageId, status: "processing", percentage: 0 }]
+    });
+
+    // Get report
+    const report = await storage.getReport(reportId);
+    if (!report) {
+      throw new Error("Report not found");
+    }
+
+    // Update progress
+    await this.updateProgress(job.id, {
+      currentStage: stageId,
+      percentage: 25,
+      message: `Executing ${stageId}...`,
+      stages: [{ stageId, status: "processing", percentage: 25 }]
+    });
+
+    // Handle attachments for Stage 1a
+    let dossierWithAttachments = report.dossierData as DossierData;
+    let visionAttachments: Array<{ mimeType: string; data: string; filename: string }> = [];
+
+    if (stageId === "1a_informatiecheck") {
+      const attachments = await storage.getAttachmentsForReport(reportId);
+      if (attachments.length > 0) {
+        const textAttachments = attachments.filter(att => att.extractedText && !att.needsVisionOCR);
+        const visionNeededAttachments = attachments.filter(att => att.needsVisionOCR);
+
+        if (textAttachments.length > 0) {
+          const attachmentTexts = textAttachments
+            .map(att => `\n\n=== BIJLAGE: ${att.filename} ===\n${att.extractedText}`)
+            .join("");
+
+          const existingRawText = (dossierWithAttachments as any).rawText || "";
+          dossierWithAttachments = {
+            ...dossierWithAttachments,
+            rawText: existingRawText + attachmentTexts
+          };
+        }
+
+        if (visionNeededAttachments.length > 0) {
+          visionAttachments = visionNeededAttachments.map(att => ({
+            mimeType: att.mimeType,
+            data: att.fileData,
+            filename: att.filename
+          }));
+        }
+
+        for (const att of attachments) {
+          await storage.updateAttachmentUsage(att.id, stageId);
+        }
+      }
+    }
+
+    // Execute stage
+    const result = await this.reportGenerator.executeStage(
+      stageId,
+      dossierWithAttachments,
+      report.bouwplanData as BouwplanData,
+      report.stageResults as Record<string, string> || {},
+      report.conceptReportVersions as Record<string, string> || {},
+      customInput,
+      reportId,
+      undefined, // onProgress callback
+      visionAttachments.length > 0 ? visionAttachments : undefined
+    );
+
+    // Update progress
+    await this.updateProgress(job.id, {
+      currentStage: stageId,
+      percentage: 75,
+      message: `Saving results...`,
+      stages: [{ stageId, status: "processing", percentage: 75 }]
+    });
+
+    // Update stage results
+    const updatedStageResults = {
+      ...(report.stageResults as Record<string, string> || {}),
+      [stageId]: result.stageOutput
+    };
+
+    await storage.updateReport(reportId, {
+      stageResults: updatedStageResults,
+      stagePrompts: {
+        ...(report.stagePrompts as Record<string, string> || {}),
+        [stageId]: result.prompt
+      }
+    });
+
+    // Handle concept report for stage 3
+    if (stageId === "3_generatie") {
+      const initialConceptVersions = {
+        "3_generatie": {
+          v: 1,
+          content: result.stageOutput,
+          createdAt: new Date().toISOString()
+        },
+        latest: {
+          v: 1,
+          content: result.stageOutput,
+          createdAt: new Date().toISOString()
+        }
+      };
+
+      await storage.updateReport(reportId, {
+        conceptReportVersions: initialConceptVersions
+      });
+    }
+
+    // Complete the job
+    await storage.completeJob(job.id, {
+      stageId,
+      stageOutput: result.stageOutput,
+      prompt: result.prompt
+    });
+
+    // Update final progress
+    await this.updateProgress(job.id, {
+      currentStage: stageId,
+      percentage: 100,
+      message: `${stageId} completed`,
+      stages: [{ stageId, status: "completed", percentage: 100 }]
+    });
+  }
+
+  /**
+   * Process Express Mode job (multiple stages)
+   */
+  private async processExpressMode(job: Job, config: ExpressModeJobConfig): Promise<void> {
+    const reportId = job.reportId!;
+    const { includeGeneration, autoAccept } = config;
+
+    // Get report
+    let report = await storage.getReport(reportId);
+    if (!report) {
+      throw new Error("Report not found");
+    }
+
+    // Build stages list
+    let stages: string[] = [];
+    if (includeGeneration) {
+      stages.push("3_generatie");
+    }
+
+    const reviewStages = config.stages || [
+      "4a_BronnenSpecialist",
+      "4b_FiscaalTechnischSpecialist",
+      "4c_ScenarioGatenAnalist",
+      "4e_DeAdvocaat",
+      "4f_HoofdCommunicatie"
+    ];
+    stages = stages.concat(reviewStages);
+
+    // Initialize progress
+    const initialProgress: JobProgress = {
+      currentStage: stages[0],
+      percentage: 0,
+      message: "Starting Express Mode...",
+      stages: stages.map(s => ({ stageId: s, status: "pending", percentage: 0 }))
+    };
+    await this.updateProgress(job.id, initialProgress);
+
+    // Track stage summaries for final result
+    const stageSummaries: Array<{
+      stageId: string;
+      stageName: string;
+      changesCount: number;
+      changes: Array<{ type: string; description: string; severity: string; section?: string }>;
+      processingTimeMs?: number;
+    }> = [];
+
+    // Process each stage
+    for (let i = 0; i < stages.length; i++) {
+      const stageId = stages[i];
+      const stageStartTime = Date.now();
+
+      // Update progress
+      await this.updateProgress(job.id, {
+        currentStage: stageId,
+        percentage: Math.round((i / stages.length) * 100),
+        message: `Processing ${stageId}...`,
+        stages: stages.map((s, idx) => ({
+          stageId: s,
+          status: idx < i ? "completed" : idx === i ? "processing" : "pending",
+          percentage: idx < i ? 100 : idx === i ? 25 : 0
+        }))
+      });
+
+      try {
+        const isGenerationStage = stageId === "3_generatie";
+
+        if (isGenerationStage) {
+          // Stage 3: Generate concept report
+          const stageExecution = await this.reportGenerator.executeStage(
+            stageId,
+            report.dossierData as DossierData,
+            report.bouwplanData as BouwplanData,
+            report.stageResults as Record<string, string> || {},
+            report.conceptReportVersions as Record<string, string> || {},
+            undefined,
+            reportId
+          );
+
+          // Update stageResults
+          const updatedStageResults = {
+            ...(report.stageResults as Record<string, string> || {}),
+            [stageId]: stageExecution.stageOutput
+          };
+
+          // Store as first concept version
+          const existingConceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
+          const timestamp = new Date().toISOString();
+          const newConceptVersions = {
+            ...existingConceptVersions,
+            "3_generatie": {
+              content: stageExecution.stageOutput,
+              v: 1,
+              timestamp,
+              source: "express_mode_generation"
+            },
+            latest: {
+              pointer: "3_generatie",
+              v: 1
+            },
+            history: [
+              ...(existingConceptVersions.history || []),
+              { stageId: "3_generatie", v: 1, timestamp }
+            ]
+          };
+
+          await storage.updateReport(reportId, {
+            stageResults: updatedStageResults,
+            conceptReportVersions: newConceptVersions,
+            generatedContent: stageExecution.stageOutput,
+            currentStage: stageId as StageId
+          });
+
+          report = await storage.getReport(reportId) || report;
+
+        } else {
+          // Reviewer stages (4a-4f): Generate feedback then process it
+          const stageExecution = await this.reportGenerator.executeStage(
+            stageId,
+            report.dossierData as DossierData,
+            report.bouwplanData as BouwplanData,
+            report.stageResults as Record<string, string> || {},
+            report.conceptReportVersions as Record<string, string> || {},
+            undefined,
+            reportId
+          );
+
+          // Update stageResults with feedback
+          const updatedStageResults = {
+            ...(report.stageResults as Record<string, string> || {}),
+            [stageId]: stageExecution.stageOutput
+          };
+
+          await storage.updateReport(reportId, {
+            stageResults: updatedStageResults,
+            currentStage: stageId as StageId
+          });
+
+          // Update progress
+          await this.updateProgress(job.id, {
+            currentStage: stageId,
+            percentage: Math.round(((i + 0.5) / stages.length) * 100),
+            message: `Processing feedback for ${stageId}...`,
+            stages: stages.map((s, idx) => ({
+              stageId: s,
+              status: idx < i ? "completed" : idx === i ? "processing" : "pending",
+              percentage: idx < i ? 100 : idx === i ? 75 : 0
+            }))
+          });
+
+          // Auto-accept and process feedback
+          if (autoAccept) {
+            let feedbackJSON;
+            try {
+              feedbackJSON = JSON.parse(stageExecution.stageOutput);
+            } catch {
+              feedbackJSON = stageExecution.stageOutput;
+            }
+
+            let latestConceptText = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
+            if (!latestConceptText && report.generatedContent) {
+              latestConceptText = report.generatedContent.toString();
+            }
+
+            if (!latestConceptText) {
+              throw new Error("No concept report found to process feedback");
+            }
+
+            // Get Editor prompt
+            const activeConfig = await storage.getActivePromptConfig();
+            if (!activeConfig || !activeConfig.config) {
+              throw new Error("No active Editor prompt configuration found");
+            }
+
+            const parsedConfig = activeConfig.config as PromptConfig;
+            const editorPromptConfig = parsedConfig.editor || (parsedConfig as any)["5_feedback_verwerker"];
+
+            // Build Editor prompt
+            const promptBuilder = new PromptBuilder();
+            const { systemPrompt, userInput } = promptBuilder.build(
+              "editor",
+              editorPromptConfig,
+              () => ({
+                BASISTEKST: latestConceptText,
+                WIJZIGINGEN_JSON: feedbackJSON
+              })
+            );
+
+            const combinedPrompt = `${systemPrompt}\n\n### USER INPUT:\n${userInput}`;
+
+            // Process with Editor prompt
+            await this.reportProcessor.processStageWithPrompt(
+              reportId,
+              stageId as StageId,
+              combinedPrompt,
+              feedbackJSON
+            );
+
+            // Refresh report
+            report = await storage.getReport(reportId) || report;
+
+            // Summarize feedback
+            const stageSummary = summarizeFeedback(
+              stageId,
+              stageExecution.stageOutput,
+              Date.now() - stageStartTime
+            );
+            stageSummaries.push(stageSummary);
+          }
+        }
+
+        // Update stage as completed
+        await this.updateProgress(job.id, {
+          currentStage: stageId,
+          percentage: Math.round(((i + 1) / stages.length) * 100),
+          message: `${stageId} completed`,
+          stages: stages.map((s, idx) => ({
+            stageId: s,
+            status: idx <= i ? "completed" : "pending",
+            percentage: idx <= i ? 100 : 0,
+            changesCount: stageSummaries.find(ss => ss.stageId === s)?.changesCount
+          }))
+        });
+
+      } catch (stageError: any) {
+        console.error(`❌ [JobProcessor] Express Mode failed at ${stageId}:`, stageError);
+
+        // Update progress with error
+        await this.updateProgress(job.id, {
+          currentStage: stageId,
+          percentage: Math.round((i / stages.length) * 100),
+          message: `Error at ${stageId}: ${stageError.message}`,
+          stages: stages.map((s, idx) => ({
+            stageId: s,
+            status: idx < i ? "completed" : idx === i ? "failed" : "pending",
+            percentage: idx < i ? 100 : 0,
+            error: idx === i ? stageError.message : undefined
+          }))
+        });
+
+        throw stageError;
+      }
+    }
+
+    // Get final report state
+    const finalReport = await storage.getReport(reportId);
+    const finalConceptVersions = (finalReport?.conceptReportVersions as Record<string, any>) || {};
+    const latestPointer = finalConceptVersions.latest?.pointer;
+    const finalVersion = finalConceptVersions.latest?.v || 1;
+    const finalContent = latestPointer
+      ? (finalConceptVersions[latestPointer]?.content || finalReport?.generatedContent || "")
+      : (finalReport?.generatedContent || "");
+
+    // Calculate totals
+    const totalChanges = stageSummaries.reduce((sum, s) => sum + s.changesCount, 0);
+
+    // Complete the job with results
+    await storage.completeJob(job.id, {
+      stages: stageSummaries,
+      totalChanges,
+      finalVersion,
+      finalContent
+    });
+
+    // Update final progress
+    await this.updateProgress(job.id, {
+      currentStage: "complete",
+      percentage: 100,
+      message: `Express Mode completed - ${totalChanges} changes across ${stages.length} stages`,
+      stages: stages.map(s => ({
+        stageId: s,
+        status: "completed",
+        percentage: 100,
+        changesCount: stageSummaries.find(ss => ss.stageId === s)?.changesCount
+      }))
+    });
+  }
+
+  /**
+   * Helper to update job progress
+   */
+  private async updateProgress(jobId: string, progress: JobProgress): Promise<void> {
+    await storage.updateJobProgress(jobId, progress);
+  }
+}
+
+// Singleton instance
+let jobProcessorInstance: JobProcessor | null = null;
+
+/**
+ * Get or create the JobProcessor singleton
+ */
+export function getJobProcessor(): JobProcessor {
+  if (!jobProcessorInstance) {
+    jobProcessorInstance = new JobProcessor();
+  }
+  return jobProcessorInstance;
+}
+
+/**
+ * Start the job processor (call on server startup)
+ */
+export function startJobProcessor(): void {
+  getJobProcessor().start();
+}
+
+/**
+ * Stop the job processor (call on server shutdown)
+ */
+export function stopJobProcessor(): void {
+  if (jobProcessorInstance) {
+    jobProcessorInstance.stop();
+  }
+}
