@@ -2477,4 +2477,152 @@ Gebruik bullet points. Max 150 woorden.
       message: `Aanpassing succesvol toegepast - nieuwe versie ${snapshot.v}`
     }, 'Aanpassing geaccepteerd'));
   }));
+
+  // ==========================================
+  // DOSSIER EXPORT/IMPORT (Dev/Prod Sync)
+  // ==========================================
+
+  /**
+   * Export complete dossier as JSON
+   * GET /api/reports/:id/export-json
+   *
+   * Exports the complete report with all stage results, concept versions,
+   * and optionally attachments for importing into another environment.
+   *
+   * Query params:
+   * - includeAttachments: boolean (default: true) - Include base64 file data
+   */
+  app.get("/api/reports/:id/export-json", asyncHandler(async (req: Request, res: Response) => {
+    const reportId = req.params.id;
+    const includeAttachments = req.query.includeAttachments !== 'false';
+
+    if (!reportId) {
+      throw ServerError.validation('Report ID is required', 'Rapport ID is verplicht');
+    }
+
+    // Fetch the report
+    const report = await storage.getReport(reportId);
+    if (!report) {
+      throw ServerError.notFound('Report not found');
+    }
+
+    // Fetch attachments if requested
+    let reportAttachments: any[] = [];
+    if (includeAttachments) {
+      reportAttachments = await storage.getAttachmentsForReport(reportId);
+    }
+
+    // Build export object - exclude id and dossierNumber (will be regenerated on import)
+    const { id, dossierNumber, createdAt, updatedAt, ...reportData } = report;
+
+    const exportData = {
+      _exportMeta: {
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        originalId: id,
+        originalDossierNumber: dossierNumber,
+        source: process.env.NODE_ENV || 'development'
+      },
+      report: reportData,
+      attachments: reportAttachments.map(att => {
+        const { id: attId, reportId: attReportId, uploadedAt, ...attData } = att;
+        return attData;
+      })
+    };
+
+    // Set headers for JSON download
+    const safeClientName = report.clientName.replace(/[^a-zA-Z0-9]/g, '-');
+    const filename = `dossier-D${String(dossierNumber).padStart(4, '0')}-${safeClientName}.json`;
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    console.log(`📦 Dossier exported: ${filename} (${includeAttachments ? 'with' : 'without'} attachments)`);
+
+    res.json(exportData);
+  }));
+
+  /**
+   * Import dossier from JSON
+   * POST /api/reports/import-json
+   *
+   * Imports a previously exported dossier, creating a new report
+   * with a new ID and dossier number.
+   *
+   * Body: The exported JSON object from export-json endpoint
+   */
+  app.post("/api/reports/import-json", asyncHandler(async (req: Request, res: Response) => {
+    const importData = req.body;
+
+    // Validate import structure
+    if (!importData?._exportMeta || !importData?.report) {
+      throw ServerError.validation(
+        'Invalid import format',
+        'Ongeldig import formaat. Gebruik een JSON bestand geëxporteerd via /export-json'
+      );
+    }
+
+    const { _exportMeta, report: reportData, attachments = [] } = importData;
+
+    console.log(`📥 Importing dossier from ${_exportMeta.source || 'unknown'} (original: D-${String(_exportMeta.originalDossierNumber || 0).padStart(4, '0')})`);
+
+    // Create the report (new id and dossierNumber will be generated)
+    const newReport = await storage.createReport({
+      title: reportData.title?.replace(/^D-\d{4}\s*-\s*/, '') || reportData.clientName, // Strip old dossier prefix
+      clientName: reportData.clientName,
+      dossierData: reportData.dossierData,
+      bouwplanData: reportData.bouwplanData,
+      generatedContent: reportData.generatedContent,
+      stageResults: reportData.stageResults,
+      conceptReportVersions: reportData.conceptReportVersions,
+      substepResults: reportData.substepResults,
+      stagePrompts: reportData.stagePrompts,
+      documentState: reportData.documentState,
+      pendingChanges: reportData.pendingChanges,
+      documentSnapshots: reportData.documentSnapshots,
+      dossierContextSummary: reportData.dossierContextSummary,
+      currentStage: reportData.currentStage,
+      status: reportData.status
+    });
+
+    console.log(`✅ Report imported: ${newReport.id} (D-${String(newReport.dossierNumber).padStart(4, '0')})`);
+
+    // Import attachments if present
+    let importedAttachments = 0;
+    for (const att of attachments) {
+      try {
+        await storage.createAttachment({
+          reportId: newReport.id,
+          filename: att.filename,
+          mimeType: att.mimeType,
+          fileSize: att.fileSize,
+          pageCount: att.pageCount,
+          fileData: att.fileData,
+          extractedText: att.extractedText,
+          needsVisionOCR: att.needsVisionOCR,
+          usedInStages: att.usedInStages || []
+        });
+        importedAttachments++;
+      } catch (attError) {
+        console.warn(`⚠️ Failed to import attachment ${att.filename}:`, attError);
+      }
+    }
+
+    if (importedAttachments > 0) {
+      console.log(`📎 Imported ${importedAttachments} attachment(s)`);
+    }
+
+    res.json(createApiSuccessResponse({
+      id: newReport.id,
+      dossierNumber: newReport.dossierNumber,
+      title: newReport.title,
+      importedFrom: {
+        originalId: _exportMeta.originalId,
+        originalDossierNumber: _exportMeta.originalDossierNumber,
+        source: _exportMeta.source,
+        exportedAt: _exportMeta.exportedAt
+      },
+      attachmentsImported: importedAttachments
+    }, `Dossier geïmporteerd als D-${String(newReport.dossierNumber).padStart(4, '0')}`));
+  }));
 }

@@ -102,6 +102,12 @@ export function parseFeedbackToProposals(
     try {
       const parsed = JSON.parse(jsonContent);
 
+      // Handle "geen_wijzigingen" status - return empty proposals (no changes needed)
+      // The geverifieerde_cijfers field is informational only, not actionable
+      if (parsed.status === 'geen_wijzigingen') {
+        return []; // No changes needed - parser returns empty array
+      }
+
       if (Array.isArray(parsed)) {
         const normalized = parsed
           .map((p, idx) => normalizeProposal(p, specialist, stageId, idx))
@@ -126,7 +132,9 @@ export function parseFeedbackToProposals(
         if (ftv) {
           // Check if status indicates no issues
           const status = ftv.status?.toLowerCase() || '';
-          const hasNoIssues = status.includes('100% accuraat') || status.includes('geen fouten');
+          const hasNoIssues = status.includes('100% accuraat') ||
+                             status.includes('geen fouten') ||
+                             status.includes('accuraat bevonden');
 
           // Parse bevindingen array
           const bevindingen = Array.isArray(ftv.bevindingen) ? ftv.bevindingen :
@@ -147,8 +155,13 @@ export function parseFeedbackToProposals(
             const probleem = b.probleem || b.beschrijving || '';
             const correctie = b.correctie_aanbeveling || b.correctie || b.aanbeveling || '';
 
-            // Only add if we have meaningful content
-            if (probleem || correctie) {
+            // Only add if we have meaningful content that indicates an actual problem
+            // Skip confirmations like "Correct toegepast"
+            const isConfirmation = (correctie + probleem).toLowerCase().includes('correct toegepast') ||
+                                   (correctie + probleem).toLowerCase().includes('correct berekend') ||
+                                   (correctie + probleem).toLowerCase().includes('geen correctie');
+
+            if ((probleem || correctie) && !isConfirmation) {
               proposals.push({
                 id: `${stageId}-bevinding-${idx}`,
                 specialist,
@@ -162,18 +175,10 @@ export function parseFeedbackToProposals(
             }
           });
 
-          // If status says all good, add a positive note
+          // If status says all good and no proposals, return empty array
+          // This means no changes are needed - don't create fake proposals
           if (hasNoIssues && proposals.length === 0) {
-            proposals.push({
-              id: `${stageId}-status`,
-              specialist,
-              changeType: 'modify',
-              section: 'Validatie Status',
-              original: '',
-              proposed: ftv.status || 'De inhoud is fiscaal-technisch accuraat bevonden.',
-              reasoning: 'Geen correcties nodig',
-              severity: 'suggestion'
-            });
+            return []; // Return empty - no changes needed
           }
         }
 
@@ -476,17 +481,29 @@ export function parseFeedbackToProposals(
     // Detect bullet points
     const bulletMatch = trimmed.match(/^[-*•]\s*(.+)/);
     if (bulletMatch) {
-      if (currentProposal) {
-        proposals.push(finalizeProposal(currentProposal, specialist, stageId, proposalCounter++));
+      const bulletContent = bulletMatch[1].toLowerCase();
+      // Skip bullets that are confirmations/verifications, not actual changes
+      const isConfirmation = bulletContent.includes('correct toegepast') ||
+                            bulletContent.includes('correct berekend') ||
+                            bulletContent.includes('geen correctie') ||
+                            bulletContent.includes('conform') ||
+                            bulletContent.includes('klopt') ||
+                            bulletContent.includes('accuraat') ||
+                            (bulletContent.includes('correct') && !bulletContent.includes('incorrect'));
+
+      if (!isConfirmation) {
+        if (currentProposal) {
+          proposals.push(finalizeProposal(currentProposal, specialist, stageId, proposalCounter++));
+        }
+        currentProposal = {
+          section: 'Algemeen',
+          proposed: bulletMatch[1],
+          original: '',
+          reasoning: '',
+          changeType: 'modify',
+          severity: 'suggestion'
+        };
       }
-      currentProposal = {
-        section: 'Algemeen',
-        proposed: bulletMatch[1],
-        original: '',
-        reasoning: '',
-        changeType: 'modify',
-        severity: 'suggestion'
-      };
       continue;
     }
 
@@ -578,18 +595,31 @@ export function parseFeedbackToProposals(
     proposals.push(finalizeProposal(currentProposal, specialist, stageId, proposalCounter++));
   }
 
-  // If no structured proposals found, create one generic proposal
+  // If no structured proposals found, check if feedback is actually a confirmation/approval
   if (proposals.length === 0) {
-    proposals.push({
-      id: `${stageId}-0`,
-      specialist,
-      changeType: 'modify',
-      section: 'Algemeen',
-      original: '',
-      proposed: rawFeedback,
-      reasoning: 'Algemene feedback van specialist',
-      severity: 'suggestion'
-    });
+    const lowerFeedback = rawFeedback.toLowerCase();
+    const isApprovalFeedback = lowerFeedback.includes('100% accuraat') ||
+                               lowerFeedback.includes('geen fouten') ||
+                               lowerFeedback.includes('geen correcties') ||
+                               lowerFeedback.includes('accuraat bevonden') ||
+                               lowerFeedback.includes('rekenkundig exact') ||
+                               lowerFeedback.includes('foutloos') ||
+                               (lowerFeedback.includes('geen') && lowerFeedback.includes('wijziging'));
+
+    // Only create a generic proposal if the feedback is NOT an approval
+    if (!isApprovalFeedback) {
+      proposals.push({
+        id: `${stageId}-0`,
+        specialist,
+        changeType: 'modify',
+        section: 'Algemeen',
+        original: '',
+        proposed: rawFeedback,
+        reasoning: 'Algemene feedback van specialist',
+        severity: 'suggestion'
+      });
+    }
+    // If it's approval feedback, return empty array - no changes needed
   }
 
   return proposals;

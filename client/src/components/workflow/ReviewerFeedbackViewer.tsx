@@ -28,6 +28,44 @@ export function ReviewerFeedbackViewer({
   rawOutput,
   className
 }: ReviewerFeedbackViewerProps) {
+  // Check for "geen_wijzigingen" status first (all verified, no changes needed)
+  const noChangesResult = parseNoChangesStatus(rawOutput);
+  if (noChangesResult) {
+    return (
+      <Card className={cn("border-green-200 bg-green-50/50", className)}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              {stageName} - Alles Correct
+            </CardTitle>
+            <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300">
+              Geen wijzigingen
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {noChangesResult.samenvatting && (
+            <p className="text-sm text-green-800">{noChangesResult.samenvatting}</p>
+          )}
+          {noChangesResult.geverifieerde_cijfers && noChangesResult.geverifieerde_cijfers.length > 0 && (
+            <div className="space-y-1">
+              <h4 className="text-xs font-semibold text-green-700">Geverifieerde cijfers:</h4>
+              <ul className="text-xs text-green-700 space-y-0.5">
+                {noChangesResult.geverifieerde_cijfers.map((cijfer, idx) => (
+                  <li key={idx} className="flex items-start gap-1">
+                    <CheckCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                    <span>{cijfer}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Probeer de JSON feedback te parsen
   const parsedFeedback = parseReviewerFeedback(rawOutput);
 
@@ -322,6 +360,49 @@ function parseReviewerFeedback(rawOutput: string): FeedbackItem[] | null {
       }
     } catch {
       // Ignore
+    }
+  }
+
+  return null;
+}
+
+interface NoChangesResult {
+  status: 'geen_wijzigingen';
+  samenvatting?: string;
+  geverifieerde_cijfers?: string[];
+}
+
+/**
+ * Parse "geen_wijzigingen" status - when specialist found everything correct
+ */
+function parseNoChangesStatus(rawOutput: string): NoChangesResult | null {
+  if (!rawOutput || typeof rawOutput !== 'string') {
+    return null;
+  }
+
+  // Try to extract JSON from markdown code blocks first
+  let jsonContent = rawOutput.trim();
+  const markdownMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (markdownMatch && markdownMatch[1]) {
+    jsonContent = markdownMatch[1].trim();
+  }
+
+  // Try to find JSON object
+  const objectMatch = jsonContent.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    try {
+      const parsed = JSON.parse(objectMatch[0]);
+      if (parsed.status === 'geen_wijzigingen') {
+        return {
+          status: 'geen_wijzigingen',
+          samenvatting: parsed.samenvatting,
+          geverifieerde_cijfers: Array.isArray(parsed.geverifieerde_cijfers)
+            ? parsed.geverifieerde_cijfers
+            : undefined
+        };
+      }
+    } catch {
+      // Not valid JSON
     }
   }
 
