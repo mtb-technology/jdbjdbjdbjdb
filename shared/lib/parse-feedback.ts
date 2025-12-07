@@ -692,9 +692,10 @@ function normalizeProposal(
   const hasChangeIdentifier = data.bevinding_id || data.change_type || data.changeType || data.type;
   const hasContentFields = data.suggestie_tekst || data.proposed || data.new || data.suggestion || data.instructie || data.herschreven_tekst;
   const hasLocationOrSection = data.locatie_origineel || data.section;
+  const hasAnalysis = data.analyse || data.probleem_categorie; // 4f HoofdCommunicatie format
 
-  // Reject if it's missing critical fields
-  if (!hasChangeIdentifier && !hasContentFields) {
+  // Reject if it's missing critical fields - allow if has content OR has analysis with location
+  if (!hasChangeIdentifier && !hasContentFields && !(hasAnalysis && hasLocationOrSection)) {
     return null;
   }
 
@@ -713,8 +714,13 @@ function normalizeProposal(
     severityStr.includes('onnauwkeurig') || severityStr.includes('important') || severityStr.includes('belangrijk') || severityStr.includes('toon') ? 'important' :
     'suggestion';
 
-  // Extract proposed text
-  const proposed = data.herschreven_tekst || data.suggestie_tekst || data.proposed || data.new || data.suggestion || data.instructie || '';
+  // Extract proposed text - prioritize herschreven_tekst for 4f HoofdCommunicatie format
+  let proposed = data.herschreven_tekst || data.suggestie_tekst || data.proposed || data.new || data.suggestion || data.instructie || '';
+
+  // Fallback: if no proposed text but has analyse, use that as the proposal description
+  if (!proposed && data.analyse) {
+    proposed = data.analyse;
+  }
 
   // Skip if proposal is too short
   if (proposed.length < 10) {
