@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ToastAction } from "@/components/ui/toast";
-import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, Package, Loader2 } from "lucide-react";
+import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, Package, Loader2, Upload } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -149,6 +149,7 @@ function Cases() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { hasActiveJobForReport, byReport } = useAllActiveJobs();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: casesData, isLoading } = useQuery<CasesResponse>({
     queryKey: ["/api/cases", { page, search, status: statusFilter }],
@@ -242,6 +243,65 @@ function Cases() {
       });
     },
   });
+
+  const importCaseMutation = useMutation({
+    mutationFn: async (jsonData: unknown) => {
+      const response = await apiRequest("POST", "/api/reports/import-json", jsonData);
+      const text = await response.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(text.substring(0, 100));
+      }
+    },
+    onSuccess: (data) => {
+      // Force refetch all cases queries
+      queryClient.invalidateQueries({
+        queryKey: ["/api/cases"],
+        refetchType: 'all'
+      });
+      const result = data?.data || data;
+      toast({
+        title: "Case geïmporteerd",
+        description: `Case succesvol geïmporteerd als ${result?.title || 'nieuwe case'}`,
+        duration: 5000,
+      });
+    },
+    onError: (error: any) => {
+      // Extract user-friendly message from AppError or use default
+      const message = error?.userMessage || error?.message || "Er ging iets mis bij het importeren";
+      toast({
+        title: "Import mislukt",
+        description: message,
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  });
+
+  const handleImportFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const jsonData = JSON.parse(e.target?.result as string);
+        importCaseMutation.mutate(jsonData);
+      } catch {
+        toast({
+          title: "Ongeldig bestand",
+          description: "Het bestand bevat geen geldige JSON",
+          variant: "destructive",
+          duration: 5000,
+        });
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset input zodat hetzelfde bestand opnieuw gekozen kan worden
+    event.target.value = '';
+  }, [importCaseMutation, toast]);
 
   // Cleanup pending deletion on unmount
   useEffect(() => {
@@ -368,6 +428,27 @@ function Cases() {
             <p className="text-muted-foreground">Beheer al je fiscale cases en rapporten</p>
           </div>
           <div className="flex items-center gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".json"
+              onChange={handleImportFile}
+              className="hidden"
+              data-testid="input-import-file"
+            />
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importCaseMutation.isPending}
+              data-testid="button-import-case"
+            >
+              {importCaseMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Import
+            </Button>
             <Link href="/batch" asChild>
               <Button variant="outline" data-testid="button-batch-processing">
                 <Package className="mr-2 h-4 w-4" />
