@@ -26,6 +26,10 @@ COPY --from=builder /app/dist /app/dist
 COPY --from=builder /app/node_modules /app/node_modules
 COPY --from=builder /app/package*.json /app/
 
+# Copy files needed for db:push (schema sync at startup)
+COPY --from=builder /app/drizzle.config.ts /app/
+COPY --from=builder /app/shared /app/shared
+
 # Copy startup scripts
 COPY start.sh /start.sh
 COPY docker-entrypoint.sh /docker-entrypoint.sh
