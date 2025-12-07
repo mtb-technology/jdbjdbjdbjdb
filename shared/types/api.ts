@@ -210,6 +210,8 @@ export const expressModeChangeSchema = z.object({
   description: z.string(),
   severity: z.enum(['critical', 'important', 'suggestion']).default('suggestion'),
   section: z.string().optional(), // e.g., "§2.3 Vermogen"
+  original: z.string().optional(), // Original text that was changed
+  reasoning: z.string().optional(), // Why the change was made
 });
 
 // Express Mode Stage Summary - per reviewer stage

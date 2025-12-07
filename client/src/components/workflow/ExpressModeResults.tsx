@@ -23,27 +23,108 @@ import {
   Lightbulb,
   ChevronDown,
   Loader2,
+  ArrowRight,
+  MessageSquare,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
+import { parseFeedbackToProposals } from '@/lib/parse-feedback';
+import { STAGE_NAMES, REVIEW_STAGES } from '@shared/constants';
 import type { ExpressModeSummary, ExpressModeStageSummary, ExpressModeChange } from '@shared/types/api';
 
 interface ExpressModeResultsProps {
   reportId: string;
-  summary: ExpressModeSummary;
+  /** Direct summary from SSE stream (optional if stageResults provided) */
+  summary?: ExpressModeSummary;
+  /** Raw stageResults from report - will be parsed client-side to rebuild summary */
+  stageResults?: Record<string, string>;
+  /** Final concept report content */
+  finalContent?: string;
+  /** Current concept version */
+  finalVersion?: number;
   onClose: () => void;
   onSaveComplete?: () => void;
 }
 
+/**
+ * Build ExpressModeSummary from raw stageResults
+ * This allows reopening the results view after the initial SSE stream
+ */
+function buildSummaryFromStageResults(
+  stageResults: Record<string, string>,
+  finalContent: string,
+  finalVersion: number
+): ExpressModeSummary {
+  const stages: ExpressModeStageSummary[] = [];
+
+  // Process each review stage that has results
+  for (const stageId of REVIEW_STAGES) {
+    const rawFeedback = stageResults[stageId];
+    if (!rawFeedback) continue;
+
+    const stageName = STAGE_NAMES[stageId] || stageId;
+
+    // Use shared parser to extract proposals
+    const proposals = parseFeedbackToProposals(rawFeedback, stageName, stageId);
+
+    // Convert to ExpressModeChange format with original and reasoning
+    const changes: ExpressModeChange[] = proposals.map(p => ({
+      type: p.changeType,
+      description: p.proposed || p.reasoning,
+      severity: p.severity,
+      section: p.section !== 'Algemeen' ? p.section : undefined,
+      original: p.original || undefined,
+      reasoning: p.reasoning || undefined,
+    }));
+
+    stages.push({
+      stageId,
+      stageName,
+      changesCount: changes.length,
+      changes,
+    });
+  }
+
+  const totalChanges = stages.reduce((sum, s) => sum + s.changesCount, 0);
+
+  return {
+    stages,
+    totalChanges,
+    finalVersion,
+    totalProcessingTimeMs: 0, // Not available when rebuilding
+    finalContent,
+  };
+}
+
 export function ExpressModeResults({
   reportId,
-  summary,
+  summary: providedSummary,
+  stageResults,
+  finalContent,
+  finalVersion = 1,
   onClose,
   onSaveComplete,
 }: ExpressModeResultsProps) {
+  // Build summary from stageResults if not provided directly
+  const summary = useMemo(() => {
+    if (providedSummary) return providedSummary;
+    if (stageResults && finalContent) {
+      return buildSummaryFromStageResults(stageResults, finalContent, finalVersion);
+    }
+    // Fallback empty summary
+    return {
+      stages: [],
+      totalChanges: 0,
+      finalVersion: 1,
+      totalProcessingTimeMs: 0,
+      finalContent: finalContent || '',
+    };
+  }, [providedSummary, stageResults, finalContent, finalVersion]);
+
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(summary.finalContent);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
+
 
   // Save mutation for concept content
   const saveMutation = useMutation({
@@ -187,12 +268,15 @@ export function ExpressModeResults({
         {/* Main content grid */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
           {/* Left: Change Summary */}
-          <Card className="flex flex-col min-h-0">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Wijzigingen per Reviewer</CardTitle>
+          <Card className="flex flex-col min-h-0 border-2">
+            <CardHeader className="pb-3 border-b bg-muted/30">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Wijzigingen per Reviewer
+              </CardTitle>
             </CardHeader>
             <CardContent className="flex-1 min-h-0 p-0">
-              <ScrollArea className="h-full px-6 pb-6">
+              <ScrollArea className="h-full p-4">
                 {summary.stages.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -200,43 +284,100 @@ export function ExpressModeResults({
                     <p className="text-sm mt-1">Het rapport was al van goede kwaliteit</p>
                   </div>
                 ) : (
-                  <Accordion type="multiple" defaultValue={summary.stages.map(s => s.stageId)}>
+                  <Accordion type="multiple" defaultValue={summary.stages.map(s => s.stageId)} className="space-y-3">
                     {summary.stages.map((stage) => (
-                      <AccordionItem key={stage.stageId} value={stage.stageId}>
-                        <AccordionTrigger className="hover:no-underline">
+                      <AccordionItem
+                        key={stage.stageId}
+                        value={stage.stageId}
+                        className="border rounded-lg px-4 bg-card/50"
+                      >
+                        <AccordionTrigger className="hover:no-underline py-4">
                           <div className="flex items-center gap-3 flex-1">
-                            <span className="font-medium">{stage.stageName}</span>
-                            <Badge variant="outline" className="ml-auto mr-2">
-                              {stage.changesCount} {stage.changesCount === 1 ? 'wijziging' : 'wijzigingen'}
-                            </Badge>
-                            {stage.processingTimeMs && (
-                              <span className="text-xs text-muted-foreground">
-                                {formatTime(stage.processingTimeMs)}
+                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                              <span className="text-xs font-bold text-primary">
+                                {stage.changesCount}
                               </span>
-                            )}
+                            </div>
+                            <div className="flex flex-col items-start gap-0.5">
+                              <span className="font-semibold text-base">{stage.stageName}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {stage.changesCount} {stage.changesCount === 1 ? 'wijziging' : 'wijzigingen'}
+                                {stage.processingTimeMs ? ` • ${formatTime(stage.processingTimeMs)}` : ''}
+                              </span>
+                            </div>
                           </div>
                         </AccordionTrigger>
                         <AccordionContent>
-                          <div className="space-y-2 pl-2">
+                          <div className="space-y-3 pt-2">
                             {stage.changes.map((change, idx) => (
                               <div
                                 key={idx}
-                                className="flex items-start gap-2 p-2 rounded-md bg-muted/50"
+                                className={`
+                                  relative rounded-lg border-l-4 bg-card p-4 shadow-sm
+                                  ${change.severity === 'critical'
+                                    ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20'
+                                    : change.severity === 'important'
+                                    ? 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
+                                    : 'border-l-amber-500 bg-amber-50/50 dark:bg-amber-950/20'
+                                  }
+                                `}
                               >
-                                {getSeverityIcon(change.severity)}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs font-medium text-muted-foreground">
-                                      {getChangeTypeLabel(change.type)}
-                                    </span>
-                                    {change.section && (
-                                      <span className="text-xs text-muted-foreground">
-                                        in {change.section}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-sm">{change.description}</p>
+                                {/* Header row */}
+                                <div className="flex items-center gap-2 mb-2">
+                                  {getSeverityIcon(change.severity)}
+                                  {getSeverityBadge(change.severity)}
+                                  <span className="text-xs font-medium px-2 py-0.5 rounded bg-muted">
+                                    {getChangeTypeLabel(change.type)}
+                                  </span>
                                 </div>
+
+                                {/* Section indicator */}
+                                {change.section && (
+                                  <div className="text-xs text-muted-foreground mb-2 font-medium">
+                                    📍 {change.section}
+                                  </div>
+                                )}
+
+                                {/* Original → New diff view (when original differs from description) */}
+                                {change.original && change.original.length > 0 && change.original !== change.description ? (
+                                  <div className="space-y-2">
+                                    {/* Original text (strikethrough) */}
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-xs font-medium text-red-600 dark:text-red-400 shrink-0 mt-0.5">Oud:</span>
+                                      <p className="text-sm text-red-700 dark:text-red-300 line-through opacity-75">
+                                        {change.original}
+                                      </p>
+                                    </div>
+                                    {/* Arrow separator */}
+                                    <div className="flex items-center gap-2 pl-6">
+                                      <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                                    </div>
+                                    {/* New text */}
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-xs font-medium text-green-600 dark:text-green-400 shrink-0 mt-0.5">Nieuw:</span>
+                                      <p className="text-sm text-green-700 dark:text-green-300 font-medium">
+                                        {change.description}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* Description only (no diff available) */
+                                  <p className="text-sm leading-relaxed text-foreground">
+                                    {change.description}
+                                  </p>
+                                )}
+
+                                {/* Reasoning (why this change was made) */}
+                                {change.reasoning && change.reasoning !== change.description && (
+                                  <div className="mt-3 pt-2 border-t border-dashed border-muted-foreground/30">
+                                    <div className="flex items-start gap-2">
+                                      <MessageSquare className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+                                      <p className="text-xs text-muted-foreground italic">
+                                        {change.reasoning}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

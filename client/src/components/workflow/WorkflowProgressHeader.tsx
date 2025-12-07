@@ -10,11 +10,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { motion, useReducedMotion } from "framer-motion";
-import { CheckCircle, Clock, Workflow, RefreshCw, Pencil } from "lucide-react";
+import { CheckCircle, Clock, Workflow, RefreshCw, Pencil, Eye } from "lucide-react";
 import { ExpressModeButton } from "./ExpressModeButton";
+import { ExpressModeResults } from "./ExpressModeResults";
 import { ReportAdjustmentDialog } from "./ReportAdjustmentDialog";
 import { WORKFLOW_STAGES } from "./constants";
 import { countCompletedStages } from "@/utils/workflowUtils";
+import { getLatestConceptText, REVIEW_STAGES } from "@shared/constants";
 
 interface WorkflowProgressHeaderProps {
   stageResults: Record<string, string>;
@@ -48,6 +50,14 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
 }: WorkflowProgressHeaderProps) {
   const shouldReduceMotion = useReducedMotion();
   const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState(false);
+  const [showExpressResults, setShowExpressResults] = useState(false);
+
+  // Check if any review stages have been completed (for "Bekijk Wijzigingen" button)
+  const hasCompletedReviewStages = REVIEW_STAGES.some(stageId => !!stageResults[stageId]);
+
+  // Get latest concept content for ExpressModeResults
+  const latestConceptContent = getLatestConceptText(conceptReportVersions as any);
+  const latestVersion = (conceptReportVersions as any)?.latest?.v || 1;
 
   const completedCount = countCompletedStages(stageResults, conceptReportVersions);
 
@@ -147,6 +157,21 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
                   </Button>
                 </motion.div>
               )}
+
+              {/* Bekijk Wijzigingen Button - shows after review stages completed */}
+              {reportId && hasCompletedReviewStages && (
+                <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
+                  <Button
+                    onClick={() => setShowExpressResults(true)}
+                    variant="outline"
+                    size="sm"
+                    className="text-sm font-medium"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Bekijk Wijzigingen
+                  </Button>
+                </motion.div>
+              )}
             </div>
           </div>
 
@@ -157,6 +182,18 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
               isOpen={isAdjustmentDialogOpen}
               onOpenChange={setIsAdjustmentDialogOpen}
               onAdjustmentApplied={onAdjustmentApplied}
+            />
+          )}
+
+          {/* Express Mode Results View - rebuilt from stageResults */}
+          {showExpressResults && reportId && (
+            <ExpressModeResults
+              reportId={reportId}
+              stageResults={stageResults}
+              finalContent={latestConceptContent}
+              finalVersion={latestVersion}
+              onClose={() => setShowExpressResults(false)}
+              onSaveComplete={onAdjustmentApplied}
             />
           )}
 

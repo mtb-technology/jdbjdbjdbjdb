@@ -19,18 +19,11 @@ import {
 const ReactDiffViewer = lazy(() => import('react-diff-viewer-continued'));
 import { DiffMethod } from 'react-diff-viewer-continued';
 
-export interface ChangeProposal {
-  id: string;
-  specialist: string;
-  changeType: 'add' | 'modify' | 'delete' | 'restructure';
-  section: string;
-  original: string;
-  proposed: string;
-  reasoning: string;
-  severity: 'critical' | 'important' | 'suggestion';
-  userDecision?: 'accept' | 'reject' | 'modify';
-  userNote?: string;
-}
+// Import ChangeProposal type from shared module
+import type { ChangeProposal } from '@shared/lib/parse-feedback';
+
+// Re-export for backwards compatibility
+export type { ChangeProposal } from '@shared/lib/parse-feedback';
 
 interface ChangeProposalCardProps {
   proposal: ChangeProposal;
