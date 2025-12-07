@@ -14,7 +14,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { AppHeader } from "@/components/app-header";
 import { celebrateExport } from "@/lib/confetti";
 import { EmptyState } from "@/components/ui/empty-state";
-import { STAGE_ORDER } from "@shared/constants";
+import { WORKFLOW_STAGES } from "@/components/workflow/constants";
+import { countCompletedStages } from "@/utils/workflowUtils";
 import { useAllActiveJobs } from "@/hooks/useJobPolling";
 
 interface Case {
@@ -313,9 +314,13 @@ function Cases() {
       case "processing":
       case "generated": {
         // Calculate progress based on completed stages for both processing and generated
+        // Use WORKFLOW_STAGES (8 steps) instead of STAGE_ORDER (9 steps with 1b)
         if (report?.stageResults) {
-          const completedStages = Object.keys(report.stageResults).length;
-          const totalStages = STAGE_ORDER.length;
+          const completedStages = countCompletedStages(
+            report.stageResults,
+            report.conceptReportVersions || {}
+          );
+          const totalStages = WORKFLOW_STAGES.length; // 8 UI stages (excludes 1b)
           const percentage = Math.round((completedStages / totalStages) * 100);
 
           if (completedStages >= 3) {

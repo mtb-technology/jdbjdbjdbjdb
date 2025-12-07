@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Download, FileDown, Loader2, CheckCircle, Eye, FileText, Globe, File } from "lucide-react";
+import { Download, FileDown, Loader2, CheckCircle, Eye, FileText, Globe, File, Braces } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -13,7 +13,7 @@ interface ExportDialogProps {
   clientName: string;
 }
 
-type ExportFormat = "pdf" | "word" | "html";
+type ExportFormat = "pdf" | "word" | "html" | "json";
 
 interface ExportSettings {
   format: ExportFormat;
@@ -50,6 +50,9 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
         response = await fetch(`/api/reports/${reportId}/export-pdf`);
       } else if (settings.format === "word") {
         response = await fetch(`/api/reports/${reportId}/export-docx`);
+      } else if (settings.format === "json") {
+        // JSON export - complete dossier for dev/prod sync
+        response = await fetch(`/api/reports/${reportId}/export-json`);
       } else {
         // Fallback to old endpoint for other formats (HTML)
         const queryParams = new URLSearchParams({
@@ -88,7 +91,9 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
       setExportSuccess(true);
       toast({
         title: "✅ Export Succesvol",
-        description: `${isClientVersion ? "Client versie" : "Werk versie"} gedownload`,
+        description: settings.format === "json"
+          ? "Dossier JSON gedownload (voor import op andere omgeving)"
+          : `${isClientVersion ? "Client versie" : "Werk versie"} gedownload`,
       });
 
       // Auto-close after 2 seconds on success
@@ -134,7 +139,7 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
           {/* Export Format - Clickable buttons */}
           <div className="space-y-2">
             <Label>Formaat</Label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => setSettings({ ...settings, format: "pdf" })}
@@ -174,57 +179,83 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
                 <Globe className="h-6 w-6" />
                 <span className="text-xs font-medium">HTML</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setSettings({ ...settings, format: "json" })}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+                  settings.format === "json"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/50 hover:bg-muted/50"
+                )}
+              >
+                <Braces className="h-6 w-6" />
+                <span className="text-xs font-medium">JSON</span>
+              </button>
             </div>
           </div>
 
-          {/* Export Options */}
-          <div className="space-y-4">
-            <Label>Opties</Label>
+          {/* Export Options - hide for JSON */}
+          {settings.format !== "json" && (
+            <div className="space-y-4">
+              <Label>Opties</Label>
 
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-normal">Inhoudsopgave</Label>
-                <p className="text-xs text-muted-foreground">Met paginanummers en secties</p>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-normal">Inhoudsopgave</Label>
+                  <p className="text-xs text-muted-foreground">Met paginanummers en secties</p>
+                </div>
+                <Switch
+                  checked={settings.includeTOC}
+                  onCheckedChange={(checked) => setSettings({ ...settings, includeTOC: checked })}
+                />
               </div>
-              <Switch
-                checked={settings.includeTOC}
-                onCheckedChange={(checked) => setSettings({ ...settings, includeTOC: checked })}
-              />
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-normal">Bronnenlijst</Label>
-                <p className="text-xs text-muted-foreground">Overzicht van gebruikte bronnen</p>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-normal">Bronnenlijst</Label>
+                  <p className="text-xs text-muted-foreground">Overzicht van gebruikte bronnen</p>
+                </div>
+                <Switch
+                  checked={settings.includeSources}
+                  onCheckedChange={(checked) => setSettings({ ...settings, includeSources: checked })}
+                />
               </div>
-              <Switch
-                checked={settings.includeSources}
-                onCheckedChange={(checked) => setSettings({ ...settings, includeSources: checked })}
-              />
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-normal">Footer met Contact</Label>
-                <p className="text-xs text-muted-foreground">Kantoorgegevens in footer</p>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-normal">Footer met Contact</Label>
+                  <p className="text-xs text-muted-foreground">Kantoorgegevens in footer</p>
+                </div>
+                <Switch
+                  checked={settings.includeFooter}
+                  onCheckedChange={(checked) => setSettings({ ...settings, includeFooter: checked })}
+                />
               </div>
-              <Switch
-                checked={settings.includeFooter}
-                onCheckedChange={(checked) => setSettings({ ...settings, includeFooter: checked })}
-              />
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-normal">Kantoor Branding</Label>
-                <p className="text-xs text-muted-foreground">Logo, kleuren en lettertype</p>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-normal">Kantoor Branding</Label>
+                  <p className="text-xs text-muted-foreground">Logo, kleuren en lettertype</p>
+                </div>
+                <Switch
+                  checked={settings.useCompanyBranding}
+                  onCheckedChange={(checked) => setSettings({ ...settings, useCompanyBranding: checked })}
+                />
               </div>
-              <Switch
-                checked={settings.useCompanyBranding}
-                onCheckedChange={(checked) => setSettings({ ...settings, useCompanyBranding: checked })}
-              />
             </div>
-          </div>
+          )}
+
+          {/* JSON info box */}
+          {settings.format === "json" && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm">
+              <p className="font-medium text-blue-900">Dossier Export (Dev/Prod Sync)</p>
+              <p className="mt-1 text-blue-700">
+                Exporteert het complete dossier inclusief alle AI outputs, review stappen,
+                en bijlages. Kan geïmporteerd worden op een andere omgeving.
+              </p>
+            </div>
+          )}
 
           {/* Preview & Export Buttons */}
           <div className="space-y-3 pt-4 border-t">
@@ -240,52 +271,81 @@ export function ExportDialog({ reportId, reportTitle, clientName }: ExportDialog
               </Button>
             )}
 
-            <Button
-              onClick={() => handleExport(true)}
-              disabled={isExporting}
-              className="w-full"
-              size="lg"
-            >
-              {isExporting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Exporteren...
-                </>
-              ) : exportSuccess ? (
-                <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Geëxporteerd!
-                </>
-              ) : (
-                <>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download voor Client
-                </>
-              )}
-            </Button>
+            {/* JSON has single download button */}
+            {settings.format === "json" ? (
+              <Button
+                onClick={() => handleExport(false)}
+                disabled={isExporting}
+                className="w-full"
+                size="lg"
+              >
+                {isExporting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Exporteren...
+                  </>
+                ) : exportSuccess ? (
+                  <>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Geëxporteerd!
+                  </>
+                ) : (
+                  <>
+                    <Braces className="mr-2 h-4 w-4" />
+                    Download JSON
+                  </>
+                )}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={() => handleExport(true)}
+                  disabled={isExporting}
+                  className="w-full"
+                  size="lg"
+                >
+                  {isExporting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Exporteren...
+                    </>
+                  ) : exportSuccess ? (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Geëxporteerd!
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Download voor Client
+                    </>
+                  )}
+                </Button>
 
-            <Button
-              onClick={() => handleExport(false)}
-              disabled={isExporting}
-              variant="outline"
-              className="w-full"
-            >
-              {isExporting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Exporteren...
-                </>
-              ) : (
-                <>
-                  <FileDown className="mr-2 h-4 w-4" />
-                  Download Werkversie
-                </>
-              )}
-            </Button>
+                <Button
+                  onClick={() => handleExport(false)}
+                  disabled={isExporting}
+                  variant="outline"
+                  className="w-full"
+                >
+                  {isExporting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Exporteren...
+                    </>
+                  ) : (
+                    <>
+                      <FileDown className="mr-2 h-4 w-4" />
+                      Download Werkversie
+                    </>
+                  )}
+                </Button>
 
-            <p className="text-xs text-center text-muted-foreground">
-              Client versie: definitief • Werkversie: met notities
-            </p>
+                <p className="text-xs text-center text-muted-foreground">
+                  Client versie: definitief • Werkversie: met notities
+                </p>
+              </>
+            )}
           </div>
         </div>
       </DialogContent>
