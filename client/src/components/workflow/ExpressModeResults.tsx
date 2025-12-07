@@ -1,5 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +23,6 @@ import {
   AlertTriangle,
   Info,
   Lightbulb,
-  ChevronDown,
   Loader2,
   ArrowRight,
   MessageSquare,
@@ -447,9 +448,90 @@ export function ExpressModeResults({
                 />
               ) : (
                 <ScrollArea className="h-full px-6 pb-6">
-                  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
-                    {summary.finalContent}
-                  </pre>
+                  <div className="prose prose-sm max-w-none dark:prose-invert">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h1: ({ children }) => (
+                          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-6 mb-3 border-b border-primary/30 pb-2">
+                            {children}
+                          </h1>
+                        ),
+                        h2: ({ children }) => (
+                          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-5 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">
+                            {children}
+                          </h2>
+                        ),
+                        h3: ({ children }) => (
+                          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mt-4 mb-2">
+                            {children}
+                          </h3>
+                        ),
+                        p: ({ children }) => (
+                          <p className="mb-3 text-gray-700 dark:text-gray-300 leading-relaxed text-sm">
+                            {children}
+                          </p>
+                        ),
+                        ul: ({ children }) => (
+                          <ul className="mb-3 list-disc list-outside ml-5 space-y-1 text-sm">
+                            {children}
+                          </ul>
+                        ),
+                        ol: ({ children }) => (
+                          <ol className="mb-3 list-decimal list-outside ml-5 space-y-1 text-sm">
+                            {children}
+                          </ol>
+                        ),
+                        li: ({ children }) => (
+                          <li className="text-gray-700 dark:text-gray-300">
+                            {children}
+                          </li>
+                        ),
+                        strong: ({ children }) => (
+                          <strong className="font-semibold text-gray-900 dark:text-gray-100">
+                            {children}
+                          </strong>
+                        ),
+                        table: ({ children }) => (
+                          <div className="overflow-x-auto mb-3">
+                            <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-700 text-sm">
+                              {children}
+                            </table>
+                          </div>
+                        ),
+                        thead: ({ children }) => (
+                          <thead className="bg-gray-50 dark:bg-gray-800">
+                            {children}
+                          </thead>
+                        ),
+                        tbody: ({ children }) => (
+                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {children}
+                          </tbody>
+                        ),
+                        th: ({ children }) => (
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                            {children}
+                          </th>
+                        ),
+                        td: ({ children }) => (
+                          <td className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
+                            {children}
+                          </td>
+                        ),
+                        blockquote: ({ children }) => (
+                          <blockquote className="border-l-4 border-primary/50 pl-3 italic my-3 text-gray-600 dark:text-gray-400 text-sm">
+                            {children}
+                          </blockquote>
+                        ),
+                        hr: () => (
+                          <hr className="my-4 border-gray-200 dark:border-gray-700" />
+                        ),
+                      }}
+                    >
+                      {summary.finalContent}
+                    </ReactMarkdown>
+                  </div>
                 </ScrollArea>
               )}
             </CardContent>

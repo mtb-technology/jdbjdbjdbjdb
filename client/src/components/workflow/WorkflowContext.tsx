@@ -47,6 +47,7 @@ export type WorkflowAction =
   | { type: "SET_STAGE_START_TIME"; time: Date | null }
   | { type: "SET_STAGE_PROMPT"; stage: string; prompt: string }
   | { type: "CLEAR_STAGE_PROMPTS" }
+  | { type: "CLEAR_STAGE_RESULT"; stage: string; cascadeDeleted?: string[] }
   | { type: "RESET_WORKFLOW" }
   | { type: "LOAD_EXISTING_REPORT"; report: Report };
 
@@ -284,6 +285,39 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         ...state,
         stagePrompts: {}
       };
+
+    case "CLEAR_STAGE_RESULT": {
+      // Clear a specific stage result and optionally cascade-deleted stages
+      const stagesToClear = [action.stage, ...(action.cascadeDeleted || [])];
+
+      const newStageResults = { ...state.stageResults };
+      const newSubstepResults = { ...state.substepResults };
+      const newConceptVersions = { ...state.conceptReportVersions };
+      const newStagePrompts = { ...state.stagePrompts };
+      const newStageTimes = { ...state.stageTimes };
+      const newStageProcessing = { ...state.stageProcessing };
+
+      stagesToClear.forEach(stageKey => {
+        delete newStageResults[stageKey];
+        delete newSubstepResults[stageKey];
+        delete newConceptVersions[stageKey];
+        delete newStagePrompts[stageKey];
+        delete newStageTimes[stageKey];
+        delete newStageProcessing[stageKey];
+      });
+
+      console.log(`🗑️ Cleared stage results for: ${stagesToClear.join(', ')}`);
+
+      return {
+        ...state,
+        stageResults: newStageResults,
+        substepResults: newSubstepResults,
+        conceptReportVersions: newConceptVersions,
+        stagePrompts: newStagePrompts,
+        stageTimes: newStageTimes,
+        stageProcessing: newStageProcessing,
+      };
+    }
 
     case "RESET_WORKFLOW":
       return initialState;

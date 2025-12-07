@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ToastAction } from "@/components/ui/toast";
-import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, Package } from "lucide-react";
+import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, Package, Loader2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +15,7 @@ import { AppHeader } from "@/components/app-header";
 import { celebrateExport } from "@/lib/confetti";
 import { EmptyState } from "@/components/ui/empty-state";
 import { STAGE_ORDER } from "@shared/constants";
+import { useAllActiveJobs } from "@/hooks/useJobPolling";
 
 interface Case {
   id: string;
@@ -146,6 +147,7 @@ function Cases() {
   const [pendingDeletion, setPendingDeletion] = useState<{ id: string; timeoutId: NodeJS.Timeout } | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { hasActiveJobForReport, byReport } = useAllActiveJobs();
 
   const { data: casesData, isLoading } = useQuery<CasesResponse>({
     queryKey: ["/api/cases", { page, search, status: statusFilter }],
@@ -462,6 +464,12 @@ function Cases() {
                         <Badge variant={getStatusColor(case_.status)}>
                           {getStatusText(case_.status, case_)}
                         </Badge>
+                        {hasActiveJobForReport(case_.id) && (
+                          <Badge variant="default" className="bg-blue-500 hover:bg-blue-600 animate-pulse gap-1">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            {byReport[case_.id]?.types.includes("express_mode") ? "Express Mode" : "Verwerking"} actief
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-6 text-sm text-muted-foreground">
                         <div className="flex items-center gap-1">

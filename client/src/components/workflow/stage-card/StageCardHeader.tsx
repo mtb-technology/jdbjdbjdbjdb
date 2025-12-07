@@ -14,7 +14,7 @@ import {
   ChevronRight,
   ChevronDown,
   Clock,
-  Activity,
+  Loader2,
   AlertTriangle,
   Sparkles,
 } from "lucide-react";
@@ -42,7 +42,7 @@ function getStatusBadge(stageStatus: StageStatus) {
     case "processing":
       return (
         <Badge className="bg-jdb-blue-primary text-white">
-          <Activity className="w-3 h-3 mr-1 animate-spin" />
+          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
           Bezig...
         </Badge>
       );

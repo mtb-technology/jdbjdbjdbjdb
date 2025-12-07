@@ -87,14 +87,23 @@ export function useStageActions({
         const cascadeMessage =
           cascadeDeleted.length > 0 ? ` (+ ${cascadeDeleted.length} volgende stages)` : "";
 
+        // Update local state immediately - this clears the stage result and updates UI
+        dispatch({
+          type: "CLEAR_STAGE_RESULT",
+          stage: stageKey,
+          cascadeDeleted,
+        });
+
+        // Invalidate the report cache to ensure data stays in sync
+        queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.reports.detail(state.currentReport.id),
+        });
+
         toast({
           title: "Stage gewist",
           description: `Stage ${stageKey}${cascadeMessage} is gewist en kan nu opnieuw worden uitgevoerd`,
           duration: 3000,
         });
-
-        // Refresh the report to update the UI
-        window.location.reload();
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";
         console.error("Failed to reset stage:", error);
@@ -106,7 +115,7 @@ export function useStageActions({
         });
       }
     },
-    [state.currentReport, toast]
+    [state.currentReport, toast, dispatch, queryClient]
   );
 
   /**

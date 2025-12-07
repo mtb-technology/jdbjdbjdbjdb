@@ -194,6 +194,43 @@ export function useActiveJobs(reportId: string | null) {
 }
 
 /**
+ * Get all active jobs across all reports
+ * Used by cases list to show which cases have active background jobs
+ */
+export function useAllActiveJobs() {
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["allActiveJobs"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/jobs/active`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch active jobs");
+      }
+      const result = await response.json();
+      return (result.success ? result.data : result) as {
+        totalActiveJobs: number;
+        reportIds: string[];
+        byReport: Record<string, { reportId: string; count: number; types: string[] }>;
+      };
+    },
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      // Poll more frequently when there are active jobs
+      return data?.totalActiveJobs ? 5000 : 30000;
+    },
+    staleTime: 2000,
+  });
+
+  return {
+    totalActiveJobs: data?.totalActiveJobs || 0,
+    reportIds: data?.reportIds || [],
+    byReport: data?.byReport || {},
+    isLoading,
+    refetch,
+    hasActiveJobForReport: (reportId: string) => data?.reportIds?.includes(reportId) || false,
+  };
+}
+
+/**
  * Create and start tracking a new job
  */
 export function useCreateJob() {

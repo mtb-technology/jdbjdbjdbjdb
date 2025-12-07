@@ -1,7 +1,7 @@
 import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession, type ExternalReportSession, type InsertExternalReportSession, type ExternalReportAdjustment, type InsertExternalReportAdjustment, type Job, type InsertJob } from "@shared/schema";
 import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions, externalReportSessions, externalReportAdjustments, jobs } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, ilike, count, sql } from "drizzle-orm";
+import { eq, desc, and, or, ilike, count, sql, inArray } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -724,7 +724,7 @@ export class DatabaseStorage implements IStorage {
   async getJobsByStatus(status: string | string[]): Promise<Job[]> {
     const statuses = Array.isArray(status) ? status : [status];
     return await db.select().from(jobs)
-      .where(sql`${jobs.status} = ANY(${statuses})`)
+      .where(inArray(jobs.status, statuses))
       .orderBy(jobs.createdAt);
   }
 
@@ -734,7 +734,7 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(jobs)
         .where(and(
           eq(jobs.reportId, reportId),
-          sql`${jobs.status} = ANY(${statuses})`
+          inArray(jobs.status, statuses)
         ))
         .orderBy(desc(jobs.createdAt));
     }

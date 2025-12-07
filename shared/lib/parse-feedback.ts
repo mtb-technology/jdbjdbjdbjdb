@@ -35,11 +35,14 @@ export function parseFeedbackToProposals(
   let jsonContent = rawFeedback.trim();
 
   // Try multiple patterns for code blocks (order matters - most specific first)
+  // Handle various backtick combinations including curly quotes and escaped versions
   const codeBlockPatterns = [
-    /```json\s*([\s\S]*?)```/,     // ```json ... ```
-    /```\s*json\s*([\s\S]*?)```/,  // ``` json ... ``` (space before json)
-    /```\s*([\s\S]*?)```/,          // ``` ... ```
-    /`json\s*([\s\S]*?)`/,          // `json ... `
+    /```json\s*([\s\S]*?)```/,           // ```json ... ```
+    /```\s*json\s*([\s\S]*?)```/,        // ``` json ... ``` (space before json)
+    /`{3}json\s*([\s\S]*?)`{3}/,         // alternative backtick matching
+    /```\s*([\s\S]*?)```/,               // ``` ... ```
+    /`json\s*([\s\S]*?)`/,               // `json ... `
+    /[`'"]{3}json\s*([\s\S]*?)[`'"]{3}/, // handle curly quotes
   ];
 
   for (const pattern of codeBlockPatterns) {
@@ -53,6 +56,9 @@ export function parseFeedbackToProposals(
       break;
     }
   }
+
+  // Additional cleanup: remove leading/trailing backticks that might remain
+  jsonContent = jsonContent.replace(/^[`'"]+/, '').replace(/[`'"]+$/, '').trim();
 
   // Also try to find JSON object/array anywhere in the content if not found yet
   if (!jsonContent.startsWith('{') && !jsonContent.startsWith('[')) {
@@ -111,61 +117,127 @@ export function parseFeedbackToProposals(
           .map((p: any, idx: number) => normalizeProposal(p, specialist, stageId, idx))
           .filter((p: ChangeProposal | null): p is ChangeProposal => p !== null);
         return normalized;
-      } else if (parsed.fiscaal_technische_validatie?.bevindingen && Array.isArray(parsed.fiscaal_technische_validatie.bevindingen)) {
-        // 4c ScenarioGatenAnalist nested format
-        const bevindingen = parsed.fiscaal_technische_validatie.bevindingen;
+      } else if (parsed.fiscaal_technische_validatie || parsed.blinde_vlekken || parsed.impliciete_aannames || parsed.grootste_risico) {
+        // 4c ScenarioGatenAnalist nested format - handle various output structures
         const proposals: ChangeProposal[] = [];
 
-        // Parse bevindingen
-        bevindingen.forEach((b: any, idx: number) => {
-          const severity: ChangeProposal['severity'] =
-            b.type_fout?.toLowerCase().includes('kritiek') || b.type_fout?.toLowerCase().includes('regel') ? 'critical' :
-            b.type_fout?.toLowerCase().includes('cijfer') || b.type_fout?.toLowerCase().includes('hallucinatie') ? 'important' :
-            'suggestion';
+        // Handle fiscaal_technische_validatie structure
+        const ftv = parsed.fiscaal_technische_validatie;
+        if (ftv) {
+          // Check if status indicates no issues
+          const status = ftv.status?.toLowerCase() || '';
+          const hasNoIssues = status.includes('100% accuraat') || status.includes('geen fouten');
 
-          proposals.push({
-            id: `${stageId}-bevinding-${idx}`,
-            specialist,
-            changeType: 'modify',
-            section: b.locatie?.substring(0, 100) || `Bevinding ${b.nummer || idx + 1}`,
-            original: '',
-            proposed: b.correctie_aanbeveling || b.probleem || '',
-            reasoning: b.probleem || '',
-            severity
+          // Parse bevindingen array
+          const bevindingen = Array.isArray(ftv.bevindingen) ? ftv.bevindingen :
+                             (ftv.bevindingen ? [ftv.bevindingen] : []);
+
+          bevindingen.forEach((b: any, idx: number) => {
+            // Skip empty or placeholder items
+            if (!b || (typeof b === 'object' && Object.keys(b).length === 0)) return;
+
+            const typeFout = (b.type_fout || '').toLowerCase();
+            const severity: ChangeProposal['severity'] =
+              typeFout.includes('kritiek') || typeFout.includes('regel') || typeFout.includes('toepassingsfout') ? 'critical' :
+              typeFout.includes('cijfer') || typeFout.includes('hallucinatie') || typeFout.includes('onnauwkeurig') ? 'important' :
+              'suggestion';
+
+            // Extract location - handle various field names
+            const locatie = b.locatie || b.locatie_zin_paragraaf || b.sectie || '';
+            const probleem = b.probleem || b.beschrijving || '';
+            const correctie = b.correctie_aanbeveling || b.correctie || b.aanbeveling || '';
+
+            // Only add if we have meaningful content
+            if (probleem || correctie) {
+              proposals.push({
+                id: `${stageId}-bevinding-${idx}`,
+                specialist,
+                changeType: 'modify',
+                section: locatie.substring(0, 150) || `Bevinding ${b.nummer || idx + 1}`,
+                original: locatie,
+                proposed: correctie || probleem,
+                reasoning: probleem,
+                severity
+              });
+            }
           });
-        });
+
+          // If status says all good, add a positive note
+          if (hasNoIssues && proposals.length === 0) {
+            proposals.push({
+              id: `${stageId}-status`,
+              specialist,
+              changeType: 'modify',
+              section: 'Validatie Status',
+              original: '',
+              proposed: ftv.status || 'De inhoud is fiscaal-technisch accuraat bevonden.',
+              reasoning: 'Geen correcties nodig',
+              severity: 'suggestion'
+            });
+          }
+        }
+
+        // Parse blinde_vlekken (Scenario Analyse specific)
+        const blindeVlekken = parsed.blinde_vlekken || [];
+        if (Array.isArray(blindeVlekken)) {
+          blindeVlekken.forEach((vlek: any, idx: number) => {
+            const titel = typeof vlek === 'string' ? vlek : (vlek.titel || vlek.onderwerp || vlek.categorie || `Blinde Vlek ${idx + 1}`);
+            const beschrijving = typeof vlek === 'string' ? vlek : (vlek.beschrijving || vlek.toelichting || '');
+
+            proposals.push({
+              id: `${stageId}-blindevlek-${idx}`,
+              specialist,
+              changeType: 'add',
+              section: typeof titel === 'string' ? titel.substring(0, 100) : `Blinde Vlek ${idx + 1}`,
+              original: '',
+              proposed: beschrijving || titel,
+              reasoning: 'Potentiële blinde vlek geïdentificeerd',
+              severity: 'important'
+            });
+          });
+        }
 
         // Parse impliciete_aannames if present
-        if (parsed.impliciete_aannames && Array.isArray(parsed.impliciete_aannames)) {
-          parsed.impliciete_aannames.forEach((aanname: string, idx: number) => {
+        const aannames = parsed.impliciete_aannames || [];
+        if (Array.isArray(aannames)) {
+          aannames.forEach((aanname: any, idx: number) => {
+            const text = typeof aanname === 'string' ? aanname : (aanname.aanname || aanname.beschrijving || JSON.stringify(aanname));
             proposals.push({
               id: `${stageId}-aanname-${idx}`,
               specialist,
               changeType: 'add',
               section: 'Impliciete Aannames',
               original: '',
-              proposed: aanname,
-              reasoning: 'Impliciete aanname geïdentificeerd door specialist',
+              proposed: text,
+              reasoning: 'Impliciete aanname geïdentificeerd - voeg toe aan uitgangspunten',
               severity: 'important'
             });
           });
         }
 
-        // Parse grootste_risico if present
-        if (parsed.grootste_risico) {
-          proposals.push({
-            id: `${stageId}-risico`,
-            specialist,
-            changeType: 'add',
-            section: parsed.grootste_risico.titel || 'Grootste Risico',
-            original: '',
-            proposed: parsed.grootste_risico.omschrijving || '',
-            reasoning: 'Kritiek risico geïdentificeerd door specialist',
-            severity: 'critical'
-          });
+        // Parse grootste_risico if present (can be object or string)
+        const risico = parsed.grootste_risico;
+        if (risico) {
+          const titel = typeof risico === 'string' ? 'Grootste Risico' : (risico.titel || risico.onderwerp || 'Grootste Risico');
+          const omschrijving = typeof risico === 'string' ? risico : (risico.omschrijving || risico.beschrijving || risico.toelichting || '');
+
+          if (omschrijving) {
+            proposals.push({
+              id: `${stageId}-risico`,
+              specialist,
+              changeType: 'add',
+              section: titel,
+              original: '',
+              proposed: omschrijving,
+              reasoning: 'Kritiek risico - #1 factor die conclusie kan ondergraven',
+              severity: 'critical'
+            });
+          }
         }
 
-        return proposals;
+        if (proposals.length > 0) {
+          return proposals;
+        }
       }
     } catch (e) {
       // Not JSON, continue with text parsing

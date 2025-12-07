@@ -159,6 +159,42 @@ export function registerJobRoutes(app: Express): void {
   }));
 
   /**
+   * GET /api/jobs/active
+   * Get all active jobs across all reports (grouped by reportId)
+   * Used by cases list to show which cases have active background jobs
+   * NOTE: This route MUST be defined BEFORE /api/jobs/:id to avoid "active" being matched as an :id
+   */
+  app.get("/api/jobs/active", asyncHandler(async (req: Request, res: Response) => {
+    const jobs = await storage.getJobsByStatus(["queued", "processing"]);
+
+    // Group jobs by reportId
+    const jobsByReport: Record<string, { reportId: string; count: number; types: string[] }> = {};
+
+    for (const job of jobs) {
+      if (!job.reportId) continue;
+
+      if (!jobsByReport[job.reportId]) {
+        jobsByReport[job.reportId] = {
+          reportId: job.reportId,
+          count: 0,
+          types: []
+        };
+      }
+
+      jobsByReport[job.reportId].count++;
+      if (!jobsByReport[job.reportId].types.includes(job.type)) {
+        jobsByReport[job.reportId].types.push(job.type);
+      }
+    }
+
+    res.json(createApiSuccessResponse({
+      totalActiveJobs: jobs.length,
+      reportIds: Object.keys(jobsByReport),
+      byReport: jobsByReport
+    }));
+  }));
+
+  /**
    * GET /api/jobs/:id
    * Get job status and progress
    */

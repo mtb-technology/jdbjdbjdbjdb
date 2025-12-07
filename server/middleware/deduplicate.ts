@@ -157,10 +157,12 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
       return originalStatus(code);
     };
 
-    // Handle errors
+    // Handle errors - resolve instead of reject to avoid unhandled rejection crashes
     const errorHandler = (error: any) => {
+      console.log(`❌ [Deduplicate] Error during request: ${requestKey}`, error?.message);
       cleanup();
-      rejectRequest!(error);
+      // Resolve instead of reject to avoid unhandled rejection crash
+      resolveRequest!();
     };
 
     // Attach error handler
@@ -169,15 +171,9 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
       if (!isCompleted) {
         console.log(`🔌 [Deduplicate] Client disconnected: ${requestKey}`);
         cleanup();
-        // Reject the promise silently - don't throw since the client is gone
-        if (rejectRequest) {
-          try {
-            rejectRequest(new Error('Response closed'));
-          } catch (e) {
-            // Ignore - client already disconnected
-            console.log(`🔌 [Deduplicate] Cleanup error ignored: ${e instanceof Error ? e.message : 'unknown'}`);
-          }
-        }
+        // Resolve the promise silently - client disconnected, but don't crash the server
+        // Using resolve instead of reject to avoid unhandled rejection
+        resolveRequest!();
       }
     });
 
