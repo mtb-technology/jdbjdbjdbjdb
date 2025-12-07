@@ -123,9 +123,64 @@ export function parseFeedbackToProposals(
           .map((p: any, idx: number) => normalizeProposal(p, specialist, stageId, idx))
           .filter((p: ChangeProposal | null): p is ChangeProposal => p !== null);
         return normalized;
-      } else if (parsed.fiscaal_technische_validatie || parsed.blinde_vlekken || parsed.impliciete_aannames || parsed.grootste_risico) {
+      } else if (parsed.fiscaal_technische_validatie || parsed.fiscaal_strategische_analyse || parsed.blinde_vlekken || parsed.impliciete_aannames || parsed.grootste_risico) {
         // 4c ScenarioGatenAnalist nested format - handle various output structures
         const proposals: ChangeProposal[] = [];
+
+        // Handle fiscaal_strategische_analyse structure (newer format)
+        const fsa = parsed.fiscaal_strategische_analyse;
+        if (fsa) {
+          // Check if status indicates no issues
+          const status = (fsa.status || '').toLowerCase();
+          const hasNoIssues = status.includes('100% accuraat') ||
+                             status.includes('geen fouten') ||
+                             status.includes('accuraat bevonden') ||
+                             status.includes('kritische validatie');
+
+          // Parse validatie_bevindingen array
+          const bevindingen = Array.isArray(fsa.validatie_bevindingen) ? fsa.validatie_bevindingen :
+                             (fsa.validatie_bevindingen ? [fsa.validatie_bevindingen] : []);
+
+          bevindingen.forEach((b: any, idx: number) => {
+            // Skip empty or placeholder items
+            if (!b || (typeof b === 'object' && Object.keys(b).length === 0)) return;
+
+            const typeFout = (b.type_fout || '').toLowerCase();
+            const severity: ChangeProposal['severity'] =
+              typeFout.includes('kritiek') || typeFout.includes('regel') || typeFout.includes('toepassingsfout') ? 'critical' :
+              typeFout.includes('cijfer') || typeFout.includes('hallucinatie') || typeFout.includes('onnauwkeurig') ? 'important' :
+              'suggestion';
+
+            // Extract location - handle various field names
+            const locatie = b.locatie || b.locatie_zin_paragraaf || b.sectie || '';
+            const probleem = b.probleem || b.beschrijving || '';
+            const correctie = b.correctie_aanbeveling || b.correctie || b.aanbeveling || '';
+
+            // Only add if we have meaningful content that indicates an actual problem
+            // Skip confirmations like "Correct toegepast"
+            const isConfirmation = (correctie + probleem).toLowerCase().includes('correct toegepast') ||
+                                   (correctie + probleem).toLowerCase().includes('correct berekend') ||
+                                   (correctie + probleem).toLowerCase().includes('geen correctie');
+
+            if ((probleem || correctie) && !isConfirmation) {
+              proposals.push({
+                id: `${stageId}-fsa-bevinding-${idx}`,
+                specialist,
+                changeType: 'modify',
+                section: locatie.substring(0, 150) || `Bevinding ${b.bevinding_nummer || idx + 1}`,
+                original: locatie,
+                proposed: correctie || probleem,
+                reasoning: probleem,
+                severity
+              });
+            }
+          });
+
+          // If status says all good and no proposals, return empty array
+          if (hasNoIssues && proposals.length === 0) {
+            return []; // Return empty - no changes needed
+          }
+        }
 
         // Handle fiscaal_technische_validatie structure
         const ftv = parsed.fiscaal_technische_validatie;
