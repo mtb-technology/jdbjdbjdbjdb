@@ -231,16 +231,15 @@ function FeedbackItemCard({ item, variant }: FeedbackItemCardProps) {
  * - Array van feedback objecten
  * - Enkel feedback object
  * - JSON string
+ * - JSON wrapped in markdown code blocks (```json ... ```)
  */
 function parseReviewerFeedback(rawOutput: string): FeedbackItem[] | null {
   if (!rawOutput || typeof rawOutput !== 'string') {
     return null;
   }
 
-  try {
-    // Probeer direct te parsen
-    const parsed = JSON.parse(rawOutput);
-
+  // Helper function to extract feedback from parsed JSON
+  function extractFeedbackFromParsed(parsed: unknown): FeedbackItem[] | null {
     // Als het een array is, return het
     if (Array.isArray(parsed)) {
       return parsed;
@@ -248,38 +247,85 @@ function parseReviewerFeedback(rawOutput: string): FeedbackItem[] | null {
 
     // Als het een object is met een feedback array property
     if (parsed && typeof parsed === 'object') {
-      if (Array.isArray(parsed.feedback)) {
-        return parsed.feedback;
+      const obj = parsed as Record<string, unknown>;
+      if (Array.isArray(obj.feedback)) {
+        return obj.feedback;
       }
-      if (Array.isArray(parsed.bevindingen)) {
-        return parsed.bevindingen;
+      if (Array.isArray(obj.bevindingen)) {
+        return obj.bevindingen;
       }
-      if (Array.isArray(parsed.items)) {
-        return parsed.items;
+      if (Array.isArray(obj.items)) {
+        return obj.items;
+      }
+      // Check for nested structure like { fiscaal_technische_validatie: { bevindingen: [...] } }
+      for (const key of Object.keys(obj)) {
+        const nested = obj[key];
+        if (nested && typeof nested === 'object') {
+          const nestedObj = nested as Record<string, unknown>;
+          if (Array.isArray(nestedObj.bevindingen)) {
+            return nestedObj.bevindingen;
+          }
+          if (Array.isArray(nestedObj.feedback)) {
+            return nestedObj.feedback;
+          }
+        }
       }
       // Als het een enkel feedback object is, wrap het in een array
-      if (parsed.bevinding_categorie || parsed.instructie) {
-        return [parsed];
-      }
-    }
-
-    return null;
-  } catch (error) {
-    // Als JSON parsing faalt, probeer te zoeken naar JSON in de tekst
-    const jsonMatch = rawOutput.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-      } catch (e) {
-        // Ignore
+      if (obj.bevinding_categorie || obj.instructie) {
+        return [obj as FeedbackItem];
       }
     }
 
     return null;
   }
+
+  try {
+    // Probeer direct te parsen
+    const parsed = JSON.parse(rawOutput);
+    const result = extractFeedbackFromParsed(parsed);
+    if (result) return result;
+  } catch {
+    // Continue to fallbacks
+  }
+
+  // Fallback 1: Extract JSON from markdown code blocks (```json ... ```)
+  const markdownMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (markdownMatch && markdownMatch[1]) {
+    try {
+      const parsed = JSON.parse(markdownMatch[1].trim());
+      const result = extractFeedbackFromParsed(parsed);
+      if (result) return result;
+    } catch {
+      // Continue to next fallback
+    }
+  }
+
+  // Fallback 2: Find JSON object in text (starts with {)
+  const objectMatch = rawOutput.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    try {
+      const parsed = JSON.parse(objectMatch[0]);
+      const result = extractFeedbackFromParsed(parsed);
+      if (result) return result;
+    } catch {
+      // Continue to next fallback
+    }
+  }
+
+  // Fallback 3: Find JSON array in text
+  const arrayMatch = rawOutput.match(/\[[\s\S]*\]/);
+  if (arrayMatch) {
+    try {
+      const parsed = JSON.parse(arrayMatch[0]);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  return null;
 }
 
 /**
