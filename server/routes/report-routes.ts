@@ -1580,10 +1580,14 @@ export function registerReportRoutes(
       throw ServerError.notFound("Report");
     }
 
-    // Get raw text from dossier data
+    // Get raw text from dossier data - gracefully handle missing rawText for older reports
     const rawText = (report.dossierData as any)?.rawText || "";
     if (!rawText) {
-      throw ServerError.validation("No raw text available", "Geen ruwe tekst beschikbaar voor samenvatting");
+      // Return empty summary instead of error for backwards compatibility
+      return res.json({
+        summary: "Geen ruwe tekst beschikbaar voor dit rapport. Dit is een ouder rapport zonder opgeslagen brondata.",
+        generated: false
+      });
     }
 
     // Get Stage 1 output (if available)
