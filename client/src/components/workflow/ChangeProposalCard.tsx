@@ -106,7 +106,7 @@ export function ChangeProposalCard({
   const isDecided = !!proposal.userDecision;
 
   return (
-    <Card className={`${getSeverityColor()} border transition-all ${isDecided ? 'opacity-50' : ''}`}>
+    <Card className={`${getSeverityColor()} border transition-all max-w-full overflow-hidden ${isDecided ? 'opacity-50' : ''}`}>
       <CardHeader className="py-2.5 px-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -147,7 +147,7 @@ export function ChangeProposalCard({
       </CardHeader>
 
       {isExpanded && (
-        <CardContent className="space-y-3 pt-0 px-3 pb-3">
+        <CardContent className="space-y-3 pt-0 px-3 pb-3 overflow-hidden">
           {/* Reasoning - compact */}
           <div className="bg-background/50 dark:bg-gray-800/50 px-2.5 py-2 rounded border border-gray-200/50 dark:border-gray-700/50">
             <p className="text-[11px] font-medium text-muted-foreground mb-0.5">Reden:</p>
@@ -156,7 +156,7 @@ export function ChangeProposalCard({
 
           {/* Diff View - compact */}
           {showDiff && proposal.changeType !== 'add' && (
-            <div className="border rounded overflow-hidden bg-background dark:bg-gray-900 text-xs">
+            <div className="border rounded overflow-hidden bg-background dark:bg-gray-900 text-xs max-w-full">
               <Suspense fallback={
                 <div className="flex items-center justify-center py-4">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -203,8 +203,8 @@ export function ChangeProposalCard({
 
           {/* Just show new text for additions - compact */}
           {proposal.changeType === 'add' && (
-            <div className="bg-green-50/50 dark:bg-green-950/20 border border-green-200/50 dark:border-green-800/50 px-2.5 py-2 rounded">
-              <p className="text-xs whitespace-pre-wrap text-foreground/80 font-mono leading-relaxed">{proposal.proposed}</p>
+            <div className="bg-green-50/50 dark:bg-green-950/20 border border-green-200/50 dark:border-green-800/50 px-2.5 py-2 rounded overflow-hidden">
+              <p className="text-xs whitespace-pre-wrap break-words text-foreground/80 font-mono leading-relaxed" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{proposal.proposed}</p>
             </div>
           )}
 

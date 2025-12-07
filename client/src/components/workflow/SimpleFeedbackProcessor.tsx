@@ -233,7 +233,7 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
 
   return (
     <Card
-      className="w-full border-2 border-blue-500/30 shadow-lg"
+      className="w-full max-w-full overflow-hidden border-2 border-blue-500/30 shadow-lg"
       data-testid="feedback-processor"
       data-feedback-processor
     >
@@ -265,9 +265,9 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-6 overflow-hidden">
         {/* View Mode Tabs */}
-        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)} className="w-full max-w-full overflow-hidden">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="structured" className="flex items-center gap-2">
                   <List className="h-4 w-4" />
@@ -279,14 +279,14 @@ export const SimpleFeedbackProcessor = memo(function SimpleFeedbackProcessor({
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="structured" className="space-y-6">
+              <TabsContent value="structured" className="space-y-6 overflow-hidden">
                 <ChangeProposalBulkActions
                   proposals={proposals}
                   onBulkAccept={handleBulkAccept}
                   onBulkReject={handleBulkReject}
                 />
 
-                <div className="space-y-4">
+                <div className="space-y-4 overflow-hidden">
                   {proposals.map((proposal) => (
                     <ChangeProposalCard
                       key={proposal.id}

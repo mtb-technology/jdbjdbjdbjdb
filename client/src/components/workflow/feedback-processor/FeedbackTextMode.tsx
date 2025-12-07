@@ -29,7 +29,7 @@ export const FeedbackTextMode = memo(function FeedbackTextMode({
   onCopyFeedback,
 }: FeedbackTextModeProps) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-full overflow-hidden">
       {/* Original Raw Feedback */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -49,8 +49,8 @@ export const FeedbackTextMode = memo(function FeedbackTextMode({
 
         <ScrollArea className="h-48 w-full border rounded-md p-3 bg-gray-50 dark:bg-gray-800">
           <pre
-            className="text-sm whitespace-pre-wrap break-all font-mono"
-            style={{ wordBreak: "break-all", overflowWrap: "anywhere" }}
+            className="text-sm whitespace-pre-wrap break-words font-mono max-w-full"
+            style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}
             data-testid="text-raw-feedback"
           >
             {rawFeedback}

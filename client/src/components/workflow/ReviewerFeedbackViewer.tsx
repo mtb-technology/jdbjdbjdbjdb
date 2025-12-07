@@ -56,7 +56,7 @@ export function ReviewerFeedbackViewer({
   const hasIssues = critical.length > 0 || warnings.length > 0;
 
   return (
-    <Card className={cn("border-gray-200", className)}>
+    <Card className={cn("border-gray-200 max-w-full overflow-hidden", className)}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -72,7 +72,7 @@ export function ReviewerFeedbackViewer({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 overflow-hidden">
         {/* Samenvatting */}
         <div className="flex gap-2 text-xs">
           {critical.length > 0 && (
@@ -193,8 +193,8 @@ function FeedbackItemCard({ item, variant }: FeedbackItemCardProps) {
   const styles = variantStyles[variant];
 
   return (
-    <div className={cn("p-3 rounded-lg border", styles.bg)}>
-      <div className="flex items-start justify-between gap-2 mb-1">
+    <div className={cn("p-3 rounded-lg border overflow-hidden", styles.bg)}>
+      <div className="flex items-start justify-between gap-2 mb-1 flex-wrap">
         {item.bevinding_categorie && (
           <Badge variant="outline" className={cn("text-xs", styles.badge)}>
             {item.bevinding_categorie}
@@ -207,7 +207,7 @@ function FeedbackItemCard({ item, variant }: FeedbackItemCardProps) {
         )}
       </div>
       {item.instructie && (
-        <p className={cn("text-xs mt-2", styles.text)}>
+        <p className={cn("text-xs mt-2 break-words", styles.text)} style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
           {item.instructie}
         </p>
       )}
@@ -216,7 +216,7 @@ function FeedbackItemCard({ item, variant }: FeedbackItemCardProps) {
       {Object.entries(item)
         .filter(([key]) => !['bevinding_categorie', 'instructie', 'priority', 'type'].includes(key))
         .map(([key, value]) => (
-          <div key={key} className="mt-2 text-xs">
+          <div key={key} className="mt-2 text-xs break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
             <span className="font-medium">{formatFieldName(key)}:</span>{' '}
             <span className="text-gray-700">{String(value)}</span>
           </div>
