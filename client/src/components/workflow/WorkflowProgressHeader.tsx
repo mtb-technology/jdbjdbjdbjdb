@@ -32,6 +32,8 @@ interface WorkflowProgressHeaderProps {
   onExpressComplete: () => void;
   /** Callback when report adjustments are applied - use to refresh editor content */
   onAdjustmentApplied?: () => void;
+  /** Rolled back changes from database - persists between page loads */
+  rolledBackChanges?: Record<string, { rolledBackAt: string }>;
 }
 
 export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
@@ -47,6 +49,7 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
   hasStage3,
   onExpressComplete,
   onAdjustmentApplied,
+  rolledBackChanges,
 }: WorkflowProgressHeaderProps) {
   const shouldReduceMotion = useReducedMotion();
   const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState(false);
@@ -192,6 +195,7 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
               stageResults={stageResults}
               finalContent={latestConceptContent}
               finalVersion={latestVersion}
+              initialRolledBackChanges={rolledBackChanges}
               onClose={() => setShowExpressResults(false)}
               onSaveComplete={onAdjustmentApplied}
             />

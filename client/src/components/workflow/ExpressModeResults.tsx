@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +14,17 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   CheckCircle,
   Clock,
   Edit3,
@@ -26,10 +37,13 @@ import {
   Loader2,
   ArrowRight,
   MessageSquare,
+  Undo2,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { parseFeedbackToProposals } from '@/lib/parse-feedback';
 import { STAGE_NAMES, REVIEW_STAGES } from '@shared/constants';
+import { QUERY_KEYS } from '@/lib/queryKeys';
+import { useToast } from '@/hooks/use-toast';
 import type { ExpressModeSummary, ExpressModeStageSummary, ExpressModeChange } from '@shared/types/api';
 
 interface ExpressModeResultsProps {
@@ -42,6 +56,8 @@ interface ExpressModeResultsProps {
   finalContent?: string;
   /** Current concept version */
   finalVersion?: number;
+  /** Previously rolled back changes (loaded from database) */
+  initialRolledBackChanges?: Record<string, { rolledBackAt: string }>;
   onClose: () => void;
   onSaveComplete?: () => void;
 }
@@ -102,6 +118,7 @@ export function ExpressModeResults({
   stageResults,
   finalContent,
   finalVersion = 1,
+  initialRolledBackChanges,
   onClose,
   onSaveComplete,
 }: ExpressModeResultsProps) {
@@ -125,7 +142,65 @@ export function ExpressModeResults({
   const [editedContent, setEditedContent] = useState(summary.finalContent);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Initialize with persisted rolled back changes from database
+  const [rolledBackChanges, setRolledBackChanges] = useState<Set<string>>(
+    () => new Set(Object.keys(initialRolledBackChanges || {}))
+  );
+  const [rollingBackChange, setRollingBackChange] = useState<string | null>(null);
+  const [displayedContent, setDisplayedContent] = useState(summary.finalContent);
 
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  // Rollback mutation
+  const rollbackMutation = useMutation({
+    mutationFn: async ({ stageId, changeIndex }: { stageId: string; changeIndex: number }) => {
+      const response = await apiRequest(
+        'POST',
+        `/api/reports/${reportId}/rollback-change`,
+        { stageId, changeIndex }
+      );
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Rollback mislukt');
+      }
+      return response.json();
+    },
+    onMutate: ({ stageId, changeIndex }) => {
+      setRollingBackChange(`${stageId}-${changeIndex}`);
+    },
+    onSuccess: (data, { stageId, changeIndex }) => {
+      const changeKey = `${stageId}-${changeIndex}`;
+      setRolledBackChanges(prev => new Set(Array.from(prev).concat(changeKey)));
+      setRollingBackChange(null);
+
+      // Update displayed content with new version
+      if (data.data?.newContent) {
+        setDisplayedContent(data.data.newContent);
+        setEditedContent(data.data.newContent);
+      }
+
+      // Invalidate report cache
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(reportId) });
+
+      toast({
+        title: 'Wijziging teruggedraaid',
+        description: data.data?.warning || `Versie ${data.data?.newVersion} opgeslagen`,
+        variant: data.data?.warning ? 'default' : 'default',
+      });
+
+      // Note: Don't call onSaveComplete here - it triggers page reload which closes this modal
+      // The query cache is already invalidated above, so the UI will update correctly
+    },
+    onError: (error: Error, { stageId, changeIndex }) => {
+      setRollingBackChange(null);
+      toast({
+        title: 'Rollback mislukt',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
 
   // Save mutation for concept content
   const saveMutation = useMutation({
@@ -310,77 +385,142 @@ export function ExpressModeResults({
                         </AccordionTrigger>
                         <AccordionContent>
                           <div className="space-y-3 pt-2">
-                            {stage.changes.map((change, idx) => (
-                              <div
-                                key={idx}
-                                className={`
-                                  relative rounded-lg border-l-4 bg-card p-4 shadow-sm
-                                  ${change.severity === 'critical'
-                                    ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20'
-                                    : change.severity === 'important'
-                                    ? 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
-                                    : 'border-l-amber-500 bg-amber-50/50 dark:bg-amber-950/20'
-                                  }
-                                `}
-                              >
-                                {/* Header row */}
-                                <div className="flex items-center gap-2 mb-2">
-                                  {getSeverityIcon(change.severity)}
-                                  {getSeverityBadge(change.severity)}
-                                  <span className="text-xs font-medium px-2 py-0.5 rounded bg-muted">
-                                    {getChangeTypeLabel(change.type)}
-                                  </span>
+                            {stage.changes.map((change, idx) => {
+                              const changeKey = `${stage.stageId}-${idx}`;
+                              const isRolledBack = rolledBackChanges.has(changeKey);
+                              const isRollingBack = rollingBackChange === changeKey;
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`
+                                    relative rounded-lg border-l-4 bg-card p-4 shadow-sm
+                                    ${isRolledBack
+                                      ? 'border-l-gray-300 bg-gray-50/50 dark:bg-gray-950/20 opacity-60'
+                                      : change.severity === 'critical'
+                                      ? 'border-l-red-500 bg-red-50/50 dark:bg-red-950/20'
+                                      : change.severity === 'important'
+                                      ? 'border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
+                                      : 'border-l-amber-500 bg-amber-50/50 dark:bg-amber-950/20'
+                                    }
+                                  `}
+                                >
+                                  {/* Header row with rollback button */}
+                                  <div className="flex items-center justify-between gap-2 mb-2">
+                                    <div className="flex items-center gap-2">
+                                      {getSeverityIcon(change.severity)}
+                                      {getSeverityBadge(change.severity)}
+                                      <span className="text-xs font-medium px-2 py-0.5 rounded bg-muted">
+                                        {getChangeTypeLabel(change.type)}
+                                      </span>
+                                      {isRolledBack && (
+                                        <Badge variant="outline" className="text-xs text-gray-500">
+                                          Teruggedraaid
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {/* Rollback button - only show if has original text and not already rolled back */}
+                                    {(change.original || change.type === 'add') && !isRolledBack && (
+                                      <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 px-2.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50 hover:text-orange-800 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-950"
+                                            disabled={isRollingBack || rollbackMutation.isPending}
+                                          >
+                                            {isRollingBack ? (
+                                              <Loader2 className="h-3 w-3 animate-spin" />
+                                            ) : (
+                                              <>
+                                                <Undo2 className="h-3 w-3 mr-1" />
+                                                Terugdraaien
+                                              </>
+                                            )}
+                                          </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                          <AlertDialogHeader>
+                                            <AlertDialogTitle>Wijziging terugdraaien?</AlertDialogTitle>
+                                            <AlertDialogDescription className="space-y-2">
+                                              <p>Weet je zeker dat je deze wijziging ongedaan wilt maken?</p>
+                                              {change.original && (
+                                                <div className="mt-3 p-3 bg-muted rounded-md text-sm">
+                                                  <p className="font-medium text-foreground mb-1">Originele tekst:</p>
+                                                  <p className="text-muted-foreground line-clamp-3">{change.original}</p>
+                                                </div>
+                                              )}
+                                            </AlertDialogDescription>
+                                          </AlertDialogHeader>
+                                          <AlertDialogFooter>
+                                            <AlertDialogCancel>Annuleren</AlertDialogCancel>
+                                            <AlertDialogAction
+                                              onClick={() => rollbackMutation.mutate({ stageId: stage.stageId, changeIndex: idx })}
+                                              className="bg-orange-600 hover:bg-orange-700"
+                                            >
+                                              <Undo2 className="h-4 w-4 mr-2" />
+                                              Ja, terugdraaien
+                                            </AlertDialogAction>
+                                          </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                      </AlertDialog>
+                                    )}
+                                  </div>
+
+                                  {/* Section indicator */}
+                                  {change.section && (
+                                    <div className="text-xs text-muted-foreground mb-2 font-medium">
+                                      📍 {change.section}
+                                    </div>
+                                  )}
+
+                                  {/* Original → New diff view (when original differs from description) */}
+                                  {change.original && change.original.length > 0 && change.original !== change.description ? (
+                                    <div className="space-y-2">
+                                      {/* Original text (strikethrough) */}
+                                      <div className="flex items-start gap-2">
+                                        <span className="text-xs font-medium text-red-600 dark:text-red-400 shrink-0 mt-0.5">Oud:</span>
+                                        <p className={`text-sm text-red-700 dark:text-red-300 ${isRolledBack ? '' : 'line-through opacity-75'}`}>
+                                          {change.original}
+                                        </p>
+                                      </div>
+                                      {!isRolledBack && (
+                                        <>
+                                          {/* Arrow separator */}
+                                          <div className="flex items-center gap-2 pl-6">
+                                            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                                          </div>
+                                          {/* New text */}
+                                          <div className="flex items-start gap-2">
+                                            <span className="text-xs font-medium text-green-600 dark:text-green-400 shrink-0 mt-0.5">Nieuw:</span>
+                                            <p className="text-sm text-green-700 dark:text-green-300 font-medium">
+                                              {change.description}
+                                            </p>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    /* Description only (no diff available) */
+                                    <p className={`text-sm leading-relaxed ${isRolledBack ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                                      {change.description}
+                                    </p>
+                                  )}
+
+                                  {/* Reasoning (why this change was made) */}
+                                  {change.reasoning && change.reasoning !== change.description && !isRolledBack && (
+                                    <div className="mt-3 pt-2 border-t border-dashed border-muted-foreground/30">
+                                      <div className="flex items-start gap-2">
+                                        <MessageSquare className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+                                        <p className="text-xs text-muted-foreground italic">
+                                          {change.reasoning}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-
-                                {/* Section indicator */}
-                                {change.section && (
-                                  <div className="text-xs text-muted-foreground mb-2 font-medium">
-                                    📍 {change.section}
-                                  </div>
-                                )}
-
-                                {/* Original → New diff view (when original differs from description) */}
-                                {change.original && change.original.length > 0 && change.original !== change.description ? (
-                                  <div className="space-y-2">
-                                    {/* Original text (strikethrough) */}
-                                    <div className="flex items-start gap-2">
-                                      <span className="text-xs font-medium text-red-600 dark:text-red-400 shrink-0 mt-0.5">Oud:</span>
-                                      <p className="text-sm text-red-700 dark:text-red-300 line-through opacity-75">
-                                        {change.original}
-                                      </p>
-                                    </div>
-                                    {/* Arrow separator */}
-                                    <div className="flex items-center gap-2 pl-6">
-                                      <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                                    </div>
-                                    {/* New text */}
-                                    <div className="flex items-start gap-2">
-                                      <span className="text-xs font-medium text-green-600 dark:text-green-400 shrink-0 mt-0.5">Nieuw:</span>
-                                      <p className="text-sm text-green-700 dark:text-green-300 font-medium">
-                                        {change.description}
-                                      </p>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  /* Description only (no diff available) */
-                                  <p className="text-sm leading-relaxed text-foreground">
-                                    {change.description}
-                                  </p>
-                                )}
-
-                                {/* Reasoning (why this change was made) */}
-                                {change.reasoning && change.reasoning !== change.description && (
-                                  <div className="mt-3 pt-2 border-t border-dashed border-muted-foreground/30">
-                                    <div className="flex items-start gap-2">
-                                      <MessageSquare className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
-                                      <p className="text-xs text-muted-foreground italic">
-                                        {change.reasoning}
-                                      </p>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </AccordionContent>
                       </AccordionItem>
@@ -529,7 +669,7 @@ export function ExpressModeResults({
                         ),
                       }}
                     >
-                      {summary.finalContent}
+                      {displayedContent}
                     </ReactMarkdown>
                   </div>
                 </ScrollArea>

@@ -161,6 +161,7 @@ export const WorkflowView = memo(function WorkflowView({
           hasStage3={hasStage3}
           onExpressComplete={handleExpressComplete}
           onAdjustmentApplied={handleAdjustmentApplied}
+          rolledBackChanges={(state.currentReport?.rolledBackChanges as Record<string, { rolledBackAt: string }>) || undefined}
         />
 
         {/* Active Jobs Banner - shows when background jobs are running */}

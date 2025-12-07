@@ -105,6 +105,9 @@ export const reports = pgTable("reports", {
   // Dossier context summary - AI-generated summary for quick reference
   dossierContextSummary: text("dossier_context_summary"), // Compact summary of case context
 
+  // Rollback tracking - which changes have been rolled back
+  rolledBackChanges: jsonb("rolled_back_changes"), // { "stageId-changeIndex": { rolledBackAt: string } }
+
   currentStage: text("current_stage").default("1a_informatiecheck"),
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),

@@ -2145,6 +2145,56 @@ Gebruik bullet points. Max 150 woorden.
   }));
 
   // ============================================================
+  // ROLLBACK CHANGES
+  // ============================================================
+
+  /**
+   * POST /api/reports/:id/rollback-change
+   * Roll back a single change made by a reviewer stage
+   *
+   * Uses direct string replacement - NO AI calls needed.
+   * The change's proposed text is replaced with the original text.
+   */
+  app.post("/api/reports/:id/rollback-change", asyncHandler(async (req: Request, res: Response) => {
+    const { id: reportId } = req.params;
+    const { stageId, changeIndex } = req.body;
+
+    if (!reportId) {
+      throw ServerError.validation('Report ID is required', 'Rapport ID is verplicht');
+    }
+
+    if (!stageId || typeof stageId !== 'string') {
+      throw ServerError.validation('Stage ID is required', 'Stage ID is verplicht');
+    }
+
+    if (typeof changeIndex !== 'number' || changeIndex < 0) {
+      throw ServerError.validation('Valid change index is required', 'Geldige change index is verplicht');
+    }
+
+    // Import dynamically to avoid circular dependency
+    const { rollbackChange } = await import('../services/rollback-service');
+
+    const result = await rollbackChange({
+      reportId,
+      stageId,
+      changeIndex,
+    });
+
+    if (!result.success) {
+      throw ServerError.business(ERROR_CODES.VALIDATION_FAILED, result.error || 'Rollback mislukt');
+    }
+
+    console.log(`🔄 Change rolled back: ${stageId} #${changeIndex} -> v${result.newVersion}`);
+
+    res.json(createApiSuccessResponse({
+      success: true,
+      newContent: result.newContent,
+      newVersion: result.newVersion,
+      warning: result.warning,
+    }));
+  }));
+
+  // ============================================================
   // RAPPORT AANPASSEN (POST-WORKFLOW ADJUSTMENTS)
   // ============================================================
 
