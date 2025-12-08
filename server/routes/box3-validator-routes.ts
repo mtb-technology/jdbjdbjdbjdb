@@ -31,9 +31,9 @@ const upload = multer({
     fileSize: 25 * 1024 * 1024, // 25MB max
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['application/pdf', 'text/plain', 'application/octet-stream'];
+    const allowedTypes = ['application/pdf', 'text/plain', 'application/octet-stream', 'image/jpeg', 'image/png'];
     const ext = file.originalname.toLowerCase().split('.').pop();
-    const allowedExtensions = ['pdf', 'txt'];
+    const allowedExtensions = ['pdf', 'txt', 'jpg', 'jpeg', 'png'];
 
     if (allowedTypes.includes(file.mimetype) || (ext && allowedExtensions.includes(ext))) {
       cb(null, true);
@@ -168,11 +168,23 @@ box3ValidatorRouter.post(
                     (file.mimetype === 'application/octet-stream' && ext === 'pdf');
       const isTXT = file.mimetype === 'text/plain' ||
                     (file.mimetype === 'application/octet-stream' && ext === 'txt');
+      const isImage = file.mimetype === 'image/jpeg' || file.mimetype === 'image/png' ||
+                      (file.mimetype === 'application/octet-stream' && ['jpg', 'jpeg', 'png'].includes(ext || ''));
 
       let extractedText = "";
       let needsVision = false;
 
-      if (isPDF) {
+      // Images always go to vision
+      if (isImage) {
+        const mimeType = file.mimetype.startsWith('image/') ? file.mimetype :
+                         (ext === 'png' ? 'image/png' : 'image/jpeg');
+        visionAttachments.push({
+          mimeType,
+          data: file.buffer.toString('base64'),
+          filename: file.originalname
+        });
+        console.log(`📋 [Box3Validator] Image added to vision: ${file.originalname}`);
+      } else if (isPDF) {
         try {
           const PDFParseClass = await getPdfParse();
           const parser = new PDFParseClass({ data: file.buffer });
@@ -426,11 +438,23 @@ box3ValidatorRouter.post(
                     (attachment.mimeType === 'application/octet-stream' && ext === 'pdf');
       const isTXT = attachment.mimeType === 'text/plain' ||
                     (attachment.mimeType === 'application/octet-stream' && ext === 'txt');
+      const isImage = attachment.mimeType === 'image/jpeg' || attachment.mimeType === 'image/png' ||
+                      (attachment.mimeType === 'application/octet-stream' && ['jpg', 'jpeg', 'png'].includes(ext || ''));
 
       let extractedText = "";
       let needsVision = false;
 
-      if (isPDF) {
+      // Images always go to vision
+      if (isImage) {
+        const mimeType = attachment.mimeType.startsWith('image/') ? attachment.mimeType :
+                         (ext === 'png' ? 'image/png' : 'image/jpeg');
+        visionAttachments.push({
+          mimeType,
+          data: attachment.fileData,
+          filename: attachment.filename
+        });
+        console.log(`📋 [Box3Validator] Image added to vision: ${attachment.filename}`);
+      } else if (isPDF) {
         try {
           const PDFParseClass = await getPdfParse();
           const buffer = Buffer.from(attachment.fileData, 'base64');
