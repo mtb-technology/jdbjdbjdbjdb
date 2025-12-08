@@ -16,3 +16,4 @@ export { SessionSidebar } from "./SessionSidebar";
 export { GevondenDataCards } from "./GevondenDataCards";
 export { RawOutputPanel } from "./RawOutputPanel";
 export { Box3SettingsModal, DEFAULT_BOX3_SYSTEM_PROMPT } from "./Box3SettingsModal";
+export { Box3AttachmentsPanel } from "./Box3AttachmentsPanel";

@@ -2,11 +2,13 @@
  * DocumentChecklist Component
  *
  * Displays the 5 document categories with their status and feedback.
+ * Now supports manual overrides (n.v.t., manual values).
  */
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   FileCheck,
   ChevronDown,
@@ -16,14 +18,20 @@ import {
   TrendingUp,
   Building,
   Calculator,
+  Ban,
+  Edit3,
+  Check,
 } from "lucide-react";
 import { StatusIcon, StatusBadge } from "./StatusComponents";
 import {
   getDocumentStatus,
   getDocumentFeedback,
   getDocumentGevondenIn,
+  getEffectiveDocumentStatus,
+  hasManualOverride,
+  getOverrideNote,
 } from "@/utils/box3Utils";
-import type { Box3ValidationResult } from "@shared/schema";
+import type { Box3ValidationResult, Box3ManualOverrides } from "@shared/schema";
 import type { LucideIcon } from "lucide-react";
 
 // Document categories with icons (can't be in constants.ts due to JSX)
@@ -83,17 +91,54 @@ interface DocumentChecklistProps {
   validationResult: Box3ValidationResult;
   expandedCategories: Set<string>;
   onToggleCategory: (key: string) => void;
+  manualOverrides?: Box3ManualOverrides | null;
+  onUpdateOverrides?: (overrides: Partial<Box3ManualOverrides>) => Promise<void>;
 }
 
 export const DocumentChecklist = memo(function DocumentChecklist({
   validationResult,
   expandedCategories,
   onToggleCategory,
+  manualOverrides,
+  onUpdateOverrides,
 }: DocumentChecklistProps) {
+  const [updatingCategory, setUpdatingCategory] = useState<string | null>(null);
+
+  // Count completed using effective status (includes overrides)
   const completedCount = documentCategories.filter((cat) => {
-    const status = getDocumentStatus(validationResult, cat.key);
-    return status === "compleet";
+    const status = getEffectiveDocumentStatus(validationResult, cat.key, manualOverrides);
+    return status === "compleet" || status === "nvt";
   }).length;
+
+  // Handle marking category as n.v.t.
+  const handleMarkNvt = async (categoryKey: string) => {
+    if (!onUpdateOverrides) return;
+    setUpdatingCategory(categoryKey);
+    try {
+      await onUpdateOverrides({
+        [categoryKey]: {
+          status: "nvt",
+          note: "Handmatig als n.v.t. gemarkeerd",
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    } finally {
+      setUpdatingCategory(null);
+    }
+  };
+
+  // Handle removing override
+  const handleRemoveOverride = async (categoryKey: string) => {
+    if (!onUpdateOverrides) return;
+    setUpdatingCategory(categoryKey);
+    try {
+      await onUpdateOverrides({
+        [categoryKey]: undefined,
+      });
+    } finally {
+      setUpdatingCategory(null);
+    }
+  };
 
   return (
     <Card>
@@ -110,11 +155,15 @@ export const DocumentChecklist = memo(function DocumentChecklist({
       </CardHeader>
       <CardContent className="space-y-3">
         {documentCategories.map((cat) => {
-          const status = getDocumentStatus(validationResult, cat.key);
+          const aiStatus = getDocumentStatus(validationResult, cat.key);
+          const effectiveStatus = getEffectiveDocumentStatus(validationResult, cat.key, manualOverrides);
+          const hasOverride = hasManualOverride(cat.key, manualOverrides);
+          const overrideNote = getOverrideNote(cat.key, manualOverrides);
           const feedback = getDocumentFeedback(validationResult, cat.key);
           const gevondenIn = getDocumentGevondenIn(validationResult, cat.key);
           const IconComponent = cat.icon;
           const isExpanded = expandedCategories.has(cat.key);
+          const isUpdating = updatingCategory === cat.key;
 
           return (
             <div key={cat.key} className="border rounded-lg overflow-hidden">
@@ -123,12 +172,18 @@ export const DocumentChecklist = memo(function DocumentChecklist({
                 className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <StatusIcon status={status} />
+                  <StatusIcon status={effectiveStatus} />
                   <div className="flex items-center gap-2">
                     <IconComponent className="h-4 w-4 text-muted-foreground" />
                     <span className="font-medium text-sm">{cat.label}</span>
                   </div>
-                  <StatusBadge status={status} />
+                  <StatusBadge status={effectiveStatus} />
+                  {hasOverride && (
+                    <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                      <Edit3 className="h-3 w-3 mr-1" />
+                      Handmatig
+                    </Badge>
+                  )}
                 </div>
                 {isExpanded ? (
                   <ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -171,11 +226,64 @@ export const DocumentChecklist = memo(function DocumentChecklist({
                   )}
 
                   {/* No feedback available */}
-                  {!feedback && status === "ontbreekt" && (
+                  {!feedback && aiStatus === "ontbreekt" && !hasOverride && (
                     <p className="text-sm text-muted-foreground italic">
                       Dit document is niet gevonden in de aangeleverde
                       bestanden.
                     </p>
+                  )}
+
+                  {/* Override note */}
+                  {hasOverride && overrideNote && (
+                    <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded p-2">
+                      <Edit3 className="h-3 w-3" />
+                      <span>{overrideNote}</span>
+                    </div>
+                  )}
+
+                  {/* Override actions */}
+                  {onUpdateOverrides && (
+                    <div className="flex items-center gap-2 pt-2 border-t mt-2">
+                      {!hasOverride && effectiveStatus === "ontbreekt" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkNvt(cat.key);
+                          }}
+                          disabled={isUpdating}
+                          className="text-xs"
+                        >
+                          {isUpdating ? (
+                            <span className="animate-pulse">...</span>
+                          ) : (
+                            <>
+                              <Ban className="h-3 w-3 mr-1" />
+                              Markeer als n.v.t.
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {hasOverride && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveOverride(cat.key);
+                          }}
+                          disabled={isUpdating}
+                          className="text-xs text-muted-foreground"
+                        >
+                          {isUpdating ? (
+                            <span className="animate-pulse">...</span>
+                          ) : (
+                            "Override verwijderen"
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

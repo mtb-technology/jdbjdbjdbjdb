@@ -20,18 +20,20 @@ import {
   getForfaitaireRendementen,
   formatCurrency,
 } from "@/utils/box3Utils";
-import type { Box3ValidationResult } from "@shared/schema";
+import type { Box3ValidationResult, Box3ManualOverrides } from "@shared/schema";
 
 interface KansrijkheidAnalyseProps {
   validationResult: Box3ValidationResult;
   belastingjaar: string | undefined;
+  manualOverrides?: Box3ManualOverrides | null;
 }
 
 export const KansrijkheidAnalyse = memo(function KansrijkheidAnalyse({
   validationResult,
   belastingjaar,
+  manualOverrides,
 }: KansrijkheidAnalyseProps) {
-  const kansrijkheid = berekenKansrijkheid(validationResult, belastingjaar);
+  const kansrijkheid = berekenKansrijkheid(validationResult, belastingjaar, manualOverrides);
   const heeftBerekening = kansrijkheid.werkelijkRendement !== null;
   const forfaitair = getForfaitaireRendementen(belastingjaar);
 

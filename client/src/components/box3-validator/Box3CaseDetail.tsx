@@ -5,14 +5,14 @@
  * Shows validation results without the input form.
  */
 
-import { memo, useState, useCallback } from "react";
+import { memo, useState, useCallback, useRef } from "react";
+import imageCompression from "browser-image-compression";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
   RefreshCw,
-  RotateCcw,
   Settings as SettingsIcon,
   User,
   Mail,
@@ -20,6 +20,8 @@ import {
   FileText,
   ChevronDown,
   ChevronRight,
+  Plus,
+  Upload,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -31,6 +33,7 @@ import {
   ConceptMailEditor,
   GevondenDataCards,
   RawOutputPanel,
+  Box3AttachmentsPanel,
 } from "@/components/box3-validator";
 
 // Utils
@@ -45,30 +48,41 @@ import {
 import { CATEGORY_LABELS } from "@/constants/box3.constants";
 
 // Types
-import type { Box3ValidatorSession, Box3ValidationResult } from "@shared/schema";
+import type { Box3ValidatorSession, Box3ValidationResult, Box3ManualOverrides } from "@shared/schema";
+import type { PendingFile } from "@/types/box3Validator.types";
 
 interface Box3CaseDetailProps {
   session: Box3ValidatorSession;
   systemPrompt: string;
   isRevalidating: boolean;
+  isAddingDocs: boolean;
   onBack: () => void;
   onRevalidate: () => void;
   onOpenSettings: () => void;
+  onAddDocuments: (files: PendingFile[], additionalText?: string) => Promise<void>;
+  onUpdateOverrides: (overrides: Partial<Box3ManualOverrides>) => Promise<void>;
 }
 
 export const Box3CaseDetail = memo(function Box3CaseDetail({
   session,
   systemPrompt,
   isRevalidating,
+  isAddingDocs,
   onBack,
   onRevalidate,
   onOpenSettings,
+  onAddDocuments,
+  onUpdateOverrides,
 }: Box3CaseDetailProps) {
   const { toast } = useToast();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(Object.keys(CATEGORY_LABELS))
   );
   const [showInputDetails, setShowInputDetails] = useState(false);
+  const [showAddDocs, setShowAddDocs] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validationResult = session.validationResult as Box3ValidationResult | null;
   const conceptMail = session.conceptMail as {
@@ -109,16 +123,70 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
   // Copy mail handler
   const handleCopyMail = useCallback(() => {
-    if (!editedConceptMail) return;
+    // Use edited mail if available, otherwise fall back to original mailData
+    const onderwerp = editedConceptMail?.onderwerp || stripHtmlToPlainText(mailData?.onderwerp || "");
+    const body = editedConceptMail?.body || stripHtmlToPlainText(mailData?.body || "");
 
-    const text = `Onderwerp: ${editedConceptMail.onderwerp}\n\n${editedConceptMail.body}`;
+    if (!onderwerp && !body) return;
+
+    const text = `Onderwerp: ${onderwerp}\n\n${body}`;
     navigator.clipboard.writeText(text);
 
     toast({
       title: "Gekopieerd",
       description: "Concept mail is naar het klembord gekopieerd.",
     });
-  }, [editedConceptMail, toast]);
+  }, [editedConceptMail, mailData, toast]);
+
+  // File handling with compression
+  const compressionOptions = {
+    maxSizeMB: 1,
+    maxWidthOrHeight: 2048,
+    useWebWorker: true,
+  };
+
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+
+    const files = Array.from(e.target.files);
+    setIsCompressing(true);
+
+    try {
+      const processedFiles: PendingFile[] = await Promise.all(
+        files.map(async (file) => {
+          const isImage = file.type.startsWith("image/");
+          if (isImage && file.size > 1024 * 1024) {
+            try {
+              const compressedFile = await imageCompression(file, compressionOptions);
+              return {
+                file: compressedFile,
+                name: file.name,
+                originalSize: file.size,
+                compressed: true,
+              };
+            } catch {
+              return { file, name: file.name };
+            }
+          }
+          return { file, name: file.name };
+        })
+      );
+      setPendingFiles((prev) => [...prev, ...processedFiles]);
+    } finally {
+      setIsCompressing(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const handleAddDocuments = useCallback(async () => {
+    if (pendingFiles.length === 0) return;
+    await onAddDocuments(pendingFiles);
+    setPendingFiles([]);
+    setShowAddDocs(false);
+  }, [pendingFiles, onAddDocuments]);
+
+  // Get manual overrides from session
+  const manualOverrides = session.manualOverrides as Box3ManualOverrides | null;
 
   return (
     <div className="space-y-6">
@@ -152,10 +220,19 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             </CardTitle>
             <div className="flex gap-2">
               <Button
+                onClick={() => setShowAddDocs(!showAddDocs)}
+                variant="outline"
+                size="sm"
+                disabled={isAddingDocs}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Document toevoegen
+              </Button>
+              <Button
                 onClick={onRevalidate}
                 variant="default"
                 size="sm"
-                disabled={isRevalidating}
+                disabled={isRevalidating || isAddingDocs}
               >
                 {isRevalidating ? (
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -168,6 +245,92 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           </div>
         </CardHeader>
         <CardContent>
+          {/* Add Documents Section */}
+          {showAddDocs && (
+            <div className="mb-4 p-4 border rounded-lg bg-muted/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  Documenten toevoegen aan dossier
+                </h4>
+                <Button variant="ghost" size="sm" onClick={() => setShowAddDocs(false)}>
+                  Annuleren
+                </Button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.txt,.jpg,.jpeg,.png"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full"
+                disabled={isCompressing || isAddingDocs}
+              >
+                {isCompressing ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Comprimeren...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Selecteer bestanden
+                  </>
+                )}
+              </Button>
+
+              {pendingFiles.length > 0 && (
+                <div className="space-y-2">
+                  {pendingFiles.map((pf, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-2 bg-background rounded text-sm">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        <span className="truncate">{pf.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({(pf.file.size / 1024).toFixed(1)} KB)
+                          {pf.compressed && (
+                            <span className="text-green-600 ml-1">✓ gecomprimeerd</span>
+                          )}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPendingFiles(prev => prev.filter((_, i) => i !== idx))}
+                      >
+                        ×
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    onClick={handleAddDocuments}
+                    disabled={isAddingDocs}
+                    className="w-full"
+                  >
+                    {isAddingDocs ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Documenten toevoegen & hervalideren...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4 mr-2" />
+                        {pendingFiles.length} document(en) toevoegen & hervalideren
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Collapsible input details */}
           <button
             onClick={() => setShowInputDetails(!showInputDetails)}
@@ -205,21 +368,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
               {/* Attachments */}
               {attachments.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2 text-sm font-medium">
+                  <div className="flex items-center gap-2 mb-3 text-sm font-medium">
                     <Paperclip className="h-4 w-4 text-green-500" />
                     Bijlages
                   </div>
-                  <div className="space-y-1">
-                    {attachments.map((att: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-2 text-sm text-muted-foreground"
-                      >
-                        <FileText className="h-4 w-4" />
-                        {att.filename || att.name || `Bijlage ${idx + 1}`}
-                      </div>
-                    ))}
-                  </div>
+                  <Box3AttachmentsPanel attachments={attachments} />
                 </div>
               )}
 
@@ -240,6 +393,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           <KansrijkheidAnalyse
             validationResult={validationResult}
             belastingjaar={belastingjaar}
+            manualOverrides={manualOverrides}
           />
 
           {/* Raw Output Panel */}

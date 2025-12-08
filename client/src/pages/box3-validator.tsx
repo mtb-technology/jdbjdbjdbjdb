@@ -30,7 +30,7 @@ import { STORAGE_KEY_SYSTEM_PROMPT } from "@/constants/box3.constants";
 
 // Types
 import type { PendingFile } from "@/types/box3Validator.types";
-import type { Box3ValidatorSession, Box3ValidationResult } from "@shared/schema";
+import type { Box3ValidatorSession, Box3ValidationResult, Box3ManualOverrides } from "@shared/schema";
 
 const Box3Validator = memo(function Box3Validator() {
   // URL-based routing
@@ -56,8 +56,11 @@ const Box3Validator = memo(function Box3Validator() {
   });
 
   // Session management hook
-  const { sessions, refetchSessions, loadSession, deleteSession } =
+  const { sessions, refetchSessions, loadSession, deleteSession, addDocuments, updateOverrides } =
     useBox3Sessions();
+
+  // State for adding documents
+  const [isAddingDocs, setIsAddingDocs] = useState(false);
 
   // Validation hook
   const {
@@ -155,6 +158,36 @@ const Box3Validator = memo(function Box3Validator() {
     }
   }, [selectedSession, revalidate, loadSession]);
 
+  // Add documents handler
+  const handleAddDocuments = useCallback(
+    async (files: PendingFile[], additionalText?: string) => {
+      if (!selectedSession) return;
+      setIsAddingDocs(true);
+      try {
+        const updatedSession = await addDocuments(selectedSession.id, files, additionalText);
+        if (updatedSession) {
+          setSelectedSession(updatedSession);
+          setValidationResult(updatedSession.validationResult as Box3ValidationResult);
+        }
+      } finally {
+        setIsAddingDocs(false);
+      }
+    },
+    [selectedSession, addDocuments, setValidationResult]
+  );
+
+  // Update overrides handler
+  const handleUpdateOverrides = useCallback(
+    async (overrides: Parameters<typeof updateOverrides>[1]) => {
+      if (!selectedSession) return;
+      const updatedSession = await updateOverrides(selectedSession.id, overrides);
+      if (updatedSession) {
+        setSelectedSession(updatedSession);
+      }
+    },
+    [selectedSession, updateOverrides]
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Settings Modal */}
@@ -182,9 +215,12 @@ const Box3Validator = memo(function Box3Validator() {
             session={selectedSession}
             systemPrompt={systemPrompt}
             isRevalidating={isValidating}
+            isAddingDocs={isAddingDocs}
             onBack={handleBackToList}
             onRevalidate={handleRevalidate}
             onOpenSettings={() => setSettingsOpen(true)}
+            onAddDocuments={handleAddDocuments}
+            onUpdateOverrides={handleUpdateOverrides}
           />
         )}
 

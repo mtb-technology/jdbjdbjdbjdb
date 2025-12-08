@@ -28,6 +28,8 @@ export const StatusIcon = memo(function StatusIcon({
     return <CheckCircle className="h-5 w-5 text-green-500" />;
   } else if (status === "onvolledig") {
     return <AlertCircle className="h-5 w-5 text-orange-500" />;
+  } else if (status === "nvt") {
+    return <Ban className="h-5 w-5 text-gray-400" />;
   } else {
     return <XCircle className="h-5 w-5 text-red-500" />;
   }
