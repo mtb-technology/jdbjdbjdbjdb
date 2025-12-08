@@ -241,10 +241,11 @@ export const DocumentChecklist = memo(function DocumentChecklist({
                     </div>
                   )}
 
-                  {/* Override actions */}
+                  {/* Override actions - always show when onUpdateOverrides is available */}
                   {onUpdateOverrides && (
                     <div className="flex items-center gap-2 pt-2 border-t mt-2">
-                      {!hasOverride && effectiveStatus === "ontbreekt" && (
+                      {/* Show n.v.t. button when no override and not already complete */}
+                      {!hasOverride && effectiveStatus !== "compleet" && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -265,6 +266,7 @@ export const DocumentChecklist = memo(function DocumentChecklist({
                           )}
                         </Button>
                       )}
+                      {/* Show remove button when there's an override */}
                       {hasOverride && (
                         <Button
                           variant="ghost"
@@ -282,6 +284,13 @@ export const DocumentChecklist = memo(function DocumentChecklist({
                             "Override verwijderen"
                           )}
                         </Button>
+                      )}
+                      {/* Info when status is already complete */}
+                      {!hasOverride && effectiveStatus === "compleet" && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Check className="h-3 w-3 text-green-500" />
+                          Document is compleet
+                        </span>
                       )}
                     </div>
                   )}

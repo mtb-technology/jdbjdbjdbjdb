@@ -2,7 +2,7 @@
  * Box3AttachmentsPanel Component
  *
  * Displays attachments for Box3 validator sessions with expandable content preview.
- * Similar to AttachmentsTab in normal dossiers but adapted for Box3 data structure.
+ * Now includes AI analysis per file showing document type, summary, and extracted values.
  */
 
 import { memo, useState, useCallback } from "react";
@@ -20,6 +20,8 @@ import {
   ChevronDown,
   ChevronRight,
   Eye,
+  Sparkles,
+  Info,
 } from "lucide-react";
 
 // Type for Box3 attachment (matches server storage structure)
@@ -30,8 +32,19 @@ interface Box3Attachment {
   fileData: string; // base64 encoded
 }
 
+// Type for AI analysis per file
+interface BijlageAnalyse {
+  bestandsnaam: string;
+  document_type: string;
+  belastingjaar?: number | string | null;
+  samenvatting: string;
+  geextraheerde_waarden?: Record<string, string | number | boolean | null>;
+  relevantie?: string;
+}
+
 interface Box3AttachmentsPanelProps {
   attachments: Box3Attachment[];
+  bijlageAnalyse?: BijlageAnalyse[];
 }
 
 /**
@@ -59,7 +72,28 @@ function getFileIcon(mimeType: string, filename: string) {
 }
 
 /**
- * Get badge for file type
+ * Get badge for document type from AI analysis
+ */
+function getDocumentTypeBadge(documentType: string) {
+  const typeColors: Record<string, string> = {
+    "Aangifte Inkomstenbelasting": "bg-purple-50 text-purple-700 border-purple-200",
+    "Bank Jaaropgave": "bg-green-50 text-green-700 border-green-200",
+    "Beleggingsoverzicht": "bg-blue-50 text-blue-700 border-blue-200",
+    "WOZ-beschikking": "bg-orange-50 text-orange-700 border-orange-200",
+    "Hypotheekafschrift": "bg-pink-50 text-pink-700 border-pink-200",
+  };
+
+  const colorClass = typeColors[documentType] || "bg-gray-50 text-gray-700 border-gray-200";
+
+  return (
+    <Badge variant="outline" className={colorClass}>
+      {documentType}
+    </Badge>
+  );
+}
+
+/**
+ * Get badge for file type (fallback when no AI analysis)
  */
 function getTypeBadge(mimeType: string, filename: string) {
   const ext = filename.toLowerCase().split('.').pop();
@@ -89,10 +123,38 @@ function getTypeBadge(mimeType: string, filename: string) {
 }
 
 /**
- * Single attachment item with expandable preview
+ * Format extracted value for display
+ */
+function formatValue(key: string, value: string | number | boolean | null): string {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "boolean") return value ? "Ja" : "Nee";
+  if (typeof value === "number") {
+    // Check if it looks like a currency value
+    if (key.includes("bedrag") || key.includes("waarde") || key.includes("saldo") ||
+        key.includes("rente") || key.includes("inkomen") || key.includes("bezittingen")) {
+      return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(value);
+    }
+    return value.toLocaleString('nl-NL');
+  }
+  return String(value);
+}
+
+/**
+ * Format key for display (convert snake_case to readable)
+ */
+function formatKey(key: string): string {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/box3/gi, 'Box 3')
+    .replace(/\b\w/g, l => l.toUpperCase());
+}
+
+/**
+ * Single attachment item with expandable preview and AI analysis
  */
 interface AttachmentItemProps {
   attachment: Box3Attachment;
+  analyse?: BijlageAnalyse;
   index: number;
   isExpanded: boolean;
   onToggle: () => void;
@@ -100,6 +162,7 @@ interface AttachmentItemProps {
 
 const Box3AttachmentItem = memo(function Box3AttachmentItem({
   attachment,
+  analyse,
   index,
   isExpanded,
   onToggle,
@@ -147,11 +210,20 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
                 <p className="font-medium text-sm">{attachment.filename}</p>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span>{formatFileSize(attachment.fileSize)}</span>
+                  {analyse && (
+                    <>
+                      <span>•</span>
+                      <span className="flex items-center gap-1 text-primary">
+                        <Sparkles className="h-3 w-3" />
+                        AI geanalyseerd
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              {getTypeBadge(attachment.mimeType, attachment.filename)}
+              {analyse ? getDocumentTypeBadge(analyse.document_type) : getTypeBadge(attachment.mimeType, attachment.filename)}
               {isPDF && (
                 <Button size="sm" variant="ghost" onClick={handleView} title="Bekijk PDF">
                   <Eye className="h-4 w-4" />
@@ -164,7 +236,44 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
           </div>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="border-t bg-muted/30 p-4">
+          <div className="border-t bg-muted/30 p-4 space-y-4">
+            {/* AI Analysis Section */}
+            {analyse && (
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                  <Sparkles className="h-4 w-4" />
+                  AI Analyse
+                </div>
+
+                {/* Summary */}
+                <p className="text-sm">{analyse.samenvatting}</p>
+
+                {/* Extracted values */}
+                {analyse.geextraheerde_waarden && Object.keys(analyse.geextraheerde_waarden).length > 0 && (
+                  <div className="bg-background rounded-md p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Geëxtraheerde waarden:</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Object.entries(analyse.geextraheerde_waarden).map(([key, value]) => (
+                        <div key={key} className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">{formatKey(key)}:</span>
+                          <span className="font-medium">{formatValue(key, value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Relevance */}
+                {analyse.relevantie && (
+                  <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                    <span>{analyse.relevantie}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* File Preview */}
             {isImage ? (
               <div className="flex flex-col items-center gap-2">
                 <img
@@ -172,20 +281,19 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
                   alt={attachment.filename}
                   className="max-w-full max-h-96 rounded-lg border shadow-sm"
                 />
-                <span className="text-xs text-muted-foreground">
-                  {attachment.filename}
-                </span>
               </div>
             ) : isPDF ? (
               <div className="space-y-3">
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
-                  <p className="text-amber-800 mb-2">
-                    <strong>PDF Document</strong>
-                  </p>
-                  <p className="text-amber-700">
-                    Dit PDF bestand wordt door de AI geanalyseerd. Klik op het oog-icoon om het document te bekijken.
-                  </p>
-                </div>
+                {!analyse && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+                    <p className="text-amber-800 mb-2">
+                      <strong>PDF Document</strong>
+                    </p>
+                    <p className="text-amber-700">
+                      Dit PDF bestand wordt door de AI geanalyseerd. Klik op het oog-icoon om het document te bekijken.
+                    </p>
+                  </div>
+                )}
                 <Button onClick={handleView} variant="outline" className="w-full">
                   <Eye className="h-4 w-4 mr-2" />
                   Open PDF in nieuw tabblad
@@ -236,6 +344,7 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
  */
 export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
   attachments,
+  bijlageAnalyse,
 }: Box3AttachmentsPanelProps) {
   const [expandedAttachments, setExpandedAttachments] = useState<Set<number>>(new Set());
 
@@ -251,6 +360,14 @@ export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
     });
   }, []);
 
+  // Match attachments with their AI analysis by filename
+  const getAnalyseForAttachment = useCallback((filename: string): BijlageAnalyse | undefined => {
+    if (!bijlageAnalyse) return undefined;
+    return bijlageAnalyse.find(a =>
+      a.bestandsnaam.toLowerCase() === filename.toLowerCase()
+    );
+  }, [bijlageAnalyse]);
+
   if (!attachments || attachments.length === 0) {
     return null;
   }
@@ -263,6 +380,7 @@ export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
     a.mimeType?.includes("image") || ['jpg', 'jpeg', 'png'].includes(a.filename.toLowerCase().split('.').pop() || '')
   ).length;
   const totalSize = attachments.reduce((sum, a) => sum + (a.fileSize || 0), 0);
+  const analysedCount = bijlageAnalyse?.length || 0;
 
   return (
     <div className="space-y-3">
@@ -270,6 +388,7 @@ export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
         <Box3AttachmentItem
           key={idx}
           attachment={att}
+          analyse={getAnalyseForAttachment(att.filename)}
           index={idx}
           isExpanded={expandedAttachments.has(idx)}
           onToggle={() => toggleAttachment(idx)}
@@ -281,6 +400,12 @@ export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>Totaal: {attachments.length} bijlage(s)</span>
           <div className="flex items-center gap-4">
+            {analysedCount > 0 && (
+              <span className="flex items-center gap-1 text-primary">
+                <Sparkles className="h-4 w-4" />
+                {analysedCount} geanalyseerd
+              </span>
+            )}
             {pdfCount > 0 && (
               <span className="flex items-center gap-1">
                 <FileText className="h-4 w-4 text-red-500" />

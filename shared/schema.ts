@@ -1026,6 +1026,16 @@ export const box3ValidationResultSchema = z.object({
     body: z.string(),
   }).optional(),
 
+  // Bijlage analyse - per bestand wat de AI gevonden heeft
+  bijlage_analyse: z.array(z.object({
+    bestandsnaam: z.string(),
+    document_type: z.string(),
+    belastingjaar: z.union([z.number(), z.string()]).nullable().optional(),
+    samenvatting: z.string(),
+    geextraheerde_waarden: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+    relevantie: z.string().optional(),
+  })).optional(),
+
   // Legacy velden voor backward compatibility
   belastingjaar: z.string().optional(),
   validatie: z.object({

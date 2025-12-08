@@ -372,7 +372,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     <Paperclip className="h-4 w-4 text-green-500" />
                     Bijlages
                   </div>
-                  <Box3AttachmentsPanel attachments={attachments} />
+                  <Box3AttachmentsPanel
+                    attachments={attachments}
+                    bijlageAnalyse={validationResult?.bijlage_analyse}
+                  />
                 </div>
               )}
 
