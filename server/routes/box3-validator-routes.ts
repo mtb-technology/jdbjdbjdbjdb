@@ -6,7 +6,7 @@ import { storage } from "../storage";
 import { AIModelFactory } from "../services/ai-models/ai-model-factory";
 import { AIConfigResolver } from "../services/ai-config-resolver";
 import { box3ValidationResultSchema, insertBox3ValidatorSessionSchema } from "@shared/schema";
-import type { PromptConfig } from "@shared/schema";
+import type { PromptConfig, Box3MultiYearData, Box3YearEntry, Box3ManualOverrides } from "@shared/schema";
 
 // Shared config resolver
 const configResolver = new AIConfigResolver();
@@ -43,75 +43,88 @@ const upload = multer({
   }
 });
 
-// Box 3 Validation System Prompt
-const BOX3_SYSTEM_PROMPT = `Je bent een fiscaal specialist die documenten voor Box 3 bezwaar zaken valideert.
+// Box 3 Validation System Prompt - Intake Analysis (multi-year support)
+const BOX3_SYSTEM_PROMPT = `Je bent een fiscaal specialist die documenten voor Box 3 bezwaarprocedures analyseert.
 
 ## Context
-Een klant heeft een informatieverzoek ontvangen waarin de volgende 5 documentcategorieën worden gevraagd:
+Een klant stuurt documenten aan voor een Box 3 bezwaarprocedure. Dit kunnen documenten zijn voor één of MEERDERE belastingjaren (2017-2024).
 
-1. **Aangifte inkomstenbelasting** - De volledige aangifte van het betreffende belastingjaar
-2. **Bankrekeningen** - Een overzicht van de daadwerkelijk ontvangen rente en eventuele valutaresultaten
-3. **Beleggingen** - Een overzicht met:
-   - Beginstand (1 januari)
-   - Eindstand (31 december)
-   - Eventuele stortingen/onttrekkingen
-   - Ontvangen dividenden
-4. **Vastgoed & overige bezittingen** - De WOZ-waarde op 1 januari van het jaar erna (T+1). Indien verhuurd: een overzicht van de huurinkomsten.
-5. **Schulden** - Een overzicht van de schulden en de betaalde rente
+## De 5 documentcategorieën per belastingjaar:
+1. **aangifte_ib** - Aangifte inkomstenbelasting van dat jaar
+2. **bankrekeningen** - Rente-overzichten, jaaropgaves van banken
+3. **beleggingen** - Begin/eindstand, dividend, aan/verkopen
+4. **vastgoed** - WOZ-waarde (T+1), evt. huurinkomsten
+5. **schulden** - Schulden en betaalde rente
 
-## Jouw taak
-Analyseer ALLE input (mail tekst + bijlages) en bepaal per categorie:
-- **status**: "compleet" (alle benodigde info aanwezig), "onvolledig" (deels aanwezig), of "ontbreekt" (niet gevonden)
-- **feedback**: Gedetailleerde uitleg wat je hebt gevonden of wat er mist
-- **gevonden_in**: In welke document(en) je de informatie hebt gevonden
+## Jouw taak - INTAKE ANALYSE
+Analyseer ALLE input (mail tekst + ELKE bijlage via vision) en:
 
-Detecteer ook het **belastingjaar** uit de documenten.
+1. **Identificeer alle belastingjaren** die in de documenten voorkomen
+2. **Analyseer ELKE bijlage apart** - bepaal type en belastingjaar
+3. **Extraheer kerncijfers** uit aangiftes:
+   - Box 3 belastbaar inkomen (na drempel)
+   - Box 3 belasting bedrag
+   - Rendementsgrondslag
+   - Totaal bezittingen/schulden
+4. **Bepaal status per jaar** per documentcategorie
 
-Genereer tot slot een **concept reactie-mail** waarin je:
-- De klant bedankt voor de aangeleverde documenten
-- Duidelijk aangeeft wat compleet is
-- Specifiek benoemt wat er nog ontbreekt of onvolledig is
-- Professioneel en vriendelijk communiceert
+## BELANGRIJK voor afbeeldingen:
+- Bekijk ELKE afbeelding zorgvuldig via vision
+- Zoek naar jaarcijfers, data, bedragen
+- Let op: foto's van brieven, schermafdrukken, scans
+- Geef in samenvatting aan wat je ZIET in de afbeelding
 
 ## Output formaat (STRIKT JSON)
-Geef je antwoord als valide JSON in exact dit formaat:
-
 \`\`\`json
 {
-  "belastingjaar": "2023",
-  "validatie": {
-    "aangifte_ib": {
-      "status": "compleet|onvolledig|ontbreekt",
-      "feedback": "Gedetailleerde uitleg...",
-      "gevonden_in": ["document1.pdf", "mail tekst"]
-    },
-    "bankrekeningen": {
-      "status": "compleet|onvolledig|ontbreekt",
-      "feedback": "Gedetailleerde uitleg...",
-      "gevonden_in": []
-    },
-    "beleggingen": {
-      "status": "compleet|onvolledig|ontbreekt",
-      "feedback": "Gedetailleerde uitleg...",
-      "gevonden_in": []
-    },
-    "vastgoed": {
-      "status": "compleet|onvolledig|ontbreekt",
-      "feedback": "Gedetailleerde uitleg...",
-      "gevonden_in": []
-    },
-    "schulden": {
-      "status": "compleet|onvolledig|ontbreekt",
-      "feedback": "Gedetailleerde uitleg...",
-      "gevonden_in": []
+  "gedetecteerde_jaren": ["2022", "2023"],
+  "bijlage_analyse": [
+    {
+      "bestandsnaam": "image_1.jpg",
+      "document_type": "aangifte_ib|bankrekeningen|beleggingen|vastgoed|schulden|overig|onleesbaar",
+      "belastingjaar": 2023,
+      "samenvatting": "Wat zie je in dit document? Beschrijf kort de inhoud.",
+      "geextraheerde_waarden": {
+        "box_3_belastbaar_inkomen": 12345,
+        "box_3_belasting_bedrag": 456,
+        "rendementsgrondslag": 78900,
+        "totaal_bezittingen": 100000,
+        "totaal_schulden": 5000,
+        "ontvangen_rente": 150,
+        "ontvangen_dividend": 500
+      }
+    }
+  ],
+  "per_jaar_status": {
+    "2023": {
+      "aangifte_ib": { "status": "compleet|onvolledig|ontbreekt", "feedback": "..." },
+      "bankrekeningen": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." },
+      "beleggingen": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." },
+      "vastgoed": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." },
+      "schulden": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." }
     }
   },
-  "concept_mail": {
-    "onderwerp": "Re: Informatieverzoek Box 3 bezwaar [jaar]",
-    "body": "Geachte heer/mevrouw,\\n\\nHartelijk dank voor..."
-  }
+  "gevonden_data": {
+    "algemeen": {
+      "belastingjaar": "2023",
+      "fiscale_partner": true
+    },
+    "fiscus_box3": {
+      "belastbaar_inkomen_na_drempel": 12345,
+      "betaalde_belasting": 456,
+      "rendementsgrondslag": 78900,
+      "totaal_bezittingen_bruto": 100000
+    }
+  },
+  "global_status": "compleet|onvolledig|actie_vereist"
 }
-\`\`\``;
+\`\`\`
+
+## Let op:
+- Analyseer ELKE bijlage, ook als bestandsnaam nietszeggend is (image_1.jpg etc)
+- Als je een jaar niet kunt bepalen, gebruik dan de context uit de mail of andere documenten
+- Bij meerdere jaren: maak voor ELK jaar een aparte entry in per_jaar_status
+- geextraheerde_waarden: alleen invullen wat je ECHT ziet, niet raden`;
 
 /**
  * Validate Box 3 documents
@@ -245,9 +258,11 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
     );
 
     // Ensure sufficient output tokens for detailed bijlage_analyse
+    // Intake analysis requires high thinking for accurate document categorization
     const aiConfig = {
       ...baseAiConfig,
-      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384)
+      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384),
+      thinkingLevel: 'high' as const, // Intake requires thorough analysis
     };
 
     // Call AI with config from database
@@ -293,18 +308,115 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       );
     }
 
-    // Create session with stored attachments
-    const session = await storage.createBox3ValidatorSession({
-      clientName: clientName.trim(),
-      belastingjaar: validationResult.belastingjaar || null,
-      inputText: inputText.trim(),
-      attachmentNames: attachmentNames as string[],
-      attachments: storedAttachments,
-      validationResult,
-      conceptMail: validationResult.concept_mail
-    });
+    // Detect unique years from bijlage_analyse
+    const yearsFromDocs = new Set<string>();
+    if (validationResult.bijlage_analyse && Array.isArray(validationResult.bijlage_analyse)) {
+      for (const analyse of validationResult.bijlage_analyse) {
+        if (analyse.belastingjaar) {
+          yearsFromDocs.add(String(analyse.belastingjaar));
+        }
+      }
+    }
+    // Also add the main detected year if not already included
+    if (validationResult.belastingjaar) {
+      yearsFromDocs.add(String(validationResult.belastingjaar));
+    }
 
-    console.log(`📋 [Box3Validator] Session created: ${session.id}`);
+    const uniqueYears = Array.from(yearsFromDocs).sort();
+    const isMultiYear = uniqueYears.length > 1;
+
+    console.log(`📋 [Box3Validator] Detected years: ${uniqueYears.join(', ')} (multi-year: ${isMultiYear})`);
+
+    let session;
+
+    if (isMultiYear) {
+      // Group attachments by year based on bijlage_analyse
+      const attachmentsByYear: Record<string, typeof storedAttachments> = {};
+      for (const year of uniqueYears) {
+        attachmentsByYear[year] = [];
+      }
+
+      // Match each attachment to its year - try filename match first, then index-based
+      for (let i = 0; i < storedAttachments.length; i++) {
+        const attachment = storedAttachments[i];
+        let matchedYear: string | null = null;
+
+        // Find matching analyse entry by filename
+        if (validationResult.bijlage_analyse) {
+          const analyse = validationResult.bijlage_analyse.find(a =>
+            a.bestandsnaam.toLowerCase() === attachment.filename.toLowerCase() ||
+            a.bestandsnaam.toLowerCase().includes(attachment.filename.toLowerCase()) ||
+            attachment.filename.toLowerCase().includes(a.bestandsnaam.toLowerCase())
+          );
+          if (analyse?.belastingjaar) {
+            matchedYear = String(analyse.belastingjaar);
+          }
+
+          // If no filename match, try index-based (AI often names files image_1, image_2 etc)
+          if (!matchedYear && validationResult.bijlage_analyse[i]?.belastingjaar) {
+            matchedYear = String(validationResult.bijlage_analyse[i].belastingjaar);
+          }
+        }
+
+        // Fallback to main belastingjaar if no match found
+        if (!matchedYear && validationResult.belastingjaar) {
+          matchedYear = String(validationResult.belastingjaar);
+        }
+
+        // Add to appropriate year bucket (or first year if no match)
+        if (matchedYear && attachmentsByYear[matchedYear]) {
+          attachmentsByYear[matchedYear].push(attachment);
+        } else if (uniqueYears.length > 0) {
+          attachmentsByYear[uniqueYears[0]].push(attachment);
+        }
+      }
+
+      // Create multi-year data structure
+      const multiYearData: Box3MultiYearData = {
+        years: {}
+      };
+
+      for (const year of uniqueYears) {
+        multiYearData.years[year] = {
+          jaar: year,
+          attachments: attachmentsByYear[year] || [],
+          // For now, only the first/main year gets the validation result
+          // Each year will need separate validation when docs are added
+          validationResult: year === validationResult.belastingjaar ? validationResult : undefined,
+          isComplete: false,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      // Create multi-year session
+      session = await storage.createBox3ValidatorSession({
+        clientName: clientName.trim(),
+        belastingjaar: validationResult.belastingjaar || uniqueYears[0] || null,
+        inputText: inputText.trim(),
+        attachmentNames: attachmentNames as string[],
+        attachments: storedAttachments, // Keep legacy field populated for backwards compat
+        validationResult, // Keep legacy field for backwards compat
+        conceptMail: validationResult.concept_mail,
+        isMultiYear: true,
+        multiYearData,
+      });
+
+      console.log(`📋 [Box3Validator] Multi-year session created: ${session.id} with years: ${uniqueYears.join(', ')}`);
+    } else {
+      // Single year - create legacy session
+      session = await storage.createBox3ValidatorSession({
+        clientName: clientName.trim(),
+        belastingjaar: validationResult.belastingjaar || null,
+        inputText: inputText.trim(),
+        attachmentNames: attachmentNames as string[],
+        attachments: storedAttachments,
+        validationResult,
+        conceptMail: validationResult.concept_mail,
+        isMultiYear: false,
+      });
+
+      console.log(`📋 [Box3Validator] Single-year session created: ${session.id}`);
+    }
 
     res.json(createApiSuccessResponse({
       session,
@@ -584,9 +696,11 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
     );
 
     // Ensure sufficient output tokens for detailed bijlage_analyse
+    // Adding docs requires high thinking for accurate document analysis
     const aiConfig = {
       ...baseAiConfig,
-      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384)
+      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384),
+      thinkingLevel: 'high' as const, // Document analysis requires thorough thinking
     };
 
     const factory = AIModelFactory.getInstance();
@@ -776,9 +890,11 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
     );
 
     // Ensure sufficient output tokens for detailed bijlage_analyse
+    // Legacy revalidation requires high thinking for thorough analysis
     const aiConfig = {
       ...baseAiConfig,
-      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384)
+      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384),
+      thinkingLevel: 'high' as const, // Revalidation requires thorough thinking
     };
 
     // Call AI with config from database
@@ -833,5 +949,841 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       session: updatedSession,
       validationResult
     }, "Documenten opnieuw gevalideerd"));
+  })
+);
+
+// ============ MULTI-YEAR ENDPOINTS ============
+
+/**
+ * Convert session to multi-year format
+ * POST /api/box3-validator/sessions/:id/convert-to-multi-year
+ *
+ * Automatically groups documents by year based on bijlage_analyse
+ */
+box3ValidatorRouter.post(
+  "/sessions/:id/convert-to-multi-year",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      throw ServerError.notFound("Sessie");
+    }
+
+    if (session.isMultiYear) {
+      throw ServerError.validation("Already multi-year", "Sessie is al multi-year");
+    }
+
+    const existingValidation = session.validationResult as any;
+    const existingAttachments = (session.attachments as any[]) || [];
+    const primaryYear = session.belastingjaar || "2023";
+
+    // Detect all unique years from bijlage_analyse
+    const yearsFromDocs = new Set<string>();
+    yearsFromDocs.add(primaryYear); // Always include primary year
+
+    if (existingValidation?.bijlage_analyse && Array.isArray(existingValidation.bijlage_analyse)) {
+      for (const analyse of existingValidation.bijlage_analyse) {
+        if (analyse.belastingjaar) {
+          yearsFromDocs.add(String(analyse.belastingjaar));
+        }
+      }
+    }
+
+    const uniqueYears = Array.from(yearsFromDocs).sort();
+    console.log(`📋 [Box3Validator] Converting to multi-year with years: ${uniqueYears.join(', ')}`);
+
+    // Group attachments by year based on bijlage_analyse
+    const attachmentsByYear: Record<string, any[]> = {};
+    for (const year of uniqueYears) {
+      attachmentsByYear[year] = [];
+    }
+
+    // Match each attachment to its year - try filename match first, then index-based
+    for (let i = 0; i < existingAttachments.length; i++) {
+      const attachment = existingAttachments[i];
+      let matchedYear: string | null = null;
+
+      if (existingValidation?.bijlage_analyse) {
+        // First try filename match
+        const analyse = existingValidation.bijlage_analyse.find((a: any) =>
+          a.bestandsnaam?.toLowerCase() === attachment.filename?.toLowerCase() ||
+          a.bestandsnaam?.toLowerCase().includes(attachment.filename?.toLowerCase()) ||
+          attachment.filename?.toLowerCase().includes(a.bestandsnaam?.toLowerCase())
+        );
+        if (analyse?.belastingjaar) {
+          matchedYear = String(analyse.belastingjaar);
+        }
+
+        // If no filename match, try index-based (AI often names files image_1, image_2 etc)
+        if (!matchedYear && existingValidation.bijlage_analyse[i]?.belastingjaar) {
+          matchedYear = String(existingValidation.bijlage_analyse[i].belastingjaar);
+        }
+      }
+
+      // Fallback to primary year if no match found
+      if (!matchedYear) {
+        matchedYear = primaryYear;
+      }
+
+      // Add to appropriate year bucket
+      if (attachmentsByYear[matchedYear]) {
+        attachmentsByYear[matchedYear].push(attachment);
+      } else {
+        // Year not in list, add to primary year
+        attachmentsByYear[primaryYear].push(attachment);
+      }
+    }
+
+    // Create multi-year data structure
+    const multiYearData: Box3MultiYearData = {
+      years: {}
+    };
+
+    for (const year of uniqueYears) {
+      multiYearData.years[year] = {
+        jaar: year,
+        attachments: attachmentsByYear[year] || [],
+        // Only primary year gets the existing validation result
+        validationResult: year === primaryYear ? existingValidation : undefined,
+        manualOverrides: year === primaryYear ? (session.manualOverrides as any) : undefined,
+        isComplete: false,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    const updated = await storage.updateBox3ValidatorSession(id, {
+      isMultiYear: true,
+      multiYearData,
+    });
+
+    const yearCounts = uniqueYears.map(y => `${y}: ${attachmentsByYear[y]?.length || 0} docs`).join(', ');
+    console.log(`📋 [Box3Validator] Session ${id} converted to multi-year: ${yearCounts}`);
+
+    res.json(createApiSuccessResponse(updated, `Sessie omgezet naar multi-year met ${uniqueYears.length} jaren`));
+  })
+);
+
+/**
+ * Re-organize multi-year session - redistribute documents by year
+ * POST /api/box3-validator/sessions/:id/reorganize
+ *
+ * Use this when documents were not properly grouped by year
+ */
+box3ValidatorRouter.post(
+  "/sessions/:id/reorganize",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      throw ServerError.notFound("Sessie");
+    }
+
+    if (!session.isMultiYear) {
+      throw ServerError.validation("Not multi-year", "Sessie is geen multi-year dossier");
+    }
+
+    const existingValidation = session.validationResult as any;
+    const multiYearData = (session.multiYearData || { years: {} }) as Box3MultiYearData;
+
+    // Collect all attachments from all years
+    const allAttachments: any[] = [];
+    for (const yearEntry of Object.values(multiYearData.years)) {
+      if (yearEntry.attachments) {
+        allAttachments.push(...yearEntry.attachments);
+      }
+    }
+
+    // Also add legacy attachments if not already included
+    const legacyAttachments = (session.attachments as any[]) || [];
+    for (const att of legacyAttachments) {
+      const exists = allAttachments.some(a => a.filename === att.filename);
+      if (!exists) {
+        allAttachments.push(att);
+      }
+    }
+
+    // Detect all unique years from bijlage_analyse
+    const yearsFromDocs = new Set<string>();
+    const primaryYear = session.belastingjaar || "2023";
+    yearsFromDocs.add(primaryYear);
+
+    if (existingValidation?.bijlage_analyse && Array.isArray(existingValidation.bijlage_analyse)) {
+      for (const analyse of existingValidation.bijlage_analyse) {
+        if (analyse.belastingjaar) {
+          yearsFromDocs.add(String(analyse.belastingjaar));
+        }
+      }
+    }
+
+    const uniqueYears = Array.from(yearsFromDocs).sort();
+    console.log(`📋 [Box3Validator] Reorganizing with years: ${uniqueYears.join(', ')}, ${allAttachments.length} total docs`);
+
+    // Group attachments by year based on bijlage_analyse
+    const attachmentsByYear: Record<string, any[]> = {};
+    for (const year of uniqueYears) {
+      attachmentsByYear[year] = [];
+    }
+
+    // Match attachments to years - try filename match first, then index-based
+    for (let i = 0; i < allAttachments.length; i++) {
+      const attachment = allAttachments[i];
+      let matchedYear: string | null = null;
+
+      if (existingValidation?.bijlage_analyse) {
+        // First try filename match
+        const analyse = existingValidation.bijlage_analyse.find((a: any) =>
+          a.bestandsnaam?.toLowerCase() === attachment.filename?.toLowerCase() ||
+          a.bestandsnaam?.toLowerCase().includes(attachment.filename?.toLowerCase()) ||
+          attachment.filename?.toLowerCase().includes(a.bestandsnaam?.toLowerCase())
+        );
+        if (analyse?.belastingjaar) {
+          matchedYear = String(analyse.belastingjaar);
+        }
+
+        // If no filename match, try index-based (AI often names files image_1, image_2 etc)
+        if (!matchedYear && existingValidation.bijlage_analyse[i]?.belastingjaar) {
+          matchedYear = String(existingValidation.bijlage_analyse[i].belastingjaar);
+        }
+      }
+
+      if (!matchedYear) {
+        matchedYear = primaryYear;
+      }
+
+      if (attachmentsByYear[matchedYear]) {
+        attachmentsByYear[matchedYear].push(attachment);
+      } else {
+        attachmentsByYear[primaryYear].push(attachment);
+      }
+    }
+
+    // Rebuild multi-year structure
+    const newMultiYearData: Box3MultiYearData = {
+      years: {}
+    };
+
+    for (const year of uniqueYears) {
+      const existingYearEntry = multiYearData.years[year];
+      newMultiYearData.years[year] = {
+        jaar: year,
+        attachments: attachmentsByYear[year] || [],
+        validationResult: existingYearEntry?.validationResult || (year === primaryYear ? existingValidation : undefined),
+        manualOverrides: existingYearEntry?.manualOverrides,
+        isComplete: false,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    const updated = await storage.updateBox3ValidatorSession(id, {
+      multiYearData: newMultiYearData,
+    });
+
+    const yearCounts = uniqueYears.map(y => `${y}: ${attachmentsByYear[y]?.length || 0} docs`).join(', ');
+    console.log(`📋 [Box3Validator] Session ${id} reorganized: ${yearCounts}`);
+
+    res.json(createApiSuccessResponse(updated, `Documenten herverdeeld: ${yearCounts}`));
+  })
+);
+
+/**
+ * Add a year to multi-year session
+ * POST /api/box3-validator/sessions/:id/years
+ */
+box3ValidatorRouter.post(
+  "/sessions/:id/years",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { jaar } = req.body;
+
+    if (!jaar || typeof jaar !== "string") {
+      throw ServerError.validation("jaar required", "Belastingjaar is verplicht");
+    }
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      throw ServerError.notFound("Sessie");
+    }
+
+    if (!session.isMultiYear) {
+      throw ServerError.validation("Not multi-year", "Sessie is geen multi-year dossier");
+    }
+
+    const multiYearData = (session.multiYearData || { years: {} }) as Box3MultiYearData;
+
+    if (multiYearData.years[jaar]) {
+      throw ServerError.validation("Year exists", `Jaar ${jaar} bestaat al`);
+    }
+
+    // Add empty year entry
+    multiYearData.years[jaar] = {
+      jaar,
+      attachments: [],
+      isComplete: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const updated = await storage.updateBox3ValidatorSession(id, {
+      multiYearData,
+    });
+
+    console.log(`📋 [Box3Validator] Added year ${jaar} to session ${id}`);
+
+    res.json(createApiSuccessResponse(updated, `Jaar ${jaar} toegevoegd`));
+  })
+);
+
+/**
+ * Add documents to a specific year
+ * POST /api/box3-validator/sessions/:id/years/:jaar/add-documents
+ */
+box3ValidatorRouter.post(
+  "/sessions/:id/years/:jaar/add-documents",
+  (req: Request, res: Response, next: NextFunction) => {
+    upload.array('files', 10)(req, res, (err: any) => {
+      if (err) {
+        return res.status(400).json(createApiErrorResponse(
+          'VALIDATION_ERROR',
+          ERROR_CODES.VALIDATION_FAILED,
+          err.message || 'Bestand upload mislukt',
+          err.message
+        ));
+      }
+      next();
+    });
+  },
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, jaar } = req.params;
+    const { systemPrompt } = req.body;
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      throw ServerError.notFound("Sessie");
+    }
+
+    if (!session.isMultiYear) {
+      throw ServerError.validation("Not multi-year", "Sessie is geen multi-year dossier");
+    }
+
+    const multiYearData = (session.multiYearData || { years: {} }) as Box3MultiYearData;
+
+    if (!multiYearData.years[jaar]) {
+      throw ServerError.notFound(`Jaar ${jaar}`);
+    }
+
+    const newFiles = req.files as Express.Multer.File[] || [];
+    if (newFiles.length === 0) {
+      throw ServerError.validation("No files", "Geen bestanden geselecteerd");
+    }
+
+    // Process new files
+    const newAttachments: { filename: string; mimeType: string; fileSize: number; fileData: string }[] = [];
+    for (const file of newFiles) {
+      newAttachments.push({
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        fileData: file.buffer.toString('base64')
+      });
+    }
+
+    // Add to existing year attachments
+    const yearEntry = multiYearData.years[jaar];
+    const existingAttachments = yearEntry.attachments || [];
+    const allAttachments = [...existingAttachments, ...newAttachments];
+    yearEntry.attachments = allAttachments;
+    yearEntry.updatedAt = new Date().toISOString();
+
+    console.log(`📋 [Box3Validator] Adding ${newFiles.length} documents to year ${jaar}`);
+
+    // Re-validate this year's documents
+    const attachmentTexts: string[] = [];
+    const visionAttachments: { mimeType: string; data: string; filename: string }[] = [];
+
+    for (const attachment of allAttachments) {
+      const ext = attachment.filename.toLowerCase().split('.').pop();
+      const isPDF = attachment.mimeType === 'application/pdf' ||
+                    (attachment.mimeType === 'application/octet-stream' && ext === 'pdf');
+      const isTXT = attachment.mimeType === 'text/plain';
+      const isImage = attachment.mimeType.startsWith('image/');
+
+      let extractedText = "";
+      let needsVision = false;
+
+      if (isImage) {
+        visionAttachments.push({
+          mimeType: attachment.mimeType,
+          data: attachment.fileData,
+          filename: attachment.filename
+        });
+      } else if (isPDF) {
+        try {
+          const PDFParseClass = await getPdfParse();
+          const buffer = Buffer.from(attachment.fileData, 'base64');
+          const parser = new PDFParseClass({ data: buffer });
+          const result = await parser.getText();
+          extractedText = result.text || "";
+
+          if (extractedText.length < 100) {
+            needsVision = true;
+          }
+        } catch {
+          needsVision = true;
+        }
+
+        if (needsVision) {
+          visionAttachments.push({
+            mimeType: 'application/pdf',
+            data: attachment.fileData,
+            filename: attachment.filename
+          });
+        }
+      } else if (isTXT) {
+        const buffer = Buffer.from(attachment.fileData, 'base64');
+        extractedText = buffer.toString('utf-8');
+      }
+
+      if (extractedText.trim().length > 0) {
+        attachmentTexts.push(`\n=== DOCUMENT: ${attachment.filename} ===\n${extractedText}`);
+      }
+    }
+
+    // Build year-specific prompt
+    const userPrompt = `## Belastingjaar: ${jaar}
+
+## Bijlages (${allAttachments.length} documenten):
+${attachmentTexts.length > 0 ? attachmentTexts.join('\n\n') : 'Geen tekst-extractie beschikbaar.'}
+
+Analyseer alle bovenstaande input voor belastingjaar ${jaar} en geef je validatie als JSON.`;
+
+    const activeConfig = await storage.getActivePromptConfig();
+    const promptConfig = activeConfig?.config as PromptConfig;
+
+    const baseAiConfig = configResolver.resolveForOperation(
+      'box3_validator',
+      promptConfig,
+      `box3-year-${jaar}-${Date.now()}`
+    );
+
+    // Year validation requires high thinking for accurate kansrijkheid calculation
+    const aiConfig = {
+      ...baseAiConfig,
+      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384),
+      thinkingLevel: 'high' as const, // Year validation requires thorough analysis
+    };
+
+    const factory = AIModelFactory.getInstance();
+    const result = await factory.callModel(
+      aiConfig,
+      `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
+      {
+        jobId: `box3-year-${jaar}-${Date.now()}`,
+        visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
+      }
+    );
+
+    // Parse validation result
+    let validationResult;
+    try {
+      let jsonText = result.content.match(/```json\s*([\s\S]*?)\s*```/)?.[1];
+      if (!jsonText) jsonText = result.content.match(/\{[\s\S]*\}/)?.[0];
+      if (!jsonText && result.content.trim().startsWith('{')) jsonText = result.content.trim();
+
+      if (!jsonText) throw new Error('No JSON found');
+
+      validationResult = box3ValidationResultSchema.parse(JSON.parse(jsonText));
+    } catch (parseError: any) {
+      throw ServerError.ai('Kon AI response niet parsen', { error: parseError.message });
+    }
+
+    yearEntry.validationResult = validationResult;
+
+    // Update session
+    const updated = await storage.updateBox3ValidatorSession(id, { multiYearData });
+
+    console.log(`📋 [Box3Validator] Year ${jaar} validated with ${newFiles.length} new docs`);
+
+    res.json(createApiSuccessResponse({
+      session: updated,
+      yearEntry,
+      validationResult,
+    }, `Documenten toegevoegd aan ${jaar}`));
+  })
+);
+
+/**
+ * Update overrides for a specific year
+ * PATCH /api/box3-validator/sessions/:id/years/:jaar/overrides
+ */
+box3ValidatorRouter.patch(
+  "/sessions/:id/years/:jaar/overrides",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, jaar } = req.params;
+    const { overrides } = req.body;
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      throw ServerError.notFound("Sessie");
+    }
+
+    if (!session.isMultiYear) {
+      throw ServerError.validation("Not multi-year", "Sessie is geen multi-year dossier");
+    }
+
+    const multiYearData = (session.multiYearData || { years: {} }) as Box3MultiYearData;
+
+    if (!multiYearData.years[jaar]) {
+      throw ServerError.notFound(`Jaar ${jaar}`);
+    }
+
+    // Merge overrides for this year
+    const yearEntry = multiYearData.years[jaar];
+    const existingOverrides = yearEntry.manualOverrides || {};
+    yearEntry.manualOverrides = { ...existingOverrides, ...overrides } as Box3ManualOverrides;
+    yearEntry.updatedAt = new Date().toISOString();
+
+    const updated = await storage.updateBox3ValidatorSession(id, { multiYearData });
+
+    console.log(`📋 [Box3Validator] Updated overrides for year ${jaar}`);
+
+    res.json(createApiSuccessResponse(updated, "Overrides bijgewerkt"));
+  })
+);
+
+/**
+ * Re-validate a specific year
+ * POST /api/box3-validator/sessions/:id/years/:jaar/revalidate
+ */
+box3ValidatorRouter.post(
+  "/sessions/:id/years/:jaar/revalidate",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id, jaar } = req.params;
+    const { systemPrompt } = req.body;
+
+    console.log(`📋 [Box3Validator] Revalidate year request: session=${id}, jaar=${jaar}`);
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      console.log(`📋 [Box3Validator] Session not found: ${id}`);
+      throw ServerError.notFound("Sessie");
+    }
+
+    console.log(`📋 [Box3Validator] Session found: isMultiYear=${session.isMultiYear}`);
+
+    if (!session.isMultiYear) {
+      throw ServerError.validation("Not multi-year", "Sessie is geen multi-year dossier");
+    }
+
+    const multiYearData = (session.multiYearData || { years: {} }) as Box3MultiYearData;
+    console.log(`📋 [Box3Validator] Available years: ${Object.keys(multiYearData.years).join(', ')}`);
+
+    if (!multiYearData.years[jaar]) {
+      console.log(`📋 [Box3Validator] Year not found: ${jaar}`);
+      throw ServerError.notFound(`Jaar ${jaar}`);
+    }
+
+    const yearEntry = multiYearData.years[jaar];
+    let attachments = yearEntry.attachments || [];
+    console.log(`📋 [Box3Validator] Year ${jaar} has ${attachments.length} attachments in yearEntry`);
+
+    // If no attachments in year entry, try to find them from session-level bijlage_analyse
+    // This handles cases where documents were assigned to years but not physically moved
+    if (attachments.length === 0) {
+      const sessionAttachments = (session.attachments || []) as { filename: string; mimeType: string; fileSize: number; fileData: string }[];
+      const sessionValidation = session.validationResult as any;
+
+      if (sessionAttachments.length > 0 && sessionValidation?.bijlage_analyse) {
+        // Find attachments that belong to this year based on bijlage_analyse
+        for (let i = 0; i < sessionAttachments.length; i++) {
+          const attachment = sessionAttachments[i];
+
+          // Try filename match first
+          const analyse = sessionValidation.bijlage_analyse.find((a: any) =>
+            a.bestandsnaam?.toLowerCase() === attachment.filename?.toLowerCase() ||
+            a.bestandsnaam?.toLowerCase().includes(attachment.filename?.toLowerCase()) ||
+            attachment.filename?.toLowerCase().includes(a.bestandsnaam?.toLowerCase())
+          );
+
+          if (analyse?.belastingjaar && String(analyse.belastingjaar) === jaar) {
+            attachments.push(attachment);
+            continue;
+          }
+
+          // Try index-based match (AI often names files image_1, image_2 etc)
+          if (sessionValidation.bijlage_analyse[i]?.belastingjaar &&
+              String(sessionValidation.bijlage_analyse[i].belastingjaar) === jaar) {
+            attachments.push(attachment);
+          }
+        }
+
+        // Update the year entry with found attachments
+        if (attachments.length > 0) {
+          yearEntry.attachments = attachments;
+          await storage.updateBox3ValidatorSession(id, { multiYearData });
+          console.log(`📋 [Box3Validator] Migrated ${attachments.length} attachments to year ${jaar}`);
+        }
+      }
+    }
+
+    if (attachments.length === 0) {
+      throw ServerError.validation("No data", "Geen documenten voor dit jaar");
+    }
+
+    // Process attachments for revalidation
+    const attachmentTexts: string[] = [];
+    const visionAttachments: { mimeType: string; data: string; filename: string }[] = [];
+
+    for (const attachment of attachments) {
+      const ext = attachment.filename.toLowerCase().split('.').pop();
+      const isPDF = attachment.mimeType === 'application/pdf';
+      const isTXT = attachment.mimeType === 'text/plain';
+      const isImage = attachment.mimeType.startsWith('image/');
+
+      let extractedText = "";
+      let needsVision = false;
+
+      if (isImage) {
+        visionAttachments.push({
+          mimeType: attachment.mimeType,
+          data: attachment.fileData,
+          filename: attachment.filename
+        });
+      } else if (isPDF) {
+        try {
+          const PDFParseClass = await getPdfParse();
+          const buffer = Buffer.from(attachment.fileData, 'base64');
+          const parser = new PDFParseClass({ data: buffer });
+          const result = await parser.getText();
+          extractedText = result.text || "";
+          if (extractedText.length < 100) needsVision = true;
+        } catch {
+          needsVision = true;
+        }
+
+        if (needsVision) {
+          visionAttachments.push({
+            mimeType: 'application/pdf',
+            data: attachment.fileData,
+            filename: attachment.filename
+          });
+        }
+      } else if (isTXT) {
+        extractedText = Buffer.from(attachment.fileData, 'base64').toString('utf-8');
+      }
+
+      if (extractedText.trim().length > 0) {
+        attachmentTexts.push(`\n=== DOCUMENT: ${attachment.filename} ===\n${extractedText}`);
+      }
+    }
+
+    const userPrompt = `## Belastingjaar: ${jaar}
+
+## Bijlages (${attachments.length} documenten):
+${attachmentTexts.length > 0 ? attachmentTexts.join('\n\n') : 'Documenten via vision.'}
+
+Analyseer voor belastingjaar ${jaar} en geef validatie als JSON.`;
+
+    const activeConfig = await storage.getActivePromptConfig();
+    const promptConfig = activeConfig?.config as PromptConfig;
+
+    const baseAiConfig = configResolver.resolveForOperation(
+      'box3_validator',
+      promptConfig,
+      `box3-reval-${jaar}-${Date.now()}`
+    );
+
+    // Year revalidation requires high thinking for accurate analysis
+    const aiConfig = {
+      ...baseAiConfig,
+      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384),
+      thinkingLevel: 'high' as const, // Year revalidation requires thorough analysis
+    };
+
+    const factory = AIModelFactory.getInstance();
+    const result = await factory.callModel(
+      aiConfig,
+      `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
+      {
+        jobId: `box3-reval-${jaar}-${Date.now()}`,
+        visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
+      }
+    );
+
+    let validationResult;
+    try {
+      let jsonText = result.content.match(/```json\s*([\s\S]*?)\s*```/)?.[1];
+      if (!jsonText) jsonText = result.content.match(/\{[\s\S]*\}/)?.[0];
+      if (!jsonText && result.content.trim().startsWith('{')) jsonText = result.content.trim();
+      if (!jsonText) throw new Error('No JSON found');
+
+      validationResult = box3ValidationResultSchema.parse(JSON.parse(jsonText));
+    } catch (parseError: any) {
+      throw ServerError.ai('Kon AI response niet parsen', { error: parseError.message });
+    }
+
+    yearEntry.validationResult = validationResult;
+    yearEntry.updatedAt = new Date().toISOString();
+
+    const updated = await storage.updateBox3ValidatorSession(id, { multiYearData });
+
+    console.log(`📋 [Box3Validator] Year ${jaar} revalidated`);
+
+    res.json(createApiSuccessResponse({
+      session: updated,
+      validationResult,
+    }, `Jaar ${jaar} opnieuw gevalideerd`));
+  })
+);
+
+/**
+ * Generate email for entire dossier (all years)
+ * Uses low thinking level for fast email generation
+ *
+ * POST /api/box3-validator/sessions/:id/generate-email
+ */
+box3ValidatorRouter.post(
+  "/sessions/:id/generate-email",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { emailPrompt } = req.body;
+
+    console.log(`📋 [Box3Validator] Generate email request: session=${id}`);
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      throw ServerError.notFound("Sessie");
+    }
+
+    // Build context from session data
+    const clientName = session.clientName || "de klant";
+    let dossierContext = "";
+
+    if (session.isMultiYear) {
+      // Multi-year dossier: gather status from all years
+      const multiYearData = (session.multiYearData || { years: {} }) as Box3MultiYearData;
+      const years = Object.keys(multiYearData.years).sort();
+
+      dossierContext = `## Dossier Overzicht (Multi-year)\nKlant: ${clientName}\nJaren: ${years.join(", ")}\n\n`;
+
+      for (const jaar of years) {
+        const yearEntry = multiYearData.years[jaar];
+        const validation = yearEntry.validationResult as any;
+
+        dossierContext += `### Belastingjaar ${jaar}\n`;
+
+        if (validation?.document_validatie) {
+          dossierContext += `Document status:\n`;
+          for (const [cat, status] of Object.entries(validation.document_validatie)) {
+            dossierContext += `- ${cat}: ${status}\n`;
+          }
+        }
+
+        if (validation?.validatie) {
+          for (const [cat, data] of Object.entries(validation.validatie)) {
+            const v = data as any;
+            if (v?.feedback) {
+              dossierContext += `${cat}: ${v.feedback}\n`;
+            }
+          }
+        }
+
+        dossierContext += "\n";
+      }
+    } else {
+      // Legacy single-year dossier
+      const validation = session.validationResult as any;
+      const jaar = validation?.belastingjaar || validation?.gevonden_data?.algemeen?.belastingjaar || "onbekend";
+
+      dossierContext = `## Dossier Overzicht\nKlant: ${clientName}\nBelastingjaar: ${jaar}\n\n`;
+
+      if (validation?.document_validatie) {
+        dossierContext += `Document status:\n`;
+        for (const [cat, status] of Object.entries(validation.document_validatie)) {
+          dossierContext += `- ${cat}: ${status}\n`;
+        }
+        dossierContext += "\n";
+      }
+
+      if (validation?.validatie) {
+        dossierContext += `Details:\n`;
+        for (const [cat, data] of Object.entries(validation.validatie)) {
+          const v = data as any;
+          if (v?.status) {
+            dossierContext += `- ${cat}: ${v.status}`;
+            if (v.feedback) dossierContext += ` - ${v.feedback}`;
+            dossierContext += "\n";
+          }
+        }
+      }
+    }
+
+    const userPrompt = `${dossierContext}\n\nGenereer een professionele e-mail voor deze klant met een overzicht van de status en wat er nog nodig is.`;
+
+    // Default email prompt if none provided
+    const DEFAULT_EMAIL_PROMPT = `Je bent een ervaren fiscalist die professionele e-mails schrijft voor Box 3 bezwaarprocedures.
+
+## E-mail richtlijnen:
+- **Toon**: Professioneel maar vriendelijk
+- **Structuur**: Duidelijke alinea's met logische opbouw
+- **Compleetheid**: Benoem specifiek wat ontvangen is en wat ontbreekt
+- **Actie**: Geef duidelijk aan welke actie de klant moet ondernemen
+
+## Output formaat (STRIKT JSON)
+\`\`\`json
+{
+  "onderwerp": "Box 3 bezwaar - Status en verzoek aanvullende documenten",
+  "body": "Geachte heer/mevrouw,\\n\\n..."
+}
+\`\`\``;
+
+    const activeConfig = await storage.getActivePromptConfig();
+    const promptConfig = activeConfig?.config as PromptConfig;
+
+    const baseAiConfig = configResolver.resolveForOperation(
+      'box3_validator',
+      promptConfig,
+      `box3-email-${Date.now()}`
+    );
+
+    // Email generation uses LOW thinking - it's just text formatting
+    const aiConfig = {
+      ...baseAiConfig,
+      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 4096, 8192),
+      thinkingLevel: 'low' as const, // Email generation is straightforward
+    };
+
+    const factory = AIModelFactory.getInstance();
+    const result = await factory.callModel(
+      aiConfig,
+      `${emailPrompt || DEFAULT_EMAIL_PROMPT}\n\n${userPrompt}`,
+      {
+        jobId: `box3-email-${Date.now()}`,
+      }
+    );
+
+    // Parse email response
+    let emailData: { onderwerp: string; body: string };
+    try {
+      let jsonText = result.content.match(/```json\s*([\s\S]*?)\s*```/)?.[1];
+      if (!jsonText) jsonText = result.content.match(/\{[\s\S]*\}/)?.[0];
+      if (!jsonText && result.content.trim().startsWith('{')) jsonText = result.content.trim();
+      if (!jsonText) throw new Error('No JSON found');
+
+      emailData = JSON.parse(jsonText);
+
+      if (!emailData.onderwerp || !emailData.body) {
+        throw new Error('Missing onderwerp or body in response');
+      }
+    } catch (parseError: any) {
+      console.error(`📋 [Box3Validator] Email parse error:`, parseError.message);
+      throw ServerError.ai('Kon e-mail response niet parsen', { error: parseError.message });
+    }
+
+    console.log(`📋 [Box3Validator] Email generated for session ${id}`);
+
+    res.json(createApiSuccessResponse({
+      email: emailData,
+    }, 'E-mail gegenereerd'));
   })
 );

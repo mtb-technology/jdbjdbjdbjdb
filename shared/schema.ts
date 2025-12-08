@@ -946,16 +946,52 @@ export interface Box3ManualOverrides {
   };
 }
 
+// ===== MULTI-YEAR BOX 3 STRUCTURE =====
+/**
+ * Per-jaar data voor Box 3 multi-year dossiers
+ * Elk jaar heeft eigen documenten, validatie resultaten en berekeningen
+ */
+export interface Box3YearEntry {
+  jaar: string; // "2017", "2018", etc.
+  attachments?: Box3Attachment[]; // Documenten voor dit jaar
+  validationResult?: Box3ValidationResult; // AI validatie voor dit jaar
+  manualOverrides?: Box3ManualOverrides; // Handmatige correcties voor dit jaar
+  indicatieveTeruggave?: number; // Berekende indicatieve teruggave
+  isComplete?: boolean; // Alle documenten compleet?
+  notes?: string; // Notities specifiek voor dit jaar
+  updatedAt?: string;
+}
+
+/**
+ * Multi-year structuur voor dossiers die meerdere belastingjaren bevatten
+ * Key = belastingjaar (string), Value = jaar-specifieke data
+ */
+export interface Box3MultiYearData {
+  years: Record<string, Box3YearEntry>;
+  // Totaaloverzicht (computed from years)
+  totalSummary?: {
+    totalIndicatieveTeruggave: number;
+    completeYears: number;
+    incompleteYears: number;
+    yearsWithIssues: string[];
+  };
+}
+
 export const box3ValidatorSessions = pgTable("box3_validator_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientName: text("client_name").notNull(),
-  belastingjaar: text("belastingjaar"), // Gedetecteerd belastingjaar
+  belastingjaar: text("belastingjaar"), // Gedetecteerd belastingjaar (single-year legacy)
   inputText: text("input_text").notNull(), // Mail tekst van klant
   attachmentNames: jsonb("attachment_names").$type<string[]>(), // Array van bestandsnamen (legacy)
-  attachments: jsonb("attachments").$type<Box3Attachment[]>(), // Volledige bijlages met data
-  validationResult: jsonb("validation_result").$type<Box3ValidationResult>(), // AI validatie output
+  attachments: jsonb("attachments").$type<Box3Attachment[]>(), // Volledige bijlages met data (single-year legacy)
+  validationResult: jsonb("validation_result").$type<Box3ValidationResult>(), // AI validatie output (single-year legacy)
   conceptMail: jsonb("concept_mail").$type<{ onderwerp: string; body: string }>(), // Concept reactie
-  manualOverrides: jsonb("manual_overrides").$type<Box3ManualOverrides>(), // Handmatige correcties
+  manualOverrides: jsonb("manual_overrides").$type<Box3ManualOverrides>(), // Handmatige correcties (single-year legacy)
+
+  // Multi-year support - nieuw systeem
+  multiYearData: jsonb("multi_year_data").$type<Box3MultiYearData>(), // Per-jaar data
+  isMultiYear: boolean("is_multi_year").default(false), // true = gebruik multiYearData, false = legacy single-year
+
   dossierStatus: text("dossier_status").default("in_behandeling"), // "in_behandeling" | "wacht_op_klant" | "compleet" | "afgewezen"
   notes: text("notes"), // Algemene notities bij dossier
   createdAt: timestamp("created_at").defaultNow(),
@@ -1107,6 +1143,28 @@ export const box3ManualOverridesSchema = z.object({
   }).optional(),
 });
 
+// Multi-year Zod schemas
+export const box3YearEntrySchema = z.object({
+  jaar: z.string(),
+  attachments: z.array(box3AttachmentSchema).optional(),
+  validationResult: box3ValidationResultSchema.optional(),
+  manualOverrides: box3ManualOverridesSchema.optional(),
+  indicatieveTeruggave: z.number().optional(),
+  isComplete: z.boolean().optional(),
+  notes: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export const box3MultiYearDataSchema = z.object({
+  years: z.record(z.string(), box3YearEntrySchema),
+  totalSummary: z.object({
+    totalIndicatieveTeruggave: z.number(),
+    completeYears: z.number(),
+    incompleteYears: z.number(),
+    yearsWithIssues: z.array(z.string()),
+  }).optional(),
+});
+
 export const insertBox3ValidatorSessionSchema = createInsertSchema(box3ValidatorSessions, {
   clientName: z.string().min(1, "Klantnaam is verplicht"),
   inputText: z.string().min(1, "Input tekst is verplicht"),
@@ -1118,6 +1176,8 @@ export const insertBox3ValidatorSessionSchema = createInsertSchema(box3Validator
     body: z.string()
   }).nullable().optional(),
   manualOverrides: box3ManualOverridesSchema.nullable().optional(),
+  multiYearData: box3MultiYearDataSchema.nullable().optional(),
+  isMultiYear: z.boolean().optional(),
   dossierStatus: z.string().optional(),
   notes: z.string().nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });

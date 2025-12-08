@@ -5,9 +5,14 @@
  * Now includes AI analysis per file showing document type, summary, and extracted values.
  */
 
-import { memo, useState, useCallback } from "react";
+import { memo, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Collapsible,
   CollapsibleContent,
@@ -22,6 +27,11 @@ import {
   Eye,
   Sparkles,
   Info,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  X,
+  Maximize2,
 } from "lucide-react";
 
 // Type for Box3 attachment (matches server storage structure)
@@ -45,6 +55,8 @@ interface BijlageAnalyse {
 interface Box3AttachmentsPanelProps {
   attachments: Box3Attachment[];
   bijlageAnalyse?: BijlageAnalyse[];
+  // Optional year filter to match only analysis entries for this year
+  yearFilter?: string;
 }
 
 /**
@@ -88,6 +100,19 @@ function getDocumentTypeBadge(documentType: string) {
   return (
     <Badge variant="outline" className={colorClass}>
       {documentType}
+    </Badge>
+  );
+}
+
+/**
+ * Get badge for belastingjaar from AI analysis
+ */
+function getBelastingjaarBadge(jaar: number | string | null | undefined) {
+  if (!jaar) return null;
+
+  return (
+    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+      {jaar}
     </Badge>
   );
 }
@@ -150,6 +175,175 @@ function formatKey(key: string): string {
 }
 
 /**
+ * Image zoom modal component
+ */
+interface ImageZoomModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  imageUrl: string;
+  filename: string;
+}
+
+const ImageZoomModal = memo(function ImageZoomModal({
+  isOpen,
+  onClose,
+  imageUrl,
+  filename,
+}: ImageZoomModalProps) {
+  const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  // Reset state when modal opens
+  const handleOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      onClose();
+      // Reset after close animation
+      setTimeout(() => {
+        setZoom(1);
+        setRotation(0);
+        setPosition({ x: 0, y: 0 });
+      }, 200);
+    }
+  }, [onClose]);
+
+  const handleZoomIn = useCallback(() => {
+    setZoom(prev => Math.min(prev + 0.5, 5));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoom(prev => Math.max(prev - 0.5, 0.5));
+  }, []);
+
+  const handleRotate = useCallback(() => {
+    setRotation(prev => (prev + 90) % 360);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setZoom(1);
+    setRotation(0);
+    setPosition({ x: 0, y: 0 });
+  }, []);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.2 : 0.2;
+    setZoom(prev => Math.max(0.5, Math.min(5, prev + delta)));
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (zoom > 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    }
+  }, [zoom, position]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isDragging) {
+      setPosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
+      });
+    }
+  }, [isDragging, dragStart]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto h-auto p-0 bg-black/95 border-none">
+        <DialogTitle className="sr-only">Document preview: {filename}</DialogTitle>
+
+        {/* Toolbar */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-black/70 backdrop-blur-sm rounded-lg p-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleZoomOut}
+            className="text-white hover:bg-white/20"
+            title="Zoom uit"
+          >
+            <ZoomOut className="h-4 w-4" />
+          </Button>
+          <span className="text-white text-sm min-w-[60px] text-center">
+            {Math.round(zoom * 100)}%
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleZoomIn}
+            className="text-white hover:bg-white/20"
+            title="Zoom in"
+          >
+            <ZoomIn className="h-4 w-4" />
+          </Button>
+          <div className="w-px h-6 bg-white/30" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRotate}
+            className="text-white hover:bg-white/20"
+            title="Draai 90°"
+          >
+            <RotateCw className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleReset}
+            className="text-white hover:bg-white/20"
+            title="Reset"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </Button>
+          <div className="w-px h-6 bg-white/30" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="text-white hover:bg-white/20"
+            title="Sluiten"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Image container */}
+        <div
+          className="w-[95vw] h-[95vh] overflow-hidden flex items-center justify-center"
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          style={{ cursor: zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+        >
+          <img
+            src={imageUrl}
+            alt={filename}
+            className="max-w-none select-none"
+            style={{
+              transform: `translate(${position.x}px, ${position.y}px) scale(${zoom}) rotate(${rotation}deg)`,
+              transition: isDragging ? 'none' : 'transform 0.2s ease-out',
+            }}
+            draggable={false}
+          />
+        </div>
+
+        {/* Filename footer */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-sm rounded-lg px-4 py-2">
+          <p className="text-white text-sm">{filename}</p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+});
+
+/**
  * Single attachment item with expandable preview and AI analysis
  */
 interface AttachmentItemProps {
@@ -167,6 +361,8 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
   isExpanded,
   onToggle,
 }: AttachmentItemProps) {
+  const [isZoomOpen, setIsZoomOpen] = useState(false);
+
   const isImage = attachment.mimeType?.includes("image") ||
     ['jpg', 'jpeg', 'png', 'gif'].includes(attachment.filename.toLowerCase().split('.').pop() || '');
   const isPDF = attachment.mimeType?.includes("pdf") ||
@@ -194,6 +390,15 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
     window.open(url, '_blank');
   }, [attachment.fileData, attachment.mimeType]);
 
+  // Handle image zoom
+  const handleOpenZoom = useCallback(() => {
+    setIsZoomOpen(true);
+  }, []);
+
+  const handleCloseZoom = useCallback(() => {
+    setIsZoomOpen(false);
+  }, []);
+
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <div className="border rounded-lg overflow-hidden">
@@ -206,24 +411,31 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               )}
               {getFileIcon(attachment.mimeType, attachment.filename)}
-              <div>
-                <p className="font-medium text-sm">{attachment.filename}</p>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{formatFileSize(attachment.fileSize)}</span>
-                  {analyse && (
-                    <>
-                      <span>•</span>
-                      <span className="flex items-center gap-1 text-primary">
-                        <Sparkles className="h-3 w-3" />
-                        AI geanalyseerd
-                      </span>
-                    </>
-                  )}
-                </div>
+              <div className="flex-1 min-w-0">
+                {analyse ? (
+                  <>
+                    {/* When AI analysis available: show doc type + year + summary */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {getDocumentTypeBadge(analyse.document_type)}
+                      {getBelastingjaarBadge(analyse.belastingjaar)}
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
+                      {analyse.samenvatting}
+                    </p>
+                    <p className="text-xs text-muted-foreground/70 mt-0.5">
+                      {attachment.filename} • {formatFileSize(attachment.fileSize)}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    {/* Fallback when no AI analysis */}
+                    <p className="font-medium text-sm">{attachment.filename}</p>
+                    <p className="text-xs text-muted-foreground">{formatFileSize(attachment.fileSize)}</p>
+                  </>
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              {analyse ? getDocumentTypeBadge(analyse.document_type) : getTypeBadge(attachment.mimeType, attachment.filename)}
+            <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
               {isPDF && (
                 <Button size="sm" variant="ghost" onClick={handleView} title="Bekijk PDF">
                   <Eye className="h-4 w-4" />
@@ -276,10 +488,39 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
             {/* File Preview */}
             {isImage ? (
               <div className="flex flex-col items-center gap-2">
-                <img
-                  src={dataUrl}
-                  alt={attachment.filename}
-                  className="max-w-full max-h-96 rounded-lg border shadow-sm"
+                <div
+                  className="relative group cursor-pointer"
+                  onClick={handleOpenZoom}
+                >
+                  <img
+                    src={dataUrl}
+                    alt={attachment.filename}
+                    className="max-w-full max-h-96 rounded-lg border shadow-sm transition-opacity group-hover:opacity-90"
+                  />
+                  {/* Zoom overlay on hover */}
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded-lg">
+                    <div className="bg-black/70 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+                      <ZoomIn className="h-5 w-5" />
+                      <span className="text-sm font-medium">Klik om in te zoomen</span>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenZoom}
+                  className="mt-2"
+                >
+                  <Maximize2 className="h-4 w-4 mr-2" />
+                  Vergroot afbeelding
+                </Button>
+
+                {/* Zoom Modal */}
+                <ImageZoomModal
+                  isOpen={isZoomOpen}
+                  onClose={handleCloseZoom}
+                  imageUrl={dataUrl}
+                  filename={attachment.filename}
                 />
               </div>
             ) : isPDF ? (
@@ -345,8 +586,22 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
   attachments,
   bijlageAnalyse,
+  yearFilter,
 }: Box3AttachmentsPanelProps) {
   const [expandedAttachments, setExpandedAttachments] = useState<Set<number>>(new Set());
+
+  // Filter bijlage_analyse to only include entries for the specified year (if any)
+  const filteredBijlageAnalyse = useMemo(() => {
+    if (!bijlageAnalyse || bijlageAnalyse.length === 0) return undefined;
+    if (!yearFilter) return bijlageAnalyse;
+
+    // Filter to only entries matching this year
+    const yearEntries = bijlageAnalyse.filter(a =>
+      a.belastingjaar && String(a.belastingjaar) === yearFilter
+    );
+
+    return yearEntries.length > 0 ? yearEntries : undefined;
+  }, [bijlageAnalyse, yearFilter]);
 
   const toggleAttachment = useCallback((index: number) => {
     setExpandedAttachments((prev) => {
@@ -362,28 +617,32 @@ export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
 
   // Match attachments with their AI analysis by filename or index
   const getAnalyseForAttachment = useCallback((filename: string, index: number): BijlageAnalyse | undefined => {
-    if (!bijlageAnalyse || bijlageAnalyse.length === 0) return undefined;
+    // Use filtered analysis (by year) if available, otherwise use all
+    const analyseList = filteredBijlageAnalyse;
+    if (!analyseList || analyseList.length === 0) return undefined;
 
     // First try exact match
-    const exactMatch = bijlageAnalyse.find(a =>
+    const exactMatch = analyseList.find(a =>
       a.bestandsnaam.toLowerCase() === filename.toLowerCase()
     );
     if (exactMatch) return exactMatch;
 
     // Try partial match (filename contains or is contained in bestandsnaam)
-    const partialMatch = bijlageAnalyse.find(a =>
+    const partialMatch = analyseList.find(a =>
       a.bestandsnaam.toLowerCase().includes(filename.toLowerCase()) ||
       filename.toLowerCase().includes(a.bestandsnaam.toLowerCase())
     );
     if (partialMatch) return partialMatch;
 
-    // Fall back to index-based matching if counts are equal
-    if (bijlageAnalyse.length === attachments.length && bijlageAnalyse[index]) {
-      return bijlageAnalyse[index];
+    // Fall back to index-based matching if counts match
+    // This works well when we've filtered by year - e.g., 4 attachments for 2022
+    // and 4 bijlage_analyse entries for 2022
+    if (analyseList.length === attachments.length && analyseList[index]) {
+      return analyseList[index];
     }
 
     return undefined;
-  }, [bijlageAnalyse, attachments.length]);
+  }, [filteredBijlageAnalyse, attachments.length]);
 
   if (!attachments || attachments.length === 0) {
     return null;
@@ -397,7 +656,7 @@ export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
     a.mimeType?.includes("image") || ['jpg', 'jpeg', 'png'].includes(a.filename.toLowerCase().split('.').pop() || '')
   ).length;
   const totalSize = attachments.reduce((sum, a) => sum + (a.fileSize || 0), 0);
-  const analysedCount = bijlageAnalyse?.length || 0;
+  const analysedCount = filteredBijlageAnalyse?.length || 0;
 
   return (
     <div className="space-y-3">

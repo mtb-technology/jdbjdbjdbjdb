@@ -3,6 +3,7 @@
  *
  * Session management for Box 3 Validator.
  * Handles fetching, loading, and deleting sessions.
+ * Supports both legacy single-year and multi-year dossiers.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -16,9 +17,15 @@ interface UseBox3SessionsReturn {
   refetchSessions: () => void;
   loadSession: (sessionId: string) => Promise<Box3ValidatorSession | null>;
   deleteSession: (sessionId: string) => Promise<boolean>;
-  updateOverrides: (sessionId: string, overrides: Partial<Box3ManualOverrides>) => Promise<Box3ValidatorSession | null>;
+  updateOverrides: (sessionId: string, overrides: Partial<Box3ManualOverrides>, jaar?: string) => Promise<Box3ValidatorSession | null>;
   updateStatus: (sessionId: string, status: string, notes?: string) => Promise<Box3ValidatorSession | null>;
-  addDocuments: (sessionId: string, files: PendingFile[], additionalText?: string) => Promise<Box3ValidatorSession | null>;
+  addDocuments: (sessionId: string, files: PendingFile[], additionalText?: string, jaar?: string) => Promise<Box3ValidatorSession | null>;
+  // Multi-year specific
+  convertToMultiYear: (sessionId: string) => Promise<Box3ValidatorSession | null>;
+  addYear: (sessionId: string, jaar: string) => Promise<Box3ValidatorSession | null>;
+  revalidateYear: (sessionId: string, jaar: string, systemPrompt?: string) => Promise<Box3ValidatorSession | null>;
+  // Email generation
+  generateEmail: (sessionId: string, emailPrompt?: string) => Promise<{ onderwerp: string; body: string } | null>;
 }
 
 export function useBox3Sessions(): UseBox3SessionsReturn {
@@ -45,11 +52,6 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
 
       const data = await res.json();
       const session: Box3ValidatorSession = data.success ? data.data : data;
-
-      toast({
-        title: "Sessie geladen",
-        description: `Sessie voor ${session.clientName} is geladen.`,
-      });
 
       return session;
     } catch (error: unknown) {
@@ -90,13 +92,19 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
     }
   };
 
-  // Update manual overrides
+  // Update manual overrides (supports both legacy and multi-year)
   const updateOverrides = async (
     sessionId: string,
-    overrides: Partial<Box3ManualOverrides>
+    overrides: Partial<Box3ManualOverrides>,
+    jaar?: string
   ): Promise<Box3ValidatorSession | null> => {
     try {
-      const res = await fetch(`/api/box3-validator/sessions/${sessionId}/overrides`, {
+      // Use year-specific endpoint for multi-year, otherwise legacy endpoint
+      const url = jaar
+        ? `/api/box3-validator/sessions/${sessionId}/years/${jaar}/overrides`
+        : `/api/box3-validator/sessions/${sessionId}/overrides`;
+
+      const res = await fetch(url, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ overrides }),
@@ -109,7 +117,9 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
 
       toast({
         title: "Aanpassingen opgeslagen",
-        description: "De handmatige correcties zijn opgeslagen.",
+        description: jaar
+          ? `Correcties voor ${jaar} opgeslagen.`
+          : "De handmatige correcties zijn opgeslagen.",
       });
 
       return session;
@@ -160,11 +170,12 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
     }
   };
 
-  // Add documents to existing session
+  // Add documents to existing session (supports both legacy and multi-year)
   const addDocuments = async (
     sessionId: string,
     files: PendingFile[],
-    additionalText?: string
+    additionalText?: string,
+    jaar?: string
   ): Promise<Box3ValidatorSession | null> => {
     try {
       const formData = new FormData();
@@ -173,7 +184,12 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
         formData.append("additionalText", additionalText);
       }
 
-      const res = await fetch(`/api/box3-validator/sessions/${sessionId}/add-documents`, {
+      // Use year-specific endpoint for multi-year, otherwise legacy endpoint
+      const url = jaar
+        ? `/api/box3-validator/sessions/${sessionId}/years/${jaar}/add-documents`
+        : `/api/box3-validator/sessions/${sessionId}/add-documents`;
+
+      const res = await fetch(url, {
         method: "POST",
         body: formData,
       });
@@ -188,7 +204,9 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
 
       toast({
         title: "Documenten toegevoegd",
-        description: `${files.length} document(en) toegevoegd en opnieuw gevalideerd.`,
+        description: jaar
+          ? `${files.length} document(en) toegevoegd aan ${jaar}.`
+          : `${files.length} document(en) toegevoegd en opnieuw gevalideerd.`,
       });
 
       refetchSessions();
@@ -204,6 +222,143 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
     }
   };
 
+  // Convert session to multi-year format
+  const convertToMultiYear = async (
+    sessionId: string
+  ): Promise<Box3ValidatorSession | null> => {
+    try {
+      const res = await fetch(`/api/box3-validator/sessions/${sessionId}/convert-to-multi-year`, {
+        method: "POST",
+      });
+
+      if (!res.ok) throw new Error("Failed to convert to multi-year");
+
+      const data = await res.json();
+      const session: Box3ValidatorSession = data.success ? data.data : data;
+
+      toast({
+        title: "Omgezet naar multi-year",
+        description: "Het dossier ondersteunt nu meerdere belastingjaren.",
+      });
+
+      refetchSessions();
+      return session;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast({
+        title: "Omzetten mislukt",
+        description: message,
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
+  // Add a year to multi-year session
+  const addYear = async (
+    sessionId: string,
+    jaar: string
+  ): Promise<Box3ValidatorSession | null> => {
+    try {
+      const res = await fetch(`/api/box3-validator/sessions/${sessionId}/years`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jaar }),
+      });
+
+      if (!res.ok) throw new Error("Failed to add year");
+
+      const data = await res.json();
+      const session: Box3ValidatorSession = data.success ? data.data : data;
+
+      toast({
+        title: "Jaar toegevoegd",
+        description: `Belastingjaar ${jaar} is toegevoegd aan het dossier.`,
+      });
+
+      return session;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast({
+        title: "Toevoegen mislukt",
+        description: message,
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
+  // Revalidate a specific year
+  const revalidateYear = async (
+    sessionId: string,
+    jaar: string,
+    systemPrompt?: string
+  ): Promise<Box3ValidatorSession | null> => {
+    try {
+      const res = await fetch(`/api/box3-validator/sessions/${sessionId}/years/${jaar}/revalidate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ systemPrompt }),
+      });
+
+      if (!res.ok) throw new Error("Failed to revalidate year");
+
+      const data = await res.json();
+      const session: Box3ValidatorSession = data.success ? data.data.session : data.session;
+
+      toast({
+        title: "Hervalidatie voltooid",
+        description: `Jaar ${jaar} is opnieuw gevalideerd.`,
+      });
+
+      return session;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast({
+        title: "Hervalidatie mislukt",
+        description: message,
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
+  /**
+   * Generate email for entire dossier
+   */
+  const generateEmail = async (
+    sessionId: string,
+    emailPrompt?: string
+  ): Promise<{ onderwerp: string; body: string } | null> => {
+    try {
+      const res = await fetch(`/api/box3-validator/sessions/${sessionId}/generate-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailPrompt }),
+      });
+
+      if (!res.ok) throw new Error("Failed to generate email");
+
+      const data = await res.json();
+      const email = data.success ? data.data.email : data.email;
+
+      toast({
+        title: "E-mail gegenereerd",
+        description: "De concept e-mail is klaar.",
+      });
+
+      return email;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast({
+        title: "E-mail generatie mislukt",
+        description: message,
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
   return {
     sessions,
     refetchSessions,
@@ -212,5 +367,9 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
     updateOverrides,
     updateStatus,
     addDocuments,
+    convertToMultiYear,
+    addYear,
+    revalidateYear,
+    generateEmail,
   };
 }

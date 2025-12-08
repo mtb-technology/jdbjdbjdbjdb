@@ -18,15 +18,17 @@ import { useBox3Validation } from "@/hooks/useBox3Validation";
 // Components
 import {
   Box3SettingsModal,
-  DEFAULT_BOX3_SYSTEM_PROMPT,
+  DEFAULT_INTAKE_PROMPT,
+  DEFAULT_YEAR_VALIDATION_PROMPT,
+  DEFAULT_EMAIL_PROMPT,
   Box3CaseList,
   Box3CaseDetail,
   Box3NewCase,
 } from "@/components/box3-validator";
-
+import type { Box3Prompts } from "@/components/box3-validator";
 
 // Constants
-import { STORAGE_KEY_SYSTEM_PROMPT } from "@/constants/box3.constants";
+import { STORAGE_KEY_PROMPTS } from "@/constants/box3.constants";
 
 // Types
 import type { PendingFile } from "@/types/box3Validator.types";
@@ -46,21 +48,48 @@ const Box3Validator = memo(function Box3Validator() {
   const [selectedSession, setSelectedSession] = useState<Box3ValidatorSession | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Load system prompt from localStorage
-  const [systemPrompt, setSystemPrompt] = useState(() => {
+  // Load prompts from localStorage (new multi-prompt structure)
+  const [prompts, setPrompts] = useState<Box3Prompts>(() => {
+    const defaults: Box3Prompts = {
+      intake: DEFAULT_INTAKE_PROMPT,
+      yearValidation: DEFAULT_YEAR_VALIDATION_PROMPT,
+      email: DEFAULT_EMAIL_PROMPT,
+    };
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(STORAGE_KEY_SYSTEM_PROMPT);
-      return saved || DEFAULT_BOX3_SYSTEM_PROMPT;
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY_PROMPTS);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return { ...defaults, ...parsed };
+        }
+      } catch {
+        // Ignore parse errors
+      }
     }
-    return DEFAULT_BOX3_SYSTEM_PROMPT;
+    return defaults;
   });
 
-  // Session management hook
-  const { sessions, refetchSessions, loadSession, deleteSession, addDocuments, updateOverrides } =
-    useBox3Sessions();
+  // For backward compatibility: expose intake prompt as systemPrompt
+  const systemPrompt = prompts.intake;
 
-  // State for adding documents
+  // Session management hook
+  const {
+    sessions,
+    refetchSessions,
+    loadSession,
+    deleteSession,
+    addDocuments,
+    updateOverrides,
+    convertToMultiYear,
+    addYear,
+    revalidateYear,
+    generateEmail,
+  } = useBox3Sessions();
+
+  // State for adding documents and revalidating years
   const [isAddingDocs, setIsAddingDocs] = useState(false);
+  const [isRevalidatingYear, setIsRevalidatingYear] = useState(false);
+  const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
 
   // Validation hook
   const {
@@ -76,10 +105,10 @@ const Box3Validator = memo(function Box3Validator() {
     refetchSessions,
   });
 
-  // Handler to update system prompt and save to localStorage
-  const handleSystemPromptChange = useCallback((newPrompt: string) => {
-    setSystemPrompt(newPrompt);
-    localStorage.setItem(STORAGE_KEY_SYSTEM_PROMPT, newPrompt);
+  // Handler to update prompts and save to localStorage
+  const handlePromptsChange = useCallback((newPrompts: Box3Prompts) => {
+    setPrompts(newPrompts);
+    localStorage.setItem(STORAGE_KEY_PROMPTS, JSON.stringify(newPrompts));
   }, []);
 
   // Load session when URL changes to detail view
@@ -146,28 +175,44 @@ const Box3Validator = memo(function Box3Validator() {
     }
   }, [viewMode, validationResult, currentSessionId, selectedSession, setLocation]);
 
-  // Revalidate handler for detail view
-  const handleRevalidate = useCallback(async () => {
-    if (selectedSession) {
+  // Revalidate handler for detail view (supports both legacy and multi-year)
+  const handleRevalidate = useCallback(async (jaar?: string) => {
+    if (!selectedSession) return;
+
+    if (jaar && selectedSession.isMultiYear) {
+      // Multi-year: revalidate specific year with yearValidation prompt
+      setIsRevalidatingYear(true);
+      try {
+        const updatedSession = await revalidateYear(selectedSession.id, jaar, prompts.yearValidation);
+        if (updatedSession) {
+          setSelectedSession(updatedSession);
+        }
+      } finally {
+        setIsRevalidatingYear(false);
+      }
+    } else {
+      // Legacy: revalidate entire session with intake prompt
       await revalidate();
-      // Refresh the session after revalidation
       const updatedSession = await loadSession(selectedSession.id);
       if (updatedSession) {
         setSelectedSession(updatedSession);
       }
     }
-  }, [selectedSession, revalidate, loadSession]);
+  }, [selectedSession, revalidate, revalidateYear, loadSession, prompts.yearValidation]);
 
-  // Add documents handler
+  // Add documents handler (supports both legacy and multi-year)
   const handleAddDocuments = useCallback(
-    async (files: PendingFile[], additionalText?: string) => {
+    async (files: PendingFile[], additionalText?: string, jaar?: string) => {
       if (!selectedSession) return;
       setIsAddingDocs(true);
       try {
-        const updatedSession = await addDocuments(selectedSession.id, files, additionalText);
+        const updatedSession = await addDocuments(selectedSession.id, files, additionalText, jaar);
         if (updatedSession) {
           setSelectedSession(updatedSession);
-          setValidationResult(updatedSession.validationResult as Box3ValidationResult);
+          // For legacy mode, also update validation result
+          if (!jaar && updatedSession.validationResult) {
+            setValidationResult(updatedSession.validationResult as Box3ValidationResult);
+          }
         }
       } finally {
         setIsAddingDocs(false);
@@ -176,11 +221,11 @@ const Box3Validator = memo(function Box3Validator() {
     [selectedSession, addDocuments, setValidationResult]
   );
 
-  // Update overrides handler
+  // Update overrides handler (supports both legacy and multi-year)
   const handleUpdateOverrides = useCallback(
-    async (overrides: Parameters<typeof updateOverrides>[1]) => {
+    async (overrides: Partial<Box3ManualOverrides>, jaar?: string) => {
       if (!selectedSession) return;
-      const updatedSession = await updateOverrides(selectedSession.id, overrides);
+      const updatedSession = await updateOverrides(selectedSession.id, overrides, jaar);
       if (updatedSession) {
         setSelectedSession(updatedSession);
       }
@@ -188,14 +233,44 @@ const Box3Validator = memo(function Box3Validator() {
     [selectedSession, updateOverrides]
   );
 
+  // Convert to multi-year handler
+  const handleConvertToMultiYear = useCallback(async () => {
+    if (!selectedSession) return;
+    const updatedSession = await convertToMultiYear(selectedSession.id);
+    if (updatedSession) {
+      setSelectedSession(updatedSession);
+    }
+  }, [selectedSession, convertToMultiYear]);
+
+  // Add year handler
+  const handleAddYear = useCallback(async (jaar: string) => {
+    if (!selectedSession) return;
+    const updatedSession = await addYear(selectedSession.id, jaar);
+    if (updatedSession) {
+      setSelectedSession(updatedSession);
+    }
+  }, [selectedSession, addYear]);
+
+  // Generate email handler
+  const handleGenerateEmail = useCallback(async () => {
+    if (!selectedSession) return null;
+    setIsGeneratingEmail(true);
+    try {
+      const email = await generateEmail(selectedSession.id, prompts.email);
+      return email;
+    } finally {
+      setIsGeneratingEmail(false);
+    }
+  }, [selectedSession, generateEmail, prompts.email]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Settings Modal */}
       <Box3SettingsModal
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        systemPrompt={systemPrompt}
-        onSystemPromptChange={handleSystemPromptChange}
+        prompts={prompts}
+        onPromptsChange={handlePromptsChange}
       />
 
       <AppHeader />
@@ -214,13 +289,17 @@ const Box3Validator = memo(function Box3Validator() {
           <Box3CaseDetail
             session={selectedSession}
             systemPrompt={systemPrompt}
-            isRevalidating={isValidating}
+            isRevalidating={isValidating || isRevalidatingYear}
             isAddingDocs={isAddingDocs}
+            isGeneratingEmail={isGeneratingEmail}
             onBack={handleBackToList}
             onRevalidate={handleRevalidate}
             onOpenSettings={() => setSettingsOpen(true)}
             onAddDocuments={handleAddDocuments}
             onUpdateOverrides={handleUpdateOverrides}
+            onConvertToMultiYear={handleConvertToMultiYear}
+            onAddYear={handleAddYear}
+            onGenerateEmail={handleGenerateEmail}
           />
         )}
 

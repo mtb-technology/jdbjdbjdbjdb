@@ -28,6 +28,71 @@ interface KansrijkheidAnalyseProps {
   manualOverrides?: Box3ManualOverrides | null;
 }
 
+/**
+ * Extract key figures from bijlage_analyse geextraheerde_waarden
+ * Only extracts values that match the specified belastingjaar
+ */
+function extractKerncijfers(validationResult: Box3ValidationResult, belastingjaar: string | undefined) {
+  const kerncijfers: {
+    belastingBedrag: number | null;
+    belastbaarInkomen: number | null;
+    rendementsgrondslag: number | null;
+    totaalBezittingen: number | null;
+  } = {
+    belastingBedrag: null,
+    belastbaarInkomen: null,
+    rendementsgrondslag: null,
+    totaalBezittingen: null,
+  };
+
+  // Check if validationResult's belastingjaar matches the requested year
+  // This handles per-year validationResults in multi-year dossiers
+  const resultJaar = validationResult.gevonden_data?.algemeen?.belastingjaar || validationResult.belastingjaar;
+  const resultJaarStr = resultJaar ? String(resultJaar) : null;
+
+  // Only use fiscus_box3 data if the validation result is for this specific year
+  // or if no year filter is specified
+  const fiscus = validationResult.gevonden_data?.fiscus_box3;
+  if (fiscus && (!belastingjaar || resultJaarStr === belastingjaar)) {
+    kerncijfers.belastbaarInkomen = fiscus.belastbaar_inkomen_na_drempel ?? null;
+    kerncijfers.totaalBezittingen = fiscus.totaal_bezittingen_bruto ?? null;
+  }
+
+  // Look through bijlage_analyse for additional values
+  // STRICT filtering: only include entries that explicitly match the year
+  const analyseArray = validationResult.bijlage_analyse || [];
+  for (const analyse of analyseArray) {
+    // If we have a year filter, ONLY include entries that match
+    if (belastingjaar) {
+      // Skip entries without a year OR with a different year
+      if (!analyse.belastingjaar || String(analyse.belastingjaar) !== belastingjaar) {
+        continue;
+      }
+    }
+
+    const waarden = analyse.geextraheerde_waarden;
+    if (!waarden) continue;
+
+    // Look for Box 3 belasting bedrag
+    for (const [key, value] of Object.entries(waarden)) {
+      const keyLower = key.toLowerCase();
+      if (typeof value === 'number') {
+        if (keyLower.includes('box 3 belasting') && keyLower.includes('bedrag')) {
+          kerncijfers.belastingBedrag = value;
+        } else if (keyLower.includes('box 3 belastbaar inkomen') || keyLower.includes('belastbaar inkomen')) {
+          if (kerncijfers.belastbaarInkomen === null) {
+            kerncijfers.belastbaarInkomen = value;
+          }
+        } else if (keyLower.includes('rendementsgrondslag')) {
+          kerncijfers.rendementsgrondslag = value;
+        }
+      }
+    }
+  }
+
+  return kerncijfers;
+}
+
 export const KansrijkheidAnalyse = memo(function KansrijkheidAnalyse({
   validationResult,
   belastingjaar,
@@ -36,6 +101,9 @@ export const KansrijkheidAnalyse = memo(function KansrijkheidAnalyse({
   const kansrijkheid = berekenKansrijkheid(validationResult, belastingjaar, manualOverrides);
   const heeftBerekening = kansrijkheid.werkelijkRendement !== null;
   const forfaitair = getForfaitaireRendementen(belastingjaar);
+
+  // Extract key figures even when full calculation isn't possible
+  const kerncijfers = extractKerncijfers(validationResult, belastingjaar);
 
   return (
     <Card
@@ -137,11 +205,85 @@ export const KansrijkheidAnalyse = memo(function KansrijkheidAnalyse({
             </div>
           </div>
         ) : (
-          <div className="bg-muted/30 rounded-lg p-4 text-center">
-            <Info className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">
-              Onvoldoende data om werkelijk rendement te berekenen
-            </p>
+          <div className="space-y-4">
+            {/* Show key figures from documents even without full calculation */}
+            {(kerncijfers.belastingBedrag !== null ||
+              kerncijfers.belastbaarInkomen !== null ||
+              kerncijfers.rendementsgrondslag !== null) ? (
+              <>
+                <div className="bg-muted/30 rounded-lg p-4 text-center mb-4">
+                  <Info className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Onvoldoende data om werkelijk rendement te berekenen
+                  </p>
+                </div>
+
+                {/* Key figures from aangifte */}
+                <div className="border-t pt-4">
+                  <p className="text-sm font-medium mb-3 flex items-center gap-2">
+                    <Calculator className="h-4 w-4 text-primary" />
+                    Kerncijfers uit aangifte ({belastingjaar}):
+                  </p>
+                  <div className="grid md:grid-cols-3 gap-4">
+                    {kerncijfers.belastingBedrag !== null && (
+                      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-center">
+                        <p className="text-xs text-muted-foreground mb-1">
+                          Betaalde Box 3 Belasting
+                        </p>
+                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                          {formatCurrency(kerncijfers.belastingBedrag)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          (forfaitair berekend)
+                        </p>
+                      </div>
+                    )}
+                    {kerncijfers.belastbaarInkomen !== null && (
+                      <div className="bg-muted/30 rounded-lg p-4 text-center">
+                        <p className="text-xs text-muted-foreground mb-1">
+                          Belastbaar Inkomen Box 3
+                        </p>
+                        <p className="text-2xl font-bold">
+                          {formatCurrency(kerncijfers.belastbaarInkomen)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          (na aftrek heffingsvrij vermogen)
+                        </p>
+                      </div>
+                    )}
+                    {kerncijfers.rendementsgrondslag !== null && (
+                      <div className="bg-muted/30 rounded-lg p-4 text-center">
+                        <p className="text-xs text-muted-foreground mb-1">
+                          Rendementsgrondslag
+                        </p>
+                        <p className="text-2xl font-bold">
+                          {formatCurrency(kerncijfers.rendementsgrondslag)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          (bezittingen min schulden)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Explanation of what's needed for full analysis */}
+                <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                  <p className="text-sm text-amber-800 dark:text-amber-200">
+                    <strong>Om kansrijkheid te bepalen:</strong> Upload ook jaaropgaves van banken (voor ontvangen rente)
+                    en eventueel beleggingsoverzichten. Dan kunnen we berekenen of het werkelijk rendement lager was
+                    dan het forfaitaire rendement.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="bg-muted/30 rounded-lg p-4 text-center">
+                <Info className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  Onvoldoende data om werkelijk rendement te berekenen
+                </p>
+              </div>
+            )}
           </div>
         )}
 

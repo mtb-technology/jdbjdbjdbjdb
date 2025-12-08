@@ -149,6 +149,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
 };
 
 /**
- * LocalStorage key for persisting system prompt
+ * LocalStorage keys for persisting prompts
  */
-export const STORAGE_KEY_SYSTEM_PROMPT = "box3-validator-system-prompt";
+export const STORAGE_KEY_SYSTEM_PROMPT = "box3-validator-system-prompt"; // Legacy
+export const STORAGE_KEY_PROMPTS = "box3-validator-prompts"; // New multi-prompt structure

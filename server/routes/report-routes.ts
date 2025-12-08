@@ -1639,7 +1639,7 @@ Gebruik bullet points. Max 150 woorden.
         customConfig: {
           provider: "google",
           temperature: 1.0, // Keep default for Gemini 3
-          maxOutputTokens: 2000, // Plenty of room for thinking + summary (can optimize later)
+          maxOutputTokens: 8192, // Increased: thinking tokens + full summary output
           thinkingLevel: "low" // Fast thinking for simple summarization tasks
         },
         operationId: "dossier-context"

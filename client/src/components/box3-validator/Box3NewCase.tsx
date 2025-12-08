@@ -246,12 +246,12 @@ export const Box3NewCase = memo(function Box3NewCase({
             {isValidating ? (
               <>
                 <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
-                Valideren...
+                Analyseren...
               </>
             ) : (
               <>
                 <FileCheck className="mr-2 h-5 w-5" />
-                Valideer Documenten
+                Start Analyse
               </>
             )}
           </Button>
