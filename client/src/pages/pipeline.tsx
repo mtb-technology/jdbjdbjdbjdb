@@ -12,6 +12,7 @@ import { AppHeader } from "@/components/app-header";
 import { apiRequest } from "@/lib/queryClient";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
 import DOMPurify from "isomorphic-dompurify";
+import imageCompression from "browser-image-compression";
 
 // Type for pending file uploads (stored in memory until case is created)
 interface PendingFile {
@@ -19,6 +20,46 @@ interface PendingFile {
   name: string;
   size: number;
   type: string;
+  originalSize?: number; // Track original size before compression
+  wasCompressed?: boolean;
+}
+
+// Compress images before upload (maintains quality while reducing file size)
+async function compressImageFile(file: File): Promise<{ file: File; wasCompressed: boolean; originalSize: number }> {
+  const originalSize = file.size;
+  const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png)$/i.test(file.name);
+
+  // Only compress images larger than 1MB
+  if (!isImage || file.size < 1024 * 1024) {
+    return { file, wasCompressed: false, originalSize };
+  }
+
+  try {
+    const options = {
+      maxSizeMB: 2, // Target max 2MB per image
+      maxWidthOrHeight: 2400, // Max dimension (maintains aspect ratio)
+      useWebWorker: true,
+      fileType: file.type as 'image/jpeg' | 'image/png' | 'image/webp',
+      initialQuality: 0.85, // Start at 85% quality
+      alwaysKeepResolution: true, // Don't downscale unless needed
+    };
+
+    const compressedFile = await imageCompression(file, options);
+
+    // Only use compressed version if it's actually smaller
+    if (compressedFile.size < file.size) {
+      console.log(`🗜️ Compressed ${file.name}: ${(originalSize / 1024 / 1024).toFixed(2)}MB → ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB (${Math.round((1 - compressedFile.size / originalSize) * 100)}% reduction)`);
+
+      // Create a new File object with the original name
+      const newFile = new File([compressedFile], file.name, { type: compressedFile.type });
+      return { file: newFile, wasCompressed: true, originalSize };
+    }
+
+    return { file, wasCompressed: false, originalSize };
+  } catch (error) {
+    console.warn(`⚠️ Could not compress ${file.name}:`, error);
+    return { file, wasCompressed: false, originalSize };
+  }
 }
 
 const Pipeline = memo(function Pipeline() {
@@ -90,10 +131,32 @@ const Pipeline = memo(function Pipeline() {
     setIsUploading(true);
     setUploadProgress(0);
 
-    const formData = new FormData();
-    files.forEach(pf => formData.append('files', pf.file));
-
     try {
+      // Compress images before upload
+      console.log('🗜️ Compressing images before upload...');
+      const compressedFiles: File[] = [];
+      let totalSaved = 0;
+
+      for (const pf of files) {
+        const { file: processedFile, wasCompressed, originalSize } = await compressImageFile(pf.file);
+        compressedFiles.push(processedFile);
+        if (wasCompressed) {
+          totalSaved += originalSize - processedFile.size;
+        }
+      }
+
+      if (totalSaved > 0) {
+        console.log(`🗜️ Total compression savings: ${(totalSaved / 1024 / 1024).toFixed(2)}MB`);
+        toast({
+          title: "Bestanden gecomprimeerd",
+          description: `${(totalSaved / 1024 / 1024).toFixed(1)}MB bespaard door compressie`,
+        });
+      }
+
+      const formData = new FormData();
+      compressedFiles.forEach((file, index) => {
+        formData.append('files', file, files[index].name); // Use original filename
+      });
       const response = await new Promise<any>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
 
@@ -201,8 +264,21 @@ const Pipeline = memo(function Pipeline() {
       console.log("🎯 Pipeline: Report created:", { reportId: report?.id });
 
       // Upload pending attachments to the new case
+      let uploadSuccess = true;
       if (pendingFiles.length > 0 && report?.id) {
-        await uploadAttachments(report.id, pendingFiles);
+        uploadSuccess = await uploadAttachments(report.id, pendingFiles);
+
+        // If upload failed, don't auto-start workflow - let user fix the issue first
+        if (!uploadSuccess) {
+          toast({
+            title: "Case aangemaakt, maar bijlages niet geüpload",
+            description: `Case "${report.title}" is aangemaakt. Ga naar de case om bijlages handmatig toe te voegen.`,
+            variant: "destructive",
+          });
+          // Navigate without autoStart so user can fix attachments
+          setLocation(`/cases/${report.id}`);
+          return;
+        }
       }
 
       toast({
