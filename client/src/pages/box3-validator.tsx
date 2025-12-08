@@ -7,7 +7,8 @@
  * - New case view: Create new validation
  */
 
-import { useState, useCallback, memo } from "react";
+import { useState, useCallback, memo, useEffect } from "react";
+import { useRoute, useLocation } from "wouter";
 import { AppHeader } from "@/components/app-header";
 
 // Extracted hooks
@@ -31,11 +32,17 @@ import { STORAGE_KEY_SYSTEM_PROMPT } from "@/constants/box3.constants";
 import type { PendingFile } from "@/types/box3Validator.types";
 import type { Box3ValidatorSession, Box3ValidationResult } from "@shared/schema";
 
-type ViewMode = "list" | "detail" | "new";
-
 const Box3Validator = memo(function Box3Validator() {
+  // URL-based routing
+  const [, setLocation] = useLocation();
+  const [matchDetail, paramsDetail] = useRoute("/box3-validator/:id");
+  const [matchNew] = useRoute("/box3-validator/new");
+
+  // Derive view mode from URL
+  const viewMode = matchNew ? "new" : matchDetail && paramsDetail?.id ? "detail" : "list";
+  const urlSessionId = matchDetail && !matchNew ? paramsDetail?.id : null;
+
   // View state
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedSession, setSelectedSession] = useState<Box3ValidatorSession | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -72,32 +79,42 @@ const Box3Validator = memo(function Box3Validator() {
     localStorage.setItem(STORAGE_KEY_SYSTEM_PROMPT, newPrompt);
   }, []);
 
-  // Navigation handlers
+  // Load session when URL changes to detail view
+  useEffect(() => {
+    if (urlSessionId && urlSessionId !== selectedSession?.id) {
+      loadSession(urlSessionId).then((session) => {
+        if (session) {
+          setSelectedSession(session);
+          setValidationResult(session.validationResult as Box3ValidationResult);
+          setCurrentSessionId(session.id);
+        } else {
+          // Session not found, go back to list
+          setLocation("/box3-validator");
+        }
+      });
+    }
+  }, [urlSessionId, selectedSession?.id, loadSession, setValidationResult, setCurrentSessionId, setLocation]);
+
+  // Navigation handlers - now use URL routing
   const handleSelectCase = useCallback(
-    async (sessionId: string) => {
-      const session = await loadSession(sessionId);
-      if (session) {
-        setSelectedSession(session);
-        setValidationResult(session.validationResult as Box3ValidationResult);
-        setCurrentSessionId(session.id);
-        setViewMode("detail");
-      }
+    (sessionId: string) => {
+      setLocation(`/box3-validator/${sessionId}`);
     },
-    [loadSession, setValidationResult, setCurrentSessionId]
+    [setLocation]
   );
 
   const handleNewCase = useCallback(() => {
     setSelectedSession(null);
     setValidationResult(null);
     setCurrentSessionId(null);
-    setViewMode("new");
-  }, [setValidationResult, setCurrentSessionId]);
+    setLocation("/box3-validator/new");
+  }, [setValidationResult, setCurrentSessionId, setLocation]);
 
   const handleBackToList = useCallback(() => {
     setSelectedSession(null);
-    setViewMode("list");
     refetchSessions(); // Refresh list when returning
-  }, [refetchSessions]);
+    setLocation("/box3-validator");
+  }, [refetchSessions, setLocation]);
 
   const handleDeleteCase = useCallback(
     async (sessionId: string) => {
@@ -119,21 +136,12 @@ const Box3Validator = memo(function Box3Validator() {
     [validate, refetchSessions]
   );
 
-  // When validation completes, switch to detail view
-  const handleValidationComplete = useCallback(async () => {
-    if (currentSessionId) {
-      const session = await loadSession(currentSessionId);
-      if (session) {
-        setSelectedSession(session);
-        setViewMode("detail");
-      }
+  // Watch for validation completion - navigate to detail view
+  useEffect(() => {
+    if (viewMode === "new" && validationResult && currentSessionId && !selectedSession) {
+      setLocation(`/box3-validator/${currentSessionId}`);
     }
-  }, [currentSessionId, loadSession]);
-
-  // Watch for validation completion
-  if (viewMode === "new" && validationResult && currentSessionId && !selectedSession) {
-    handleValidationComplete();
-  }
+  }, [viewMode, validationResult, currentSessionId, selectedSession, setLocation]);
 
   // Revalidate handler for detail view
   const handleRevalidate = useCallback(async () => {
