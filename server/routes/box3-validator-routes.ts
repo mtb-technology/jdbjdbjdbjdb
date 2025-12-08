@@ -233,16 +233,22 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
 
     console.log(`📋 [Box3Validator] Calling AI with ${visionAttachments.length} vision attachments`);
 
-    // Get AI config via AIConfigResolver - GEEN hardcoded defaults
-    // Box3 validator gebruikt global aiConfig (geen aparte stage config)
+    // Get AI config via AIConfigResolver
+    // Box3 validator needs higher maxOutputTokens for bijlage_analyse with many files
     const activeConfig = await storage.getActivePromptConfig();
     const promptConfig = activeConfig?.config as PromptConfig;
 
-    const aiConfig = configResolver.resolveForOperation(
+    const baseAiConfig = configResolver.resolveForOperation(
       'box3_validator',
       promptConfig,
       `box3-validator-${Date.now()}`
     );
+
+    // Ensure sufficient output tokens for detailed bijlage_analyse
+    const aiConfig = {
+      ...baseAiConfig,
+      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384)
+    };
 
     // Call AI with config from database
     const factory = AIModelFactory.getInstance();
@@ -571,11 +577,17 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
     const activeConfig = await storage.getActivePromptConfig();
     const promptConfig = activeConfig?.config as PromptConfig;
 
-    const aiConfig = configResolver.resolveForOperation(
+    const baseAiConfig = configResolver.resolveForOperation(
       'box3_validator',
       promptConfig,
       `box3-add-docs-${Date.now()}`
     );
+
+    // Ensure sufficient output tokens for detailed bijlage_analyse
+    const aiConfig = {
+      ...baseAiConfig,
+      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384)
+    };
 
     const factory = AIModelFactory.getInstance();
     const result = await factory.callModel(
@@ -752,16 +764,22 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
 
     console.log(`📋 [Box3Validator] Re-validating with ${visionAttachments.length} vision attachments`);
 
-    // Get AI config via AIConfigResolver - GEEN hardcoded defaults
-    // Box3 validator gebruikt global aiConfig (geen aparte stage config)
+    // Get AI config via AIConfigResolver
+    // Box3 validator needs higher maxOutputTokens for bijlage_analyse with many files
     const activeConfig = await storage.getActivePromptConfig();
     const promptConfig = activeConfig?.config as PromptConfig;
 
-    const aiConfig = configResolver.resolveForOperation(
+    const baseAiConfig = configResolver.resolveForOperation(
       'box3_validator',
       promptConfig,
       `box3-revalidate-${Date.now()}`
     );
+
+    // Ensure sufficient output tokens for detailed bijlage_analyse
+    const aiConfig = {
+      ...baseAiConfig,
+      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384)
+    };
 
     // Call AI with config from database
     const factory = AIModelFactory.getInstance();

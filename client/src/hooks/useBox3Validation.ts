@@ -107,7 +107,8 @@ export function useBox3Validation({
       formData.append("systemPrompt", systemPrompt);
 
       for (const pf of pendingFiles) {
-        formData.append("files", pf.file);
+        // Explicitly pass filename - important when file is a Blob after compression
+        formData.append("files", pf.file, pf.name);
       }
 
       const response = await fetch("/api/box3-validator/validate", {

@@ -360,13 +360,30 @@ export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
     });
   }, []);
 
-  // Match attachments with their AI analysis by filename
-  const getAnalyseForAttachment = useCallback((filename: string): BijlageAnalyse | undefined => {
-    if (!bijlageAnalyse) return undefined;
-    return bijlageAnalyse.find(a =>
+  // Match attachments with their AI analysis by filename or index
+  const getAnalyseForAttachment = useCallback((filename: string, index: number): BijlageAnalyse | undefined => {
+    if (!bijlageAnalyse || bijlageAnalyse.length === 0) return undefined;
+
+    // First try exact match
+    const exactMatch = bijlageAnalyse.find(a =>
       a.bestandsnaam.toLowerCase() === filename.toLowerCase()
     );
-  }, [bijlageAnalyse]);
+    if (exactMatch) return exactMatch;
+
+    // Try partial match (filename contains or is contained in bestandsnaam)
+    const partialMatch = bijlageAnalyse.find(a =>
+      a.bestandsnaam.toLowerCase().includes(filename.toLowerCase()) ||
+      filename.toLowerCase().includes(a.bestandsnaam.toLowerCase())
+    );
+    if (partialMatch) return partialMatch;
+
+    // Fall back to index-based matching if counts are equal
+    if (bijlageAnalyse.length === attachments.length && bijlageAnalyse[index]) {
+      return bijlageAnalyse[index];
+    }
+
+    return undefined;
+  }, [bijlageAnalyse, attachments.length]);
 
   if (!attachments || attachments.length === 0) {
     return null;
@@ -388,7 +405,7 @@ export const Box3AttachmentsPanel = memo(function Box3AttachmentsPanel({
         <Box3AttachmentItem
           key={idx}
           attachment={att}
-          analyse={getAnalyseForAttachment(att.filename)}
+          analyse={getAnalyseForAttachment(att.filename, idx)}
           index={idx}
           isExpanded={expandedAttachments.has(idx)}
           onToggle={() => toggleAttachment(idx)}
