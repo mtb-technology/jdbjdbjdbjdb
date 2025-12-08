@@ -31,10 +31,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ Body size limits: 25mb to support large dossier text inputs
-// Note: File uploads use multer with separate limits (25mb per file)
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: false, limit: '25mb' }));
+// ✅ Body size limits: 25mb for JSON, skip for file uploads (multer handles those)
+// File uploads via /api/upload use multipart/form-data which multer parses
+app.use((req, res, next) => {
+  // Skip body parsing for file upload routes - multer handles multipart/form-data
+  if (req.path.startsWith('/api/upload')) {
+    return next();
+  }
+  express.json({ limit: '25mb' })(req, res, next);
+});
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/upload')) {
+    return next();
+  }
+  express.urlencoded({ extended: false, limit: '25mb' })(req, res, next);
+});
 
 // 🔒 SECURITY: Session middleware for authentication
 // Sessions are stored in PostgreSQL for production, memory for development

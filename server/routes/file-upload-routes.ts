@@ -26,7 +26,9 @@ async function getPdfParse() {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 25 * 1024 * 1024, // 25MB max file size (increased for larger PDFs)
+    fileSize: 25 * 1024 * 1024, // 25MB max per file
+    files: 20, // Max 20 files per request
+    fieldSize: 100 * 1024 * 1024, // 100MB total field size
   },
   fileFilter: (req, file, cb) => {
     // Accept PDF, TXT, images, and common document formats
