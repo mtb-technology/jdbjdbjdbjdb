@@ -227,7 +227,7 @@ fileUploadRouter.post(
  */
 fileUploadRouter.post(
   "/extract-text-batch",
-  upload.array('files', 5), // Max 5 files
+  upload.array('files', 20), // Max 20 files
   asyncHandler(async (req: Request, res: Response) => {
     console.log(`📥 Batch file upload request received:`, {
       hasFiles: !!req.files,
@@ -410,7 +410,7 @@ fileUploadRouter.post(
   (req: Request, res: Response, next: NextFunction) => {
     console.log(`📎 [${req.params.reportId}] Batch upload request received`);
     // Wrap multer to catch file filter errors
-    upload.array('files', 10)(req, res, (err: any) => {
+    upload.array('files', 20)(req, res, (err: any) => {
       if (err) {
         console.error('📎 Multer error:', err.message, err.stack);
         return res.status(400).json(createApiErrorResponse(
