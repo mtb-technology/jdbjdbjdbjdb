@@ -25,6 +25,8 @@ export interface SessionLight {
 export interface PendingFile {
   file: File;
   name: string;
+  originalSize?: number; // Original size before compression
+  compressed?: boolean;  // Whether the file was compressed
 }
 
 /**

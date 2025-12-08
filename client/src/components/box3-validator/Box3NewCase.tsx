@@ -5,6 +5,7 @@
  */
 
 import { memo, useState, useRef, useCallback } from "react";
+import imageCompression from "browser-image-compression";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,22 +40,58 @@ export const Box3NewCase = memo(function Box3NewCase({
   const [clientName, setClientName] = useState("");
   const [inputText, setInputText] = useState("");
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [isCompressing, setIsCompressing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // File handling
+  // Image compression options
+  const compressionOptions = {
+    maxSizeMB: 1, // Max 1MB per image
+    maxWidthOrHeight: 2048, // Max dimension
+    useWebWorker: true,
+  };
+
+  // File handling with auto-compression for images
   const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (!e.target.files) return;
 
-      const newFiles = Array.from(e.target.files).map((file) => ({
-        file,
-        name: file.name,
-      }));
+      const files = Array.from(e.target.files);
+      setIsCompressing(true);
 
-      setPendingFiles((prev) => [...prev, ...newFiles]);
+      try {
+        const processedFiles: PendingFile[] = await Promise.all(
+          files.map(async (file) => {
+            const isImage = file.type.startsWith("image/");
 
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+            // Compress images > 1MB
+            if (isImage && file.size > 1024 * 1024) {
+              try {
+                const compressedFile = await imageCompression(file, compressionOptions);
+                const originalSize = (file.size / 1024 / 1024).toFixed(1);
+                const newSize = (compressedFile.size / 1024 / 1024).toFixed(1);
+                console.log(`📸 Compressed ${file.name}: ${originalSize}MB → ${newSize}MB`);
+                return {
+                  file: compressedFile,
+                  name: file.name,
+                  originalSize: file.size,
+                  compressed: true,
+                };
+              } catch (err) {
+                console.warn(`Failed to compress ${file.name}:`, err);
+                return { file, name: file.name };
+              }
+            }
+
+            return { file, name: file.name };
+          })
+        );
+
+        setPendingFiles((prev) => [...prev, ...processedFiles]);
+      } finally {
+        setIsCompressing(false);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
       }
     },
     []
@@ -150,9 +187,19 @@ export const Box3NewCase = memo(function Box3NewCase({
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
               className="w-full"
+              disabled={isCompressing}
             >
-              <Upload className="h-4 w-4 mr-2" />
-              Selecteer bestanden (PDF, TXT, JPG, PNG)
+              {isCompressing ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Afbeeldingen comprimeren...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Selecteer bestanden (PDF, TXT, JPG, PNG)
+                </>
+              )}
             </Button>
 
             {pendingFiles.length > 0 && (
@@ -167,6 +214,11 @@ export const Box3NewCase = memo(function Box3NewCase({
                       <span className="text-sm truncate">{pf.name}</span>
                       <span className="text-xs text-muted-foreground">
                         ({(pf.file.size / 1024).toFixed(1)} KB)
+                        {pf.compressed && pf.originalSize && (
+                          <span className="text-green-600 ml-1">
+                            ✓ gecomprimeerd van {(pf.originalSize / 1024 / 1024).toFixed(1)}MB
+                          </span>
+                        )}
                       </span>
                     </div>
                     <Button

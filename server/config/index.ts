@@ -300,8 +300,8 @@ export const REPORT_CONFIG = {
     },
     '4c_ScenarioGatenAnalist': {
       name: 'Scenario Gaten Analist Review',
-      timeout: 90000,
-      maxTokens: 8192
+      timeout: 120000,
+      maxTokens: 12288 // Increased - was truncating JSON output
     },
     '4e_DeAdvocaat': {
       name: 'De Advocaat Review',

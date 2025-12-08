@@ -41,8 +41,10 @@ export function parseFeedbackToProposals(
     /```\s*json\s*([\s\S]*?)```/,        // ``` json ... ``` (space before json)
     /`{3}json\s*([\s\S]*?)`{3}/,         // alternative backtick matching
     /```\s*([\s\S]*?)```/,               // ``` ... ```
+    /``json\s*([\s\S]*?)``/,             // ``json ... `` (2 backticks)
+    /``\s*([\s\S]*?)``/,                 // `` ... `` (2 backticks without json)
     /`json\s*([\s\S]*?)`/,               // `json ... `
-    /[`'"]{3}json\s*([\s\S]*?)[`'"]{3}/, // handle curly quotes
+    /[`'"]{2,3}json\s*([\s\S]*?)[`'"]{2,3}/, // handle curly quotes (2-3)
   ];
 
   for (const pattern of codeBlockPatterns) {
