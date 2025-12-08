@@ -141,6 +141,19 @@ export function errorHandler(
     );
   }
 
+  // Handle PayloadTooLarge (413) errors from body-parser
+  if (typeof err === 'object' && err !== null && 'type' in err && err.type === 'entity.too.large') {
+    return res.status(413).json(
+      createApiErrorResponse(
+        'PAYLOAD_TOO_LARGE',
+        ERROR_CODES.VALIDATION_FAILED,
+        'Request entity too large',
+        'De ingevoerde tekst is te groot. Maximaal toegestaan is 25MB. Probeer de tekst in te korten of upload een bestand.',
+        { limit: '25mb' }
+      )
+    );
+  }
+
   // Handle network/fetch errors
   const networkErrorCodes = ['ENOTFOUND', 'ECONNREFUSED'];
   if (typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string' && networkErrorCodes.includes(err.code)) {

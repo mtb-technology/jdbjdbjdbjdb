@@ -31,10 +31,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ FIX: Reduce body size limits (was 50mb, now 10mb for security)
-// Large payloads can cause memory issues and enable DoS attacks
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+// ✅ Body size limits: 25mb to support large dossier text inputs
+// Note: File uploads use multer with separate limits (25mb per file)
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: false, limit: '25mb' }));
 
 // 🔒 SECURITY: Session middleware for authentication
 // Sessions are stored in PostgreSQL for production, memory for development
