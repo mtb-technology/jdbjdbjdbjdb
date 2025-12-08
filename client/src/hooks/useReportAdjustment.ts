@@ -51,7 +51,7 @@ interface UseReportAdjustmentReturn {
   setAdjustmentStatus: (id: string, status: AdjustmentStatus, modifiedNieuw?: string) => void;
   acceptAll: () => void;
   rejectAll: () => void;
-  applyAdjustments: () => Promise<void>;
+  applyAdjustments: (mode?: "direct" | "ai") => Promise<void>;
   goBackToInput: () => void;
 }
 
@@ -114,9 +114,10 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
     },
   });
 
-  // Apply adjustment mutation (Step 2: Apply via Editor)
+  // Apply adjustment mutation (Step 2: Apply changes)
+  // Supports two modes: "direct" (find/replace) or "ai" (via Editor prompt)
   const applyMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (mode: "direct" | "ai" = "direct") => {
       if (!proposal) throw new Error("Geen voorstel om toe te passen");
 
       // Only send accepted/modified adjustments
@@ -124,9 +125,11 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
         .filter(adj => adj.status === "accepted" || adj.status === "modified")
         .map(adj => ({
           id: adj.id,
+          type: adj.type || "replace", // Include type for insert/delete support
           context: adj.context,
           oud: adj.oud,
           nieuw: adj.status === "modified" && adj.modifiedNieuw ? adj.modifiedNieuw : adj.nieuw,
+          anker: adj.anker, // Include anker for insert operations
           reden: adj.reden
         }));
 
@@ -136,7 +139,8 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
         {
           adjustments: toApply,
           instruction: proposal.instruction,
-          adjustmentId: proposal.adjustmentId
+          adjustmentId: proposal.adjustmentId,
+          mode // "direct" or "ai"
         }
       );
       const json = await response.json();
@@ -223,7 +227,8 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
   }, []);
 
   // Apply adjustments (Step 2)
-  const applyAdjustments = useCallback(async () => {
+  // mode: "direct" = instant find/replace, "ai" = via Editor AI
+  const applyAdjustments = useCallback(async (mode: "direct" | "ai" = "direct") => {
     const acceptedCount = proposedAdjustments.filter(
       adj => adj.status === "accepted" || adj.status === "modified"
     ).length;
@@ -235,7 +240,7 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
 
     setStage("applying");
     setError(null);
-    await applyMutation.mutateAsync();
+    await applyMutation.mutateAsync(mode);
   }, [proposedAdjustments, applyMutation]);
 
   // Go back to input (from review)

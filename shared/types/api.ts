@@ -323,11 +323,14 @@ export const externalReportAnalyzeRequestSchema = z.object({
 });
 
 // Single adjustment item in the analysis response
+// Supports 3 types: replace (default), insert, delete
 export const adjustmentItemSchema = z.object({
   id: z.string(), // Generated ID for tracking
+  type: z.enum(["replace", "insert", "delete"]).default("replace"), // Operation type
   context: z.string(), // Location in report (e.g., "Paragraaf Box 3")
-  oud: z.string(), // Exact text to replace
-  nieuw: z.string(), // Replacement text
+  oud: z.string().optional(), // Text to replace/delete (not used for insert)
+  nieuw: z.string().optional(), // New/replacement text (not used for delete)
+  anker: z.string().optional(), // For insert: text AFTER which to insert new content
   reden: z.string() // Reason for change
 });
 
@@ -343,9 +346,11 @@ export const externalReportAnalyzeResponseSchema = z.object({
 export const externalReportApplyRequestSchema = z.object({
   adjustments: z.array(z.object({
     id: z.string(),
+    type: z.enum(["replace", "insert", "delete"]).default("replace"),
     context: z.string(),
-    oud: z.string(),
-    nieuw: z.string(),
+    oud: z.string().optional(), // Not used for insert
+    nieuw: z.string().optional(), // Not used for delete
+    anker: z.string().optional(), // For insert: text AFTER which to insert
     reden: z.string(),
     status: z.enum(["accepted", "modified"]) // Only accepted/modified items are sent
   })),

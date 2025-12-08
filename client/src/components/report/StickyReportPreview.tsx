@@ -62,9 +62,8 @@ export function StickyReportPreview({
   }
 
   return (
-    <div 
-      className={`sticky top-4 h-[calc(100vh-2rem)] flex flex-col ${className}`}
-      style={{ minWidth: isExpanded ? '400px' : '350px' }}
+    <div
+      className={`sticky top-4 h-[calc(100vh-2rem)] flex flex-col w-full ${className}`}
     >
       <Card className="flex flex-col h-full shadow-lg border-2 border-primary/20">
         <CardHeader className="pb-3 space-y-3">

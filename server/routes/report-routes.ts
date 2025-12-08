@@ -2355,17 +2355,19 @@ Gebruik bullet points. Max 150 woorden.
 
   /**
    * POST /api/reports/:id/adjust/apply
-   * Step 2: Apply accepted adjustments using Editor prompt (Chirurgische Redacteur)
+   * Step 2: Apply accepted adjustments
    *
-   * This takes the reviewed adjustments and uses the Editor to apply them to the report.
+   * Supports two modes:
+   * - mode: "direct" (default) - Simple find/replace, instant, no AI
+   * - mode: "ai" - Uses Editor prompt (Chirurgische Redacteur) for complex changes
    */
   app.post("/api/reports/:id/adjust/apply", asyncHandler(async (req: Request, res: Response) => {
     const { id: reportId } = req.params;
 
-    console.log(`✏️ [${reportId}] Applying adjustments`);
+    // Validate request - expect adjustments array, instruction, and optional mode
+    const { adjustments, instruction, adjustmentId, mode = "direct" } = req.body;
 
-    // Validate request - expect adjustments array and instruction
-    const { adjustments, instruction, adjustmentId } = req.body;
+    console.log(`✏️ [${reportId}] Applying adjustments (mode: ${mode})`);
 
     if (!adjustments || !Array.isArray(adjustments) || adjustments.length === 0) {
       throw ServerError.business(
@@ -2389,53 +2391,151 @@ Gebruik bullet points. Max 150 woorden.
       );
     }
 
-    // Get editor prompt from config (Chirurgische Redacteur)
-    const activeConfig = await storage.getActivePromptConfig();
-    const editorConfig = (activeConfig?.config as PromptConfig)?.editor;
+    let newContent: string;
+    let appliedCount = 0;
+    let debugInfo: Record<string, any> = {};
 
-    if (!editorConfig?.prompt || editorConfig.prompt.trim().length === 0) {
-      throw ServerError.business(
-        ERROR_CODES.VALIDATION_FAILED,
-        'Editor (Chirurgische Redacteur) prompt niet geconfigureerd. Ga naar Instellingen en vul de "Editor" prompt in.'
+    if (mode === "direct") {
+      // ============================================
+      // DIRECT MODE: Supports replace, insert, and delete
+      // ============================================
+      console.log(`🔄 [${reportId}] Using direct mode for ${adjustments.length} adjustments`);
+
+      newContent = currentContent;
+      const notFound: string[] = [];
+      const applied: { type: string; context: string }[] = [];
+
+      for (const adj of adjustments as {
+        type?: "replace" | "insert" | "delete";
+        oud?: string;
+        nieuw?: string;
+        anker?: string;
+        context: string
+      }[]) {
+        const adjType = adj.type || "replace"; // Default to replace for backwards compatibility
+
+        if (adjType === "replace") {
+          // REPLACE: Find old text and replace with new
+          const oldText = adj.oud || "";
+          const newText = adj.nieuw || "";
+
+          if (oldText && newContent.includes(oldText)) {
+            newContent = newContent.replace(oldText, newText);
+            appliedCount++;
+            applied.push({ type: "replace", context: adj.context });
+            console.log(`  ✅ Replaced: "${oldText.substring(0, 50)}..."`);
+          } else {
+            notFound.push(adj.context || (oldText ? oldText.substring(0, 50) : "unknown"));
+            console.log(`  ⚠️ Replace failed - not found: "${adj.context}"`);
+          }
+        }
+        else if (adjType === "insert") {
+          // INSERT: Find anchor text and insert new content AFTER it
+          const ankerText = adj.anker || "";
+          const newText = adj.nieuw || "";
+
+          if (ankerText && newText && newContent.includes(ankerText)) {
+            const ankerIndex = newContent.indexOf(ankerText);
+            const insertPos = ankerIndex + ankerText.length;
+            newContent = newContent.slice(0, insertPos) + "\n\n" + newText + newContent.slice(insertPos);
+            appliedCount++;
+            applied.push({ type: "insert", context: adj.context });
+            console.log(`  ✅ Inserted after: "${ankerText.substring(0, 50)}..."`);
+          } else {
+            notFound.push(adj.context || "insert failed");
+            console.log(`  ⚠️ Insert failed - anchor not found: "${adj.context}"`);
+          }
+        }
+        else if (adjType === "delete") {
+          // DELETE: Find old text and remove it
+          const oldText = adj.oud || "";
+
+          if (oldText && newContent.includes(oldText)) {
+            newContent = newContent.replace(oldText, "");
+            appliedCount++;
+            applied.push({ type: "delete", context: adj.context });
+            console.log(`  ✅ Deleted: "${oldText.substring(0, 50)}..."`);
+          } else {
+            notFound.push(adj.context || (oldText ? oldText.substring(0, 50) : "unknown"));
+            console.log(`  ⚠️ Delete failed - not found: "${adj.context}"`);
+          }
+        }
+      }
+
+      debugInfo = {
+        mode: "direct",
+        appliedCount,
+        applied,
+        notFound,
+        totalRequested: adjustments.length
+      };
+
+      if (notFound.length > 0) {
+        console.log(`⚠️ [${reportId}] ${notFound.length} adjustments could not be applied (text not found)`);
+      }
+    } else {
+      // ============================================
+      // AI MODE: Use Editor prompt (Chirurgische Redacteur)
+      // ============================================
+      const activeConfig = await storage.getActivePromptConfig();
+      const editorConfig = (activeConfig?.config as PromptConfig)?.editor;
+
+      if (!editorConfig?.prompt || editorConfig.prompt.trim().length === 0) {
+        throw ServerError.business(
+          ERROR_CODES.VALIDATION_FAILED,
+          'Editor (Chirurgische Redacteur) prompt niet geconfigureerd. Ga naar Instellingen en vul de "Editor" prompt in.'
+        );
+      }
+
+      // Format adjustments for the editor prompt
+      const adjustmentsText = adjustments.map((adj: { context: string; oud: string; nieuw: string; reden: string }, idx: number) =>
+        `${idx + 1}. [${adj.context}]\n   OUD: "${adj.oud}"\n   NIEUW: "${adj.nieuw}"\n   REDEN: ${adj.reden}`
+      ).join('\n\n');
+
+      // Replace placeholders
+      const editorPrompt = editorConfig.prompt
+        .replace(/{HUIDIGE_RAPPORT}/g, currentContent)
+        .replace(/{CONCEPT_RAPPORT}/g, currentContent)
+        .replace(/{AANPASSINGEN}/g, adjustmentsText)
+        .replace(/{FEEDBACK}/g, adjustmentsText)
+        .replace(/{AANTAL_AANPASSINGEN}/g, String(adjustments.length));
+
+      // Get AI config
+      const editorConfigResolver = new AIConfigResolver();
+      const aiConfig = editorConfigResolver.resolveForStage(
+        'editor',
+        editorConfig ? { aiConfig: editorConfig.aiConfig } : undefined,
+        { aiConfig: (activeConfig?.config as PromptConfig)?.aiConfig },
+        `apply-${reportId}`
       );
+
+      console.log(`🤖 [${reportId}] Using AI (${aiConfig.provider}/${aiConfig.model}) for ${adjustments.length} adjustments`);
+
+      // Call AI (Editor)
+      const aiFactory = AIModelFactory.getInstance();
+      const response = await aiFactory.callModel(
+        aiConfig,
+        editorPrompt,
+        {
+          timeout: 300000, // 5 minutes
+          jobId: `adjust-apply-${reportId}`
+        }
+      );
+
+      newContent = response.content;
+      appliedCount = adjustments.length;
+      debugInfo = {
+        mode: "ai",
+        promptUsed: editorPrompt,
+        promptLength: editorPrompt.length,
+        aiConfig,
+        stage: "editor"
+      };
     }
 
-    // Format adjustments for the editor prompt (same format as reviewer feedback)
-    const adjustmentsText = adjustments.map((adj: { context: string; oud: string; nieuw: string; reden: string }, idx: number) =>
-      `${idx + 1}. [${adj.context}]\n   OUD: "${adj.oud}"\n   NIEUW: "${adj.nieuw}"\n   REDEN: ${adj.reden}`
-    ).join('\n\n');
-
-    // Replace placeholders (editor prompt uses these placeholders)
-    const editorPrompt = editorConfig.prompt
-      .replace(/{HUIDIGE_RAPPORT}/g, currentContent)
-      .replace(/{CONCEPT_RAPPORT}/g, currentContent)
-      .replace(/{AANPASSINGEN}/g, adjustmentsText)
-      .replace(/{FEEDBACK}/g, adjustmentsText)
-      .replace(/{AANTAL_AANPASSINGEN}/g, String(adjustments.length));
-
-    // Get AI config via AIConfigResolver - GEEN hardcoded defaults
-    const editorConfigResolver = new AIConfigResolver();
-    const aiConfig = editorConfigResolver.resolveForStage(
-      'editor',
-      editorConfig ? { aiConfig: editorConfig.aiConfig } : undefined,
-      { aiConfig: (activeConfig?.config as PromptConfig)?.aiConfig },
-      `apply-${reportId}`
-    );
-
-    console.log(`✏️ [${reportId}] Applying ${adjustments.length} adjustments with ${aiConfig.provider}/${aiConfig.model}`);
-
-    // Call AI (Editor)
-    const aiFactory = AIModelFactory.getInstance();
-    const response = await aiFactory.callModel(
-      aiConfig,
-      editorPrompt,
-      {
-        timeout: 300000, // 5 minutes
-        jobId: `adjust-apply-${reportId}`
-      }
-    );
-
-    const newContent = response.content;
+    // ============================================
+    // COMMON: Save the result
+    // ============================================
 
     // Determine the predecessor stage (the current latest version)
     const currentVersions = report.conceptReportVersions as Record<string, any> || {};
@@ -2459,26 +2559,20 @@ Gebruik bullet points. Max 150 woorden.
     // Update report with new version and content
     await storage.updateReport(reportId, {
       conceptReportVersions: updatedVersions,
-      generatedContent: newContent, // Update preview content
+      generatedContent: newContent,
       updatedAt: new Date()
     });
 
-    console.log(`✅ [${reportId}] Applied ${adjustments.length} adjustments - v${snapshot.v}`);
+    console.log(`✅ [${reportId}] Applied ${appliedCount}/${adjustments.length} adjustments - v${snapshot.v} (mode: ${mode})`);
 
     res.json(createApiSuccessResponse({
       success: true,
       newContent,
-      appliedCount: adjustments.length,
+      appliedCount,
       newVersion: snapshot.v,
       stageId: adjustmentId,
-      // Debug info
-      _debug: {
-        promptUsed: editorPrompt,
-        promptLength: editorPrompt.length,
-        aiConfig,
-        stage: "editor"
-      }
-    }, `${adjustments.length} aanpassingen toegepast - nieuwe versie ${snapshot.v}`));
+      _debug: debugInfo
+    }, `${appliedCount} aanpassingen toegepast - nieuwe versie ${snapshot.v}`));
   }));
 
   /**

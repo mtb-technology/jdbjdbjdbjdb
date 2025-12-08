@@ -26,12 +26,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
   ArrowLeft,
   FileText,
   GitBranch,
   Eye,
   Activity,
   Paperclip,
+  PanelRight,
 } from "lucide-react";
 
 // Feature Components
@@ -169,7 +177,7 @@ export default function CaseDetail() {
     <div className="min-h-screen bg-background">
       <AppHeader />
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
@@ -230,7 +238,7 @@ export default function CaseDetail() {
         />
 
         {/* 2-Column Layout: Content + Sticky Preview */}
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6">
           {/* Main Content Area */}
           <div className="space-y-6">
             <Tabs
@@ -362,7 +370,7 @@ export default function CaseDetail() {
           </div>
 
           {/* Dossier Context & Report Preview - Hidden below XL (1280px) */}
-          <div className="hidden xl:block">
+          <div className="hidden xl:block space-y-4">
             <DossierContextPanel
               reportId={reportId!}
               summary={report.dossierContextSummary || undefined}
@@ -396,6 +404,45 @@ export default function CaseDetail() {
             onClose={() => setShowFullScreen(false)}
           />
         )}
+
+        {/* Floating Action Button for Preview (visible below XL) */}
+        <div className="fixed bottom-6 right-6 xl:hidden z-50">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button
+                size="lg"
+                className="h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-shadow"
+              >
+                <PanelRight className="h-6 w-6" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[400px] sm:w-[450px] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Dossier & Preview</SheetTitle>
+              </SheetHeader>
+              <div className="mt-4 space-y-4">
+                <DossierContextPanel
+                  reportId={reportId!}
+                  summary={report.dossierContextSummary || undefined}
+                  rawText={
+                    (report.dossierData as Record<string, unknown>)?.rawText as string || ""
+                  }
+                />
+                <StickyReportPreview
+                  content={currentContent}
+                  version={currentVersion}
+                  stageName={
+                    versionCheckpoints.find((v) => v.version === currentVersion)
+                      ?.stageName || "Concept"
+                  }
+                  changeCount={latestChanges}
+                  versions={versionCheckpoints}
+                  onFullView={() => setShowFullScreen(true)}
+                />
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
     </div>
   );

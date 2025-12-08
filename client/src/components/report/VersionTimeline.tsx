@@ -247,47 +247,100 @@ interface CompactTimelineProps {
   currentVersion?: number;
 }
 
+// Helper to get a short label for the bubble
+function getShortStageLabel(stageKey: string): string {
+  // Map known stage keys to short labels
+  const stageLabels: Record<string, string> = {
+    'stage_1': '1',
+    'stage_2': '2',
+    'stage_3': '3',
+    'stage_4a': '4a',
+    'stage_4b': '4b',
+    'stage_4c': '4c',
+    'stage_4e': '4e',
+    'stage_4f': '4f',
+    'stage_6': '6',
+  };
+
+  // Check for exact match first
+  if (stageLabels[stageKey]) {
+    return stageLabels[stageKey];
+  }
+
+  // Handle adjustment stages like "adjustment_1", "adjustment_2"
+  if (stageKey.startsWith('adjustment_')) {
+    const num = stageKey.split('_')[1];
+    return `A${num}`;
+  }
+
+  // Fallback: use first 2 characters
+  return stageKey.slice(0, 2).toUpperCase();
+}
+
+// Helper to format stage name for display
+function formatStageName(stageName: string, stageKey: string): string {
+  // For adjustments, show "Aanpassing X"
+  if (stageKey.startsWith('adjustment_')) {
+    const num = stageKey.split('_')[1];
+    return `Aanpassing ${num}`;
+  }
+
+  // Remove version suffix like " v8"
+  const nameWithoutVersion = stageName.replace(/\s+v\d+$/, '');
+
+  // Get last meaningful words, max 12 chars
+  const words = nameWithoutVersion.split(' ');
+  if (words.length >= 2) {
+    return words.slice(-2).join(' ');
+  }
+  return nameWithoutVersion;
+}
+
 export function CompactVersionTimeline({ versions, currentVersion }: CompactTimelineProps) {
   const sortedVersions = [...versions].sort((a, b) => a.version - b.version);
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-2">
+    <div className="flex items-center gap-1 overflow-x-auto pb-2">
       {sortedVersions.map((checkpoint, index) => {
         const isCurrent = checkpoint.version === currentVersion || checkpoint.isCurrent;
         const isLast = index === sortedVersions.length - 1;
+        const shortLabel = getShortStageLabel(checkpoint.stageKey);
+        const displayName = formatStageName(checkpoint.stageName, checkpoint.stageKey);
 
         return (
           <div key={`${checkpoint.stageKey}-${checkpoint.version}-${index}`} className="flex items-center">
             {/* Version bubble */}
-            <div 
-              className={`flex flex-col items-center min-w-[80px] ${
-                isCurrent ? 'scale-110' : ''
+            <div
+              className={`flex flex-col items-center min-w-[60px] ${
+                isCurrent ? 'scale-105' : ''
               }`}
             >
               <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+                className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${
                   isCurrent
                     ? 'bg-primary border-primary text-primary-foreground font-bold'
                     : 'bg-background border-border text-muted-foreground'
                 }`}
+                title={`${checkpoint.stageName} (${checkpoint.stageKey})`}
               >
-                <span className="text-[10px] font-semibold">{checkpoint.stageKey.split('_')[0]}</span>
+                <span className="text-xs font-semibold">{shortLabel}</span>
               </div>
-              <p className="text-xs text-center mt-1 text-muted-foreground truncate max-w-[80px]" title={checkpoint.stageName}>
-                {checkpoint.stageName.split(' v')[0].split(' ').slice(-2).join(' ')}
+              <p
+                className="text-[10px] text-center mt-1 text-muted-foreground leading-tight max-w-[60px]"
+                title={checkpoint.stageName}
+              >
+                {displayName}
               </p>
               {checkpoint.changeCount !== undefined && checkpoint.changeCount > 0 && (
-                <Badge variant="secondary" className="text-xs mt-1">
+                <Badge variant="secondary" className="text-[10px] px-1 h-4 mt-0.5">
                   +{checkpoint.changeCount}
                 </Badge>
               )}
             </div>
 
-            {/* Arrow */}
+            {/* Connector line */}
             {!isLast && (
-              <div className="px-2">
-                <div className="h-0.5 w-8 bg-border" />
-              </div>
+              <div className="w-6 h-0.5 bg-border mx-0.5" />
             )}
           </div>
         );

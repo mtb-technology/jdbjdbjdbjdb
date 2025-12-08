@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Loader2,
   Pencil,
@@ -35,6 +36,10 @@ import {
   Code2,
   Copy,
   Sparkles,
+  Zap,
+  Replace,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import {
   useReportAdjustment,
@@ -50,6 +55,186 @@ interface ReportAdjustmentDialogProps {
   /** Callback when adjustments are successfully applied - use to refresh editor content */
   onAdjustmentApplied?: () => void;
 }
+
+// Diff Result View - shows the full report with inline diff highlighting
+const DiffResultView = memo(function DiffResultView({
+  previousContent,
+  newContent,
+  appliedCount,
+  appliedAdjustments,
+  analyzeDebugInfo,
+  applyDebugInfo,
+  onClose,
+  onNewAdjustment,
+}: {
+  previousContent: string;
+  newContent: string;
+  appliedCount: number;
+  appliedAdjustments: ReviewableAdjustment[];
+  analyzeDebugInfo: DebugInfo | null;
+  applyDebugInfo: DebugInfo | null;
+  onClose: () => void;
+  onNewAdjustment: () => void;
+}) {
+  // Build highlighted content showing changes inline
+  const renderDiffContent = useCallback(() => {
+    if (!previousContent || !newContent) {
+      return <pre className="whitespace-pre-wrap text-sm">{newContent}</pre>;
+    }
+
+    // For each applied adjustment, highlight the changes in the new content
+    let highlightedContent: React.ReactNode[] = [];
+    let currentPos = 0;
+    const sortedAdjustments = [...appliedAdjustments].sort((a, b) => {
+      // Sort by position in new content
+      const posA = a.type === "delete" ? -1 : newContent.indexOf(a.nieuw || "");
+      const posB = b.type === "delete" ? -1 : newContent.indexOf(b.nieuw || "");
+      return posA - posB;
+    });
+
+    // Simple approach: show the full new content with highlighted sections
+    // For each adjustment, wrap the new text in green highlighting
+    let processedContent = newContent;
+    const highlights: { start: number; end: number; type: string; text: string }[] = [];
+
+    for (const adj of appliedAdjustments) {
+      if (adj.type === "delete") {
+        // For deletes, we need to find where it was in the old content
+        // and show it as struck through
+        continue; // Handle separately
+      }
+
+      const newText = adj.status === "modified" && adj.modifiedNieuw ? adj.modifiedNieuw : (adj.nieuw || "");
+      if (newText) {
+        const pos = newContent.indexOf(newText);
+        if (pos !== -1) {
+          highlights.push({
+            start: pos,
+            end: pos + newText.length,
+            type: adj.type || "replace",
+            text: newText
+          });
+        }
+      }
+    }
+
+    // Sort highlights by position
+    highlights.sort((a, b) => a.start - b.start);
+
+    // Build the content with highlights
+    let lastEnd = 0;
+    for (const highlight of highlights) {
+      // Add unchanged text before this highlight
+      if (highlight.start > lastEnd) {
+        highlightedContent.push(
+          <span key={`text-${lastEnd}`}>{newContent.slice(lastEnd, highlight.start)}</span>
+        );
+      }
+      // Add highlighted text
+      highlightedContent.push(
+        <span
+          key={`highlight-${highlight.start}`}
+          className={
+            highlight.type === "insert"
+              ? "bg-green-200 dark:bg-green-900/50 text-green-900 dark:text-green-100"
+              : "bg-yellow-200 dark:bg-yellow-900/50 text-yellow-900 dark:text-yellow-100"
+          }
+        >
+          {highlight.text}
+        </span>
+      );
+      lastEnd = highlight.end;
+    }
+    // Add remaining text
+    if (lastEnd < newContent.length) {
+      highlightedContent.push(
+        <span key={`text-${lastEnd}`}>{newContent.slice(lastEnd)}</span>
+      );
+    }
+
+    // Show deleted items at the top
+    const deletedItems = appliedAdjustments.filter(adj => adj.type === "delete");
+
+    return (
+      <>
+        {deletedItems.length > 0 && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded">
+            <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-2">Verwijderde tekst:</p>
+            {deletedItems.map((adj, i) => (
+              <div key={i} className="text-sm line-through text-red-600 dark:text-red-400 mb-1">
+                {adj.oud}
+              </div>
+            ))}
+          </div>
+        )}
+        <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed">
+          {highlightedContent.length > 0 ? highlightedContent : newContent}
+        </pre>
+      </>
+    );
+  }, [previousContent, newContent, appliedAdjustments]);
+
+  return (
+    <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+      <div className="flex items-center gap-4 p-4 bg-green-500/10 border-b border-green-500/20">
+        <CheckCircle2 className="h-8 w-8 text-green-500" />
+        <div className="flex-1">
+          <h3 className="font-semibold text-green-700 dark:text-green-400">
+            Aanpassingen Toegepast
+          </h3>
+          <p className="text-sm text-green-600 dark:text-green-500">
+            {appliedCount} aanpassing{appliedCount !== 1 ? "en" : ""} succesvol verwerkt.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <Badge variant="outline" className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-300">
+            <Replace className="h-3 w-3 mr-1" />
+            Vervangen
+          </Badge>
+          <Badge variant="outline" className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300">
+            <Plus className="h-3 w-3 mr-1" />
+            Toegevoegd
+          </Badge>
+          <Badge variant="outline" className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300">
+            <Trash2 className="h-3 w-3 mr-1" />
+            Verwijderd
+          </Badge>
+        </div>
+      </div>
+
+      <ScrollArea className="flex-1">
+        <div className="p-4">
+          {/* Full report with diff highlighting */}
+          <div className="border rounded-lg p-4 bg-white dark:bg-gray-950">
+            {renderDiffContent()}
+          </div>
+
+          {/* Developer Tools */}
+          <div className="mt-4 space-y-2">
+            <DevToolsPanel
+              debugInfo={applyDebugInfo}
+              title="Toepassen (Editor)"
+            />
+            <DevToolsPanel
+              debugInfo={analyzeDebugInfo}
+              title="Analyse (Rapport Aanpassen)"
+            />
+          </div>
+        </div>
+      </ScrollArea>
+
+      <div className="border-t p-4 flex justify-end gap-3">
+        <Button onClick={onClose}>
+          Sluiten
+        </Button>
+        <Button variant="outline" onClick={onNewAdjustment}>
+          <Sparkles className="h-4 w-4 mr-2" />
+          Nieuwe Aanpassing
+        </Button>
+      </div>
+    </div>
+  );
+});
 
 // Developer Tools Panel for debugging prompts
 const DevToolsPanel = memo(function DevToolsPanel({
@@ -106,23 +291,31 @@ const DevToolsPanel = memo(function DevToolsPanel({
             <>
               {/* AI Config Summary */}
               <div className="flex flex-wrap gap-2">
-                <Badge variant="outline" className="text-xs">
-                  Stage: {debugInfo.stage}
-                </Badge>
-                <Badge variant="outline" className="text-xs">
-                  Provider: {debugInfo.aiConfig.provider}
-                </Badge>
-                <Badge variant="outline" className="text-xs">
-                  Model: {debugInfo.aiConfig.model}
-                </Badge>
-                {debugInfo.aiConfig.temperature !== undefined && (
+                {debugInfo.stage && (
+                  <Badge variant="outline" className="text-xs">
+                    Stage: {debugInfo.stage}
+                  </Badge>
+                )}
+                {debugInfo.aiConfig?.provider && (
+                  <Badge variant="outline" className="text-xs">
+                    Provider: {debugInfo.aiConfig.provider}
+                  </Badge>
+                )}
+                {debugInfo.aiConfig?.model && (
+                  <Badge variant="outline" className="text-xs">
+                    Model: {debugInfo.aiConfig.model}
+                  </Badge>
+                )}
+                {debugInfo.aiConfig?.temperature !== undefined && (
                   <Badge variant="outline" className="text-xs">
                     Temp: {debugInfo.aiConfig.temperature}
                   </Badge>
                 )}
-                <Badge variant="outline" className="text-xs">
-                  Prompt: {debugInfo.promptLength.toLocaleString()} chars
-                </Badge>
+                {debugInfo.promptLength !== undefined && (
+                  <Badge variant="outline" className="text-xs">
+                    Prompt: {debugInfo.promptLength.toLocaleString()} chars
+                  </Badge>
+                )}
               </div>
 
               {/* Parse Error Alert */}
@@ -146,6 +339,7 @@ const DevToolsPanel = memo(function DevToolsPanel({
               )}
 
               {/* Prompt content */}
+              {debugInfo.promptUsed && (
               <div className="border border-blue-500/30 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 overflow-hidden">
                 <button
                   onClick={() => setIsPromptExpanded(!isPromptExpanded)}
@@ -156,9 +350,11 @@ const DevToolsPanel = memo(function DevToolsPanel({
                     Raw LLM Input
                   </span>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs bg-white dark:bg-background">
-                      {debugInfo.promptLength.toLocaleString()} chars
-                    </Badge>
+                    {debugInfo.promptLength !== undefined && (
+                      <Badge variant="outline" className="text-xs bg-white dark:bg-background">
+                        {debugInfo.promptLength.toLocaleString()} chars
+                      </Badge>
+                    )}
                     {isPromptExpanded ? (
                       <ChevronDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                     ) : (
@@ -194,6 +390,7 @@ const DevToolsPanel = memo(function DevToolsPanel({
                   </div>
                 )}
               </div>
+              )}
             </>
           )}
         </div>
@@ -214,7 +411,9 @@ const AdjustmentCard = memo(function AdjustmentCard({
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedNieuw, setEditedNieuw] = useState(adjustment.nieuw);
+  const [editedNieuw, setEditedNieuw] = useState(adjustment.nieuw || "");
+
+  const adjType = adjustment.type || "replace";
 
   const handleAccept = () => {
     onStatusChange(adjustment.id, "accepted");
@@ -226,7 +425,7 @@ const AdjustmentCard = memo(function AdjustmentCard({
 
   const handleEdit = () => {
     setIsEditing(true);
-    setEditedNieuw(adjustment.modifiedNieuw || adjustment.nieuw);
+    setEditedNieuw(adjustment.modifiedNieuw || adjustment.nieuw || "");
   };
 
   const handleSaveEdit = () => {
@@ -236,7 +435,7 @@ const AdjustmentCard = memo(function AdjustmentCard({
 
   const handleCancelEdit = () => {
     setIsEditing(false);
-    setEditedNieuw(adjustment.nieuw);
+    setEditedNieuw(adjustment.nieuw || "");
   };
 
   const getStatusColor = () => {
@@ -257,12 +456,36 @@ const AdjustmentCard = memo(function AdjustmentCard({
     }
   };
 
+  const getTypeBadge = () => {
+    switch (adjType) {
+      case "insert": return (
+        <Badge className="bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/30">
+          <Plus className="h-3 w-3 mr-1" />
+          Toevoegen
+        </Badge>
+      );
+      case "delete": return (
+        <Badge className="bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/30">
+          <Trash2 className="h-3 w-3 mr-1" />
+          Verwijderen
+        </Badge>
+      );
+      default: return (
+        <Badge className="bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30">
+          <Replace className="h-3 w-3 mr-1" />
+          Vervangen
+        </Badge>
+      );
+    }
+  };
+
   return (
     <div className={`border rounded-lg p-4 transition-colors ${getStatusColor()}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-3">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
           <span className="font-mono text-sm text-muted-foreground">#{index + 1}</span>
+          {getTypeBadge()}
           <span className="font-medium truncate">{adjustment.context}</span>
           {getStatusBadge()}
         </div>
@@ -282,31 +505,69 @@ const AdjustmentCard = memo(function AdjustmentCard({
             {adjustment.reden}
           </p>
 
-          {/* Old vs New comparison */}
-          <div className="grid md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="text-xs text-red-600 dark:text-red-400 uppercase tracking-wide font-medium">Oud</label>
-              <div className="mt-1 p-3 bg-red-500/5 border border-red-500/20 rounded text-sm font-mono whitespace-pre-wrap">
+          {/* Content display based on type */}
+          {adjType === "replace" && (
+            <div className="grid md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="text-xs text-red-600 dark:text-red-400 uppercase tracking-wide font-medium">Oud</label>
+                <div className="mt-1 p-3 bg-red-500/5 border border-red-500/20 rounded text-sm font-mono whitespace-pre-wrap">
+                  {adjustment.oud}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-green-600 dark:text-green-400 uppercase tracking-wide font-medium">Nieuw</label>
+                {isEditing ? (
+                  <Textarea
+                    value={editedNieuw}
+                    onChange={(e) => setEditedNieuw(e.target.value)}
+                    className="mt-1 font-mono text-sm min-h-[100px]"
+                  />
+                ) : (
+                  <div className="mt-1 p-3 bg-green-500/5 border border-green-500/20 rounded text-sm font-mono whitespace-pre-wrap">
+                    {adjustment.status === "modified" && adjustment.modifiedNieuw
+                      ? adjustment.modifiedNieuw
+                      : adjustment.nieuw}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {adjType === "insert" && (
+            <div className="space-y-4 mb-4">
+              <div>
+                <label className="text-xs text-purple-600 dark:text-purple-400 uppercase tracking-wide font-medium">Invoegen na</label>
+                <div className="mt-1 p-3 bg-purple-500/5 border border-purple-500/20 rounded text-sm font-mono whitespace-pre-wrap">
+                  {adjustment.anker || "(geen anker)"}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-green-600 dark:text-green-400 uppercase tracking-wide font-medium">Toe te voegen tekst</label>
+                {isEditing ? (
+                  <Textarea
+                    value={editedNieuw}
+                    onChange={(e) => setEditedNieuw(e.target.value)}
+                    className="mt-1 font-mono text-sm min-h-[100px]"
+                  />
+                ) : (
+                  <div className="mt-1 p-3 bg-green-500/5 border border-green-500/20 rounded text-sm font-mono whitespace-pre-wrap">
+                    {adjustment.status === "modified" && adjustment.modifiedNieuw
+                      ? adjustment.modifiedNieuw
+                      : adjustment.nieuw}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {adjType === "delete" && (
+            <div className="mb-4">
+              <label className="text-xs text-red-600 dark:text-red-400 uppercase tracking-wide font-medium">Te verwijderen tekst</label>
+              <div className="mt-1 p-3 bg-red-500/5 border border-red-500/20 rounded text-sm font-mono whitespace-pre-wrap line-through">
                 {adjustment.oud}
               </div>
             </div>
-            <div>
-              <label className="text-xs text-green-600 dark:text-green-400 uppercase tracking-wide font-medium">Nieuw</label>
-              {isEditing ? (
-                <Textarea
-                  value={editedNieuw}
-                  onChange={(e) => setEditedNieuw(e.target.value)}
-                  className="mt-1 font-mono text-sm min-h-[100px]"
-                />
-              ) : (
-                <div className="mt-1 p-3 bg-green-500/5 border border-green-500/20 rounded text-sm font-mono whitespace-pre-wrap">
-                  {adjustment.status === "modified" && adjustment.modifiedNieuw
-                    ? adjustment.modifiedNieuw
-                    : adjustment.nieuw}
-                </div>
-              )}
-            </div>
-          </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center gap-2">
@@ -331,14 +592,16 @@ const AdjustmentCard = memo(function AdjustmentCard({
                   <CheckCircle2 className="h-3 w-3 mr-1" />
                   Accepteer
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleEdit}
-                >
-                  <Edit3 className="h-3 w-3 mr-1" />
-                  Bewerk
-                </Button>
+                {adjType !== "delete" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleEdit}
+                  >
+                    <Edit3 className="h-3 w-3 mr-1" />
+                    Bewerk
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant={adjustment.status === "rejected" ? "destructive" : "outline"}
@@ -362,9 +625,12 @@ export const ReportAdjustmentDialog = memo(function ReportAdjustmentDialog({
   onOpenChange,
   onAdjustmentApplied,
 }: ReportAdjustmentDialogProps) {
+  const [applyMode, setApplyMode] = useState<"direct" | "ai">("direct");
+
   const {
     stage,
     instruction,
+    proposal,
     proposedAdjustments,
     resultContent,
     appliedCount,
@@ -557,16 +823,34 @@ export const ReportAdjustmentDialog = memo(function ReportAdjustmentDialog({
                     {acceptedCount} van {proposedAdjustments.length} aanpassingen geselecteerd
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Klik op "Toepassen" om de geselecteerde aanpassingen te verwerken.
+                    {applyMode === "direct" ? "Instant find/replace" : "Via AI Editor (langzamer, voor complexe wijzigingen)"}
                   </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex items-center gap-3">
                   <Button variant="outline" onClick={goBackToInput}>
                     <X className="h-4 w-4 mr-2" />
                     Terug
                   </Button>
+
+                  {/* Mode Toggle */}
+                  <ToggleGroup
+                    type="single"
+                    value={applyMode}
+                    onValueChange={(value) => value && setApplyMode(value as "direct" | "ai")}
+                    className="border rounded-md"
+                  >
+                    <ToggleGroupItem value="direct" aria-label="Direct mode" className="px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                      <Zap className="h-4 w-4 mr-1" />
+                      Direct
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="ai" aria-label="AI mode" className="px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                      <Sparkles className="h-4 w-4 mr-1" />
+                      AI
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+
                   <Button
-                    onClick={applyAdjustments}
+                    onClick={() => applyAdjustments(applyMode)}
                     disabled={isApplying || acceptedCount === 0}
                   >
                     {isApplying ? (
@@ -602,55 +886,16 @@ export const ReportAdjustmentDialog = memo(function ReportAdjustmentDialog({
 
         {/* Stage: Complete */}
         {stage === "complete" && (
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <div className="flex items-center gap-4 p-4 bg-green-500/10 border-b border-green-500/20">
-              <CheckCircle2 className="h-8 w-8 text-green-500" />
-              <div>
-                <h3 className="font-semibold text-green-700 dark:text-green-400">
-                  Aanpassingen Toegepast
-                </h3>
-                <p className="text-sm text-green-600 dark:text-green-500">
-                  {appliedCount} aanpassing{appliedCount !== 1 ? "en" : ""} succesvol verwerkt.
-                  Het rapport is bijgewerkt - sluit dit venster om de nieuwe versie te zien.
-                </p>
-              </div>
-            </div>
-
-            <ScrollArea className="flex-1 p-4">
-              {/* Result Content Preview */}
-              {resultContent && (
-                <div className="mb-4">
-                  <h4 className="text-sm font-medium mb-2">Aangepast Rapport (preview):</h4>
-                  <div className="border rounded-lg p-4 bg-muted/30 max-h-[300px] overflow-auto">
-                    <pre className="whitespace-pre-wrap text-sm font-mono">
-                      {resultContent.substring(0, 3000)}
-                      {resultContent.length > 3000 && "..."}
-                    </pre>
-                  </div>
-                </div>
-              )}
-
-              {/* Developer Tools */}
-              <DevToolsPanel
-                debugInfo={applyDebugInfo}
-                title="Toepassen (Editor)"
-              />
-              <DevToolsPanel
-                debugInfo={analyzeDebugInfo}
-                title="Analyse (Rapport Aanpassen)"
-              />
-            </ScrollArea>
-
-            <div className="border-t p-4 flex justify-end gap-3">
-              <Button onClick={() => handleOpenChange(false)}>
-                Sluiten
-              </Button>
-              <Button variant="outline" onClick={goBackToInput}>
-                <Sparkles className="h-4 w-4 mr-2" />
-                Nieuwe Aanpassing
-              </Button>
-            </div>
-          </div>
+          <DiffResultView
+            previousContent={proposal?.previousContent || ""}
+            newContent={resultContent || ""}
+            appliedCount={appliedCount}
+            appliedAdjustments={proposedAdjustments.filter(adj => adj.status === "accepted" || adj.status === "modified")}
+            analyzeDebugInfo={analyzeDebugInfo}
+            applyDebugInfo={applyDebugInfo}
+            onClose={() => handleOpenChange(false)}
+            onNewAdjustment={goBackToInput}
+          />
         )}
       </DialogContent>
     </Dialog>

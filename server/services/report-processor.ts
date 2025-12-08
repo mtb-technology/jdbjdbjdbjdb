@@ -615,6 +615,7 @@ ${feedback}
    * This was the missing piece that prevented step-back functionality!
    */
   private setStageSnapshot(versions: ConceptReportVersions, stageId: StageId, snapshot: ConceptReportSnapshot): void {
+    // Known workflow stages
     switch (stageId) {
       case '3_generatie': versions['3_generatie'] = snapshot; break;
       case '4a_BronnenSpecialist': versions['4a_BronnenSpecialist'] = snapshot; break;
@@ -623,9 +624,11 @@ ${feedback}
       case '4e_DeAdvocaat': versions['4e_DeAdvocaat'] = snapshot; break;
       case '4f_HoofdCommunicatie': versions['4f_HoofdCommunicatie'] = snapshot; break;
       default:
-        console.warn(`⚠️ [ReportProcessor] Cannot set snapshot for unknown stage: ${stageId}`);
+        // Dynamic stages (like adjustment_1, adjustment_2, etc.) - store directly
+        (versions as Record<string, any>)[stageId] = snapshot;
+        console.log(`📦 [ReportProcessor] Stored dynamic stage snapshot for: ${stageId}`);
     }
-    
+
     console.log(`💾 [ReportProcessor] Persisted snapshot v${snapshot.v} for stage ${stageId}`);
   }
 }
