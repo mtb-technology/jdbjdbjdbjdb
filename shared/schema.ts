@@ -922,6 +922,30 @@ export interface Box3Attachment {
   fileData: string; // base64 encoded
 }
 
+// Type voor handmatige overrides per categorie
+export interface Box3ManualOverride {
+  status?: "nvt" | "compleet"; // Override de AI status
+  value?: number; // Handmatig ingevoerde waarde (bijv. bankrente)
+  note?: string; // Notitie/reden voor override
+  updatedAt?: string; // Wanneer aangepast
+}
+
+export interface Box3ManualOverrides {
+  aangifte_ib?: Box3ManualOverride;
+  bankrekeningen?: Box3ManualOverride;
+  beleggingen?: Box3ManualOverride;
+  vastgoed?: Box3ManualOverride;
+  schulden?: Box3ManualOverride;
+  // Extra handmatige waarden voor berekening
+  extraValues?: {
+    bank_rente_ontvangen?: number;
+    beleggingen_waarde_1jan?: number;
+    beleggingen_waarde_31dec?: number;
+    beleggingen_dividend?: number;
+    schulden_rente_betaald?: number;
+  };
+}
+
 export const box3ValidatorSessions = pgTable("box3_validator_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientName: text("client_name").notNull(),
@@ -931,6 +955,9 @@ export const box3ValidatorSessions = pgTable("box3_validator_sessions", {
   attachments: jsonb("attachments").$type<Box3Attachment[]>(), // Volledige bijlages met data
   validationResult: jsonb("validation_result").$type<Box3ValidationResult>(), // AI validatie output
   conceptMail: jsonb("concept_mail").$type<{ onderwerp: string; body: string }>(), // Concept reactie
+  manualOverrides: jsonb("manual_overrides").$type<Box3ManualOverrides>(), // Handmatige correcties
+  dossierStatus: text("dossier_status").default("in_behandeling"), // "in_behandeling" | "wacht_op_klant" | "compleet" | "afgewezen"
+  notes: text("notes"), // Algemene notities bij dossier
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
@@ -1047,6 +1074,29 @@ export const box3AttachmentSchema = z.object({
   fileData: z.string(), // base64
 });
 
+// Zod schema for manual overrides
+export const box3ManualOverrideSchema = z.object({
+  status: z.enum(["nvt", "compleet"]).optional(),
+  value: z.number().optional(),
+  note: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export const box3ManualOverridesSchema = z.object({
+  aangifte_ib: box3ManualOverrideSchema.optional(),
+  bankrekeningen: box3ManualOverrideSchema.optional(),
+  beleggingen: box3ManualOverrideSchema.optional(),
+  vastgoed: box3ManualOverrideSchema.optional(),
+  schulden: box3ManualOverrideSchema.optional(),
+  extraValues: z.object({
+    bank_rente_ontvangen: z.number().optional(),
+    beleggingen_waarde_1jan: z.number().optional(),
+    beleggingen_waarde_31dec: z.number().optional(),
+    beleggingen_dividend: z.number().optional(),
+    schulden_rente_betaald: z.number().optional(),
+  }).optional(),
+});
+
 export const insertBox3ValidatorSessionSchema = createInsertSchema(box3ValidatorSessions, {
   clientName: z.string().min(1, "Klantnaam is verplicht"),
   inputText: z.string().min(1, "Input tekst is verplicht"),
@@ -1057,6 +1107,9 @@ export const insertBox3ValidatorSessionSchema = createInsertSchema(box3Validator
     onderwerp: z.string(),
     body: z.string()
   }).nullable().optional(),
+  manualOverrides: box3ManualOverridesSchema.nullable().optional(),
+  dossierStatus: z.string().optional(),
+  notes: z.string().nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
 // ===== EXTERNAL REPORT SESSIONS =====

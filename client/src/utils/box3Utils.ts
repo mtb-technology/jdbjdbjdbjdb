@@ -4,7 +4,7 @@
  * Pure utility functions extracted from box3-validator.tsx
  */
 
-import type { Box3ValidationResult } from "@shared/schema";
+import type { Box3ValidationResult, Box3ManualOverrides } from "@shared/schema";
 import type { RendementBerekening } from "@/types/box3Validator.types";
 import {
   FORFAITAIRE_RENDEMENTEN,
@@ -71,6 +71,49 @@ export const getDocumentStatus = (
 };
 
 /**
+ * Get effective document status considering manual overrides
+ * Manual overrides take precedence over AI-detected status
+ */
+export const getEffectiveDocumentStatus = (
+  result: Box3ValidationResult,
+  categoryKey: string,
+  manualOverrides?: Box3ManualOverrides | null
+): string => {
+  // Check for manual override first
+  const override = manualOverrides?.[categoryKey as keyof Omit<Box3ManualOverrides, 'extraValues'>];
+  if (override?.status) {
+    return override.status;
+  }
+
+  // Fall back to AI-detected status
+  return getDocumentStatus(result, categoryKey);
+};
+
+/**
+ * Check if a category has a manual override
+ */
+export const hasManualOverride = (
+  categoryKey: string,
+  manualOverrides?: Box3ManualOverrides | null
+): boolean => {
+  if (!manualOverrides) return false;
+  const override = manualOverrides[categoryKey as keyof Omit<Box3ManualOverrides, 'extraValues'>];
+  return override?.status !== undefined || override?.value !== undefined;
+};
+
+/**
+ * Get manual override note for a category
+ */
+export const getOverrideNote = (
+  categoryKey: string,
+  manualOverrides?: Box3ManualOverrides | null
+): string | null => {
+  if (!manualOverrides) return null;
+  const override = manualOverrides[categoryKey as keyof Omit<Box3ManualOverrides, 'extraValues'>];
+  return override?.note || null;
+};
+
+/**
  * Get document feedback from legacy format
  */
 export const getDocumentFeedback = (
@@ -104,22 +147,26 @@ export const getDocumentGevondenIn = (
 
 /**
  * Calculate kansrijkheid (profitability) based on validation result
+ * Now supports manual overrides for values
  */
 export const berekenKansrijkheid = (
   result: Box3ValidationResult,
-  belastingjaar: string | null | undefined
+  belastingjaar: string | null | undefined,
+  manualOverrides?: Box3ManualOverrides | null
 ): RendementBerekening => {
   const tarief = getBox3Tarief(belastingjaar);
   const data = result.gevonden_data?.werkelijk_rendement_input;
   const fiscus = result.gevonden_data?.fiscus_box3;
+  const extraValues = manualOverrides?.extraValues;
 
+  // Use manual override values if available, otherwise fall back to AI-extracted values
   const berekening: RendementBerekening = {
-    bankRente: data?.bank_rente_ontvangen ?? null,
-    beleggingenBegin: data?.beleggingen_waarde_1jan ?? null,
-    beleggingenEind: data?.beleggingen_waarde_31dec ?? null,
-    beleggingenDividend: data?.beleggingen_dividend ?? null,
+    bankRente: extraValues?.bank_rente_ontvangen ?? data?.bank_rente_ontvangen ?? null,
+    beleggingenBegin: extraValues?.beleggingen_waarde_1jan ?? data?.beleggingen_waarde_1jan ?? null,
+    beleggingenEind: extraValues?.beleggingen_waarde_31dec ?? data?.beleggingen_waarde_31dec ?? null,
+    beleggingenDividend: extraValues?.beleggingen_dividend ?? data?.beleggingen_dividend ?? null,
     beleggingenMutatiesGevonden: data?.beleggingen_mutaties_gevonden ?? false,
-    schuldenRente: data?.schulden_rente_betaald ?? null,
+    schuldenRente: extraValues?.schulden_rente_betaald ?? data?.schulden_rente_betaald ?? null,
     forfaitairRendement: null, // Must come from aangifte
     belastbaarInkomen: fiscus?.belastbaar_inkomen_na_drempel ?? null,
     werkelijkRendement: null,

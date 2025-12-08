@@ -38,22 +38,24 @@ export const ConceptMailEditor = memo(function ConceptMailEditor({
     editedConceptMail?.body || stripHtmlToPlainText(mailData?.body || "");
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-slate-50/50">
+      <CardHeader className="pb-4 border-b border-slate-100">
         <CardTitle className="flex items-center justify-between">
-          <span className="flex items-center">
-            <Mail className="h-5 w-5 mr-2 text-primary" />
-            Concept Reactie Mail
+          <span className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <Mail className="h-5 w-5 text-primary" />
+            </div>
+            <span className="text-lg font-semibold text-slate-800">Concept Reactie Mail</span>
           </span>
-          <Button onClick={onCopyMail} variant="outline" size="sm">
-            <Copy className="h-4 w-4 mr-2" />
+          <Button onClick={onCopyMail} variant="outline" size="sm" className="gap-2 hover:bg-primary hover:text-white hover:border-primary transition-colors">
+            <Copy className="h-4 w-4" />
             Kopieer
           </Button>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <Label>Onderwerp</Label>
+      <CardContent className="space-y-5 pt-5">
+        <div className="space-y-2">
+          <Label className="text-sm font-medium text-slate-600">Onderwerp</Label>
           <Input
             value={currentOnderwerp}
             onChange={(e) =>
@@ -62,11 +64,11 @@ export const ConceptMailEditor = memo(function ConceptMailEditor({
                 body: currentBody,
               })
             }
-            className="mt-1"
+            className="bg-white border-slate-200 focus:border-primary focus:ring-primary/20"
           />
         </div>
-        <div>
-          <Label>Bericht</Label>
+        <div className="space-y-2">
+          <Label className="text-sm font-medium text-slate-600">Bericht</Label>
           <Textarea
             value={currentBody}
             onChange={(e) =>
@@ -75,7 +77,7 @@ export const ConceptMailEditor = memo(function ConceptMailEditor({
                 body: e.target.value,
               })
             }
-            className="mt-1 min-h-64 font-mono text-sm"
+            className="min-h-80 bg-white border-slate-200 focus:border-primary focus:ring-primary/20 text-sm leading-relaxed resize-y"
           />
         </div>
       </CardContent>

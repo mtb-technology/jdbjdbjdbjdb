@@ -385,6 +385,253 @@ box3ValidatorRouter.patch(
 );
 
 /**
+ * Update manual overrides for a session
+ * PATCH /api/box3-validator/sessions/:id/overrides
+ */
+box3ValidatorRouter.patch(
+  "/sessions/:id/overrides",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { overrides } = req.body;
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      throw ServerError.notFound("Sessie");
+    }
+
+    // Merge existing overrides with new ones
+    const existingOverrides = (session.manualOverrides || {}) as Record<string, unknown>;
+    const mergedOverrides = { ...existingOverrides, ...overrides };
+
+    const updated = await storage.updateBox3ValidatorSession(id, {
+      manualOverrides: mergedOverrides
+    });
+
+    console.log(`📋 [Box3Validator] Updated overrides for session ${id}`);
+    res.json(createApiSuccessResponse(updated, "Overrides bijgewerkt"));
+  })
+);
+
+/**
+ * Update dossier status and notes
+ * PATCH /api/box3-validator/sessions/:id/status
+ */
+box3ValidatorRouter.patch(
+  "/sessions/:id/status",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { dossierStatus, notes } = req.body;
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      throw ServerError.notFound("Sessie");
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (dossierStatus !== undefined) updateData.dossierStatus = dossierStatus;
+    if (notes !== undefined) updateData.notes = notes;
+
+    const updated = await storage.updateBox3ValidatorSession(id, updateData);
+
+    console.log(`📋 [Box3Validator] Updated status for session ${id}: ${dossierStatus}`);
+    res.json(createApiSuccessResponse(updated, "Status bijgewerkt"));
+  })
+);
+
+/**
+ * Add documents to existing session and re-validate
+ * POST /api/box3-validator/sessions/:id/add-documents
+ */
+box3ValidatorRouter.post(
+  "/sessions/:id/add-documents",
+  (req: Request, res: Response, next: NextFunction) => {
+    upload.array('files', 10)(req, res, (err: any) => {
+      if (err) {
+        return res.status(400).json(createApiErrorResponse(
+          'VALIDATION_ERROR',
+          ERROR_CODES.VALIDATION_FAILED,
+          err.message || 'Bestand upload mislukt',
+          err.message
+        ));
+      }
+      next();
+    });
+  },
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { additionalText, systemPrompt } = req.body;
+
+    const session = await storage.getBox3ValidatorSession(id);
+    if (!session) {
+      throw ServerError.notFound("Sessie");
+    }
+
+    const newFiles = req.files as Express.Multer.File[] || [];
+    if (newFiles.length === 0 && !additionalText) {
+      throw ServerError.validation("No new data", "Geen nieuwe documenten of tekst toegevoegd");
+    }
+
+    // Get existing attachments
+    const existingAttachments = (session.attachments || []) as { filename: string; mimeType: string; fileSize: number; fileData: string }[];
+    const existingNames = (session.attachmentNames || []) as string[];
+
+    // Process new files and add to existing
+    const newAttachments: { filename: string; mimeType: string; fileSize: number; fileData: string }[] = [];
+    const newNames: string[] = [];
+
+    for (const file of newFiles) {
+      newAttachments.push({
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        fileData: file.buffer.toString('base64')
+      });
+      newNames.push(file.originalname);
+    }
+
+    // Combine all attachments
+    const allAttachments = [...existingAttachments, ...newAttachments];
+    const allNames = [...existingNames, ...newNames];
+
+    // Combine input text if additional text provided
+    const combinedInputText = additionalText
+      ? `${session.inputText}\n\n--- Aanvullende informatie ---\n${additionalText}`
+      : session.inputText;
+
+    console.log(`📋 [Box3Validator] Adding ${newFiles.length} documents to session ${id}. Total: ${allAttachments.length}`);
+
+    // Now re-validate with all documents
+    const attachmentTexts: string[] = [];
+    const visionAttachments: { mimeType: string; data: string; filename: string }[] = [];
+
+    for (const attachment of allAttachments) {
+      const ext = attachment.filename.toLowerCase().split('.').pop();
+      const isPDF = attachment.mimeType === 'application/pdf' ||
+                    (attachment.mimeType === 'application/octet-stream' && ext === 'pdf');
+      const isTXT = attachment.mimeType === 'text/plain' ||
+                    (attachment.mimeType === 'application/octet-stream' && ext === 'txt');
+      const isImage = attachment.mimeType === 'image/jpeg' || attachment.mimeType === 'image/png' ||
+                      (attachment.mimeType === 'application/octet-stream' && ['jpg', 'jpeg', 'png'].includes(ext || ''));
+
+      let extractedText = "";
+      let needsVision = false;
+
+      if (isImage) {
+        const mimeType = attachment.mimeType.startsWith('image/') ? attachment.mimeType :
+                         (ext === 'png' ? 'image/png' : 'image/jpeg');
+        visionAttachments.push({
+          mimeType,
+          data: attachment.fileData,
+          filename: attachment.filename
+        });
+      } else if (isPDF) {
+        try {
+          const PDFParseClass = await getPdfParse();
+          const buffer = Buffer.from(attachment.fileData, 'base64');
+          const parser = new PDFParseClass({ data: buffer });
+          const result = await parser.getText();
+          const pages = Array.isArray(result.pages) ? result.pages.length :
+                       (typeof result.pages === 'object' ? Object.keys(result.pages).length : 1);
+          extractedText = result.text || "";
+
+          const charsPerPage = extractedText.length / Math.max(pages, 1);
+          if (charsPerPage < 100 && pages > 0) {
+            needsVision = true;
+          }
+        } catch (err: any) {
+          needsVision = true;
+        }
+
+        if (needsVision || extractedText.length < 100) {
+          visionAttachments.push({
+            mimeType: 'application/pdf',
+            data: attachment.fileData,
+            filename: attachment.filename
+          });
+        }
+      } else if (isTXT) {
+        const buffer = Buffer.from(attachment.fileData, 'base64');
+        extractedText = buffer.toString('utf-8');
+      }
+
+      if (extractedText.trim().length > 0) {
+        attachmentTexts.push(`\n=== DOCUMENT: ${attachment.filename} ===\n${extractedText}`);
+      }
+    }
+
+    // Build prompt and call AI
+    const userPrompt = `## Mail van klant:
+${combinedInputText}
+
+## Bijlages (${allNames.length} documenten):
+${attachmentTexts.length > 0 ? attachmentTexts.join('\n\n') : 'Geen tekst-extractie beschikbaar - documenten worden via vision geanalyseerd.'}
+
+Analyseer alle bovenstaande input en geef je validatie als JSON.`;
+
+    const activeConfig = await storage.getActivePromptConfig();
+    const promptConfig = activeConfig?.config as PromptConfig;
+
+    const aiConfig = configResolver.resolveForOperation(
+      'box3_validator',
+      promptConfig,
+      `box3-add-docs-${Date.now()}`
+    );
+
+    const factory = AIModelFactory.getInstance();
+    const result = await factory.callModel(
+      aiConfig,
+      `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
+      {
+        jobId: `box3-add-docs-${Date.now()}`,
+        visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
+      }
+    );
+
+    // Parse JSON response
+    let validationResult;
+    try {
+      let jsonText = result.content.match(/```json\s*([\s\S]*?)\s*```/)?.[1];
+      if (!jsonText) {
+        jsonText = result.content.match(/\{[\s\S]*\}/)?.[0];
+      }
+      if (!jsonText && result.content.trim().startsWith('{')) {
+        jsonText = result.content.trim();
+      }
+
+      if (!jsonText) {
+        throw new Error('No JSON found in AI response');
+      }
+
+      const parsed = JSON.parse(jsonText);
+      validationResult = box3ValidationResultSchema.parse(parsed);
+    } catch (parseError: any) {
+      throw ServerError.ai(
+        'Kon AI response niet parsen. Probeer opnieuw.',
+        { error: parseError.message }
+      );
+    }
+
+    // Update session with combined data
+    const updatedSession = await storage.updateBox3ValidatorSession(id, {
+      inputText: combinedInputText,
+      attachmentNames: allNames,
+      attachments: allAttachments,
+      belastingjaar: validationResult.belastingjaar || session.belastingjaar,
+      validationResult,
+      conceptMail: validationResult.concept_mail || validationResult.draft_mail
+    });
+
+    console.log(`📋 [Box3Validator] Session ${id} updated with ${newFiles.length} new documents`);
+
+    res.json(createApiSuccessResponse({
+      session: updatedSession,
+      validationResult,
+      addedDocuments: newNames
+    }, `${newFiles.length} document(en) toegevoegd en opnieuw gevalideerd`));
+  })
+);
+
+/**
  * Delete session
  * DELETE /api/box3-validator/sessions/:id
  */
