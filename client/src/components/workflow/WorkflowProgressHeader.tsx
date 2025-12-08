@@ -9,14 +9,21 @@ import { memo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { motion, useReducedMotion } from "framer-motion";
-import { CheckCircle, Clock, Workflow, RefreshCw, Pencil, Eye } from "lucide-react";
+import { CheckCircle, Clock, Workflow, RefreshCw, Pencil, Eye, Settings, Zap } from "lucide-react";
 import { ExpressModeButton } from "./ExpressModeButton";
 import { ExpressModeResults } from "./ExpressModeResults";
 import { ReportAdjustmentDialog } from "./ReportAdjustmentDialog";
 import { WORKFLOW_STAGES } from "./constants";
 import { countCompletedStages } from "@/utils/workflowUtils";
-import { getLatestConceptText, REVIEW_STAGES } from "@shared/constants";
+import { getLatestConceptText } from "@shared/constants";
 
 interface WorkflowProgressHeaderProps {
   stageResults: Record<string, string>;
@@ -34,6 +41,8 @@ interface WorkflowProgressHeaderProps {
   onAdjustmentApplied?: () => void;
   /** Rolled back changes from database - persists between page loads */
   rolledBackChanges?: Record<string, { rolledBackAt: string }>;
+  /** Whether all review stages (4a-4f) are completed */
+  allReviewStagesCompleted?: boolean;
 }
 
 export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
@@ -50,13 +59,11 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
   onExpressComplete,
   onAdjustmentApplied,
   rolledBackChanges,
+  allReviewStagesCompleted,
 }: WorkflowProgressHeaderProps) {
   const shouldReduceMotion = useReducedMotion();
   const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState(false);
   const [showExpressResults, setShowExpressResults] = useState(false);
-
-  // Check if any review stages have been completed (for "Bekijk Wijzigingen" button)
-  const hasCompletedReviewStages = REVIEW_STAGES.some(stageId => !!stageResults[stageId]);
 
   // Get latest concept content for ExpressModeResults
   const latestConceptContent = getLatestConceptText(conceptReportVersions as any);
@@ -120,22 +127,25 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
                 </motion.div>
               )}
 
-              {/* Reload Prompts Button */}
-              <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
-                <Button
-                  onClick={onReloadPrompts}
-                  disabled={isReloadingPrompts}
-                  variant="outline"
-                  size="sm"
-                  className="text-sm font-medium"
+              {/* Express Mode Badge - show when all review stages are completed */}
+              {allReviewStagesCompleted && (
+                <motion.div
+                  initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.9 }}
+                  animate={shouldReduceMotion ? false : { opacity: 1, scale: 1 }}
+                  className="inline-flex"
                 >
-                  <RefreshCw className={`h-4 w-4 mr-2 ${isReloadingPrompts ? "animate-spin" : ""}`} />
-                  Herlaad Prompts
-                </Button>
-              </motion.div>
+                  <Badge
+                    variant="default"
+                    className="text-sm font-semibold px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white"
+                  >
+                    <Zap className="h-3.5 w-3.5 mr-1.5" />
+                    Express Mode
+                  </Badge>
+                </motion.div>
+              )}
 
-              {/* Express Mode Button - available after stage 2 OR stage 3 */}
-              {reportId && (hasStage2 || hasStage3) && (
+              {/* Express Mode Button - available after stage 2 OR stage 3, but not if all review stages done */}
+              {reportId && (hasStage2 || hasStage3) && !allReviewStagesCompleted && (
                 <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
                   <ExpressModeButton
                     reportId={reportId}
@@ -146,7 +156,7 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
                 </motion.div>
               )}
 
-              {/* Rapport Aanpassen Button */}
+              {/* Rapport Aanpassen Button - only after Stage 3 */}
               {reportId && hasStage3 && (
                 <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
                   <Button
@@ -161,8 +171,8 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
                 </motion.div>
               )}
 
-              {/* Bekijk Wijzigingen Button - shows after review stages completed */}
-              {reportId && hasCompletedReviewStages && (
+              {/* Bekijk Wijzigingen Button - only when all review stages are completed */}
+              {reportId && allReviewStagesCompleted && (
                 <motion.div whileHover={shouldReduceMotion ? {} : { scale: 1.05 }} className="inline-flex">
                   <Button
                     onClick={() => setShowExpressResults(true)}
@@ -175,6 +185,32 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
                   </Button>
                 </motion.div>
               )}
+
+              {/* Settings Menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                    <Settings className="h-4 w-4" />
+                    <span className="sr-only">Instellingen</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem
+                    onClick={onReloadPrompts}
+                    disabled={isReloadingPrompts}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isReloadingPrompts ? "animate-spin" : ""}`} />
+                    Herlaad Prompts
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-muted-foreground text-xs"
+                    disabled
+                  >
+                    Meer opties binnenkort...
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 

@@ -357,14 +357,15 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
 box3ValidatorRouter.get(
   "/sessions",
   asyncHandler(async (req: Request, res: Response) => {
-    const sessions = await storage.getAllBox3ValidatorSessions();
+    // Use light query - excludes large binary data (attachments, validationResult, multiYearData)
+    const sessions = await storage.getAllBox3ValidatorSessionsLight();
 
-    // Return without full validation result to reduce response size
+    // Transform to response format
     const sessionsLight = sessions.map(s => ({
       id: s.id,
       clientName: s.clientName,
       belastingjaar: s.belastingjaar,
-      attachmentCount: (s.attachmentNames as string[] || []).length,
+      attachmentCount: (s.attachmentNames || []).length,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt
     }));

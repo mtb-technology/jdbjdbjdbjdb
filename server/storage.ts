@@ -1,4 +1,16 @@
 import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession, type ExternalReportSession, type InsertExternalReportSession, type ExternalReportAdjustment, type InsertExternalReportAdjustment, type Job, type InsertJob } from "@shared/schema";
+
+// Light version of Box3ValidatorSession for list views (excludes large binary data)
+export type Box3ValidatorSessionLight = {
+  id: string;
+  clientName: string;
+  belastingjaar: string | null;
+  attachmentNames: string[] | null;
+  isMultiYear: boolean | null;
+  dossierStatus: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
 import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions, externalReportSessions, externalReportAdjustments, jobs } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql, inArray } from "drizzle-orm";
@@ -54,6 +66,7 @@ export interface IStorage {
   // Box 3 Validator Sessions
   getBox3ValidatorSession(id: string): Promise<Box3ValidatorSession | undefined>;
   getAllBox3ValidatorSessions(): Promise<Box3ValidatorSession[]>;
+  getAllBox3ValidatorSessionsLight(): Promise<Box3ValidatorSessionLight[]>;
   createBox3ValidatorSession(session: InsertBox3ValidatorSession): Promise<Box3ValidatorSession>;
   updateBox3ValidatorSession(id: string, data: Partial<Box3ValidatorSession>): Promise<Box3ValidatorSession | undefined>;
   deleteBox3ValidatorSession(id: string): Promise<void>;
@@ -78,6 +91,7 @@ export interface IStorage {
   startJob(id: string): Promise<Job | undefined>;
   completeJob(id: string, result: Record<string, any>): Promise<Job | undefined>;
   failJob(id: string, error: string): Promise<Job | undefined>;
+  cancelJob(id: string): Promise<Job | undefined>;
 }
 
 // Flag to track if dossier number migration has been checked
@@ -649,6 +663,20 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(box3ValidatorSessions).orderBy(desc(box3ValidatorSessions.createdAt));
   }
 
+  async getAllBox3ValidatorSessionsLight(): Promise<Box3ValidatorSessionLight[]> {
+    // Only select columns needed for list view - excludes large binary data (attachments, validationResult, etc.)
+    return await db.select({
+      id: box3ValidatorSessions.id,
+      clientName: box3ValidatorSessions.clientName,
+      belastingjaar: box3ValidatorSessions.belastingjaar,
+      attachmentNames: box3ValidatorSessions.attachmentNames,
+      isMultiYear: box3ValidatorSessions.isMultiYear,
+      dossierStatus: box3ValidatorSessions.dossierStatus,
+      createdAt: box3ValidatorSessions.createdAt,
+      updatedAt: box3ValidatorSessions.updatedAt,
+    }).from(box3ValidatorSessions).orderBy(desc(box3ValidatorSessions.createdAt));
+  }
+
   async createBox3ValidatorSession(insertSession: InsertBox3ValidatorSession): Promise<Box3ValidatorSession> {
     const [session] = await db.insert(box3ValidatorSessions).values(insertSession).returning();
     return session;
@@ -795,6 +823,22 @@ export class DatabaseStorage implements IStorage {
       .returning();
     if (updated) {
       console.error(`❌ [Jobs] Failed job ${id}: ${error}`);
+    }
+    return updated || undefined;
+  }
+
+  async cancelJob(id: string): Promise<Job | undefined> {
+    const [updated] = await db
+      .update(jobs)
+      .set({
+        status: 'failed',
+        error: 'Job cancelled by user',
+        completedAt: new Date()
+      })
+      .where(eq(jobs.id, id))
+      .returning();
+    if (updated) {
+      console.log(`🛑 [Jobs] Cancelled job ${id}`);
     }
     return updated || undefined;
   }

@@ -6,8 +6,9 @@
  */
 
 import { useState } from "react";
-import { Loader2, ChevronDown, ChevronUp, CheckCircle, XCircle, Clock } from "lucide-react";
-import { useActiveJobs, useJobPolling, type Job, type JobProgress } from "@/hooks/useJobPolling";
+import { Loader2, ChevronDown, ChevronUp, CheckCircle, XCircle, Clock, StopCircle } from "lucide-react";
+import { useActiveJobs, useJobPolling, useCancelJob, type Job, type JobProgress } from "@/hooks/useJobPolling";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface ActiveJobsBannerProps {
@@ -67,6 +68,9 @@ interface JobProgressCardProps {
 }
 
 function JobProgressCard({ job: initialJob, reportId, onComplete }: JobProgressCardProps) {
+  const [isCancelling, setIsCancelling] = useState(false);
+  const { cancelJob } = useCancelJob();
+
   // Poll for this specific job's progress
   const { job, progress, isPolling } = useJobPolling({
     jobId: initialJob.id,
@@ -82,6 +86,14 @@ function JobProgressCard({ job: initialJob, reportId, onComplete }: JobProgressC
   const jobTypeLabel = currentJob.type === "express_mode" ? "Express Mode" : "Stage Executie";
   const overallPercentage = currentProgress?.percentage || 0;
 
+  const handleCancel = async () => {
+    setIsCancelling(true);
+    await cancelJob(currentJob.id, reportId);
+    setIsCancelling(false);
+  };
+
+  const canCancel = currentJob.status === "queued" || currentJob.status === "processing";
+
   return (
     <div className="bg-white rounded-md border border-blue-100 p-3">
       {/* Job header */}
@@ -90,7 +102,25 @@ function JobProgressCard({ job: initialJob, reportId, onComplete }: JobProgressC
           <span className="text-sm font-medium text-gray-800">{jobTypeLabel}</span>
           <StatusBadge status={currentJob.status} />
         </div>
-        {isPolling && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+        <div className="flex items-center gap-2">
+          {isPolling && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+          {canCancel && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+              disabled={isCancelling}
+              className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+            >
+              {isCancelling ? (
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              ) : (
+                <StopCircle className="h-3 w-3 mr-1" />
+              )}
+              Stop
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Overall progress bar */}

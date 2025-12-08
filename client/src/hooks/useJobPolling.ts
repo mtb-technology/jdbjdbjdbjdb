@@ -231,6 +231,53 @@ export function useAllActiveJobs() {
 }
 
 /**
+ * Cancel a running job
+ */
+export function useCancelJob() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const cancelJob = useCallback(
+    async (jobId: string, reportId?: string): Promise<boolean> => {
+      try {
+        const response = await apiRequest("POST", `/api/jobs/${jobId}/cancel`);
+
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error?.message || "Failed to cancel job");
+        }
+
+        toast({
+          title: "Job geannuleerd",
+          description: "De verwerking is gestopt",
+        });
+
+        // Invalidate queries to refresh UI
+        queryClient.invalidateQueries({ queryKey: ["job", jobId] });
+        if (reportId) {
+          queryClient.invalidateQueries({ queryKey: ["activeJobs", reportId] });
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(reportId) });
+        }
+        queryClient.invalidateQueries({ queryKey: ["allActiveJobs"] });
+
+        return true;
+      } catch (error: any) {
+        console.error("Failed to cancel job:", error);
+        toast({
+          title: "Annuleren mislukt",
+          description: error.message || "De job kon niet worden geannuleerd",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [toast, queryClient]
+  );
+
+  return { cancelJob };
+}
+
+/**
  * Create and start tracking a new job
  */
 export function useCreateJob() {

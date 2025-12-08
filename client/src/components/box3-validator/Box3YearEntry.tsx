@@ -161,6 +161,34 @@ function extractKerncijfersFromBijlage(
     return result;
   }
 
+  // Auto-detect partners from bijlageAnalyse if not already set
+  if (!result.hasPartners) {
+    const partnerIds = new Set<string>();
+    for (const entry of yearEntries) {
+      const partnerId = (entry as any).partner_id as string | undefined;
+      if (partnerId && partnerId !== "gedeeld") {
+        partnerIds.add(partnerId);
+      }
+    }
+    if (partnerIds.size > 0) {
+      result.hasPartners = true;
+      for (const partnerId of partnerIds) {
+        // Try to get name from bijlageAnalyse entries
+        const entryWithName = yearEntries.find(
+          (e) => (e as any).partner_id === partnerId && (e as any).partner_naam
+        );
+        result.partners.push({
+          partnerId,
+          naam: (entryWithName as any)?.partner_naam || partnerId,
+          belastingBedrag: null,
+          belastbaarInkomen: null,
+          totaalBezittingen: null,
+          verdelingPercentage: null,
+        });
+      }
+    }
+  }
+
   // Helper to parse currency from text
   const parseCurrency = (text: string): number | null => {
     const cleaned = text.replace(/[€\s.]/g, "").replace(",", ".");
@@ -225,7 +253,7 @@ function extractKerncijfersFromBijlage(
           else if (typeof val === "string") values.inkomen = parseCurrency(val);
         }
 
-        if (lowerKey.includes("vermogen") || lowerKey.includes("bezitting")) {
+        if (lowerKey.includes("vermogen") || lowerKey.includes("bezitting") || lowerKey.includes("rendementsgrondslag")) {
           if (typeof val === "number") values.vermogen = val;
           else if (typeof val === "string") values.vermogen = parseCurrency(val);
         }

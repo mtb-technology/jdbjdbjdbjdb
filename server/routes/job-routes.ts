@@ -195,6 +195,40 @@ export function registerJobRoutes(app: Express): void {
   }));
 
   /**
+   * POST /api/jobs/:id/cancel
+   * Cancel a queued or processing job
+   */
+  app.post("/api/jobs/:id/cancel", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    console.log(`🛑 [${id}] Cancelling job`);
+
+    const job = await storage.getJob(id);
+    if (!job) {
+      throw ServerError.notFound("Job");
+    }
+
+    // Only allow cancellation of queued or processing jobs
+    if (job.status !== "queued" && job.status !== "processing") {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "JOB_NOT_CANCELLABLE",
+          message: `Job kan niet worden geannuleerd (status: ${job.status})`
+        }
+      });
+    }
+
+    const cancelledJob = await storage.cancelJob(id);
+
+    res.json(createApiSuccessResponse({
+      id: cancelledJob?.id,
+      status: cancelledJob?.status,
+      message: "Job is geannuleerd"
+    }, "Job geannuleerd"));
+  }));
+
+  /**
    * GET /api/jobs/:id
    * Get job status and progress
    */

@@ -125,6 +125,14 @@ class JobProcessor {
   }
 
   /**
+   * Check if a job has been cancelled
+   */
+  private async isJobCancelled(jobId: string): Promise<boolean> {
+    const job = await storage.getJob(jobId);
+    return job?.status === "failed" && (job?.error?.includes("cancelled") ?? false);
+  }
+
+  /**
    * Process a single job
    */
   private async processJob(job: Job): Promise<void> {
@@ -132,6 +140,12 @@ class JobProcessor {
     console.log(`▶️ [JobProcessor] Processing job ${job.id} (type: ${job.type})`);
 
     try {
+      // Check if already cancelled before starting
+      if (await this.isJobCancelled(job.id)) {
+        console.log(`🛑 [JobProcessor] Job ${job.id} was cancelled before processing`);
+        return;
+      }
+
       // Mark job as processing
       await storage.startJob(job.id);
 
@@ -342,6 +356,12 @@ class JobProcessor {
 
     // Process each stage
     for (let i = 0; i < stages.length; i++) {
+      // Check if job was cancelled
+      if (await this.isJobCancelled(job.id)) {
+        console.log(`🛑 [JobProcessor] Job ${job.id} cancelled at stage ${i + 1}/${stages.length}`);
+        return;
+      }
+
       const stageId = stages[i];
       const stageStartTime = Date.now();
 
@@ -371,6 +391,12 @@ class JobProcessor {
             undefined,
             reportId
           );
+
+          // Check if cancelled during AI execution
+          if (await this.isJobCancelled(job.id)) {
+            console.log(`🛑 [JobProcessor] Job ${job.id} cancelled during generation`);
+            return;
+          }
 
           // Update stageResults
           const updatedStageResults = {
@@ -419,6 +445,12 @@ class JobProcessor {
             undefined,
             reportId
           );
+
+          // Check if cancelled during AI execution
+          if (await this.isJobCancelled(job.id)) {
+            console.log(`🛑 [JobProcessor] Job ${job.id} cancelled during feedback generation`);
+            return;
+          }
 
           // Update stageResults with feedback
           const updatedStageResults = {
@@ -490,6 +522,12 @@ class JobProcessor {
               combinedPrompt,
               feedbackJSON
             );
+
+            // Check if cancelled during editor processing
+            if (await this.isJobCancelled(job.id)) {
+              console.log(`🛑 [JobProcessor] Job ${job.id} cancelled during editor processing`);
+              return;
+            }
 
             // Refresh report
             report = await storage.getReport(reportId) || report;

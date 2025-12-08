@@ -48,6 +48,7 @@ import {
   isWorkflowComplete,
 } from "@/utils/workflowUtils";
 import { isInformatieCheckComplete, getStage2BlockReason } from "@/lib/workflowParsers";
+import { REVIEW_STAGES } from "@shared/constants";
 
 // Types
 import type { SimplifiedWorkflowViewProps, ReportDepth } from "./types";
@@ -92,6 +93,9 @@ export const WorkflowView = memo(function WorkflowView({
   const conceptVersions = (state.currentReport?.conceptReportVersions as Record<string, unknown>) || {};
   const hasStage2 = !!state.stageResults["2_complexiteitscheck"];
   const hasStage3 = !!conceptVersions["3_generatie"] || !!conceptVersions["latest"];
+
+  // Detect if all review stages are completed (either via Express Mode or manually)
+  const allReviewStagesCompleted = REVIEW_STAGES.every(key => !!state.stageResults[key]);
 
   // Auto-collapse stage 3 when completed and moved to next stage
   useEffect(() => {
@@ -162,6 +166,7 @@ export const WorkflowView = memo(function WorkflowView({
           onExpressComplete={handleExpressComplete}
           onAdjustmentApplied={handleAdjustmentApplied}
           rolledBackChanges={(state.currentReport?.rolledBackChanges as Record<string, { rolledBackAt: string }>) || undefined}
+          allReviewStagesCompleted={allReviewStagesCompleted}
         />
 
         {/* Active Jobs Banner - shows when background jobs are running */}
