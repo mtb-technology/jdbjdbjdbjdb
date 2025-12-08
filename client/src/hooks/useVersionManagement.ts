@@ -123,11 +123,9 @@ export function useVersionManagement({
   const currentVersion = useMemo(() => {
     const versions = report?.conceptReportVersions as ConceptReportVersions;
     if (!versions?.latest) return versionCheckpoints.length;
-    const latestPointer = versions.latest.pointer;
-    const checkpoint = versionCheckpoints.find(
-      (v) => v.stageKey === latestPointer
-    );
-    return checkpoint?.version || versionCheckpoints.length;
+    // Use latest.v directly instead of searching, since there can be multiple
+    // entries with the same stageKey but different versions
+    return versions.latest.v || versionCheckpoints.length;
   }, [report?.conceptReportVersions, versionCheckpoints]);
 
   const currentContent = useMemo(() => {

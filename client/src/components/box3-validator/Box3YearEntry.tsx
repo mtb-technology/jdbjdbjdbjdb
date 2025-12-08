@@ -116,6 +116,7 @@ function extractKerncijfersFromBijlage(
   };
 
   // Check if we have per-partner data from the validation result
+  // But first, we'll try to enhance with bijlageAnalyse data below
   if (perPartnerData && Object.keys(perPartnerData).length > 0) {
     result.hasPartners = true;
     for (const [partnerId, partnerData] of Object.entries(perPartnerData)) {
@@ -129,7 +130,7 @@ function extractKerncijfersFromBijlage(
         verdelingPercentage: fiscus?.box_3_verdeling_percentage ?? null,
       });
     }
-    return result;
+    // Don't return early - continue to check bijlageAnalyse for better values
   }
 
   // Check if partners are detected but no per_partner data
@@ -197,35 +198,37 @@ function extractKerncijfersFromBijlage(
   };
 
   // Helper to update partner or combined data
+  // isHighPriority=true means this value should override existing values (e.g. from document extraction)
   const updateValues = (
     partnerId: string | undefined,
-    values: { belasting?: number | null; inkomen?: number | null; vermogen?: number | null; verdeling?: number | null }
+    values: { belasting?: number | null; inkomen?: number | null; vermogen?: number | null; verdeling?: number | null },
+    isHighPriority = false
   ) => {
     if (result.hasPartners && partnerId && partnerId !== "gedeeld") {
       const partner = result.partners.find(p => p.partnerId === partnerId);
       if (partner) {
-        if (values.belasting !== undefined && partner.belastingBedrag === null) {
+        if (values.belasting !== undefined && (partner.belastingBedrag === null || isHighPriority)) {
           partner.belastingBedrag = values.belasting;
         }
-        if (values.inkomen !== undefined && partner.belastbaarInkomen === null) {
+        if (values.inkomen !== undefined && (partner.belastbaarInkomen === null || isHighPriority)) {
           partner.belastbaarInkomen = values.inkomen;
         }
-        if (values.vermogen !== undefined && partner.totaalBezittingen === null) {
+        if (values.vermogen !== undefined && (partner.totaalBezittingen === null || isHighPriority)) {
           partner.totaalBezittingen = values.vermogen;
         }
-        if (values.verdeling !== undefined && partner.verdelingPercentage === null) {
+        if (values.verdeling !== undefined && (partner.verdelingPercentage === null || isHighPriority)) {
           partner.verdelingPercentage = values.verdeling;
         }
       }
     } else {
       // Update combined values
-      if (values.belasting !== undefined && result.belastingBedrag === null) {
+      if (values.belasting !== undefined && (result.belastingBedrag === null || isHighPriority)) {
         result.belastingBedrag = values.belasting;
       }
-      if (values.inkomen !== undefined && result.belastbaarInkomen === null) {
+      if (values.inkomen !== undefined && (result.belastbaarInkomen === null || isHighPriority)) {
         result.belastbaarInkomen = values.inkomen;
       }
-      if (values.vermogen !== undefined && result.totaalBezittingen === null) {
+      if (values.vermogen !== undefined && (result.totaalBezittingen === null || isHighPriority)) {
         result.totaalBezittingen = values.vermogen;
       }
     }
@@ -234,10 +237,12 @@ function extractKerncijfersFromBijlage(
   for (const entry of yearEntries) {
     const partnerId = (entry as any).partner_id as string | undefined;
 
-    // Try geextraheerde_waarden first
+    // Try geextraheerde_waarden first - these are extracted directly from documents
+    // and should take priority over per_partner data from the AI summary
     if (entry.geextraheerde_waarden) {
       const vals = entry.geextraheerde_waarden;
       const values: { belasting?: number | null; inkomen?: number | null; vermogen?: number | null; verdeling?: number | null } = {};
+      let hasHighPriorityVermogen = false;
 
       for (const key of Object.keys(vals)) {
         const lowerKey = key.toLowerCase();
@@ -253,9 +258,17 @@ function extractKerncijfersFromBijlage(
           else if (typeof val === "string") values.inkomen = parseCurrency(val);
         }
 
-        if (lowerKey.includes("vermogen") || lowerKey.includes("bezitting") || lowerKey.includes("rendementsgrondslag")) {
+        // "Totaal Bezittingen" is the most accurate source - prioritize it
+        if (lowerKey.includes("totaal") && lowerKey.includes("bezitting")) {
           if (typeof val === "number") values.vermogen = val;
           else if (typeof val === "string") values.vermogen = parseCurrency(val);
+          hasHighPriorityVermogen = true;
+        } else if (lowerKey.includes("vermogen") || lowerKey.includes("bezitting") || lowerKey.includes("rendementsgrondslag")) {
+          // Only use these if we don't have a "totaal bezittingen" value
+          if (!hasHighPriorityVermogen) {
+            if (typeof val === "number") values.vermogen = val;
+            else if (typeof val === "string") values.vermogen = parseCurrency(val);
+          }
         }
 
         if (lowerKey.includes("verdeling") || lowerKey.includes("percentage")) {
@@ -263,7 +276,8 @@ function extractKerncijfersFromBijlage(
         }
       }
 
-      updateValues(partnerId, values);
+      // Values from document extraction should override per_partner data
+      updateValues(partnerId, values, hasHighPriorityVermogen);
     }
 
     // Parse samenvatting for values

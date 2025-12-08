@@ -264,17 +264,11 @@ ${feedback}
 
     const currentVersions = report.conceptReportVersions as ConceptReportVersions || {};
 
-    // FIXED: Check CURRENT stage version first (for re-processing same stage)
-    // If current stage already has a version, increment from that
-    // Otherwise, use the global latest version (for adjustments and new stages)
-    // Fallback to predecessor stage version for normal workflow stages
-    const currentStageVersion = this.getStageVersion(currentVersions, stageId);
+    // ALWAYS use the global latest version as the base for incrementing
+    // This ensures version numbers are always monotonically increasing across the entire report
+    // even when re-running stages that already have a version
     const latestVersion = currentVersions.latest?.v || 0;
-    const predecessorVersion = fromStage ? this.getStageVersion(currentVersions, fromStage) : null;
-
-    // Priority: current stage version > global latest > predecessor > start at 1
-    const previousVersion = currentStageVersion?.v || latestVersion || predecessorVersion?.v || 0;
-    const nextVersion = previousVersion + 1;
+    const nextVersion = latestVersion + 1;
 
     const snapshot: ConceptReportSnapshot = {
       v: nextVersion,
@@ -284,7 +278,7 @@ ${feedback}
       processedFeedback
     };
 
-    console.log(`📸 [ReportProcessor] Created snapshot v${nextVersion} for ${stageId} (from: ${fromStage || 'none'}, currentStageHadV${currentStageVersion?.v || 0})`);
+    console.log(`📸 [ReportProcessor] Created snapshot v${nextVersion} for ${stageId} (from: ${fromStage || 'none'}, latestWasV${latestVersion})`);
     return snapshot;
   }
 
