@@ -142,7 +142,7 @@ export const Box3NewCase = memo(function Box3NewCase({
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".pdf,.txt"
+              accept=".pdf,.txt,.jpg,.jpeg,.png"
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -152,7 +152,7 @@ export const Box3NewCase = memo(function Box3NewCase({
               className="w-full"
             >
               <Upload className="h-4 w-4 mr-2" />
-              Selecteer bestanden (PDF, TXT)
+              Selecteer bestanden (PDF, TXT, JPG, PNG)
             </Button>
 
             {pendingFiles.length > 0 && (
