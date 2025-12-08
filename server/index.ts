@@ -33,18 +33,21 @@ app.use((req, res, next) => {
 
 // ✅ Body size limits: 25mb for JSON, skip for file uploads (multer handles those)
 // File uploads via /api/upload use multipart/form-data which multer parses
+const jsonParser = express.json({ limit: '25mb' });
+const urlencodedParser = express.urlencoded({ extended: false, limit: '25mb' });
+
 app.use((req, res, next) => {
   // Skip body parsing for file upload routes - multer handles multipart/form-data
   if (req.path.startsWith('/api/upload')) {
     return next();
   }
-  express.json({ limit: '25mb' })(req, res, next);
+  jsonParser(req, res, next);
 });
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/upload')) {
     return next();
   }
-  express.urlencoded({ extended: false, limit: '25mb' })(req, res, next);
+  urlencodedParser(req, res, next);
 });
 
 // 🔒 SECURITY: Session middleware for authentication
