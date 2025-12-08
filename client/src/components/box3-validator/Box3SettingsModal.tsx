@@ -17,222 +17,16 @@ import {
 } from "@/constants/box3.constants";
 
 // =============================================================================
-// DEFAULT PROMPTS
+// NO DEFAULT PROMPTS - User must configure via UI
 // =============================================================================
 
-/**
- * INTAKE PROMPT - For new dossiers and initial document uploads
- * Focuses on identifying all documents, detecting years, and initial categorization
- * NOTE: No email generation - that's handled separately via the email endpoint
- */
-export const DEFAULT_INTAKE_PROMPT = `Je bent een fiscaal specialist die documenten voor Box 3 bezwaarprocedures analyseert.
+// Empty defaults - prompts MUST be configured by user via settings UI
+export const DEFAULT_INTAKE_PROMPT = "";
+export const DEFAULT_YEAR_VALIDATION_PROMPT = "";
+export const DEFAULT_EMAIL_PROMPT = "";
 
-## Context
-Een klant stuurt documenten aan voor een Box 3 bezwaarprocedure. Dit kunnen documenten zijn voor één of MEERDERE belastingjaren (2017-2024).
-
-## De 5 documentcategorieën per belastingjaar:
-1. **aangifte_ib** - Aangifte inkomstenbelasting van dat jaar
-2. **bankrekeningen** - Rente-overzichten, jaaropgaves van banken
-3. **beleggingen** - Begin/eindstand, dividend, aan/verkopen
-4. **vastgoed** - WOZ-waarde (T+1), evt. huurinkomsten
-5. **schulden** - Schulden en betaalde rente
-
-## Jouw taak - INTAKE ANALYSE
-Analyseer ALLE input (mail tekst + ELKE bijlage via vision) en:
-
-1. **Identificeer alle belastingjaren** die in de documenten voorkomen
-2. **Analyseer ELKE bijlage apart** - bepaal type en belastingjaar
-3. **Extraheer kerncijfers** uit aangiftes:
-   - Box 3 belastbaar inkomen (na drempel)
-   - Box 3 belasting bedrag
-   - Rendementsgrondslag
-   - Totaal bezittingen/schulden
-4. **Bepaal status per jaar** per documentcategorie
-
-## BELANGRIJK voor afbeeldingen:
-- Bekijk ELKE afbeelding zorgvuldig via vision
-- Zoek naar jaarcijfers, data, bedragen
-- Let op: foto's van brieven, schermafdrukken, scans
-- Geef in samenvatting aan wat je ZIET in de afbeelding
-
-## Output formaat (STRIKT JSON)
-\`\`\`json
-{
-  "gedetecteerde_jaren": ["2022", "2023"],
-  "bijlage_analyse": [
-    {
-      "bestandsnaam": "image_1.jpg",
-      "document_type": "aangifte_ib|bankrekeningen|beleggingen|vastgoed|schulden|overig|onleesbaar",
-      "belastingjaar": 2023,
-      "samenvatting": "Wat zie je in dit document? Beschrijf kort de inhoud.",
-      "geextraheerde_waarden": {
-        "box_3_belastbaar_inkomen": 12345,
-        "box_3_belasting_bedrag": 456,
-        "rendementsgrondslag": 78900,
-        "totaal_bezittingen": 100000,
-        "totaal_schulden": 5000,
-        "ontvangen_rente": 150,
-        "ontvangen_dividend": 500
-      }
-    }
-  ],
-  "per_jaar_status": {
-    "2023": {
-      "aangifte_ib": { "status": "compleet|onvolledig|ontbreekt", "feedback": "..." },
-      "bankrekeningen": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." },
-      "beleggingen": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." },
-      "vastgoed": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." },
-      "schulden": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." }
-    }
-  },
-  "gevonden_data": {
-    "algemeen": {
-      "belastingjaar": "2023",
-      "fiscale_partner": true
-    },
-    "fiscus_box3": {
-      "belastbaar_inkomen_na_drempel": 12345,
-      "betaalde_belasting": 456,
-      "rendementsgrondslag": 78900,
-      "totaal_bezittingen_bruto": 100000
-    }
-  },
-  "global_status": "compleet|onvolledig|actie_vereist"
-}
-\`\`\`
-
-## Let op:
-- Analyseer ELKE bijlage, ook als bestandsnaam nietszeggend is (image_1.jpg etc)
-- Als je een jaar niet kunt bepalen, gebruik dan de context uit de mail of andere documenten
-- Bij meerdere jaren: maak voor ELK jaar een aparte entry in per_jaar_status
-- geextraheerde_waarden: alleen invullen wat je ECHT ziet, niet raden`;
-
-/**
- * YEAR VALIDATION PROMPT - For revalidating a specific year
- * Focuses on deep analysis of one year with complete kansrijkheid calculation
- */
-export const DEFAULT_YEAR_VALIDATION_PROMPT = `Je bent een fiscaal specialist die documenten voor Box 3 bezwaar zaken valideert.
-
-## Context
-Je valideert documenten voor een SPECIFIEK belastingjaar. Focus alleen op dit jaar.
-
-## Benodigde documenten (5 categorieën):
-1. **Aangifte inkomstenbelasting** - De volledige aangifte
-2. **Bankrekeningen** - Daadwerkelijk ontvangen rente + eventuele valutaresultaten
-3. **Beleggingen**:
-   - Beginstand (1 januari)
-   - Eindstand (31 december)
-   - Stortingen/onttrekkingen
-   - Ontvangen dividenden
-4. **Vastgoed & overige bezittingen** - WOZ-waarde op 1 januari T+1, evt. huurinkomsten
-5. **Schulden** - Overzicht + betaalde rente
-
-## Jouw taak - JAAR VALIDATIE
-Analyseer de documenten en bepaal:
-
-1. **Per categorie**:
-   - status: "compleet" | "onvolledig" | "ontbreekt" | "n.v.t."
-   - feedback: Wat je gevonden hebt of wat er mist
-   - gevonden_in: Welke documenten
-
-2. **Extraheer ALLE relevante waarden** voor kansrijkheid berekening:
-   - Uit aangifte: belastbaar inkomen, betaalde belasting, rendementsgrondslag
-   - Uit bankafschriften: werkelijk ontvangen rente
-   - Uit beleggingsoverzicht: begin/eindwaarde, dividend, mutaties
-   - Uit schulden: betaalde rente
-
-3. **Beoordeel global_status**: "compleet" | "actie_vereist" | "onvolledig"
-
-## Output formaat (STRIKT JSON)
-\`\`\`json
-{
-  "belastingjaar": "2023",
-  "global_status": "actie_vereist",
-  "document_validatie": {
-    "aangifte_ib": "compleet",
-    "bank": "onvolledig",
-    "beleggingen": "compleet",
-    "vastgoed": "n.v.t.",
-    "schulden": "ontbreekt"
-  },
-  "validatie": {
-    "aangifte_ib": {
-      "status": "compleet",
-      "feedback": "Volledige aangifte gevonden met alle Box 3 gegevens",
-      "gevonden_in": ["aangifte_2023.pdf"]
-    },
-    "bankrekeningen": {
-      "status": "onvolledig",
-      "feedback": "Saldo gevonden maar rente-overzicht ontbreekt",
-      "gevonden_in": ["bankafschrift.pdf"]
-    }
-  },
-  "gevonden_data": {
-    "algemeen": {
-      "belastingjaar": 2023
-    },
-    "fiscus_box3": {
-      "belastbaar_inkomen_na_drempel": 1234,
-      "betaalde_belasting": 456,
-      "rendementsgrondslag": 78900
-    },
-    "werkelijk_rendement_input": {
-      "bank_rente_ontvangen": 150,
-      "beleggingen_waarde_1jan": 50000,
-      "beleggingen_waarde_31dec": 52000,
-      "beleggingen_dividend": 800,
-      "beleggingen_mutaties_gevonden": true,
-      "schulden_rente_betaald": null
-    }
-  },
-  "bijlage_analyse": [
-    {
-      "bestandsnaam": "aangifte_2023.pdf",
-      "document_type": "aangifte_ib",
-      "belastingjaar": 2023,
-      "samenvatting": "Volledige aangifte IB 2023",
-      "geextraheerde_waarden": {}
-    }
-  ],
-  "draft_mail": {
-    "onderwerp": "Re: Box 3 bezwaar 2023 - Ontbrekende documenten",
-    "body": "Geachte heer/mevrouw,\\n\\n..."
-  }
-}
-\`\`\``;
-
-/**
- * EMAIL GENERATION PROMPT - For generating follow-up emails
- * Focuses on clear, professional communication about missing documents
- */
-export const DEFAULT_EMAIL_PROMPT = `Je bent een ervaren fiscalist die professionele e-mails schrijft voor Box 3 bezwaarprocedures.
-
-## Context
-Je schrijft een e-mail naar een klant over de status van hun Box 3 bezwaardossier.
-
-## E-mail richtlijnen:
-- **Toon**: Professioneel maar vriendelijk
-- **Structuur**: Duidelijke alinea's met logische opbouw
-- **Compleetheid**: Benoem specifiek wat ontvangen is en wat ontbreekt
-- **Actie**: Geef duidelijk aan welke actie de klant moet ondernemen
-
-## E-mail onderdelen:
-1. **Opening**: Bedank voor aangeleverde documenten
-2. **Overzicht per jaar**: Wat is compleet, wat ontbreekt
-3. **Specifieke verzoeken**: Welke documenten nog nodig zijn
-4. **Uitleg**: Waarom deze documenten belangrijk zijn voor de zaak
-5. **Afsluiting**: Volgende stappen en contactmogelijkheid
-
-## Output formaat (STRIKT JSON)
-\`\`\`json
-{
-  "onderwerp": "Box 3 bezwaar [jaren] - Status en verzoek aanvullende documenten",
-  "body": "Geachte heer/mevrouw [Naam],\\n\\nHartelijk dank voor het aanleveren van de documenten voor uw Box 3 bezwaarprocedure.\\n\\n**Ontvangen en compleet:**\\n- ...\\n\\n**Nog benodigd:**\\n- ...\\n\\nMet vriendelijke groet,\\n[Naam]"
-}
-\`\`\``;
-
-// Legacy export for backwards compatibility
-export const DEFAULT_BOX3_SYSTEM_PROMPT = DEFAULT_INTAKE_PROMPT;
+// Legacy export for backwards compatibility (also empty)
+export const DEFAULT_BOX3_SYSTEM_PROMPT = "";
 
 // =============================================================================
 // TYPES
@@ -296,22 +90,22 @@ export function Box3SettingsModal({
     onOpenChange(false);
   };
 
-  const handleReset = (promptType: keyof Box3Prompts) => {
-    const defaults: Box3Prompts = {
-      intake: DEFAULT_INTAKE_PROMPT,
-      yearValidation: DEFAULT_YEAR_VALIDATION_PROMPT,
-      email: DEFAULT_EMAIL_PROMPT,
-    };
-    setLocalPrompts((prev) => ({ ...prev, [promptType]: defaults[promptType] }));
+  const handleClear = (promptType: keyof Box3Prompts) => {
+    setLocalPrompts((prev) => ({ ...prev, [promptType]: "" }));
   };
 
-  const handleResetAll = () => {
+  const handleClearAll = () => {
     setLocalPrompts({
-      intake: DEFAULT_INTAKE_PROMPT,
-      yearValidation: DEFAULT_YEAR_VALIDATION_PROMPT,
-      email: DEFAULT_EMAIL_PROMPT,
+      intake: "",
+      yearValidation: "",
+      email: "",
     });
   };
+
+  // Check if prompts are configured
+  const isIntakeConfigured = localPrompts.intake.trim().length > 0;
+  const isYearValidationConfigured = localPrompts.yearValidation.trim().length > 0;
+  const isEmailConfigured = localPrompts.email.trim().length > 0;
 
   const updatePrompt = (key: keyof Box3Prompts, value: string) => {
     setLocalPrompts((prev) => ({ ...prev, [key]: value }));
@@ -359,19 +153,30 @@ export function Box3SettingsModal({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleReset("intake")}
+                  onClick={() => handleClear("intake")}
                   className="h-8"
+                  disabled={!isIntakeConfigured}
                 >
                   <RotateCcw className="h-4 w-4 mr-2" />
-                  Reset
+                  Wissen
                 </Button>
               </div>
+              {!isIntakeConfigured && (
+                <div className="bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+                  <p className="text-sm text-orange-700 dark:text-orange-300 font-medium">
+                    Intake prompt is verplicht
+                  </p>
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                    Configureer een intake prompt om nieuwe dossiers te kunnen analyseren.
+                  </p>
+                </div>
+              )}
               <Textarea
                 id="intake-prompt"
                 value={localPrompts.intake}
                 onChange={(e) => updatePrompt("intake", e.target.value)}
                 className="font-mono text-sm min-h-[400px]"
-                placeholder="Voer de intake prompt in..."
+                placeholder="Voer de intake prompt in... (verplicht)"
               />
             </div>
           </TabsContent>
@@ -391,13 +196,24 @@ export function Box3SettingsModal({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleReset("yearValidation")}
+                  onClick={() => handleClear("yearValidation")}
                   className="h-8"
+                  disabled={!isYearValidationConfigured}
                 >
                   <RotateCcw className="h-4 w-4 mr-2" />
-                  Reset
+                  Wissen
                 </Button>
               </div>
+              {!isYearValidationConfigured && (
+                <div className="bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+                  <p className="text-sm text-orange-700 dark:text-orange-300 font-medium">
+                    Jaar validatie prompt niet geconfigureerd
+                  </p>
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                    Configureer een prompt om jaren individueel te kunnen hervalideren.
+                  </p>
+                </div>
+              )}
               <Textarea
                 id="year-validation-prompt"
                 value={localPrompts.yearValidation}
@@ -423,13 +239,24 @@ export function Box3SettingsModal({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleReset("email")}
+                  onClick={() => handleClear("email")}
                   className="h-8"
+                  disabled={!isEmailConfigured}
                 >
                   <RotateCcw className="h-4 w-4 mr-2" />
-                  Reset
+                  Wissen
                 </Button>
               </div>
+              {!isEmailConfigured && (
+                <div className="bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+                  <p className="text-sm text-orange-700 dark:text-orange-300 font-medium">
+                    E-mail prompt niet geconfigureerd
+                  </p>
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                    Configureer een prompt om follow-up e-mails te kunnen genereren.
+                  </p>
+                </div>
+              )}
               <Textarea
                 id="email-prompt"
                 value={localPrompts.email}
@@ -491,9 +318,14 @@ export function Box3SettingsModal({
 
         {/* Actions */}
         <div className="flex justify-between items-center pt-4 border-t">
-          <Button variant="ghost" size="sm" onClick={handleResetAll}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearAll}
+            disabled={!isIntakeConfigured && !isYearValidationConfigured && !isEmailConfigured}
+          >
             <RotateCcw className="h-4 w-4 mr-2" />
-            Reset alle prompts
+            Wis alle prompts
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>

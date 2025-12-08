@@ -43,88 +43,8 @@ const upload = multer({
   }
 });
 
-// Box 3 Validation System Prompt - Intake Analysis (multi-year support)
-const BOX3_SYSTEM_PROMPT = `Je bent een fiscaal specialist die documenten voor Box 3 bezwaarprocedures analyseert.
-
-## Context
-Een klant stuurt documenten aan voor een Box 3 bezwaarprocedure. Dit kunnen documenten zijn voor één of MEERDERE belastingjaren (2017-2024).
-
-## De 5 documentcategorieën per belastingjaar:
-1. **aangifte_ib** - Aangifte inkomstenbelasting van dat jaar
-2. **bankrekeningen** - Rente-overzichten, jaaropgaves van banken
-3. **beleggingen** - Begin/eindstand, dividend, aan/verkopen
-4. **vastgoed** - WOZ-waarde (T+1), evt. huurinkomsten
-5. **schulden** - Schulden en betaalde rente
-
-## Jouw taak - INTAKE ANALYSE
-Analyseer ALLE input (mail tekst + ELKE bijlage via vision) en:
-
-1. **Identificeer alle belastingjaren** die in de documenten voorkomen
-2. **Analyseer ELKE bijlage apart** - bepaal type en belastingjaar
-3. **Extraheer kerncijfers** uit aangiftes:
-   - Box 3 belastbaar inkomen (na drempel)
-   - Box 3 belasting bedrag
-   - Rendementsgrondslag
-   - Totaal bezittingen/schulden
-4. **Bepaal status per jaar** per documentcategorie
-
-## BELANGRIJK voor afbeeldingen:
-- Bekijk ELKE afbeelding zorgvuldig via vision
-- Zoek naar jaarcijfers, data, bedragen
-- Let op: foto's van brieven, schermafdrukken, scans
-- Geef in samenvatting aan wat je ZIET in de afbeelding
-
-## Output formaat (STRIKT JSON)
-\`\`\`json
-{
-  "gedetecteerde_jaren": ["2022", "2023"],
-  "bijlage_analyse": [
-    {
-      "bestandsnaam": "image_1.jpg",
-      "document_type": "aangifte_ib|bankrekeningen|beleggingen|vastgoed|schulden|overig|onleesbaar",
-      "belastingjaar": 2023,
-      "samenvatting": "Wat zie je in dit document? Beschrijf kort de inhoud.",
-      "geextraheerde_waarden": {
-        "box_3_belastbaar_inkomen": 12345,
-        "box_3_belasting_bedrag": 456,
-        "rendementsgrondslag": 78900,
-        "totaal_bezittingen": 100000,
-        "totaal_schulden": 5000,
-        "ontvangen_rente": 150,
-        "ontvangen_dividend": 500
-      }
-    }
-  ],
-  "per_jaar_status": {
-    "2023": {
-      "aangifte_ib": { "status": "compleet|onvolledig|ontbreekt", "feedback": "..." },
-      "bankrekeningen": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." },
-      "beleggingen": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." },
-      "vastgoed": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." },
-      "schulden": { "status": "compleet|onvolledig|ontbreekt|n.v.t.", "feedback": "..." }
-    }
-  },
-  "gevonden_data": {
-    "algemeen": {
-      "belastingjaar": "2023",
-      "fiscale_partner": true
-    },
-    "fiscus_box3": {
-      "belastbaar_inkomen_na_drempel": 12345,
-      "betaalde_belasting": 456,
-      "rendementsgrondslag": 78900,
-      "totaal_bezittingen_bruto": 100000
-    }
-  },
-  "global_status": "compleet|onvolledig|actie_vereist"
-}
-\`\`\`
-
-## Let op:
-- Analyseer ELKE bijlage, ook als bestandsnaam nietszeggend is (image_1.jpg etc)
-- Als je een jaar niet kunt bepalen, gebruik dan de context uit de mail of andere documenten
-- Bij meerdere jaren: maak voor ELK jaar een aparte entry in per_jaar_status
-- geextraheerde_waarden: alleen invullen wat je ECHT ziet, niet raden`;
+// NOTE: Box 3 intake prompt is now REQUIRED from frontend/settings
+// No hardcoded fallback prompt - user must configure their own prompt
 
 /**
  * Validate Box 3 documents
@@ -266,10 +186,15 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
     };
 
     // Call AI with config from database
+    // systemPrompt is REQUIRED - no fallback
+    if (!systemPrompt || systemPrompt.trim().length === 0) {
+      throw ServerError.validation("systemPrompt is required", "Configureer eerst een intake prompt in de instellingen");
+    }
+
     const factory = AIModelFactory.getInstance();
     const result = await factory.callModel(
       aiConfig,
-      `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
+      `${systemPrompt}\n\n${userPrompt}`,
       {
         jobId: `box3-validator-${Date.now()}`,
         visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
@@ -703,10 +628,15 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       thinkingLevel: 'high' as const, // Document analysis requires thorough thinking
     };
 
+    // systemPrompt is REQUIRED - no fallback
+    if (!systemPrompt || systemPrompt.trim().length === 0) {
+      throw ServerError.validation("systemPrompt is required", "Configureer eerst een intake prompt in de instellingen");
+    }
+
     const factory = AIModelFactory.getInstance();
     const result = await factory.callModel(
       aiConfig,
-      `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
+      `${systemPrompt}\n\n${userPrompt}`,
       {
         jobId: `box3-add-docs-${Date.now()}`,
         visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
@@ -898,10 +828,15 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
     };
 
     // Call AI with config from database
+    // systemPrompt is REQUIRED - no fallback
+    if (!systemPrompt || systemPrompt.trim().length === 0) {
+      throw ServerError.validation("systemPrompt is required", "Configureer eerst een intake prompt in de instellingen");
+    }
+
     const factory = AIModelFactory.getInstance();
     const result = await factory.callModel(
       aiConfig,
-      `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
+      `${systemPrompt}\n\n${userPrompt}`,
       {
         jobId: `box3-revalidate-${Date.now()}`,
         visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
@@ -1373,10 +1308,15 @@ Analyseer alle bovenstaande input voor belastingjaar ${jaar} en geef je validati
       thinkingLevel: 'high' as const, // Year validation requires thorough analysis
     };
 
+    // systemPrompt is REQUIRED - no fallback
+    if (!systemPrompt || systemPrompt.trim().length === 0) {
+      throw ServerError.validation("systemPrompt is required", "Configureer eerst een intake prompt in de instellingen");
+    }
+
     const factory = AIModelFactory.getInstance();
     const result = await factory.callModel(
       aiConfig,
-      `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
+      `${systemPrompt}\n\n${userPrompt}`,
       {
         jobId: `box3-year-${jaar}-${Date.now()}`,
         visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
@@ -1600,10 +1540,15 @@ Analyseer voor belastingjaar ${jaar} en geef validatie als JSON.`;
       thinkingLevel: 'high' as const, // Year revalidation requires thorough analysis
     };
 
+    // systemPrompt is REQUIRED - no fallback
+    if (!systemPrompt || systemPrompt.trim().length === 0) {
+      throw ServerError.validation("systemPrompt is required", "Configureer eerst een intake prompt in de instellingen");
+    }
+
     const factory = AIModelFactory.getInstance();
     const result = await factory.callModel(
       aiConfig,
-      `${systemPrompt || BOX3_SYSTEM_PROMPT}\n\n${userPrompt}`,
+      `${systemPrompt}\n\n${userPrompt}`,
       {
         jobId: `box3-reval-${jaar}-${Date.now()}`,
         visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined

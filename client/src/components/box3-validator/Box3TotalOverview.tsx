@@ -16,17 +16,31 @@ import {
   CheckCircle,
   AlertCircle,
   Info,
+  Users,
 } from "lucide-react";
 import {
   berekenKansrijkheid,
   formatCurrency,
   extractBelastingjaar,
 } from "@/utils/box3Utils";
-import type { Box3MultiYearData, Box3YearEntry } from "@shared/schema";
+import type { Box3MultiYearData, Box3YearEntry, Box3FiscalePartners } from "@shared/schema";
+
+// Type for bijlage analyse (from session-level validation)
+interface BijlageAnalyse {
+  bestandsnaam: string;
+  document_type: string;
+  belastingjaar?: number | string | null;
+  samenvatting: string;
+  geextraheerde_waarden?: Record<string, string | number | boolean | null>;
+  relevantie?: string;
+}
 
 interface Box3TotalOverviewProps {
   multiYearData: Box3MultiYearData;
   onSelectYear?: (jaar: string) => void;
+  sessionBijlageAnalyse?: BijlageAnalyse[];
+  // Fiscale partners detectie (session-level)
+  fiscalePartners?: Box3FiscalePartners;
 }
 
 interface YearSummary {
@@ -37,9 +51,93 @@ interface YearSummary {
   hasData: boolean;
 }
 
+/**
+ * Extract indicative refund from session-level bijlage_analyse for a specific year
+ * Parses the samenvatting text to find Box 3 inkomen and belasting values
+ */
+function extractIndicatieveTeruggaveFromBijlage(
+  sessionBijlageAnalyse: BijlageAnalyse[] | undefined,
+  jaar: string
+): number | null {
+  if (!sessionBijlageAnalyse || sessionBijlageAnalyse.length === 0) {
+    return null;
+  }
+
+  // Filter to entries for this year
+  const yearEntries = sessionBijlageAnalyse.filter(
+    (a) => a.belastingjaar && String(a.belastingjaar) === jaar
+  );
+
+  if (yearEntries.length === 0) {
+    return null;
+  }
+
+  // Helper to parse currency from text
+  const parseCurrency = (text: string): number | null => {
+    // Remove currency symbol and dots, replace comma with period
+    const cleaned = text.replace(/[€\s.]/g, "").replace(",", ".");
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? null : num;
+  };
+
+  // Try to find Box 3 belasting from geextraheerde_waarden first
+  for (const entry of yearEntries) {
+    if (entry.geextraheerde_waarden) {
+      const vals = entry.geextraheerde_waarden;
+      // Look for various possible field names
+      for (const key of Object.keys(vals)) {
+        const lowerKey = key.toLowerCase();
+        if (
+          (lowerKey.includes("box") && lowerKey.includes("3") && lowerKey.includes("belasting")) ||
+          lowerKey.includes("inkomstenbelasting") ||
+          lowerKey === "belasting"
+        ) {
+          const val = vals[key];
+          if (typeof val === "number") {
+            return val;
+          }
+          if (typeof val === "string") {
+            const parsed = parseCurrency(val);
+            if (parsed !== null) {
+              return parsed;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback: parse samenvatting text for belasting values
+  for (const entry of yearEntries) {
+    const text = entry.samenvatting;
+    if (!text) continue;
+
+    // Try patterns like "belasting: €1.234" or "Box 3 belasting: €1.234,56"
+    const patterns = [
+      /box\s*3[^:]*belasting[:\s]*€?\s*([\d.,]+)/i,
+      /belasting[:\s]*€?\s*([\d.,]+)/i,
+      /inkomstenbelasting[:\s]*€?\s*([\d.,]+)/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const parsed = parseCurrency(match[1]);
+        if (parsed !== null && parsed > 0) {
+          return parsed;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 export const Box3TotalOverview = memo(function Box3TotalOverview({
   multiYearData,
   onSelectYear,
+  sessionBijlageAnalyse,
+  fiscalePartners,
 }: Box3TotalOverviewProps) {
   // Calculate summary for each year
   const yearSummaries = useMemo(() => {
@@ -68,6 +166,20 @@ export const Box3TotalOverview = memo(function Box3TotalOverview({
         indicatieveTeruggave = entry.indicatieveTeruggave;
       }
 
+      // Fallback: try to extract from session-level bijlage_analyse
+      if (indicatieveTeruggave === null && sessionBijlageAnalyse) {
+        const extracted = extractIndicatieveTeruggaveFromBijlage(sessionBijlageAnalyse, jaar);
+        if (extracted !== null) {
+          indicatieveTeruggave = extracted;
+          hasData = true; // Mark as having data if we found something
+        }
+      }
+
+      // Also check if there are attachments for this year (mark as hasData)
+      if (!hasData && entry.attachments && entry.attachments.length > 0) {
+        hasData = true;
+      }
+
       summaries.push({
         jaar,
         indicatieveTeruggave,
@@ -78,7 +190,7 @@ export const Box3TotalOverview = memo(function Box3TotalOverview({
     }
 
     return summaries;
-  }, [multiYearData]);
+  }, [multiYearData, sessionBijlageAnalyse]);
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -149,6 +261,43 @@ export const Box3TotalOverview = memo(function Box3TotalOverview({
           </div>
         ) : (
           <>
+            {/* Fiscale Partners Alert */}
+            {fiscalePartners?.heeft_partner && fiscalePartners.partners && fiscalePartners.partners.length > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <Users className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-medium text-blue-800 dark:text-blue-200 flex items-center gap-2">
+                      Fiscale Partners Gedetecteerd
+                      <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+                        {fiscalePartners.partners.length} personen
+                      </Badge>
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {fiscalePartners.partners.map((partner) => (
+                        <div key={partner.id} className="flex items-center gap-2 text-sm">
+                          <Badge variant="outline" className="text-xs">
+                            {partner.rol === "hoofdaanvrager" ? "Hoofdaanvrager" : "Partner"}
+                          </Badge>
+                          <span className="text-blue-700 dark:text-blue-300">
+                            {partner.naam || `Partner ${partner.id.replace("partner_", "").toUpperCase()}`}
+                          </span>
+                          {partner.bsn_laatste_4 && (
+                            <span className="text-xs text-muted-foreground">
+                              (BSN ...{partner.bsn_laatste_4})
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                      Elke partner moet een apart bezwaarschrift indienen. Beide aangiftes per jaar zijn nodig.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Main total */}
             <div className="grid md:grid-cols-3 gap-4">
               {/* Totale Teruggave */}

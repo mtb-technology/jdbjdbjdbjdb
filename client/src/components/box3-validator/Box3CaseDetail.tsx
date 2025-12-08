@@ -561,6 +561,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           <Box3TotalOverview
             multiYearData={multiYearData}
             onSelectYear={handleSelectYearFromOverview}
+            sessionBijlageAnalyse={validationResult?.bijlage_analyse}
+            fiscalePartners={validationResult?.fiscale_partners}
           />
 
           {/* Add Year Button */}
@@ -615,6 +617,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     isRevalidating={isRevalidating}
                     isAddingDocs={isAddingDocs}
                     sessionBijlageAnalyse={validationResult?.bijlage_analyse}
+                    sessionFiscalePartners={validationResult?.fiscale_partners}
+                    sessionPerPartnerData={validationResult?.gevonden_data?.per_partner}
                   />
                 </div>
               );

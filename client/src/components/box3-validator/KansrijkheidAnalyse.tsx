@@ -22,17 +22,34 @@ import {
 } from "@/utils/box3Utils";
 import type { Box3ValidationResult, Box3ManualOverrides } from "@shared/schema";
 
+// Type for bijlage analyse (from session-level validation)
+interface BijlageAnalyseEntry {
+  bestandsnaam: string;
+  document_type: string;
+  belastingjaar?: number | string | null;
+  samenvatting: string;
+  geextraheerde_waarden?: Record<string, string | number | boolean | null>;
+  relevantie?: string;
+}
+
 interface KansrijkheidAnalyseProps {
   validationResult: Box3ValidationResult;
   belastingjaar: string | undefined;
   manualOverrides?: Box3ManualOverrides | null;
+  // Fallback bijlage_analyse from session level (for multi-year converted sessions)
+  sessionBijlageAnalyse?: BijlageAnalyseEntry[];
 }
 
 /**
  * Extract key figures from bijlage_analyse geextraheerde_waarden
  * Only extracts values that match the specified belastingjaar
+ * Also parses samenvatting for values when geextraheerde_waarden is missing
  */
-function extractKerncijfers(validationResult: Box3ValidationResult, belastingjaar: string | undefined) {
+function extractKerncijfers(
+  validationResult: Box3ValidationResult,
+  belastingjaar: string | undefined,
+  sessionBijlageAnalyse?: BijlageAnalyseEntry[]
+) {
   const kerncijfers: {
     belastingBedrag: number | null;
     belastbaarInkomen: number | null;
@@ -58,9 +75,11 @@ function extractKerncijfers(validationResult: Box3ValidationResult, belastingjaa
     kerncijfers.totaalBezittingen = fiscus.totaal_bezittingen_bruto ?? null;
   }
 
-  // Look through bijlage_analyse for additional values
+  // Use validation result's bijlage_analyse, fallback to session level
+  const analyseArray = validationResult.bijlage_analyse || sessionBijlageAnalyse || [];
+
+  // Look through bijlage_analyse for values
   // STRICT filtering: only include entries that explicitly match the year
-  const analyseArray = validationResult.bijlage_analyse || [];
   for (const analyse of analyseArray) {
     // If we have a year filter, ONLY include entries that match
     if (belastingjaar) {
@@ -70,21 +89,76 @@ function extractKerncijfers(validationResult: Box3ValidationResult, belastingjaa
       }
     }
 
+    // First try geextraheerde_waarden
     const waarden = analyse.geextraheerde_waarden;
-    if (!waarden) continue;
+    if (waarden) {
+      for (const [key, value] of Object.entries(waarden)) {
+        const keyLower = key.toLowerCase().replace(/_/g, ' ');
+        if (typeof value === 'number') {
+          // Box 3 belasting bedrag
+          if ((keyLower.includes('box 3 belasting') || keyLower.includes('box3 belasting')) &&
+              keyLower.includes('bedrag')) {
+            if (kerncijfers.belastingBedrag === null) {
+              kerncijfers.belastingBedrag = value;
+            }
+          }
+          // Belastbaar inkomen
+          else if (keyLower.includes('belastbaar inkomen') || keyLower.includes('belastbaar_inkomen')) {
+            if (kerncijfers.belastbaarInkomen === null) {
+              kerncijfers.belastbaarInkomen = value;
+            }
+          }
+          // Rendementsgrondslag
+          else if (keyLower.includes('rendementsgrondslag')) {
+            if (kerncijfers.rendementsgrondslag === null) {
+              kerncijfers.rendementsgrondslag = value;
+            }
+          }
+          // Totaal bezittingen
+          else if (keyLower.includes('totaal bezittingen') || keyLower.includes('totaal_bezittingen')) {
+            if (kerncijfers.totaalBezittingen === null) {
+              kerncijfers.totaalBezittingen = value;
+            }
+          }
+        }
+      }
+    }
 
-    // Look for Box 3 belasting bedrag
-    for (const [key, value] of Object.entries(waarden)) {
-      const keyLower = key.toLowerCase();
-      if (typeof value === 'number') {
-        if (keyLower.includes('box 3 belasting') && keyLower.includes('bedrag')) {
-          kerncijfers.belastingBedrag = value;
-        } else if (keyLower.includes('box 3 belastbaar inkomen') || keyLower.includes('belastbaar inkomen')) {
-          if (kerncijfers.belastbaarInkomen === null) {
+    // Also try to extract from samenvatting if values still missing
+    // Pattern: "Box 3 inkomen € 762" or "belasting € 236"
+    if (analyse.samenvatting) {
+      const samenvatting = analyse.samenvatting.toLowerCase();
+
+      // Extract Box 3 inkomen from samenvatting
+      if (kerncijfers.belastbaarInkomen === null) {
+        const inkomenMatch = samenvatting.match(/box\s*3\s*inkomen[:\s]*€?\s*([\d.,]+)/i);
+        if (inkomenMatch) {
+          const value = parseFloat(inkomenMatch[1].replace(/\./g, '').replace(',', '.'));
+          if (!isNaN(value)) {
             kerncijfers.belastbaarInkomen = value;
           }
-        } else if (keyLower.includes('rendementsgrondslag')) {
-          kerncijfers.rendementsgrondslag = value;
+        }
+      }
+
+      // Extract belasting from samenvatting
+      if (kerncijfers.belastingBedrag === null) {
+        const belastingMatch = samenvatting.match(/belasting[:\s]*€?\s*([\d.,]+)/i);
+        if (belastingMatch) {
+          const value = parseFloat(belastingMatch[1].replace(/\./g, '').replace(',', '.'));
+          if (!isNaN(value)) {
+            kerncijfers.belastingBedrag = value;
+          }
+        }
+      }
+
+      // Extract vastgesteld vermogen from samenvatting
+      if (kerncijfers.totaalBezittingen === null) {
+        const vermogenMatch = samenvatting.match(/(?:vastgesteld\s*)?vermogen[:\s]*€?\s*([\d.,]+)/i);
+        if (vermogenMatch) {
+          const value = parseFloat(vermogenMatch[1].replace(/\./g, '').replace(',', '.'));
+          if (!isNaN(value) && value > 1000) { // Only if it looks like a reasonable amount
+            kerncijfers.totaalBezittingen = value;
+          }
         }
       }
     }
@@ -97,13 +171,15 @@ export const KansrijkheidAnalyse = memo(function KansrijkheidAnalyse({
   validationResult,
   belastingjaar,
   manualOverrides,
+  sessionBijlageAnalyse,
 }: KansrijkheidAnalyseProps) {
   const kansrijkheid = berekenKansrijkheid(validationResult, belastingjaar, manualOverrides);
   const heeftBerekening = kansrijkheid.werkelijkRendement !== null;
   const forfaitair = getForfaitaireRendementen(belastingjaar);
 
   // Extract key figures even when full calculation isn't possible
-  const kerncijfers = extractKerncijfers(validationResult, belastingjaar);
+  // Use sessionBijlageAnalyse as fallback for converted multi-year sessions
+  const kerncijfers = extractKerncijfers(validationResult, belastingjaar, sessionBijlageAnalyse);
 
   return (
     <Card

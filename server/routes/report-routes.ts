@@ -2437,11 +2437,16 @@ Gebruik bullet points. Max 150 woorden.
 
     const newContent = response.content;
 
-    // Create snapshot for the adjustment
+    // Determine the predecessor stage (the current latest version)
+    const currentVersions = report.conceptReportVersions as Record<string, any> || {};
+    const fromStage = currentVersions.latest?.pointer as StageId | undefined;
+
+    // Create snapshot for the adjustment (with proper version chaining from latest)
     const snapshot = await reportProcessor.createSnapshot(
       reportId,
       adjustmentId as StageId,
-      newContent
+      newContent,
+      fromStage
     );
 
     // Update concept versions with the new adjustment

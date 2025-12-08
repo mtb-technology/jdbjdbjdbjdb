@@ -266,10 +266,15 @@ ${feedback}
 
     // FIXED: Check CURRENT stage version first (for re-processing same stage)
     // If current stage already has a version, increment from that
-    // Otherwise, use predecessor stage version
+    // Otherwise, use the global latest version (for adjustments and new stages)
+    // Fallback to predecessor stage version for normal workflow stages
     const currentStageVersion = this.getStageVersion(currentVersions, stageId);
-    const previousVersion = currentStageVersion || (fromStage ? this.getStageVersion(currentVersions, fromStage) : null);
-    const nextVersion = previousVersion ? previousVersion.v + 1 : 1;
+    const latestVersion = currentVersions.latest?.v || 0;
+    const predecessorVersion = fromStage ? this.getStageVersion(currentVersions, fromStage) : null;
+
+    // Priority: current stage version > global latest > predecessor > start at 1
+    const previousVersion = currentStageVersion?.v || latestVersion || predecessorVersion?.v || 0;
+    const nextVersion = previousVersion + 1;
 
     const snapshot: ConceptReportSnapshot = {
       v: nextVersion,

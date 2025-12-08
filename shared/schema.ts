@@ -1016,14 +1016,45 @@ export const box3GlobalStatusSchema = z.enum([
 // Document validatie status
 export const box3DocumentStatusSchema = z.enum(["compleet", "onvolledig", "ontbreekt", "nvt"]);
 
+// Partner schema voor fiscale partners
+export const box3PartnerSchema = z.object({
+  id: z.string(), // "partner_a" | "partner_b"
+  naam: z.string().optional(),
+  rol: z.string().optional(), // "hoofdaanvrager" | "partner"
+  bsn_laatste_4: z.string().optional(), // Laatste 4 cijfers BSN (privacy)
+});
+
+export const box3FiscalePartnersSchema = z.object({
+  heeft_partner: z.boolean(),
+  partners: z.array(box3PartnerSchema).optional(),
+});
+
+// Per-partner fiscale data
+export const box3PartnerFiscusDataSchema = z.object({
+  naam: z.string().optional(),
+  fiscus_box3: z.object({
+    belastbaar_inkomen_na_drempel: z.number().nullable().optional(),
+    betaalde_belasting: z.number().nullable().optional(),
+    rendementsgrondslag: z.number().nullable().optional(),
+    totaal_bezittingen_bruto: z.number().nullable().optional(),
+    box_3_verdeling_percentage: z.number().nullable().optional(),
+  }).optional(),
+});
+
 // Flexibel schema dat alles accepteert wat de AI teruggeeft
 export const box3ValidationResultSchema = z.object({
+  // Fiscale partners detectie (nieuw)
+  fiscale_partners: box3FiscalePartnersSchema.optional(),
+
   // Geëxtraheerde data (flexibel)
   gevonden_data: z.object({
     algemeen: z.object({
       belastingjaar: z.union([z.number(), z.string()]).nullable().optional(),
       fiscaal_partnerschap_detectie: z.string().nullable().optional(),
+      fiscale_partner: z.boolean().nullable().optional(), // Simpele ja/nee vlag
     }).optional(),
+    // Per-partner data (nieuw)
+    per_partner: z.record(box3PartnerFiscusDataSchema).optional(),
     fiscus_box3: z.object({
       totaal_bezittingen_bruto: z.number().nullable().optional(),
       heffingsvrij_vermogen: z.number().nullable().optional(),
@@ -1067,6 +1098,7 @@ export const box3ValidationResultSchema = z.object({
     bestandsnaam: z.string(),
     document_type: z.string(),
     belastingjaar: z.union([z.number(), z.string()]).nullable().optional(),
+    partner_id: z.string().optional(), // "partner_a" | "partner_b" | "gedeeld" - voor fiscale partners
     samenvatting: z.string(),
     geextraheerde_waarden: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
     relevantie: z.string().optional(),
@@ -1110,6 +1142,9 @@ export const box3ValidationResultSchema = z.object({
 export type Box3ValidationResult = z.infer<typeof box3ValidationResultSchema>;
 export type Box3GlobalStatus = z.infer<typeof box3GlobalStatusSchema>;
 export type Box3DocumentStatus = z.infer<typeof box3DocumentStatusSchema>;
+export type Box3Partner = z.infer<typeof box3PartnerSchema>;
+export type Box3FiscalePartners = z.infer<typeof box3FiscalePartnersSchema>;
+export type Box3PartnerFiscusData = z.infer<typeof box3PartnerFiscusDataSchema>;
 export type Box3ValidatorSession = typeof box3ValidatorSessions.$inferSelect;
 export type InsertBox3ValidatorSession = typeof box3ValidatorSessions.$inferInsert;
 
