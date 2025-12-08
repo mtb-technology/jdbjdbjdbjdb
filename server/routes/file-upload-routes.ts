@@ -502,7 +502,7 @@ fileUploadRouter.post(
                     provider: 'google'
                   },
                   {
-                    jobId: `ocr-${reportId}-${file.originalname}`,
+                    jobId: `ocr-${reportId.slice(-8)}-${Date.now()}`,
                     visionAttachments: [{
                       mimeType: 'application/pdf',
                       data: base64Data,
@@ -550,7 +550,7 @@ fileUploadRouter.post(
                   provider: 'google'
                 },
                 {
-                  jobId: `ocr-fallback-${reportId}-${file.originalname}`,
+                  jobId: `ocr-fb-${reportId.slice(-8)}-${Date.now()}`,
                   visionAttachments: [{
                     mimeType: 'application/pdf',
                     data: base64Data,
@@ -596,7 +596,7 @@ fileUploadRouter.post(
                 provider: 'google'
               },
               {
-                jobId: `image-ocr-${reportId}-${file.originalname}`,
+                jobId: `img-ocr-${reportId.slice(-8)}-${Date.now()}`,
                 visionAttachments: [{
                   mimeType,
                   data: base64Data,
@@ -875,7 +875,7 @@ fileUploadRouter.post(
             provider: 'google'
           },
           {
-            jobId: `ocr-batch-${reportId}-${att.id}`,
+            jobId: `ocr-b-${reportId.slice(-8)}-${Date.now()}`,
             visionAttachments: [{
               mimeType: 'application/pdf',
               data: att.fileData,
