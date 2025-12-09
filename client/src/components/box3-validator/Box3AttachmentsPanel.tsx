@@ -47,6 +47,8 @@ interface BijlageAnalyse {
   bestandsnaam: string;
   document_type: string;
   belastingjaar?: number | string | null;
+  partner_id?: string; // "partner_a" | "partner_b" | "gedeeld" - voor fiscale partners
+  partner_naam?: string; // Naam van de partner (bijv. "K.W. van Ruler-Kuijpers")
   samenvatting: string;
   geextraheerde_waarden?: Record<string, string | number | boolean | null>;
   relevantie?: string;
@@ -115,6 +117,83 @@ function getBelastingjaarBadge(jaar: number | string | null | undefined) {
       {jaar}
     </Badge>
   );
+}
+
+/**
+ * Get badge for partner from AI analysis
+ * Shows who this document belongs to (for fiscal partners)
+ */
+function getPartnerBadge(partnerId: string | undefined, partnerNaam: string | undefined, samenvatting: string) {
+  // Helper to format name (shorten if needed)
+  const formatName = (name: string): string => {
+    if (name.length <= 25) return name;
+    // Shorten: keep initials + last name part
+    const parts = name.split(' ');
+    if (parts.length <= 1) return name;
+    // Keep last part (usually achternaam), shorten rest to initials
+    return parts.map((part, i, arr) =>
+      i === arr.length - 1 ? part : part.charAt(0) + '.'
+    ).join(' ');
+  };
+
+  // 1. If we have explicit partner_naam, use that
+  if (partnerNaam) {
+    return (
+      <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+        👤 {formatName(partnerNaam)}
+      </Badge>
+    );
+  }
+
+  // 2. Try to extract name from samenvatting
+  let extractedName: string | null = null;
+
+  // Pattern: Look for Dutch name patterns like "K.W. van Ruler" or "H.J. van Ruler-Kuijpers"
+  // This matches: Initial(s) + optional "van/de/den" + Capitalized surname (with optional hyphenated part)
+  const namePatterns = [
+    // "t.n.v. K.W. van Ruler-Kuijpers" - explicit t.n.v.
+    /t\.n\.v\.\s+([A-Z]\.[A-Z]?\.\s*(?:van\s+|de\s+|den\s+)?[A-Z][a-z]+(?:-[A-Z][a-z]+)?)/,
+    // "K.W. van Ruler" or "H.J. van Ruler-Kuijpers" - anywhere in text
+    /\b([A-Z]\.[A-Z]?\.\s*van\s+[A-Z][a-z]+(?:-[A-Z][a-z]+)?)\b/,
+    // "K.W. van Ruler" without the period requirement after initials
+    /\b([A-Z]\.[A-Z]?\.?\s+van\s+[A-Z][a-z]+(?:-[A-Z][a-z]+)?)\b/,
+  ];
+
+  for (const pattern of namePatterns) {
+    const match = samenvatting?.match(pattern);
+    if (match) {
+      extractedName = match[1].trim().replace(/\.+$/, '');
+      break;
+    }
+  }
+
+  if (extractedName && extractedName.length > 5) {
+    return (
+      <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+        👤 {formatName(extractedName)}
+      </Badge>
+    );
+  }
+
+  // 3. If we have partner_id but couldn't extract name, show readable version
+  if (partnerId && partnerId !== "gedeeld") {
+    // Convert partner_id like "partner_kw" or "partner_hj" to more readable format
+    // But prefer not to show technical IDs - only show if it's partner_a/partner_b
+    if (partnerId === "partner_a" || partnerId === "partner_b") {
+      const label = partnerId === "partner_a" ? "Partner A" : "Partner B";
+      return (
+        <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+          👤 {label}
+        </Badge>
+      );
+    }
+    // For other partner_ids (like partner_kw), don't show ugly technical ID
+    // The name should come from samenvatting or partner_naam instead
+    return null;
+  }
+
+  // No partner info available
+  return null;
 }
 
 /**
@@ -414,10 +493,11 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
               <div className="flex-1 min-w-0">
                 {analyse ? (
                   <>
-                    {/* When AI analysis available: show doc type + year + summary */}
+                    {/* When AI analysis available: show doc type + year + partner + summary */}
                     <div className="flex items-center gap-2 flex-wrap">
                       {getDocumentTypeBadge(analyse.document_type)}
                       {getBelastingjaarBadge(analyse.belastingjaar)}
+                      {getPartnerBadge(analyse.partner_id, analyse.partner_naam, analyse.samenvatting)}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
                       {analyse.samenvatting}

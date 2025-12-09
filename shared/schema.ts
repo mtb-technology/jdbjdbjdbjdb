@@ -1003,6 +1003,7 @@ export const box3ValidatorSessions = pgTable("box3_validator_sessions", {
 
 // Box 3 Validation Result Schema - Flexibel voor COG output
 // De structuur is afhankelijk van de prompt die de gebruiker configureert
+// Ondersteunt zowel oude prompt formaat als nieuwe "Senior Fiscaal Jurist" formaat
 
 // Global status types
 export const box3GlobalStatusSchema = z.enum([
@@ -1016,10 +1017,10 @@ export const box3GlobalStatusSchema = z.enum([
 // Document validatie status
 export const box3DocumentStatusSchema = z.enum(["compleet", "onvolledig", "ontbreekt", "nvt"]);
 
-// Partner schema voor fiscale partners
+// Partner schema voor fiscale partners (legacy format)
 export const box3PartnerSchema = z.object({
   id: z.string(), // "partner_a" | "partner_b"
-  naam: z.string().optional(),
+  naam: z.string().optional().nullable(),
   rol: z.string().optional(), // "hoofdaanvrager" | "partner"
   bsn_laatste_4: z.string().optional(), // Laatste 4 cijfers BSN (privacy)
 });
@@ -1029,7 +1030,7 @@ export const box3FiscalePartnersSchema = z.object({
   partners: z.array(box3PartnerSchema).optional(),
 });
 
-// Per-partner fiscale data
+// Per-partner fiscale data (legacy format)
 export const box3PartnerFiscusDataSchema = z.object({
   naam: z.string().optional(),
   fiscus_box3: z.object({
@@ -1041,25 +1042,84 @@ export const box3PartnerFiscusDataSchema = z.object({
   }).optional(),
 });
 
-// Flexibel schema dat alles accepteert wat de AI teruggeeft
+// ===== NEW FORMAT: Senior Fiscaal Jurist Prompt =====
+
+// Dossier meta informatie
+export const box3DossierMetaSchema = z.object({
+  klant_email: z.string().nullable().optional(),
+  status_analyse: z.string().optional(), // "Compleet" | "Missende info"
+});
+
+// Betrokken personen (nieuwe partner format)
+export const box3BetrokkenPersoonSchema = z.object({
+  id: z.string(), // "persoon_1", "persoon_2"
+  rol: z.string().optional(), // "Briefadres / Hoofdaanvrager", "Partner"
+  naam: z.string().nullable().optional(),
+  geboortedatum: z.string().nullable().optional(), // "DD-MM-YYYY"
+  bsn_mask: z.string().nullable().optional(),
+});
+
+// Vermogens mix voor een jaar
+export const box3VermogensMixSchema = z.object({
+  bank_en_spaartegoeden: z.number().nullable().optional(),
+  overige_bezittingen: z.number().nullable().optional(),
+  onroerende_zaken_waarde: z.number().nullable().optional(),
+  schulden_box_3: z.number().nullable().optional(),
+  totaal_bezittingen: z.number().nullable().optional(),
+  heffingsvrij_vermogen_totaal: z.number().nullable().optional(),
+});
+
+// Fiscale verdeling voor een jaar
+export const box3FiscaleVerdelingSchema = z.object({
+  grondslag_sparen_beleggen_totaal: z.number().nullable().optional(),
+  aandeel_persoon_1: z.number().nullable().optional(),
+  aandeel_persoon_2: z.number().nullable().optional(),
+});
+
+// Te betalen/terug te krijgen
+export const box3TeBetalenSchema = z.object({
+  box_3_inkomen_berekend: z.number().nullable().optional(),
+  totaal_te_betalen_aanslag: z.number().nullable().optional(),
+});
+
+// Jaar data (nieuw format)
+export const box3JaarDataSchema = z.object({
+  document_type: z.string().optional(), // "Voorlopige Aanslag" | "Definitieve Aanslag" | "Aangifte"
+  datum_document: z.string().nullable().optional(), // "DD-MM-YYYY"
+  vermogens_mix_totaal_huishouden: box3VermogensMixSchema.optional(),
+  fiscale_verdeling: box3FiscaleVerdelingSchema.optional(),
+  te_betalen_terug_te_krijgen: box3TeBetalenSchema.optional(),
+});
+
+// Flexibel schema dat BEIDE formaten accepteert
 export const box3ValidationResultSchema = z.object({
-  // Fiscale partners detectie (nieuw)
+  // ===== NEW FORMAT FIELDS (Senior Fiscaal Jurist) =====
+  dossier_meta: box3DossierMetaSchema.optional(),
+  betrokken_personen: z.array(box3BetrokkenPersoonSchema).optional(),
+  jaren_data: z.record(box3JaarDataSchema).optional(), // Key = jaar (bijv. "2023")
+  aandachtspunten_voor_expert: z.array(z.string()).optional(),
+
+  // ===== LEGACY FORMAT FIELDS =====
+  // Fiscale partners detectie (legacy)
   fiscale_partners: box3FiscalePartnersSchema.optional(),
 
-  // Geëxtraheerde data (flexibel)
+  // Geëxtraheerde data (legacy flexibel format)
   gevonden_data: z.object({
     algemeen: z.object({
       belastingjaar: z.union([z.number(), z.string()]).nullable().optional(),
       fiscaal_partnerschap_detectie: z.string().nullable().optional(),
-      fiscale_partner: z.boolean().nullable().optional(), // Simpele ja/nee vlag
+      fiscale_partner: z.boolean().nullable().optional(),
     }).optional(),
-    // Per-partner data (nieuw)
     per_partner: z.record(box3PartnerFiscusDataSchema).optional(),
     fiscus_box3: z.object({
       totaal_bezittingen_bruto: z.number().nullable().optional(),
       heffingsvrij_vermogen: z.number().nullable().optional(),
       belastbaar_inkomen_na_drempel: z.number().nullable().optional(),
       schulden_box3: z.number().nullable().optional(),
+      rendementsgrondslag: z.number().nullable().optional(),
+      betaalde_belasting: z.number().nullable().optional(),
+      grondslag_sparen_beleggen: z.number().nullable().optional(),
+      forfaitair_rendement: z.number().nullable().optional(),
     }).optional(),
     werkelijk_rendement_input: z.object({
       bank_rente_ontvangen: z.number().nullable().optional(),
@@ -1068,37 +1128,40 @@ export const box3ValidationResultSchema = z.object({
       beleggingen_dividend: z.number().nullable().optional(),
       beleggingen_mutaties_gevonden: z.boolean().nullable().optional(),
       schulden_rente_betaald: z.number().nullable().optional(),
+      schulden_totaal: z.number().nullable().optional(),
+      schulden_rente_percentage: z.number().nullable().optional(),
     }).optional(),
   }).optional(),
 
-  // Analyse resultaat
+  // Analyse resultaat (legacy)
   analyse_box3: z.object({
     oordeel_basis_bedrag: z.number().nullable().optional(),
     conclusie_type: z.string().optional(),
   }).optional(),
 
-  // Globale status
+  // Globale status (legacy)
   global_status: z.string().optional(),
 
-  // Document validatie per categorie
+  // Document validatie per categorie (legacy)
   document_validatie: z.object({
     bank: box3DocumentStatusSchema.optional(),
     beleggingen: box3DocumentStatusSchema.optional(),
     vastgoed: box3DocumentStatusSchema.optional(),
   }).optional(),
 
-  // Concept mail
+  // Concept mail (legacy)
   draft_mail: z.object({
     onderwerp: z.string(),
     body: z.string(),
   }).optional(),
 
-  // Bijlage analyse - per bestand wat de AI gevonden heeft
+  // Bijlage analyse (legacy) - per bestand wat de AI gevonden heeft
   bijlage_analyse: z.array(z.object({
     bestandsnaam: z.string(),
     document_type: z.string(),
     belastingjaar: z.union([z.number(), z.string()]).nullable().optional(),
-    partner_id: z.string().optional(), // "partner_a" | "partner_b" | "gedeeld" - voor fiscale partners
+    partner_id: z.string().optional(),
+    partner_naam: z.string().optional(),
     samenvatting: z.string(),
     geextraheerde_waarden: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
     relevantie: z.string().optional(),
@@ -1145,6 +1208,13 @@ export type Box3DocumentStatus = z.infer<typeof box3DocumentStatusSchema>;
 export type Box3Partner = z.infer<typeof box3PartnerSchema>;
 export type Box3FiscalePartners = z.infer<typeof box3FiscalePartnersSchema>;
 export type Box3PartnerFiscusData = z.infer<typeof box3PartnerFiscusDataSchema>;
+// New format types
+export type Box3DossierMeta = z.infer<typeof box3DossierMetaSchema>;
+export type Box3BetrokkenPersoon = z.infer<typeof box3BetrokkenPersoonSchema>;
+export type Box3VermogensMix = z.infer<typeof box3VermogensMixSchema>;
+export type Box3FiscaleVerdeling = z.infer<typeof box3FiscaleVerdelingSchema>;
+export type Box3TeBetalen = z.infer<typeof box3TeBetalenSchema>;
+export type Box3JaarData = z.infer<typeof box3JaarDataSchema>;
 export type Box3ValidatorSession = typeof box3ValidatorSessions.$inferSelect;
 export type InsertBox3ValidatorSession = typeof box3ValidatorSessions.$inferInsert;
 
@@ -1278,3 +1348,530 @@ export const insertExternalReportAdjustmentSchema = createInsertSchema(externalR
   previousContent: z.string().min(1),
   newContent: z.string().min(1),
 }).omit({ id: true, createdAt: true });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BOX 3 V2 - NEW CANONICAL DATA MODEL
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * ## BOX 3 V2 ARCHITECTURE
+ *
+ * Dit is het nieuwe data model voor Box 3 bezwaar dossiers.
+ * Alle LLM outputs worden naar dit canonical format gemapped.
+ *
+ * ### Drie tabellen:
+ * 1. `box3_dossiers` - Metadata (normale kolommen voor queries)
+ * 2. `box3_documents` - Alle uploads met classificatie
+ * 3. `box3_blueprints` - Blueprint JSON blob, versioned
+ *
+ * ### Principe:
+ * - LLM extraheert data → vult blueprint
+ * - Backend rekent ermee (deterministic)
+ * - Elke waarde heeft source tracking
+ */
+
+// ─── DATABASE TABLES ───
+
+export const box3Dossiers = pgTable("box3_dossiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  // Identificatie
+  dossierNummer: text("dossier_nummer").unique(), // "BZ-2024-001"
+
+  // Klant info
+  clientName: text("client_name").notNull(),
+  clientEmail: text("client_email"),
+
+  // Intake
+  intakeText: text("intake_text"), // Originele mail van klant
+
+  // Status
+  status: text("status").default("intake"), // intake | in_behandeling | wacht_op_klant | klaar | afgerond
+  taxYears: text("tax_years").array(), // ["2022", "2023"]
+  hasFiscalPartner: boolean("has_fiscal_partner").default(false),
+
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  statusIdx: index("box3_dossiers_status_idx").on(table.status),
+  clientNameIdx: index("box3_dossiers_client_name_idx").on(table.clientName),
+  createdAtIdx: index("box3_dossiers_created_at_idx").on(table.createdAt),
+}));
+
+export const box3Documents = pgTable("box3_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dossierId: varchar("dossier_id").notNull().references(() => box3Dossiers.id, { onDelete: 'cascade' }),
+
+  // File info
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  fileData: text("file_data").notNull(), // base64
+
+  // Upload tracking
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+  uploadedVia: text("uploaded_via"), // "intake" | "aanvulling" | "hervalidatie"
+
+  // AI classificatie (JSON voor flexibiliteit)
+  classification: jsonb("classification").$type<Box3DocumentClassification>(),
+  extractionSummary: text("extraction_summary"),
+  extractedValues: jsonb("extracted_values").$type<Record<string, string | number | boolean | null>>(),
+}, (table) => ({
+  dossierIdIdx: index("box3_documents_dossier_id_idx").on(table.dossierId),
+}));
+
+export const box3Blueprints = pgTable("box3_blueprints", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dossierId: varchar("dossier_id").notNull().references(() => box3Dossiers.id, { onDelete: 'cascade' }),
+
+  version: integer("version").notNull(), // 1, 2, 3...
+  blueprint: jsonb("blueprint").notNull().$type<Box3Blueprint>(),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: text("created_by"), // "intake" | "aanvulling" | "hervalidatie" | "manual"
+}, (table) => ({
+  dossierIdIdx: index("box3_blueprints_dossier_id_idx").on(table.dossierId),
+  versionIdx: index("box3_blueprints_version_idx").on(table.dossierId, table.version),
+}));
+
+// ─── TYPESCRIPT TYPES FOR BLUEPRINT ───
+
+/**
+ * DataPoint - Elke waarde met source tracking
+ */
+export interface Box3DataPoint<T = number> {
+  amount: T;
+  source_doc_id?: string;
+  source_type?: 'document' | 'email' | 'client_estimate' | 'calculation' | 'estimate';
+  source_snippet?: string;
+  confidence?: number; // 0.0 - 1.0
+  requires_validation?: boolean;
+  validation_note?: string;
+}
+
+/**
+ * Person - Belastingplichtige of partner
+ */
+export interface Box3Person {
+  id: string; // "tp_01" | "fp_01"
+  name: string | null;
+  bsn_masked: string | null;
+  date_of_birth: string | null;
+  email?: string | null;
+}
+
+export interface Box3FiscalEntity {
+  taxpayer: Box3Person;
+  fiscal_partner: {
+    has_partner: boolean;
+    id?: string;
+    name?: string | null;
+    bsn_masked?: string | null;
+    date_of_birth?: string | null;
+  };
+}
+
+/**
+ * Owner reference
+ */
+export type Box3OwnerRef = string; // "tp_01" | "fp_01" | "joint"
+
+/**
+ * Bank/Savings Asset
+ */
+export interface Box3BankSavingsAsset {
+  id: string;
+  owner_id: Box3OwnerRef;
+  description: string;
+  account_masked?: string;
+  bank_name?: string;
+  is_joint_account: boolean;
+  ownership_percentage: number;
+  is_green_investment: boolean;
+
+  yearly_data: Record<string, {
+    value_jan_1?: Box3DataPoint;
+    value_dec_31?: Box3DataPoint;
+    interest_received?: Box3DataPoint;
+    currency_result?: Box3DataPoint;
+  }>;
+}
+
+/**
+ * Investment Asset
+ */
+export interface Box3InvestmentAsset {
+  id: string;
+  owner_id: Box3OwnerRef;
+  description: string;
+  institution?: string;
+  type: 'stocks' | 'bonds' | 'funds' | 'crypto' | 'other';
+  ownership_percentage: number;
+
+  yearly_data: Record<string, {
+    value_jan_1?: Box3DataPoint;
+    value_dec_31?: Box3DataPoint;
+    dividend_received?: Box3DataPoint;
+    deposits?: Box3DataPoint;
+    withdrawals?: Box3DataPoint;
+    realized_gains?: Box3DataPoint;
+    transaction_costs?: Box3DataPoint;
+  }>;
+}
+
+/**
+ * Real Estate Asset
+ */
+export interface Box3RealEstateAsset {
+  id: string;
+  owner_id: Box3OwnerRef;
+  description: string;
+  address: string;
+  type: 'rented_residential' | 'rented_commercial' | 'vacation_home' | 'land' | 'other';
+  ownership_percentage: number;
+  ownership_note?: string;
+
+  yearly_data: Record<string, {
+    woz_value?: Box3DataPoint & { reference_date?: string };
+    economic_value?: Box3DataPoint;
+    rental_income_gross?: Box3DataPoint;
+    maintenance_costs?: Box3DataPoint;
+    property_tax?: Box3DataPoint;
+    insurance?: Box3DataPoint;
+    other_costs?: Box3DataPoint;
+  }>;
+}
+
+/**
+ * Other Asset (VvE, claims, etc.)
+ */
+export interface Box3OtherAsset {
+  id: string;
+  owner_id: Box3OwnerRef;
+  description: string;
+  type: 'vve_share' | 'claims' | 'rights' | 'other';
+
+  yearly_data: Record<string, {
+    value_jan_1?: Box3DataPoint;
+    value_dec_31?: Box3DataPoint;
+    income_received?: Box3DataPoint;
+  }>;
+}
+
+/**
+ * Assets container
+ */
+export interface Box3Assets {
+  bank_savings: Box3BankSavingsAsset[];
+  investments: Box3InvestmentAsset[];
+  real_estate: Box3RealEstateAsset[];
+  other_assets: Box3OtherAsset[];
+}
+
+/**
+ * Debt
+ */
+export interface Box3Debt {
+  id: string;
+  owner_id: Box3OwnerRef;
+  description: string;
+  lender?: string;
+  linked_asset_id?: string;
+  ownership_percentage: number;
+
+  yearly_data: Record<string, {
+    value_jan_1?: Box3DataPoint;
+    value_dec_31?: Box3DataPoint;
+    interest_paid?: Box3DataPoint;
+    interest_rate?: Box3DataPoint<number>; // percentage
+  }>;
+}
+
+/**
+ * Tax Authority Data - per person
+ */
+export interface Box3TaxAuthorityPersonData {
+  allocation_percentage: number;
+  total_assets_box3: number;
+  total_debts_box3: number;
+  exempt_amount: number;
+  taxable_base: number;
+  deemed_return: number;
+  tax_assessed: number;
+}
+
+/**
+ * Tax Authority Data - per year
+ */
+export interface Box3TaxAuthorityYearData {
+  source_doc_id: string;
+  document_type: 'aangifte' | 'voorlopige_aanslag' | 'definitieve_aanslag';
+  document_date?: string;
+
+  per_person: Record<string, Box3TaxAuthorityPersonData>;
+
+  household_totals: {
+    total_assets_gross: number;
+    total_debts: number;
+    net_assets: number;
+    total_exempt: number;
+    taxable_base: number;
+    total_tax_assessed: number;
+  };
+}
+
+/**
+ * Year Summary - status and calculations
+ */
+export type Box3CompletenessStatus = 'complete' | 'incomplete' | 'not_applicable';
+export type Box3YearStatus = 'no_data' | 'incomplete' | 'ready_for_calculation' | 'complete';
+
+export interface Box3MissingItem {
+  field: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  action: 'ask_client' | 'search_documents' | 'manual_entry';
+}
+
+export interface Box3CalculatedTotals {
+  total_assets_jan_1: number;
+  actual_return: {
+    bank_interest: number;
+    investment_gain: number;
+    dividends: number;
+    rental_income_net: number;
+    debt_interest_paid: number;
+    total: number;
+  };
+  deemed_return_from_tax_authority: number;
+  difference: number;
+  indicative_refund: number;
+  is_profitable: boolean;
+}
+
+export interface Box3YearSummary {
+  status: Box3YearStatus;
+  completeness: {
+    bank_savings: Box3CompletenessStatus;
+    investments: Box3CompletenessStatus;
+    real_estate: Box3CompletenessStatus;
+    debts: Box3CompletenessStatus;
+    tax_return: Box3CompletenessStatus;
+  };
+  missing_items: Box3MissingItem[];
+  calculated_totals?: Box3CalculatedTotals;
+}
+
+/**
+ * Validation Flag
+ */
+export interface Box3ValidationFlag {
+  id: string;
+  field_path: string;
+  type: 'requires_validation' | 'low_confidence' | 'inconsistency';
+  message: string;
+  severity: 'low' | 'medium' | 'high';
+  created_at: string;
+  resolved_at?: string;
+}
+
+/**
+ * Manual Override
+ */
+export interface Box3ManualOverrideV2 {
+  id: string;
+  field_path: string;
+  original_value: number | string | null;
+  override_value: number | string;
+  reason: string;
+  created_at: string;
+  created_by: string;
+}
+
+/**
+ * Document Classification (for box3_documents.classification)
+ */
+export interface Box3DocumentClassification {
+  document_type: 'aangifte_ib' | 'definitieve_aanslag' | 'voorlopige_aanslag' |
+    'jaaroverzicht_bank' | 'spaarrekeningoverzicht' | 'effectenoverzicht' |
+    'dividendnota' | 'woz_beschikking' | 'hypotheekoverzicht' |
+    'leningoverzicht' | 'overig';
+  tax_years: string[];
+  for_person: string | null; // person id or null = both
+  confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Complete Blueprint - The canonical data structure
+ */
+export interface Box3Blueprint {
+  schema_version: string;
+
+  fiscal_entity: Box3FiscalEntity;
+  assets: Box3Assets;
+  debts: Box3Debt[];
+  tax_authority_data: Record<string, Box3TaxAuthorityYearData>;
+  year_summaries: Record<string, Box3YearSummary>;
+
+  validation_flags: Box3ValidationFlag[];
+  manual_overrides: Box3ManualOverrideV2[];
+}
+
+// ─── ZOD SCHEMAS FOR VALIDATION ───
+
+export const box3DataPointSchema = z.object({
+  amount: z.number(),
+  source_doc_id: z.string().optional(),
+  source_type: z.enum(['document', 'email', 'client_estimate', 'calculation', 'estimate']).optional(),
+  source_snippet: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  requires_validation: z.boolean().optional(),
+  validation_note: z.string().optional(),
+});
+
+export const box3PersonSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  bsn_masked: z.string().nullable(),
+  date_of_birth: z.string().nullable(),
+  email: z.string().nullable().optional(),
+});
+
+export const box3FiscalEntitySchema = z.object({
+  taxpayer: box3PersonSchema,
+  fiscal_partner: z.object({
+    has_partner: z.boolean(),
+    id: z.string().optional(),
+    name: z.string().nullable().optional(),
+    bsn_masked: z.string().nullable().optional(),
+    date_of_birth: z.string().nullable().optional(),
+  }),
+});
+
+export const box3DocumentClassificationSchema = z.object({
+  document_type: z.enum([
+    'aangifte_ib', 'definitieve_aanslag', 'voorlopige_aanslag',
+    'jaaroverzicht_bank', 'spaarrekeningoverzicht', 'effectenoverzicht',
+    'dividendnota', 'woz_beschikking', 'hypotheekoverzicht',
+    'leningoverzicht', 'overig'
+  ]),
+  tax_years: z.array(z.string()),
+  for_person: z.string().nullable(),
+  confidence: z.enum(['high', 'medium', 'low']),
+});
+
+export const box3YearSummarySchema = z.object({
+  status: z.enum(['no_data', 'incomplete', 'ready_for_calculation', 'complete']),
+  completeness: z.object({
+    bank_savings: z.enum(['complete', 'incomplete', 'not_applicable']),
+    investments: z.enum(['complete', 'incomplete', 'not_applicable']),
+    real_estate: z.enum(['complete', 'incomplete', 'not_applicable']),
+    debts: z.enum(['complete', 'incomplete', 'not_applicable']),
+    tax_return: z.enum(['complete', 'incomplete', 'not_applicable']),
+  }),
+  missing_items: z.array(z.object({
+    field: z.string(),
+    description: z.string(),
+    severity: z.enum(['low', 'medium', 'high', 'critical']),
+    action: z.enum(['ask_client', 'search_documents', 'manual_entry']),
+  })),
+  calculated_totals: z.object({
+    total_assets_jan_1: z.number(),
+    actual_return: z.object({
+      bank_interest: z.number(),
+      investment_gain: z.number(),
+      dividends: z.number(),
+      rental_income_net: z.number(),
+      debt_interest_paid: z.number(),
+      total: z.number(),
+    }),
+    deemed_return_from_tax_authority: z.number(),
+    difference: z.number(),
+    indicative_refund: z.number(),
+    is_profitable: z.boolean(),
+  }).optional(),
+});
+
+// Partial blueprint schema for LLM output validation (more lenient)
+export const box3BlueprintPartialSchema = z.object({
+  schema_version: z.string(),
+  fiscal_entity: box3FiscalEntitySchema.optional(),
+  assets: z.object({
+    bank_savings: z.array(z.any()).optional(),
+    investments: z.array(z.any()).optional(),
+    real_estate: z.array(z.any()).optional(),
+    other_assets: z.array(z.any()).optional(),
+  }).optional(),
+  debts: z.array(z.any()).optional(),
+  tax_authority_data: z.record(z.any()).optional(),
+  year_summaries: z.record(box3YearSummarySchema).optional(),
+  validation_flags: z.array(z.any()).optional(),
+  manual_overrides: z.array(z.any()).optional(),
+}).passthrough();
+
+// ─── DATABASE TYPE EXPORTS ───
+
+export type Box3Dossier = typeof box3Dossiers.$inferSelect;
+export type InsertBox3Dossier = typeof box3Dossiers.$inferInsert;
+
+export type Box3Document = typeof box3Documents.$inferSelect;
+export type InsertBox3Document = typeof box3Documents.$inferInsert;
+
+export type Box3BlueprintRecord = typeof box3Blueprints.$inferSelect;
+export type InsertBox3BlueprintRecord = typeof box3Blueprints.$inferInsert;
+
+// ─── INSERT SCHEMAS ───
+
+export const insertBox3DossierSchema = createInsertSchema(box3Dossiers, {
+  clientName: z.string().min(1, "Klantnaam is verplicht"),
+  clientEmail: z.string().email().optional().nullable(),
+  status: z.enum(['intake', 'in_behandeling', 'wacht_op_klant', 'klaar', 'afgerond']).optional(),
+  taxYears: z.array(z.string()).optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
+export const insertBox3DocumentSchema = createInsertSchema(box3Documents, {
+  dossierId: z.string().uuid("Ongeldige dossier ID"),
+  filename: z.string().min(1, "Filename is verplicht"),
+  mimeType: z.string().min(1, "MIME type is verplicht"),
+  fileSize: z.number().positive(),
+  fileData: z.string().min(1, "File data is verplicht"),
+  uploadedVia: z.enum(['intake', 'aanvulling', 'hervalidatie']).optional(),
+  classification: box3DocumentClassificationSchema.optional(),
+}).omit({ id: true, uploadedAt: true });
+
+export const insertBox3BlueprintSchema = createInsertSchema(box3Blueprints, {
+  dossierId: z.string().uuid("Ongeldige dossier ID"),
+  version: z.number().int().positive(),
+  blueprint: box3BlueprintPartialSchema,
+  createdBy: z.enum(['intake', 'aanvulling', 'hervalidatie', 'manual']).optional(),
+}).omit({ id: true, createdAt: true });
+
+// ─── HELPER: Create empty blueprint ───
+
+export function createEmptyBox3Blueprint(): Box3Blueprint {
+  return {
+    schema_version: "2.0",
+    fiscal_entity: {
+      taxpayer: {
+        id: "tp_01",
+        name: null,
+        bsn_masked: null,
+        date_of_birth: null,
+      },
+      fiscal_partner: {
+        has_partner: false,
+      },
+    },
+    assets: {
+      bank_savings: [],
+      investments: [],
+      real_estate: [],
+      other_assets: [],
+    },
+    debts: [],
+    tax_authority_data: {},
+    year_summaries: {},
+    validation_flags: [],
+    manual_overrides: [],
+  };
+}

@@ -3,10 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { 
-  FileText, 
-  Maximize2, 
-  Minimize2, 
+import {
+  FileText,
+  Maximize2,
+  Minimize2,
   Download,
   Eye,
   EyeOff,
@@ -15,6 +15,16 @@ import {
   AlertCircle
 } from "lucide-react";
 import { CompactVersionTimeline } from "./VersionTimeline";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+// Transform numbered chapters (1. Title, 2. Title) to markdown H1 headers
+function transformChaptersToHeaders(content: string): string {
+  return content.replace(
+    /^(\d+)\.\s+([A-Z][^\n]*)/gm,
+    '# $1. $2'
+  );
+}
 
 interface StickyReportPreviewProps {
   content: string;
@@ -125,10 +135,56 @@ export function StickyReportPreview({
           {/* Content preview */}
           <ScrollArea className="flex-1 px-4">
             {content ? (
-              <div className="prose prose-sm max-w-none pb-4">
-                <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed bg-muted/30 p-3 rounded-md">
-                  {content}
-                </pre>
+              <div className="prose prose-xs max-w-none pb-4 dark:prose-invert">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  children={transformChaptersToHeaders(content)}
+                  components={{
+                    h1: ({ children }) => (
+                      <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 mt-4 mb-2 border-b border-blue-500 pb-1">
+                        {children}
+                      </h1>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 mt-3 mb-2">
+                        {children}
+                      </h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="text-xs font-bold text-gray-900 dark:text-gray-100 mt-2 mb-1">
+                        {children}
+                      </h3>
+                    ),
+                    p: ({ children }) => (
+                      <p className="text-xs mb-2 text-gray-700 dark:text-gray-300 leading-relaxed">
+                        {children}
+                      </p>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="text-xs mb-2 list-disc list-outside ml-4 space-y-0.5">
+                        {children}
+                      </ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="text-xs mb-2 list-decimal list-outside ml-4 space-y-0.5">
+                        {children}
+                      </ol>
+                    ),
+                    li: ({ children }) => (
+                      <li className="text-xs text-gray-700 dark:text-gray-300">
+                        {children}
+                      </li>
+                    ),
+                    strong: ({ children }) => (
+                      <strong className="font-bold">{children}</strong>
+                    ),
+                    blockquote: ({ children }) => (
+                      <blockquote className="border-l-2 border-blue-400 pl-2 italic text-xs text-gray-600 dark:text-gray-400">
+                        {children}
+                      </blockquote>
+                    ),
+                  }}
+                />
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center p-4 text-muted-foreground">
@@ -226,10 +282,58 @@ export function FullScreenReportPreview({
 
           <CardContent className="flex-1 min-h-0">
             <ScrollArea className="h-full">
-              <div className="prose prose-sm max-w-none">
-                <pre className="whitespace-pre-wrap font-sans leading-relaxed">
-                  {content}
-                </pre>
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  children={transformChaptersToHeaders(content)}
+                  components={{
+                    h1: ({ children }) => (
+                      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-6 mb-4 border-b-2 border-blue-600 pb-2">
+                        {children}
+                      </h1>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-5 mb-3 border-b border-gray-300 dark:border-gray-600 pb-1">
+                        {children}
+                      </h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-4 mb-2">
+                        {children}
+                      </h3>
+                    ),
+                    p: ({ children }) => (
+                      <p className="mb-4 text-gray-700 dark:text-gray-300 leading-relaxed">
+                        {children}
+                      </p>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="mb-4 list-disc list-outside ml-6 space-y-1">
+                        {children}
+                      </ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="mb-4 list-decimal list-outside ml-6 space-y-1">
+                        {children}
+                      </ol>
+                    ),
+                    li: ({ children }) => (
+                      <li className="text-gray-700 dark:text-gray-300">
+                        {children}
+                      </li>
+                    ),
+                    strong: ({ children }) => (
+                      <strong className="font-bold text-gray-900 dark:text-gray-100">
+                        {children}
+                      </strong>
+                    ),
+                    blockquote: ({ children }) => (
+                      <blockquote className="border-l-4 border-blue-500 pl-4 italic my-4 text-gray-600 dark:text-gray-400">
+                        {children}
+                      </blockquote>
+                    ),
+                  }}
+                />
               </div>
             </ScrollArea>
           </CardContent>

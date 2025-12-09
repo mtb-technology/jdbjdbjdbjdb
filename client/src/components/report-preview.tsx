@@ -19,6 +19,16 @@ import { OverrideConceptDialog } from "./workflow/OverrideConceptDialog";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+// Transform numbered chapters (1. Title, 2. Title) to markdown H1 headers
+function transformChaptersToHeaders(content: string): string {
+  // Match lines that start with a number followed by a dot and text (main chapters)
+  // Pattern: beginning of line, number(s), dot, space, then capitalized text
+  return content.replace(
+    /^(\d+)\.\s+([A-Z][^\n]*)/gm,
+    '# $1. $2'
+  );
+}
+
 interface ReportPreviewProps {
   report: Report | null;
   isGenerating: boolean;
@@ -376,6 +386,7 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
             <div className="prose prose-sm max-w-none dark:prose-invert" data-testid="report-content">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
+                children={transformChaptersToHeaders(displayContent)}
                 components={{
                   h1: ({ children }) => (
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-6 mb-4 border-b-2 border-blue-600 pb-2">
@@ -467,9 +478,7 @@ const ReportPreview = memo(function ReportPreview({ report, isGenerating }: Repo
                     );
                   },
                 }}
-              >
-                {displayContent}
-              </ReactMarkdown>
+              />
             </div>
           ) : (
             <div className="text-center text-muted-foreground py-8">

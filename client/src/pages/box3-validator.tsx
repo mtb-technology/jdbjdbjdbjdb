@@ -96,6 +96,7 @@ const Box3Validator = memo(function Box3Validator() {
     isValidating,
     validationResult,
     currentSessionId,
+    debugInfo,
     validate,
     revalidate,
     setValidationResult,
@@ -292,6 +293,7 @@ const Box3Validator = memo(function Box3Validator() {
             isRevalidating={isValidating || isRevalidatingYear}
             isAddingDocs={isAddingDocs}
             isGeneratingEmail={isGeneratingEmail}
+            debugInfo={debugInfo}
             onBack={handleBackToList}
             onRevalidate={handleRevalidate}
             onOpenSettings={() => setSettingsOpen(true)}

@@ -292,23 +292,61 @@ export const stripHtmlToPlainText = (html: string): string => {
 };
 
 /**
- * Extract belastingjaar from validation result (handles both formats)
+ * Extract belastingjaar from validation result (handles all formats)
  */
 export const extractBelastingjaar = (
   result: Box3ValidationResult | null
 ): string | undefined => {
   if (!result) return undefined;
+
+  // NEW FORMAT: jaren_data has the years as keys
+  if (result.jaren_data) {
+    const years = Object.keys(result.jaren_data).sort();
+    if (years.length > 0) {
+      return years[0]; // Return first year
+    }
+  }
+
+  // LEGACY FORMAT
   const raw =
     result.gevonden_data?.algemeen?.belastingjaar || result.belastingjaar;
   return raw != null ? String(raw) : undefined;
 };
 
 /**
- * Check if validation result uses new format
+ * Extract all belastingjaren from validation result (for multi-year dossiers)
+ */
+export const extractAllBelastingjaren = (
+  result: Box3ValidationResult | null
+): string[] => {
+  if (!result) return [];
+
+  // NEW FORMAT: jaren_data has the years as keys
+  if (result.jaren_data) {
+    return Object.keys(result.jaren_data).sort();
+  }
+
+  // LEGACY FORMAT: single year
+  const raw =
+    result.gevonden_data?.algemeen?.belastingjaar || result.belastingjaar;
+  return raw != null ? [String(raw)] : [];
+};
+
+/**
+ * Check if validation result uses NEW "Senior Fiscaal Jurist" format
+ */
+export const isNewJuristFormat = (result: Box3ValidationResult | null): boolean => {
+  if (!result) return false;
+  return !!(result.jaren_data || result.betrokken_personen || result.dossier_meta);
+};
+
+/**
+ * Check if validation result uses legacy format (old prompt)
  */
 export const isNewFormat = (result: Box3ValidationResult | null): boolean => {
   if (!result) return false;
-  return !!(result.gevonden_data || result.global_status);
+  // This now includes both old "new" format and the newest jurist format
+  return !!(result.gevonden_data || result.global_status || result.jaren_data);
 };
 
 /**
@@ -319,4 +357,127 @@ export const getMailData = (
 ): { onderwerp?: string; body?: string } | null => {
   if (!result) return null;
   return result.draft_mail || result.concept_mail || null;
+};
+
+/**
+ * Get betrokken personen from validation result
+ * Supports both new format (betrokken_personen) and legacy format (fiscale_partners)
+ */
+export const getBetrokkenPersonen = (
+  result: Box3ValidationResult | null
+): { id: string; naam: string | null; rol: string; geboortedatum?: string | null; bsn_mask?: string | null }[] => {
+  if (!result) return [];
+
+  // NEW FORMAT: betrokken_personen
+  if (result.betrokken_personen && result.betrokken_personen.length > 0) {
+    return result.betrokken_personen.map(p => ({
+      id: p.id,
+      naam: p.naam ?? null,
+      rol: p.rol || "Onbekend",
+      geboortedatum: p.geboortedatum,
+      bsn_mask: p.bsn_mask,
+    }));
+  }
+
+  // LEGACY FORMAT: fiscale_partners
+  if (result.fiscale_partners?.partners && result.fiscale_partners.partners.length > 0) {
+    return result.fiscale_partners.partners.map(p => ({
+      id: p.id,
+      naam: p.naam ?? null,
+      rol: p.rol || "Onbekend",
+    }));
+  }
+
+  return [];
+};
+
+/**
+ * Check if dossier has partners (supports both formats)
+ */
+export const hasPartners = (result: Box3ValidationResult | null): boolean => {
+  if (!result) return false;
+
+  // NEW FORMAT
+  if (result.betrokken_personen) {
+    return result.betrokken_personen.length > 1;
+  }
+
+  // LEGACY FORMAT
+  return result.fiscale_partners?.heeft_partner === true;
+};
+
+/**
+ * Get jaar data from validation result (new format)
+ */
+export const getJaarData = (
+  result: Box3ValidationResult | null,
+  jaar: string
+): {
+  documentType?: string;
+  datumDocument?: string | null;
+  vermogensMix?: {
+    bankEnSpaartegoeden?: number | null;
+    overigeBezittingen?: number | null;
+    onroerendeZakenWaarde?: number | null;
+    schuldenBox3?: number | null;
+    totaalBezittingen?: number | null;
+    heffingsvrijVermogenTotaal?: number | null;
+  };
+  fiscaleVerdeling?: {
+    grondslagSparenBeleggenTotaal?: number | null;
+    aandeelPersoon1?: number | null;
+    aandeelPersoon2?: number | null;
+  };
+  teBetalenTerugTeKrijgen?: {
+    box3InkomenBerekend?: number | null;
+    totaalTeBetalenAanslag?: number | null;
+  };
+} | null => {
+  if (!result?.jaren_data?.[jaar]) return null;
+
+  const jd = result.jaren_data[jaar];
+  return {
+    documentType: jd.document_type,
+    datumDocument: jd.datum_document,
+    vermogensMix: jd.vermogens_mix_totaal_huishouden ? {
+      bankEnSpaartegoeden: jd.vermogens_mix_totaal_huishouden.bank_en_spaartegoeden,
+      overigeBezittingen: jd.vermogens_mix_totaal_huishouden.overige_bezittingen,
+      onroerendeZakenWaarde: jd.vermogens_mix_totaal_huishouden.onroerende_zaken_waarde,
+      schuldenBox3: jd.vermogens_mix_totaal_huishouden.schulden_box_3,
+      totaalBezittingen: jd.vermogens_mix_totaal_huishouden.totaal_bezittingen,
+      heffingsvrijVermogenTotaal: jd.vermogens_mix_totaal_huishouden.heffingsvrij_vermogen_totaal,
+    } : undefined,
+    fiscaleVerdeling: jd.fiscale_verdeling ? {
+      grondslagSparenBeleggenTotaal: jd.fiscale_verdeling.grondslag_sparen_beleggen_totaal,
+      aandeelPersoon1: jd.fiscale_verdeling.aandeel_persoon_1,
+      aandeelPersoon2: jd.fiscale_verdeling.aandeel_persoon_2,
+    } : undefined,
+    teBetalenTerugTeKrijgen: jd.te_betalen_terug_te_krijgen ? {
+      box3InkomenBerekend: jd.te_betalen_terug_te_krijgen.box_3_inkomen_berekend,
+      totaalTeBetalenAanslag: jd.te_betalen_terug_te_krijgen.totaal_te_betalen_aanslag,
+    } : undefined,
+  };
+};
+
+/**
+ * Get global status from validation result (handles both formats)
+ */
+export const getGlobalStatus = (result: Box3ValidationResult | null): string | null => {
+  if (!result) return null;
+
+  // NEW FORMAT: dossier_meta.status_analyse
+  if (result.dossier_meta?.status_analyse) {
+    return result.dossier_meta.status_analyse;
+  }
+
+  // LEGACY FORMAT
+  return result.global_status || null;
+};
+
+/**
+ * Get aandachtspunten from validation result (new format only)
+ */
+export const getAandachtspunten = (result: Box3ValidationResult | null): string[] => {
+  if (!result) return [];
+  return result.aandachtspunten_voor_expert || [];
 };

@@ -343,9 +343,18 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       console.log(`📋 [Box3Validator] Single-year session created: ${session.id}`);
     }
 
+    // Include debug info for developer tools
+    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+
     res.json(createApiSuccessResponse({
       session,
-      validationResult
+      validationResult,
+      _debug: {
+        fullPrompt,
+        rawAiResponse: result.content,
+        modelUsed: aiConfig.model,
+        timestamp: new Date().toISOString(),
+      }
     }, "Documenten succesvol gevalideerd"));
   })
 );
@@ -881,9 +890,18 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
 
     console.log(`📋 [Box3Validator] Session ${id} re-validated`);
 
+    // Include debug info for developer tools
+    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+
     res.json(createApiSuccessResponse({
       session: updatedSession,
-      validationResult
+      validationResult,
+      _debug: {
+        fullPrompt,
+        rawAiResponse: result.content,
+        modelUsed: aiConfig.model,
+        timestamp: new Date().toISOString(),
+      }
     }, "Documenten opnieuw gevalideerd"));
   })
 );
@@ -1575,9 +1593,19 @@ Analyseer voor belastingjaar ${jaar} en geef validatie als JSON.`;
 
     console.log(`📋 [Box3Validator] Year ${jaar} revalidated`);
 
+    // Include debug info for developer tools
+    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+
     res.json(createApiSuccessResponse({
       session: updated,
       validationResult,
+      _debug: {
+        fullPrompt,
+        rawAiResponse: result.content,
+        modelUsed: aiConfig.model,
+        timestamp: new Date().toISOString(),
+        jaar,
+      }
     }, `Jaar ${jaar} opnieuw gevalideerd`));
   })
 );

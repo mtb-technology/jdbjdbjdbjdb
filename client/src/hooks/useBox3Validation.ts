@@ -12,6 +12,15 @@ import type { PendingFile, EditedConceptMail } from "@/types/box3Validator.types
 import { stripHtmlToPlainText, getMailData } from "@/utils/box3Utils";
 import { CATEGORY_LABELS } from "@/constants/box3.constants";
 
+// Debug info from API response
+interface DebugInfo {
+  fullPrompt: string;
+  rawAiResponse: string;
+  modelUsed: string;
+  timestamp: string;
+  jaar?: string;
+}
+
 interface ValidationState {
   isValidating: boolean;
   validationResult: Box3ValidationResult | null;
@@ -19,6 +28,7 @@ interface ValidationState {
   editedConceptMail: EditedConceptMail | null;
   expandedCategories: Set<string>;
   lastUsedPrompt: string | null;
+  debugInfo: DebugInfo | null;
 }
 
 interface UseBox3ValidationProps {
@@ -56,9 +66,10 @@ export function useBox3Validation({
     new Set()
   );
   const [lastUsedPrompt, setLastUsedPrompt] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
 
   // Process validation result and extract concept mail
-  const processValidationResult = (result: Box3ValidationResult) => {
+  const processValidationResult = (result: Box3ValidationResult, debug?: DebugInfo) => {
     setValidationResult(result);
 
     const mailData = getMailData(result);
@@ -72,6 +83,13 @@ export function useBox3Validation({
     // Expand all categories by default
     setExpandedCategories(new Set(Object.keys(CATEGORY_LABELS)));
     setLastUsedPrompt(systemPrompt);
+
+    // Store debug info if provided
+    if (debug) {
+      setDebugInfo(debug);
+      // Also store in localStorage for persistence
+      localStorage.setItem('box3_last_debug_info', JSON.stringify(debug));
+    }
   };
 
   // Validate new documents
@@ -124,7 +142,7 @@ export function useBox3Validation({
       const data = await response.json();
       const result = data.success ? data.data : data;
 
-      processValidationResult(result.validationResult);
+      processValidationResult(result.validationResult, result._debug);
       setCurrentSessionId(result.session?.id || null);
 
       toast({
@@ -179,7 +197,7 @@ export function useBox3Validation({
       const data = await response.json();
       const result = data.success ? data.data : data;
 
-      processValidationResult(result.validationResult);
+      processValidationResult(result.validationResult, result._debug);
 
       toast({
         title: "Opnieuw gevalideerd",
@@ -216,6 +234,7 @@ export function useBox3Validation({
     editedConceptMail,
     expandedCategories,
     lastUsedPrompt,
+    debugInfo,
     validate,
     revalidate,
     setValidationResult,
@@ -225,3 +244,6 @@ export function useBox3Validation({
     handleReset,
   };
 }
+
+// Export DebugInfo type for use in components
+export type { DebugInfo };

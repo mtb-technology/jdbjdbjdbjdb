@@ -65,12 +65,22 @@ import type { PendingFile } from "@/types/box3Validator.types";
 // Box 3 herstel years (2017-2023 are the relevant years)
 const BOX3_YEARS = ["2017", "2018", "2019", "2020", "2021", "2022", "2023"];
 
+// Debug info from API response
+interface DebugInfo {
+  fullPrompt: string;
+  rawAiResponse: string;
+  modelUsed: string;
+  timestamp: string;
+  jaar?: string;
+}
+
 interface Box3CaseDetailProps {
   session: Box3ValidatorSession;
   systemPrompt: string;
   isRevalidating: boolean;
   isAddingDocs: boolean;
   isGeneratingEmail?: boolean;
+  debugInfo?: DebugInfo | null;
   onBack: () => void;
   onRevalidate: (jaar?: string) => void;
   onOpenSettings: () => void;
@@ -87,6 +97,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   isRevalidating,
   isAddingDocs,
   isGeneratingEmail = false,
+  debugInfo,
   onBack,
   onRevalidate,
   onOpenSettings,
@@ -140,10 +151,22 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   const attachments = (session.attachments as any[]) || [];
 
   // Get years that already have data
+  // Combines years from multiYearData.years AND validationResult.jaren_data (new jurist format)
   const existingYears = useMemo(() => {
-    if (!multiYearData?.years) return [];
-    return Object.keys(multiYearData.years).sort();
-  }, [multiYearData]);
+    const yearsSet = new Set<string>();
+
+    // Add years from multiYearData
+    if (multiYearData?.years) {
+      Object.keys(multiYearData.years).forEach(y => yearsSet.add(y));
+    }
+
+    // Add years from validationResult.jaren_data (new jurist format)
+    if (validationResult?.jaren_data) {
+      Object.keys(validationResult.jaren_data).forEach(y => yearsSet.add(y));
+    }
+
+    return Array.from(yearsSet).sort();
+  }, [multiYearData, validationResult]);
 
   // Get years that can still be added
   const availableYears = useMemo(() => {
@@ -557,6 +580,21 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
       {/* ============ MULTI-YEAR MODE ============ */}
       {isMultiYear && multiYearData && (
         <div className="space-y-6">
+          {/* Session-level Raw Output Panel - shows intake analysis prompt/output */}
+          {validationResult && (
+            <RawOutputPanel
+              validationResult={validationResult}
+              lastUsedPrompt={null}
+              systemPrompt={systemPrompt}
+              debugInfo={debugInfo}
+            />
+          )}
+
+          {/* Gevonden Data Cards - shows jaren_data from new jurist format */}
+          {validationResult && (validationResult.jaren_data || validationResult.gevonden_data) && (
+            <GevondenDataCards validationResult={validationResult} />
+          )}
+
           {/* Total Overview */}
           <Box3TotalOverview
             multiYearData={multiYearData}
@@ -603,7 +641,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           {/* Per-Year Entries */}
           <div className="space-y-4">
             {existingYears.map((jaar) => {
-              const yearData = multiYearData.years[jaar];
+              // Get yearData from multiYearData, or create empty entry for years only in jaren_data
+              const yearData = multiYearData?.years?.[jaar] ?? {
+                jaar,
+                attachments: [],
+                validationResult: undefined,
+                manualOverrides: undefined,
+                isComplete: false,
+              };
               return (
                 <div key={jaar} id={`year-${jaar}`}>
                   <Box3YearEntry
@@ -619,6 +664,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     sessionBijlageAnalyse={validationResult?.bijlage_analyse}
                     sessionFiscalePartners={validationResult?.fiscale_partners}
                     sessionPerPartnerData={validationResult?.gevonden_data?.per_partner}
+                    // Pass jaren_data for this specific year (new format)
+                    sessionJarenData={validationResult?.jaren_data}
                   />
                 </div>
               );
@@ -690,10 +737,12 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 validationResult={validationResult}
                 lastUsedPrompt={null}
                 systemPrompt={systemPrompt}
+                debugInfo={debugInfo}
               />
 
               {/* New Format: Gevonden Data Dashboard */}
-              {showNewFormat && validationResult.gevonden_data && (
+              {/* Show for legacy format (gevonden_data) OR new jurist format (jaren_data) */}
+              {showNewFormat && (validationResult.gevonden_data || validationResult.jaren_data) && (
                 <GevondenDataCards validationResult={validationResult} />
               )}
 
