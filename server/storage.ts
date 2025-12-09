@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession, type ExternalReportSession, type InsertExternalReportSession, type ExternalReportAdjustment, type InsertExternalReportAdjustment, type Job, type InsertJob } from "@shared/schema";
+import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession, type ExternalReportSession, type InsertExternalReportSession, type ExternalReportAdjustment, type InsertExternalReportAdjustment, type Job, type InsertJob, type Box3Dossier, type InsertBox3Dossier, type Box3Document, type InsertBox3Document, type Box3BlueprintRecord, type InsertBox3BlueprintRecord, type Box3Blueprint } from "@shared/schema";
 
 // Light version of Box3ValidatorSession for list views (excludes large binary data)
 export type Box3ValidatorSessionLight = {
@@ -11,7 +11,7 @@ export type Box3ValidatorSessionLight = {
   createdAt: Date | null;
   updatedAt: Date | null;
 };
-import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions, externalReportSessions, externalReportAdjustments, jobs } from "@shared/schema";
+import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions, externalReportSessions, externalReportAdjustments, jobs, box3Dossiers, box3Documents, box3Blueprints } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql, inArray } from "drizzle-orm";
 import * as fs from "fs";
@@ -92,6 +92,33 @@ export interface IStorage {
   completeJob(id: string, result: Record<string, any>): Promise<Job | undefined>;
   failJob(id: string, error: string): Promise<Job | undefined>;
   cancelJob(id: string): Promise<Job | undefined>;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BOX 3 V2 - New canonical data model
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Dossiers
+  getBox3Dossier(id: string): Promise<Box3Dossier | undefined>;
+  getAllBox3Dossiers(): Promise<Box3Dossier[]>;
+  createBox3Dossier(dossier: InsertBox3Dossier): Promise<Box3Dossier>;
+  updateBox3Dossier(id: string, data: Partial<Box3Dossier>): Promise<Box3Dossier | undefined>;
+  deleteBox3Dossier(id: string): Promise<void>;
+
+  // Documents
+  getBox3Document(id: string): Promise<Box3Document | undefined>;
+  getBox3DocumentsForDossier(dossierId: string): Promise<Box3Document[]>;
+  createBox3Document(doc: InsertBox3Document): Promise<Box3Document>;
+  updateBox3Document(id: string, data: Partial<Box3Document>): Promise<Box3Document | undefined>;
+  deleteBox3Document(id: string): Promise<void>;
+
+  // Blueprints
+  getBox3Blueprint(id: string): Promise<Box3BlueprintRecord | undefined>;
+  getLatestBox3Blueprint(dossierId: string): Promise<Box3BlueprintRecord | undefined>;
+  getAllBox3Blueprints(dossierId: string): Promise<Box3BlueprintRecord[]>;
+  createBox3Blueprint(blueprint: InsertBox3BlueprintRecord): Promise<Box3BlueprintRecord>;
+
+  // Combined operations
+  getBox3DossierWithLatestBlueprint(dossierId: string): Promise<{ dossier: Box3Dossier; blueprint: Box3BlueprintRecord | null; documents: Box3Document[] } | undefined>;
 }
 
 // Flag to track if dossier number migration has been checked
@@ -898,6 +925,110 @@ export class DatabaseStorage implements IStorage {
 
     console.log(`🔧 Client name restoration complete: ${updated} updated, ${failed} failed/skipped`);
     return { updated, failed, details };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BOX 3 V2 - New canonical data model implementation
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // --- Dossiers ---
+
+  async getBox3Dossier(id: string): Promise<Box3Dossier | undefined> {
+    const [dossier] = await db.select().from(box3Dossiers).where(eq(box3Dossiers.id, id));
+    return dossier;
+  }
+
+  async getAllBox3Dossiers(): Promise<Box3Dossier[]> {
+    return db.select().from(box3Dossiers).orderBy(desc(box3Dossiers.createdAt));
+  }
+
+  async createBox3Dossier(dossier: InsertBox3Dossier): Promise<Box3Dossier> {
+    const [created] = await db.insert(box3Dossiers).values(dossier).returning();
+    return created;
+  }
+
+  async updateBox3Dossier(id: string, data: Partial<Box3Dossier>): Promise<Box3Dossier | undefined> {
+    const [updated] = await db
+      .update(box3Dossiers)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(box3Dossiers.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteBox3Dossier(id: string): Promise<void> {
+    await db.delete(box3Dossiers).where(eq(box3Dossiers.id, id));
+  }
+
+  // --- Documents ---
+
+  async getBox3Document(id: string): Promise<Box3Document | undefined> {
+    const [doc] = await db.select().from(box3Documents).where(eq(box3Documents.id, id));
+    return doc;
+  }
+
+  async getBox3DocumentsForDossier(dossierId: string): Promise<Box3Document[]> {
+    return db.select().from(box3Documents).where(eq(box3Documents.dossierId, dossierId));
+  }
+
+  async createBox3Document(doc: InsertBox3Document): Promise<Box3Document> {
+    const [created] = await db.insert(box3Documents).values(doc).returning();
+    return created;
+  }
+
+  async updateBox3Document(id: string, data: Partial<Box3Document>): Promise<Box3Document | undefined> {
+    const [updated] = await db
+      .update(box3Documents)
+      .set(data)
+      .where(eq(box3Documents.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteBox3Document(id: string): Promise<void> {
+    await db.delete(box3Documents).where(eq(box3Documents.id, id));
+  }
+
+  // --- Blueprints ---
+
+  async getBox3Blueprint(id: string): Promise<Box3BlueprintRecord | undefined> {
+    const [blueprint] = await db.select().from(box3Blueprints).where(eq(box3Blueprints.id, id));
+    return blueprint;
+  }
+
+  async getLatestBox3Blueprint(dossierId: string): Promise<Box3BlueprintRecord | undefined> {
+    const [blueprint] = await db
+      .select()
+      .from(box3Blueprints)
+      .where(eq(box3Blueprints.dossierId, dossierId))
+      .orderBy(desc(box3Blueprints.version))
+      .limit(1);
+    return blueprint;
+  }
+
+  async getAllBox3Blueprints(dossierId: string): Promise<Box3BlueprintRecord[]> {
+    return db
+      .select()
+      .from(box3Blueprints)
+      .where(eq(box3Blueprints.dossierId, dossierId))
+      .orderBy(desc(box3Blueprints.version));
+  }
+
+  async createBox3Blueprint(blueprint: InsertBox3BlueprintRecord): Promise<Box3BlueprintRecord> {
+    const [created] = await db.insert(box3Blueprints).values(blueprint).returning();
+    return created;
+  }
+
+  // --- Combined operations ---
+
+  async getBox3DossierWithLatestBlueprint(dossierId: string): Promise<{ dossier: Box3Dossier; blueprint: Box3BlueprintRecord | null; documents: Box3Document[] } | undefined> {
+    const dossier = await this.getBox3Dossier(dossierId);
+    if (!dossier) return undefined;
+
+    const blueprint = await this.getLatestBox3Blueprint(dossierId);
+    const documents = await this.getBox3DocumentsForDossier(dossierId);
+
+    return { dossier, blueprint: blueprint || null, documents };
   }
 }
 

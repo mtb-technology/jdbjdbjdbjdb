@@ -1702,11 +1702,26 @@ export interface Box3DocumentClassification {
 }
 
 /**
+ * Source Document Registry Entry - tracks what docs were analyzed
+ */
+export interface Box3SourceDocumentEntry {
+  file_id: string;
+  filename: string;
+  detected_type: 'aangifte_ib' | 'aanslag_definitief' | 'aanslag_voorlopig' |
+    'jaaropgave_bank' | 'woz_beschikking' | 'email_body' | 'overig';
+  detected_tax_year: number | null;
+  is_readable: boolean;
+  used_for_extraction: boolean;
+  notes?: string;
+}
+
+/**
  * Complete Blueprint - The canonical data structure
  */
 export interface Box3Blueprint {
   schema_version: string;
 
+  source_documents_registry?: Box3SourceDocumentEntry[];
   fiscal_entity: Box3FiscalEntity;
   assets: Box3Assets;
   debts: Box3Debt[];
@@ -1792,9 +1807,22 @@ export const box3YearSummarySchema = z.object({
   }).optional(),
 });
 
+// Source document entry schema for LLM output
+export const box3SourceDocumentEntrySchema = z.object({
+  file_id: z.string(),
+  filename: z.string(),
+  detected_type: z.enum(['aangifte_ib', 'aanslag_definitief', 'aanslag_voorlopig',
+    'jaaropgave_bank', 'woz_beschikking', 'email_body', 'overig']),
+  detected_tax_year: z.number().nullable(),
+  is_readable: z.boolean(),
+  used_for_extraction: z.boolean(),
+  notes: z.string().optional(),
+});
+
 // Partial blueprint schema for LLM output validation (more lenient)
 export const box3BlueprintPartialSchema = z.object({
   schema_version: z.string(),
+  source_documents_registry: z.array(box3SourceDocumentEntrySchema).optional(),
   fiscal_entity: box3FiscalEntitySchema.optional(),
   assets: z.object({
     bank_savings: z.array(z.any()).optional(),
