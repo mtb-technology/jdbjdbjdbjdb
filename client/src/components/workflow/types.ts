@@ -26,6 +26,16 @@ export interface StageExecutionResponse {
 export type ReportDepth = "concise" | "balanced" | "comprehensive";
 
 /**
+ * Pending file for attachment upload
+ */
+export interface PendingFile {
+  file: File;
+  name: string;
+  size: number;
+  type: string;
+}
+
+/**
  * Variables for executing a stage mutation.
  */
 export interface ExecuteStageVariables {
@@ -34,6 +44,8 @@ export interface ExecuteStageVariables {
   customInput?: string;
   /** Report depth for Stage 3 - controls detail level */
   reportDepth?: ReportDepth;
+  /** Pending attachments to upload for Stage 1a re-run */
+  pendingAttachments?: PendingFile[];
 }
 
 /**

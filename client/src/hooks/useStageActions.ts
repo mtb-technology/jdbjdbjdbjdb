@@ -14,7 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import type { WorkflowState, WorkflowAction } from "@/components/workflow/WorkflowContext";
-import type { ExecuteStageMutation, ReportDepth } from "@/components/workflow/types";
+import type { ExecuteStageMutation, ReportDepth, PendingFile } from "@/components/workflow/types";
 import type { ProcessFeedbackResponse } from "@shared/types/api";
 
 interface UseStageActionsProps {
@@ -24,7 +24,7 @@ interface UseStageActionsProps {
 }
 
 interface UseStageActionsReturn {
-  handleExecuteStage: (stageKey: string, customContext?: string, reportDepth?: ReportDepth) => void;
+  handleExecuteStage: (stageKey: string, customContext?: string, reportDepth?: ReportDepth, pendingAttachments?: PendingFile[]) => void;
   handleResetStage: (stageKey: string) => Promise<void>;
   handleFeedbackProcessed: (stageKey: string, response: ProcessFeedbackResponse) => void;
   handleReloadPrompts: () => Promise<void>;
@@ -44,7 +44,7 @@ export function useStageActions({
    * Execute a workflow stage
    */
   const handleExecuteStage = useCallback(
-    (stageKey: string, customContext?: string, reportDepth?: ReportDepth) => {
+    (stageKey: string, customContext?: string, reportDepth?: ReportDepth, pendingAttachments?: PendingFile[]) => {
       if (!state.currentReport) return;
 
       executeStageM.mutate({
@@ -52,6 +52,7 @@ export function useStageActions({
         stage: stageKey,
         customInput: customContext || state.customInput || undefined,
         reportDepth,
+        pendingAttachments,
       });
     },
     [state.currentReport, state.customInput, executeStageM]

@@ -54,7 +54,7 @@ export interface WorkflowStageCardProps {
   // Controls
   canExecute: boolean;
   isProcessing: boolean;
-  onExecute: (customContext?: string, reportDepth?: ReportDepth) => void;
+  onExecute: (customContext?: string, reportDepth?: ReportDepth, pendingAttachments?: PendingFile[]) => void;
   onResetStage?: () => void;
 
   // Stage 1a/1b email generation
@@ -130,6 +130,16 @@ export interface ManualModePanelProps {
 export type ReportDepth = "concise" | "balanced" | "comprehensive";
 
 /**
+ * Pending file for upload
+ */
+export interface PendingFile {
+  file: File;
+  name: string;
+  size: number;
+  type: string;
+}
+
+/**
  * Props for StageActionButtons component
  */
 export interface StageActionButtonsProps {
@@ -151,6 +161,10 @@ export interface StageActionButtonsProps {
   showExpressMode?: boolean;
   hasStage3?: boolean;
   onExpressComplete?: () => void;
+  /** Attachment upload props - for Stage 1a re-run */
+  pendingAttachments?: PendingFile[];
+  onAttachmentsChange?: (files: PendingFile[]) => void;
+  isUploadingAttachments?: boolean;
 }
 
 /**

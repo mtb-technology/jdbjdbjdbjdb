@@ -39,7 +39,7 @@ import {
 } from "@/utils/stageCardUtils";
 
 // Types
-import type { WorkflowStageCardProps, ReportDepth } from "@/types/workflowStageCard.types";
+import type { WorkflowStageCardProps, ReportDepth, PendingFile } from "@/types/workflowStageCard.types";
 
 // Re-export props type for consumers
 export type { WorkflowStageCardProps } from "@/types/workflowStageCard.types";
@@ -89,6 +89,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   const [customContext, setCustomContext] = useState("");
   const [showCustomContext, setShowCustomContext] = useState(false);
   const [localReportDepth, setLocalReportDepth] = useState<ReportDepth>("balanced");
+  const [pendingAttachments, setPendingAttachments] = useState<PendingFile[]>([]);
 
   // Use external or local reportDepth
   const reportDepth = externalReportDepth ?? localReportDepth;
@@ -104,8 +105,10 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
   // Handlers
   const handleExecuteClick = useCallback(() => {
-    onExecute(customContext.trim() || undefined, reportDepth);
-  }, [onExecute, customContext, reportDepth]);
+    onExecute(customContext.trim() || undefined, reportDepth, pendingAttachments.length > 0 ? pendingAttachments : undefined);
+    // Clear pending attachments after execute
+    setPendingAttachments([]);
+  }, [onExecute, customContext, reportDepth, pendingAttachments]);
 
   const handleCopy = useCallback((text: string) => {
     copyToClipboard(text);
@@ -183,6 +186,9 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   showExpressMode={showExpressMode}
                   hasStage3={hasStage3}
                   onExpressComplete={onExpressComplete}
+                  pendingAttachments={pendingAttachments}
+                  onAttachmentsChange={setPendingAttachments}
+                  isUploadingAttachments={isProcessing}
                 />
               )}
 

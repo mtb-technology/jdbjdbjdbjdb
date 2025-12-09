@@ -5,10 +5,10 @@
  * Extracted from WorkflowStageCard.tsx lines 426-509.
  */
 
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Play,
   RefreshCw,
@@ -20,28 +20,69 @@ import {
   Zap,
   Scale,
   BookOpen,
+  Upload,
+  FileText,
+  X,
+  Loader2,
+  Paperclip,
 } from "lucide-react";
 import { ExpressModeButton } from "../ExpressModeButton";
-import type { StageActionButtonsProps, ReportDepth } from "@/types/workflowStageCard.types";
+import type { StageActionButtonsProps, ReportDepth, PendingFile } from "@/types/workflowStageCard.types";
 
 /**
  * Custom context input section
  */
 interface CustomContextSectionProps {
+  stageKey: string;
   stageStatus: string;
   customContext: string;
   showCustomContext: boolean;
   onToggleCustomContext: () => void;
   onCustomContextChange: (value: string) => void;
+  // Attachment props for Stage 1a
+  pendingAttachments?: PendingFile[];
+  onAttachmentsChange?: (files: PendingFile[]) => void;
+  isUploadingAttachments?: boolean;
 }
 
 const CustomContextSection = memo(function CustomContextSection({
+  stageKey,
   stageStatus,
   customContext,
   showCustomContext,
   onToggleCustomContext,
   onCustomContextChange,
+  pendingAttachments = [],
+  onAttachmentsChange,
+  isUploadingAttachments = false,
 }: CustomContextSectionProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const isStage1a = stageKey === "1a_informatiecheck";
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0 || !onAttachmentsChange) return;
+
+    const newFiles: PendingFile[] = Array.from(files).map(file => ({
+      file,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    }));
+
+    onAttachmentsChange([...pendingAttachments, ...newFiles]);
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveFile = (fileName: string) => {
+    if (!onAttachmentsChange) return;
+    onAttachmentsChange(pendingAttachments.filter(f => f.name !== fileName));
+  };
+
   return (
     <div className="bg-purple-50 dark:bg-purple-950/20 border-2 border-purple-200 dark:border-purple-800 rounded-lg p-4">
       <button
@@ -58,6 +99,7 @@ const CustomContextSection = memo(function CustomContextSection({
             </h4>
             <p className="text-xs text-purple-700 dark:text-purple-300 mt-1">
               Voeg extra instructies of context toe die de AI moet gebruiken
+              {isStage1a && " • Upload extra bijlages voor heranalyse"}
             </p>
           </div>
         </div>
@@ -70,6 +112,58 @@ const CustomContextSection = memo(function CustomContextSection({
 
       {showCustomContext && (
         <div className="mt-3 space-y-3">
+          {/* Attachment upload for Stage 1a */}
+          {isStage1a && onAttachmentsChange && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.txt,.jpg,.jpeg,.png"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingAttachments}
+                  className="gap-2 border-purple-300 hover:border-purple-400 hover:bg-purple-100"
+                >
+                  {isUploadingAttachments ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Uploaden...</>
+                  ) : (
+                    <><Upload className="h-4 w-4" /> Extra Bijlages</>
+                  )}
+                </Button>
+                <span className="text-xs text-purple-600">PDF, TXT, JPG, PNG</span>
+              </div>
+
+              {/* Pending files badges */}
+              {pendingAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {pendingAttachments.map((file) => (
+                    <Badge key={file.name} variant="secondary" className="gap-2 pr-1 bg-purple-100 text-purple-800">
+                      <FileText className="h-3 w-3" />
+                      <span className="text-xs">{file.name}</span>
+                      <span className="text-xs text-purple-600">
+                        ({Math.round(file.size / 1024)}KB)
+                      </span>
+                      <button
+                        onClick={() => handleRemoveFile(file.name)}
+                        className="ml-1 hover:bg-purple-200 rounded-sm p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <Textarea
             value={customContext}
             onChange={(e) => onCustomContextChange(e.target.value)}
@@ -79,8 +173,9 @@ const CustomContextSection = memo(function CustomContextSection({
           <div className="flex items-start gap-2 text-xs text-purple-700 dark:text-purple-300">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <p>
-              Deze context wordt toegevoegd aan de originele prompt. De AI zal
-              rekening houden met deze extra informatie.
+              {isStage1a && pendingAttachments.length > 0
+                ? `${pendingAttachments.length} nieuwe bijlage(s) + bestaande bijlages worden meegenomen bij re-run.`
+                : "Deze context wordt toegevoegd aan de originele prompt. De AI zal rekening houden met deze extra informatie."}
             </p>
           </div>
         </div>
@@ -191,6 +286,9 @@ export const StageActionButtons = memo(function StageActionButtons({
   showExpressMode,
   hasStage3,
   onExpressComplete,
+  pendingAttachments,
+  onAttachmentsChange,
+  isUploadingAttachments,
 }: StageActionButtonsProps) {
   // Check if this is Stage 3 (generatie)
   const isStage3 = stageKey === "3_generatie";
@@ -210,11 +308,15 @@ export const StageActionButtons = memo(function StageActionButtons({
       {/* Custom Context Section - Always show when stage can execute */}
       {canExecute && (
         <CustomContextSection
+          stageKey={stageKey}
           stageStatus={stageStatus}
           customContext={customContext}
           showCustomContext={showCustomContext}
           onToggleCustomContext={onToggleCustomContext}
           onCustomContextChange={onCustomContextChange}
+          pendingAttachments={pendingAttachments}
+          onAttachmentsChange={onAttachmentsChange}
+          isUploadingAttachments={isUploadingAttachments}
         />
       )}
 

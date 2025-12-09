@@ -160,7 +160,31 @@ function WorkflowManagerContent({
 
   // Execute stage mutation
   const executeStageM = useMutation({
-    mutationFn: async ({ reportId, stage, customInput, reportDepth }: { reportId: string; stage: string; customInput?: string; reportDepth?: string }) => {
+    mutationFn: async ({ reportId, stage, customInput, reportDepth, pendingAttachments }: { reportId: string; stage: string; customInput?: string; reportDepth?: string; pendingAttachments?: Array<{ file: File; name: string }> }) => {
+      // Upload attachments first if present (only for Stage 1a re-run)
+      if (pendingAttachments && pendingAttachments.length > 0 && stage === "1a_informatiecheck") {
+        console.log(`📎 Uploading ${pendingAttachments.length} attachment(s) before Stage 1a re-run...`);
+
+        const formData = new FormData();
+        pendingAttachments.forEach((pf) => {
+          formData.append('files', pf.file, pf.name);
+        });
+
+        const uploadResponse = await fetch(`/api/upload/attachments/${reportId}/batch`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          throw new Error(`Bijlage upload mislukt: ${errorText}`);
+        }
+
+        const uploadResult = await uploadResponse.json();
+        console.log(`📎 Upload complete: ${uploadResult.data?.successful || 0} file(s) uploaded`);
+      }
+
       const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
         customInput,
         reportDepth,

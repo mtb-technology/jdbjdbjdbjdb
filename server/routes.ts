@@ -26,7 +26,6 @@ import { registerPromptRoutes } from "./routes/prompt-routes";
 import { registerCaseRoutes } from "./routes/case-routes";
 import { registerReportRoutes } from "./routes/report-routes";
 import { registerJobRoutes } from "./routes/job-routes";
-import { box3ValidatorRouter } from "./routes/box3-validator-routes";
 import { box3V2Router } from "./routes/box3-v2-routes";
 import { externalReportRouter } from "./routes/external-report-routes";
 import { z } from "zod";
@@ -89,11 +88,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Job routes - background task management
   registerJobRoutes(app);
 
-  // Box 3 Validator micro-module (legacy V1)
-  app.use("/api/box3-validator", box3ValidatorRouter);
-
-  // Box 3 V2 - New canonical data model
-  app.use("/api/box3-v2", box3V2Router);
+  // Box 3 Validator (V2 - Blueprint data model)
+  app.use("/api/box3-validator", box3V2Router);
 
   // External Report Sessions (paste & adjust existing reports)
   app.use("/api/external-reports", externalReportRouter);

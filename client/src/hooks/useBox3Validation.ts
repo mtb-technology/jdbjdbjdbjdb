@@ -1,16 +1,15 @@
 /**
- * useBox3Validation Hook
+ * useBox3Validation Hook - V2
  *
  * Validation logic for Box 3 Validator.
- * Handles validate and revalidate operations.
+ * Uses the new V2 Blueprint data model.
  */
 
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import type { Box3ValidationResult } from "@shared/schema";
-import type { PendingFile, EditedConceptMail } from "@/types/box3Validator.types";
-import { stripHtmlToPlainText, getMailData } from "@/utils/box3Utils";
-import { CATEGORY_LABELS } from "@/constants/box3.constants";
+import type { Box3Blueprint } from "@shared/schema";
+import type { PendingFile } from "@/types/box3Validator.types";
+import type { Box3DossierFull } from "./useBox3Sessions";
 
 // Debug info from API response
 interface DebugInfo {
@@ -18,16 +17,14 @@ interface DebugInfo {
   rawAiResponse: string;
   modelUsed: string;
   timestamp: string;
-  jaar?: string;
 }
 
 interface ValidationState {
   isValidating: boolean;
-  validationResult: Box3ValidationResult | null;
-  currentSessionId: string | null;
-  editedConceptMail: EditedConceptMail | null;
-  expandedCategories: Set<string>;
-  lastUsedPrompt: string | null;
+  blueprint: Box3Blueprint | null;
+  currentDossierId: string | null;
+  blueprintVersion: number;
+  taxYears: string[];
   debugInfo: DebugInfo | null;
 }
 
@@ -41,13 +38,12 @@ interface UseBox3ValidationReturn extends ValidationState {
     clientName: string,
     inputText: string,
     pendingFiles: PendingFile[]
-  ) => Promise<void>;
-  revalidate: () => Promise<void>;
-  setValidationResult: (result: Box3ValidationResult | null) => void;
-  setCurrentSessionId: (id: string | null) => void;
-  setEditedConceptMail: (mail: EditedConceptMail | null) => void;
-  setExpandedCategories: React.Dispatch<React.SetStateAction<Set<string>>>;
+  ) => Promise<Box3DossierFull | null>;
+  revalidate: (dossierId: string) => Promise<Box3Blueprint | null>;
+  setBlueprint: (blueprint: Box3Blueprint | null) => void;
+  setCurrentDossierId: (id: string | null) => void;
   handleReset: () => void;
+  loadFromDossier: (dossierFull: Box3DossierFull) => void;
 }
 
 export function useBox3Validation({
@@ -57,54 +53,33 @@ export function useBox3Validation({
   const { toast } = useToast();
 
   const [isValidating, setIsValidating] = useState(false);
-  const [validationResult, setValidationResult] =
-    useState<Box3ValidationResult | null>(null);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [editedConceptMail, setEditedConceptMail] =
-    useState<EditedConceptMail | null>(null);
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set()
-  );
-  const [lastUsedPrompt, setLastUsedPrompt] = useState<string | null>(null);
+  const [blueprint, setBlueprint] = useState<Box3Blueprint | null>(null);
+  const [currentDossierId, setCurrentDossierId] = useState<string | null>(null);
+  const [blueprintVersion, setBlueprintVersion] = useState(0);
+  const [taxYears, setTaxYears] = useState<string[]>([]);
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
 
-  // Process validation result and extract concept mail
-  const processValidationResult = (result: Box3ValidationResult, debug?: DebugInfo) => {
-    setValidationResult(result);
-
-    const mailData = getMailData(result);
-    if (mailData) {
-      setEditedConceptMail({
-        onderwerp: stripHtmlToPlainText(mailData.onderwerp || ""),
-        body: stripHtmlToPlainText(mailData.body || ""),
-      });
-    }
-
-    // Expand all categories by default
-    setExpandedCategories(new Set(Object.keys(CATEGORY_LABELS)));
-    setLastUsedPrompt(systemPrompt);
-
-    // Store debug info if provided
-    if (debug) {
-      setDebugInfo(debug);
-      // Also store in localStorage for persistence
-      localStorage.setItem('box3_last_debug_info', JSON.stringify(debug));
-    }
+  // Load state from a loaded dossier
+  const loadFromDossier = (dossierFull: Box3DossierFull) => {
+    setBlueprint(dossierFull.blueprint);
+    setCurrentDossierId(dossierFull.dossier.id);
+    setBlueprintVersion(dossierFull.blueprintVersion);
+    setTaxYears(dossierFull.dossier.taxYears || []);
   };
 
-  // Validate new documents
+  // Validate new documents - creates a new dossier
   const validate = async (
     clientName: string,
     inputText: string,
     pendingFiles: PendingFile[]
-  ) => {
+  ): Promise<Box3DossierFull | null> => {
     if (!clientName.trim()) {
       toast({
         title: "Klantnaam vereist",
         description: "Vul een klantnaam in.",
         variant: "destructive",
       });
-      return;
+      return null;
     }
 
     if (!inputText.trim() && pendingFiles.length === 0) {
@@ -113,7 +88,16 @@ export function useBox3Validation({
         description: "Voer mail tekst in of upload documenten.",
         variant: "destructive",
       });
-      return;
+      return null;
+    }
+
+    if (!systemPrompt.trim()) {
+      toast({
+        title: "Geen prompt",
+        description: "Configureer eerst een intake prompt in de instellingen.",
+        variant: "destructive",
+      });
+      return null;
     }
 
     setIsValidating(true);
@@ -125,7 +109,6 @@ export function useBox3Validation({
       formData.append("systemPrompt", systemPrompt);
 
       for (const pf of pendingFiles) {
-        // Explicitly pass filename - important when file is a Blob after compression
         formData.append("files", pf.file, pf.name);
       }
 
@@ -142,15 +125,32 @@ export function useBox3Validation({
       const data = await response.json();
       const result = data.success ? data.data : data;
 
-      processValidationResult(result.validationResult, result._debug);
-      setCurrentSessionId(result.session?.id || null);
+      // Update state with V2 response
+      setBlueprint(result.blueprint);
+      setCurrentDossierId(result.dossier?.id || null);
+      setBlueprintVersion(result.blueprintVersion || 1);
+      setTaxYears(result.taxYears || []);
+
+      // Store debug info
+      if (result._debug) {
+        setDebugInfo(result._debug);
+        localStorage.setItem('box3_last_debug_info', JSON.stringify(result._debug));
+      }
 
       toast({
         title: "Validatie voltooid",
-        description: "De documenten zijn geanalyseerd.",
+        description: `Dossier aangemaakt met ${result.taxYears?.length || 0} belastingjaar(en).`,
       });
 
       refetchSessions();
+
+      // Return full dossier data for navigation
+      return {
+        dossier: result.dossier,
+        blueprint: result.blueprint,
+        blueprintVersion: result.blueprintVersion || 1,
+        documents: [], // Documents are in the dossier, fetch separately if needed
+      };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Validation failed:", error);
@@ -159,27 +159,37 @@ export function useBox3Validation({
         description: message || "Kon documenten niet valideren.",
         variant: "destructive",
       });
+      return null;
     } finally {
       setIsValidating(false);
     }
   };
 
-  // Revalidate existing session
-  const revalidate = async () => {
-    if (!currentSessionId) {
+  // Revalidate existing dossier
+  const revalidate = async (dossierId: string): Promise<Box3Blueprint | null> => {
+    if (!dossierId) {
       toast({
-        title: "Geen sessie",
-        description: "Laad eerst een sessie om opnieuw te valideren.",
+        title: "Geen dossier",
+        description: "Laad eerst een dossier om opnieuw te valideren.",
         variant: "destructive",
       });
-      return;
+      return null;
+    }
+
+    if (!systemPrompt.trim()) {
+      toast({
+        title: "Geen prompt",
+        description: "Configureer eerst een intake prompt in de instellingen.",
+        variant: "destructive",
+      });
+      return null;
     }
 
     setIsValidating(true);
 
     try {
       const response = await fetch(
-        `/api/box3-validator/sessions/${currentSessionId}/revalidate`,
+        `/api/box3-validator/dossiers/${dossierId}/revalidate`,
         {
           method: "POST",
           headers: {
@@ -197,23 +207,33 @@ export function useBox3Validation({
       const data = await response.json();
       const result = data.success ? data.data : data;
 
-      processValidationResult(result.validationResult, result._debug);
+      // Update state with V2 response
+      setBlueprint(result.blueprint);
+      setBlueprintVersion(result.blueprintVersion || 1);
+      setTaxYears(result.taxYears || []);
+
+      // Store debug info
+      if (result._debug) {
+        setDebugInfo(result._debug);
+        localStorage.setItem('box3_last_debug_info', JSON.stringify(result._debug));
+      }
 
       toast({
         title: "Opnieuw gevalideerd",
-        description:
-          "De documenten zijn opnieuw geanalyseerd met de aangepaste prompt.",
+        description: `Blueprint v${result.blueprintVersion} aangemaakt.`,
       });
 
       refetchSessions();
+      return result.blueprint;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Re-validation failed:", error);
       toast({
         title: "Hervalidatie mislukt",
-        description: message || "Kon documenten niet opnieuw valideren.",
+        description: message || "Kon dossier niet opnieuw valideren.",
         variant: "destructive",
       });
+      return null;
     } finally {
       setIsValidating(false);
     }
@@ -221,27 +241,26 @@ export function useBox3Validation({
 
   // Reset all validation state
   const handleReset = () => {
-    setValidationResult(null);
-    setCurrentSessionId(null);
-    setEditedConceptMail(null);
-    setExpandedCategories(new Set());
+    setBlueprint(null);
+    setCurrentDossierId(null);
+    setBlueprintVersion(0);
+    setTaxYears([]);
+    setDebugInfo(null);
   };
 
   return {
     isValidating,
-    validationResult,
-    currentSessionId,
-    editedConceptMail,
-    expandedCategories,
-    lastUsedPrompt,
+    blueprint,
+    currentDossierId,
+    blueprintVersion,
+    taxYears,
     debugInfo,
     validate,
     revalidate,
-    setValidationResult,
-    setCurrentSessionId,
-    setEditedConceptMail,
-    setExpandedCategories,
+    setBlueprint,
+    setCurrentDossierId,
     handleReset,
+    loadFromDossier,
   };
 }
 

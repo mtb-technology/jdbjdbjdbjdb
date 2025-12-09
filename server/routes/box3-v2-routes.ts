@@ -188,10 +188,10 @@ function extractTaxYearsFromBlueprint(blueprint: Box3Blueprint): string[] {
 
 /**
  * Create new dossier with intake validation
- * POST /api/box3-v2/intake
+ * POST /api/box3-validator/validate (compatible with frontend)
  */
 box3V2Router.post(
-  "/intake",
+  "/validate",
   (req: Request, res: Response, next: NextFunction) => {
     upload.array('files', 10)(req, res, (err: any) => {
       if (err) {
