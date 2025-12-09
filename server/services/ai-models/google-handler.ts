@@ -32,7 +32,7 @@ export class GoogleAIHandler extends BaseAIHandler {
   async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters & { signal?: AbortSignal; visionAttachments?: Array<{ mimeType: string; data: string; filename: string }> }
+    options?: AIModelParameters & { signal?: AbortSignal; visionAttachments?: Array<{ mimeType: string; data: string; filename: string }>; responseFormat?: 'json' | 'text' }
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -78,6 +78,12 @@ export class GoogleAIHandler extends BaseAIHandler {
         topK: config.topK,
         maxOutputTokens: config.maxOutputTokens,
       };
+
+      // Add JSON response format if requested - forces model to output valid JSON
+      if (options?.responseFormat === 'json') {
+        generationConfig.responseMimeType = 'application/json';
+        console.log(`[${jobId}] 📋 JSON response mode enabled (responseMimeType: application/json)`);
+      }
 
       // Add thinking_config for Gemini 3 models (as per API docs)
       if (config.thinkingLevel) {

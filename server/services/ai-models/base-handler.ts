@@ -45,6 +45,8 @@ export interface AIModelParameters {
   reportDepth?: "concise" | "balanced" | "comprehensive";
   // AbortSignal for graceful cancellation
   signal?: AbortSignal;
+  // Response format - use 'json' to force structured JSON output (Google AI only)
+  responseFormat?: 'json' | 'text';
 }
 
 export interface CircuitBreakerState {

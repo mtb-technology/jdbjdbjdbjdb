@@ -225,14 +225,15 @@ externalReportRouter.post("/:id/analyze", asyncHandler(async (req: Request, res:
 
   console.log(`🔍 [${id}] Analyzing report v${newVersion} with ${aiConfig.provider}/${aiConfig.model}`);
 
-  // Call AI
+  // Call AI - use responseFormat: 'json' to force valid JSON output
   const aiFactory = AIModelFactory.getInstance();
   const response = await aiFactory.callModel(
     aiConfig,
     analyzerPrompt,
     {
       timeout: 300000,
-      jobId: `external-analyze-${id}-${newVersion}`
+      jobId: `external-analyze-${id}-${newVersion}`,
+      responseFormat: 'json' // Force structured JSON output to prevent Markdown responses
     }
   );
 

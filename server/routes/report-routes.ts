@@ -2276,13 +2276,15 @@ Gebruik bullet points. Max 150 woorden.
     console.log(`📝 [${reportId}] Using AI config from database:`, aiConfig.provider, aiConfig.model);
 
     // Call AI to generate JSON adjustments (like reviewers)
+    // Use responseFormat: 'json' to force valid JSON output from Gemini models
     const aiFactory = AIModelFactory.getInstance();
     const response = await aiFactory.callModel(
       aiConfig,
       adjustmentPrompt,
       {
         timeout: 300000, // 5 minutes
-        jobId: `adjust-${reportId}-${adjustmentNumber}`
+        jobId: `adjust-${reportId}-${adjustmentNumber}`,
+        responseFormat: 'json' // Force structured JSON output to prevent Markdown responses
       }
     );
 
