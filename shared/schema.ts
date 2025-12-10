@@ -877,7 +877,7 @@ export const attachments = pgTable("attachments", {
 
   // Vision/OCR tracking
   needsVisionOCR: boolean("needs_vision_ocr").default(false), // True if PDF is scanned (little extractable text)
-  ocrStatus: text("ocr_status").default("none"), // 'none' | 'pending' | 'processing' | 'completed' | 'failed'
+  // ocrStatus removed - column doesn't exist in prod DB yet
 
   // Usage tracking
   usedInStages: json("used_in_stages").$type<string[]>().default([]), // Which stages used this attachment
