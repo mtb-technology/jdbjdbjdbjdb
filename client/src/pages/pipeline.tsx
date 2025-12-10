@@ -71,6 +71,7 @@ const Pipeline = memo(function Pipeline() {
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]); // Files wachten tot case is gemaakt
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState<string>(''); // Status message during upload/processing
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast} = useToast();
   const [, setLocation] = useLocation();
@@ -166,6 +167,7 @@ const Pipeline = memo(function Pipeline() {
 
     setIsUploading(true);
     setUploadProgress(0);
+    setUploadStatus('Bestanden voorbereiden...');
 
     try {
       // Compress images before upload
@@ -173,7 +175,9 @@ const Pipeline = memo(function Pipeline() {
       const compressedFiles: File[] = [];
       let totalSaved = 0;
 
-      for (const pf of files) {
+      for (let i = 0; i < files.length; i++) {
+        const pf = files[i];
+        setUploadStatus(`Comprimeren ${i + 1}/${files.length}: ${pf.name.substring(0, 25)}...`);
         const { file: processedFile, wasCompressed, originalSize } = await compressImageFile(pf.file);
         compressedFiles.push(processedFile);
         if (wasCompressed) {
@@ -193,6 +197,9 @@ const Pipeline = memo(function Pipeline() {
       compressedFiles.forEach((file, index) => {
         formData.append('files', file, files[index].name); // Use original filename
       });
+
+      setUploadStatus(`Uploaden (${files.length} bestanden)...`);
+
       const response = await new Promise<any>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
 
@@ -201,6 +208,10 @@ const Pipeline = memo(function Pipeline() {
             const progress = Math.round((e.loaded / e.total) * 100);
             console.log(`📎 Upload progress: ${progress}%`);
             setUploadProgress(progress);
+            if (progress >= 100) {
+              // Upload done, server is now processing (OCR, PDF parsing)
+              setUploadStatus('Server verwerkt documenten (OCR/tekst extractie)...');
+            }
           }
         });
 
@@ -298,6 +309,7 @@ const Pipeline = memo(function Pipeline() {
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
+      setUploadStatus('');
     }
   }, [toast]);
 
@@ -484,9 +496,7 @@ De AI analyseert zowel geüploade bestanden als tekst input.`}
                   {isCreatingCase || isUploading ? (
                     <><Loader2 className="mr-3 h-5 w-5 animate-spin" />
                       {isUploading
-                        ? (uploadProgress >= 100
-                            ? 'Documenten verwerken...'
-                            : `Uploaden ${uploadProgress}%...`)
+                        ? (uploadStatus || `Uploaden ${uploadProgress}%...`)
                         : 'Case aanmaken...'}
                     </>
                   ) : (

@@ -267,7 +267,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   // Year-first navigation: year is the primary selector
   const availableYears = Object.keys(blueprint?.year_summaries || {}).sort((a, b) => Number(b) - Number(a));
   const [selectedYear, setSelectedYear] = useState<string | null>(availableYears[0] || null);
-  const [activeYearTab, setActiveYearTab] = useState("assets");
+  const [activeYearTab, setActiveYearTab] = useState("bank");
 
   // Per-person view: null = household view, string = specific person id
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
@@ -1306,8 +1306,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           )}
 
                           <Tabs value={activeYearTab} onValueChange={setActiveYearTab}>
-                            <TabsList className="mb-4">
-                              <TabsTrigger value="assets">Vermogen</TabsTrigger>
+                            <TabsList className="mb-4 flex-wrap h-auto gap-1">
+                              <TabsTrigger value="bank">Bank- en spaartegoeden</TabsTrigger>
+                              <TabsTrigger value="investments">Beleggingen</TabsTrigger>
+                              <TabsTrigger value="realestate">Onroerend goed & overig</TabsTrigger>
                               <TabsTrigger value="debts">Schulden</TabsTrigger>
                               <TabsTrigger value="overview">Aanslag/Aangifte</TabsTrigger>
                             </TabsList>
@@ -1405,28 +1407,19 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         })()}
                       </TabsContent>
 
-                      {/* Assets for selected year */}
-                      <TabsContent value="assets" className="space-y-4">
+                      {/* TAB 1: Bank- en spaartegoeden */}
+                      <TabsContent value="bank" className="space-y-4">
                         {(() => {
                           const bankSavings = blueprint.assets?.bank_savings || [];
-                          const investments = blueprint.assets?.investments || [];
-                          const realEstate = blueprint.assets?.real_estate || [];
 
-                          // Filter assets that have data for this year AND match selected person (if any)
-                          // owner_id is "tp_01", "fp_01", or "joint"
                           const matchesPerson = (asset: { owner_id?: string }) => {
-                            if (!selectedPersonId) return true; // Household view shows all
-                            if (asset.owner_id === 'joint') return true; // Joint assets show for both
+                            if (!selectedPersonId) return true;
+                            if (asset.owner_id === 'joint') return true;
                             return asset.owner_id === selectedPersonId;
                           };
 
                           const yearBankSavings = bankSavings.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
-                          const yearInvestments = investments.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
-                          const yearRealEstate = realEstate.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
 
-                          const hasYearAssets = yearBankSavings.length > 0 || yearInvestments.length > 0 || yearRealEstate.length > 0;
-
-                          // Get selected person name for display
                           let selectedPersonName = 'dit huishouden';
                           if (selectedPersonId) {
                             if (selectedPersonId === blueprint.fiscal_entity?.taxpayer?.id) {
@@ -1436,11 +1429,255 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                             }
                           }
 
-                          if (!hasYearAssets) {
+                          if (yearBankSavings.length === 0) {
                             return (
                               <Card className="border-dashed">
                                 <CardContent className="py-8 text-center text-muted-foreground">
-                                  Geen vermogensbestanddelen gevonden voor {selectedPersonName} in {selectedYear}
+                                  Geen bank- en spaartegoeden gevonden voor {selectedPersonName} in {selectedYear}
+                                </CardContent>
+                              </Card>
+                            );
+                          }
+
+                          // Calculate totals
+                          let totalValue = 0;
+                          let totalInterest = 0;
+                          yearBankSavings.forEach(asset => {
+                            const yearData = asset.yearly_data?.[selectedYear];
+                            const val = yearData?.value_jan_1;
+                            const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                            if (typeof amount === 'number') totalValue += amount;
+                            const interest = yearData?.interest_received;
+                            const interestAmount = typeof interest === 'object' && interest !== null ? interest.amount : interest;
+                            if (typeof interestAmount === 'number') totalInterest += interestAmount;
+                          });
+
+                          return (
+                            <Card>
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-base flex items-center justify-between">
+                                  <span className="flex items-center gap-2">
+                                    <PiggyBank className="h-4 w-4 text-blue-500" />
+                                    Bank- en spaartegoeden ({yearBankSavings.length})
+                                  </span>
+                                  <span className="text-sm font-normal text-muted-foreground">
+                                    Totaal: {formatCurrency(totalValue)} | Rente: {formatCurrency(totalInterest)}
+                                  </span>
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="p-0">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-muted/50 border-y">
+                                    <tr>
+                                      <th className="text-left px-4 py-2 font-medium">Omschrijving</th>
+                                      <th className="text-left px-4 py-2 font-medium">Bank</th>
+                                      <th className="text-left px-4 py-2 font-medium">Land</th>
+                                      <th className="text-right px-4 py-2 font-medium">Eigendom</th>
+                                      <th className="text-right px-4 py-2 font-medium">1 jan {selectedYear}</th>
+                                      <th className="text-right px-4 py-2 font-medium">Rente</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {yearBankSavings.map((asset, idx) => {
+                                      const yearData = asset.yearly_data?.[selectedYear];
+                                      const val = yearData?.value_jan_1;
+                                      const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                      const interest = yearData?.interest_received;
+                                      const interestAmount = typeof interest === 'object' && interest !== null ? interest.amount : interest;
+
+                                      return (
+                                        <tr key={asset.id || idx} className="hover:bg-muted/30">
+                                          <td className="px-4 py-3">
+                                            <span className="font-medium">{asset.description}</span>
+                                            {asset.account_masked && (
+                                              <span className="text-muted-foreground text-xs block">{asset.account_masked}</span>
+                                            )}
+                                            {asset.is_green_investment && (
+                                              <Badge variant="outline" className="text-xs ml-1 text-green-600 border-green-300">Groen</Badge>
+                                            )}
+                                          </td>
+                                          <td className="px-4 py-3 text-muted-foreground">{asset.bank_name || '—'}</td>
+                                          <td className="px-4 py-3 text-muted-foreground">{asset.country || 'NL'}</td>
+                                          <td className="px-4 py-3 text-right">{asset.ownership_percentage}%</td>
+                                          <td className="px-4 py-3 text-right font-semibold">
+                                            {amount != null ? formatCurrency(amount) : '—'}
+                                          </td>
+                                          <td className="px-4 py-3 text-right text-green-600">
+                                            {interestAmount != null ? formatCurrency(interestAmount) : '—'}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                  <tfoot className="bg-muted/30 border-t-2">
+                                    <tr className="font-semibold">
+                                      <td className="px-4 py-2" colSpan={4}>Subtotaal</td>
+                                      <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
+                                      <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalInterest)}</td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </CardContent>
+                            </Card>
+                          );
+                        })()}
+                      </TabsContent>
+
+                      {/* TAB 2: Beleggingen */}
+                      <TabsContent value="investments" className="space-y-4">
+                        {(() => {
+                          const investments = blueprint.assets?.investments || [];
+
+                          const matchesPerson = (asset: { owner_id?: string }) => {
+                            if (!selectedPersonId) return true;
+                            if (asset.owner_id === 'joint') return true;
+                            return asset.owner_id === selectedPersonId;
+                          };
+
+                          const yearInvestments = investments.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+
+                          let selectedPersonName = 'dit huishouden';
+                          if (selectedPersonId) {
+                            if (selectedPersonId === blueprint.fiscal_entity?.taxpayer?.id) {
+                              selectedPersonName = blueprint.fiscal_entity.taxpayer.name || 'de belastingplichtige';
+                            } else if (selectedPersonId === blueprint.fiscal_entity?.fiscal_partner?.id) {
+                              selectedPersonName = blueprint.fiscal_entity.fiscal_partner.name || 'de fiscaal partner';
+                            }
+                          }
+
+                          if (yearInvestments.length === 0) {
+                            return (
+                              <Card className="border-dashed">
+                                <CardContent className="py-8 text-center text-muted-foreground">
+                                  Geen beleggingen gevonden voor {selectedPersonName} in {selectedYear}
+                                </CardContent>
+                              </Card>
+                            );
+                          }
+
+                          // Calculate totals
+                          let totalValue = 0;
+                          let totalDividend = 0;
+                          yearInvestments.forEach(asset => {
+                            const yearData = asset.yearly_data?.[selectedYear];
+                            const val = yearData?.value_jan_1;
+                            const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                            if (typeof amount === 'number') totalValue += amount;
+                            const dividend = yearData?.dividend_received;
+                            const dividendAmount = typeof dividend === 'object' && dividend !== null ? dividend.amount : dividend;
+                            if (typeof dividendAmount === 'number') totalDividend += dividendAmount;
+                          });
+
+                          return (
+                            <Card>
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-base flex items-center justify-between">
+                                  <span className="flex items-center gap-2">
+                                    <TrendingUp className="h-4 w-4 text-green-500" />
+                                    Beleggingen ({yearInvestments.length})
+                                  </span>
+                                  <span className="text-sm font-normal text-muted-foreground">
+                                    Totaal: {formatCurrency(totalValue)} | Dividend: {formatCurrency(totalDividend)}
+                                  </span>
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent className="p-0">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-muted/50 border-y">
+                                    <tr>
+                                      <th className="text-left px-4 py-2 font-medium">Omschrijving</th>
+                                      <th className="text-left px-4 py-2 font-medium">Type</th>
+                                      <th className="text-left px-4 py-2 font-medium">Land</th>
+                                      <th className="text-right px-4 py-2 font-medium">Eigendom</th>
+                                      <th className="text-right px-4 py-2 font-medium">1 jan {selectedYear}</th>
+                                      <th className="text-right px-4 py-2 font-medium">Dividend</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {yearInvestments.map((asset, idx) => {
+                                      const yearData = asset.yearly_data?.[selectedYear];
+                                      const val = yearData?.value_jan_1;
+                                      const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                      const dividend = yearData?.dividend_received;
+                                      const dividendAmount = typeof dividend === 'object' && dividend !== null ? dividend.amount : dividend;
+
+                                      const typeLabel = {
+                                        stocks: 'Aandelen',
+                                        bonds: 'Obligaties',
+                                        funds: 'Fondsen',
+                                        crypto: 'Crypto',
+                                        other: 'Overig',
+                                      }[asset.type] || asset.type;
+
+                                      return (
+                                        <tr key={asset.id || idx} className="hover:bg-muted/30">
+                                          <td className="px-4 py-3">
+                                            <span className="font-medium">{asset.description}</span>
+                                            {asset.institution && (
+                                              <span className="text-muted-foreground text-xs block">{asset.institution}</span>
+                                            )}
+                                            {asset.account_masked && (
+                                              <span className="text-muted-foreground text-xs block">{asset.account_masked}</span>
+                                            )}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <Badge variant="outline" className="text-xs">{typeLabel}</Badge>
+                                          </td>
+                                          <td className="px-4 py-3 text-muted-foreground">{asset.country || 'NL'}</td>
+                                          <td className="px-4 py-3 text-right">{asset.ownership_percentage}%</td>
+                                          <td className="px-4 py-3 text-right font-semibold">
+                                            {amount != null ? formatCurrency(amount) : '—'}
+                                          </td>
+                                          <td className="px-4 py-3 text-right text-green-600">
+                                            {dividendAmount != null ? formatCurrency(dividendAmount) : '—'}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                  <tfoot className="bg-muted/30 border-t-2">
+                                    <tr className="font-semibold">
+                                      <td className="px-4 py-2" colSpan={4}>Subtotaal</td>
+                                      <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
+                                      <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalDividend)}</td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </CardContent>
+                            </Card>
+                          );
+                        })()}
+                      </TabsContent>
+
+                      {/* TAB 3: Onroerend goed & overige bezittingen */}
+                      <TabsContent value="realestate" className="space-y-4">
+                        {(() => {
+                          const realEstate = blueprint.assets?.real_estate || [];
+                          const otherAssets = blueprint.assets?.other_assets || [];
+
+                          const matchesPerson = (asset: { owner_id?: string }) => {
+                            if (!selectedPersonId) return true;
+                            if (asset.owner_id === 'joint') return true;
+                            return asset.owner_id === selectedPersonId;
+                          };
+
+                          const yearRealEstate = realEstate.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+                          const yearOtherAssets = otherAssets.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+
+                          let selectedPersonName = 'dit huishouden';
+                          if (selectedPersonId) {
+                            if (selectedPersonId === blueprint.fiscal_entity?.taxpayer?.id) {
+                              selectedPersonName = blueprint.fiscal_entity.taxpayer.name || 'de belastingplichtige';
+                            } else if (selectedPersonId === blueprint.fiscal_entity?.fiscal_partner?.id) {
+                              selectedPersonName = blueprint.fiscal_entity.fiscal_partner.name || 'de fiscaal partner';
+                            }
+                          }
+
+                          if (yearRealEstate.length === 0 && yearOtherAssets.length === 0) {
+                            return (
+                              <Card className="border-dashed">
+                                <CardContent className="py-8 text-center text-muted-foreground">
+                                  Geen onroerend goed of overige bezittingen gevonden voor {selectedPersonName} in {selectedYear}
                                 </CardContent>
                               </Card>
                             );
@@ -1448,44 +1685,18 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
                           return (
                             <>
-                              {/* Summary cards */}
-                              <div className="grid grid-cols-3 gap-4">
-                                <Card className="bg-blue-50 border-blue-200">
-                                  <CardContent className="pt-4 pb-3 text-center">
-                                    <PiggyBank className="h-5 w-5 mx-auto text-blue-600 mb-1" />
-                                    <p className="text-xl font-bold text-blue-700">{yearBankSavings.length}</p>
-                                    <p className="text-xs text-blue-600">Bankrekeningen</p>
-                                  </CardContent>
-                                </Card>
-                                <Card className="bg-green-50 border-green-200">
-                                  <CardContent className="pt-4 pb-3 text-center">
-                                    <TrendingUp className="h-5 w-5 mx-auto text-green-600 mb-1" />
-                                    <p className="text-xl font-bold text-green-700">{yearInvestments.length}</p>
-                                    <p className="text-xs text-green-600">Beleggingen</p>
-                                  </CardContent>
-                                </Card>
-                                <Card className="bg-orange-50 border-orange-200">
-                                  <CardContent className="pt-4 pb-3 text-center">
-                                    <Home className="h-5 w-5 mx-auto text-orange-600 mb-1" />
-                                    <p className="text-xl font-bold text-orange-700">{yearRealEstate.length}</p>
-                                    <p className="text-xs text-orange-600">Onroerend goed</p>
-                                  </CardContent>
-                                </Card>
-                              </div>
-
-                              {/* Bank Savings for this year */}
-                              {yearBankSavings.length > 0 && (() => {
-                                // Calculate totals
-                                let totalValue = 0;
-                                let totalInterest = 0;
-                                yearBankSavings.forEach(asset => {
+                              {/* Real Estate section */}
+                              {yearRealEstate.length > 0 && (() => {
+                                let totalWoz = 0;
+                                let totalRental = 0;
+                                yearRealEstate.forEach(asset => {
                                   const yearData = asset.yearly_data?.[selectedYear];
-                                  const val = yearData?.value_jan_1;
+                                  const val = yearData?.woz_value;
                                   const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                  if (typeof amount === 'number') totalValue += amount;
-                                  const interest = yearData?.interest_received;
-                                  const interestAmount = typeof interest === 'object' && interest !== null ? interest.amount : interest;
-                                  if (typeof interestAmount === 'number') totalInterest += interestAmount;
+                                  if (typeof amount === 'number') totalWoz += amount;
+                                  const rental = yearData?.rental_income_gross;
+                                  const rentalAmount = typeof rental === 'object' && rental !== null ? rental.amount : rental;
+                                  if (typeof rentalAmount === 'number') totalRental += rentalAmount;
                                 });
 
                                 return (
@@ -1493,8 +1704,106 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                     <CardHeader className="pb-2">
                                       <CardTitle className="text-base flex items-center justify-between">
                                         <span className="flex items-center gap-2">
-                                          <PiggyBank className="h-4 w-4 text-blue-500" />
-                                          Banktegoeden
+                                          <Home className="h-4 w-4 text-orange-500" />
+                                          Onroerend goed ({yearRealEstate.length})
+                                        </span>
+                                        <span className="text-sm font-normal text-muted-foreground">
+                                          WOZ: {formatCurrency(totalWoz)} | Huur: {formatCurrency(totalRental)}
+                                        </span>
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="p-0">
+                                      <table className="w-full text-sm">
+                                        <thead className="bg-muted/50 border-y">
+                                          <tr>
+                                            <th className="text-left px-4 py-2 font-medium">Omschrijving</th>
+                                            <th className="text-left px-4 py-2 font-medium">Type</th>
+                                            <th className="text-left px-4 py-2 font-medium">Land</th>
+                                            <th className="text-right px-4 py-2 font-medium">Eigendom</th>
+                                            <th className="text-right px-4 py-2 font-medium">WOZ {selectedYear}</th>
+                                            <th className="text-right px-4 py-2 font-medium">Huurinkomsten</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                          {yearRealEstate.map((asset, idx) => {
+                                            const yearData = asset.yearly_data?.[selectedYear];
+                                            const val = yearData?.woz_value;
+                                            const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                            const rental = yearData?.rental_income_gross;
+                                            const rentalAmount = typeof rental === 'object' && rental !== null ? rental.amount : rental;
+
+                                            const typeLabel = {
+                                              rented_residential: 'Verhuurpand',
+                                              rented_commercial: 'Commercieel',
+                                              vacation_home: 'Vakantiewoning',
+                                              land: 'Grond',
+                                              other: 'Overig',
+                                            }[asset.type] || asset.type;
+
+                                            return (
+                                              <tr key={asset.id || idx} className="hover:bg-muted/30">
+                                                <td className="px-4 py-3">
+                                                  <span className="font-medium">{asset.description}</span>
+                                                  {asset.address && (
+                                                    <span className="text-muted-foreground text-xs block">{asset.address}</span>
+                                                  )}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                  <Badge variant="outline" className="text-xs">{typeLabel}</Badge>
+                                                </td>
+                                                <td className="px-4 py-3 text-muted-foreground">{asset.country || 'NL'}</td>
+                                                <td className="px-4 py-3 text-right">{asset.ownership_percentage}%</td>
+                                                <td className="px-4 py-3 text-right font-semibold">
+                                                  {amount != null ? formatCurrency(amount) : '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-green-600">
+                                                  {rentalAmount != null ? formatCurrency(rentalAmount) : '—'}
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                        <tfoot className="bg-muted/30 border-t-2">
+                                          <tr className="font-semibold">
+                                            <td className="px-4 py-2" colSpan={4}>Subtotaal</td>
+                                            <td className="px-4 py-2 text-right">{formatCurrency(totalWoz)}</td>
+                                            <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalRental)}</td>
+                                          </tr>
+                                        </tfoot>
+                                      </table>
+                                    </CardContent>
+                                  </Card>
+                                );
+                              })()}
+
+                              {/* Other Assets section */}
+                              {yearOtherAssets.length > 0 && (() => {
+                                let totalValue = 0;
+                                yearOtherAssets.forEach(asset => {
+                                  const yearData = asset.yearly_data?.[selectedYear];
+                                  const val = yearData?.value_jan_1;
+                                  const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                  if (typeof amount === 'number') totalValue += amount;
+                                });
+
+                                const typeLabels: Record<string, string> = {
+                                  vve_share: 'VvE reserve',
+                                  claims: 'Vorderingen',
+                                  rights: 'Rechten',
+                                  capital_insurance: 'Kapitaalverzekering',
+                                  loaned_money: 'Uitgeleend geld',
+                                  cash: 'Contant geld',
+                                  periodic_benefits: 'Periodieke uitkeringen',
+                                  other: 'Overig',
+                                };
+
+                                return (
+                                  <Card>
+                                    <CardHeader className="pb-2">
+                                      <CardTitle className="text-base flex items-center justify-between">
+                                        <span className="flex items-center gap-2">
+                                          <FileText className="h-4 w-4 text-purple-500" />
+                                          Overige bezittingen ({yearOtherAssets.length})
                                         </span>
                                         <span className="text-sm font-normal text-muted-foreground">
                                           Totaal: {formatCurrency(totalValue)}
@@ -1506,35 +1815,28 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                         <thead className="bg-muted/50 border-y">
                                           <tr>
                                             <th className="text-left px-4 py-2 font-medium">Omschrijving</th>
-                                            <th className="text-left px-4 py-2 font-medium">Bank</th>
-                                            <th className="text-right px-4 py-2 font-medium">Eigendom</th>
+                                            <th className="text-left px-4 py-2 font-medium">Type</th>
+                                            <th className="text-left px-4 py-2 font-medium">Land</th>
                                             <th className="text-right px-4 py-2 font-medium">1 jan {selectedYear}</th>
-                                            <th className="text-right px-4 py-2 font-medium">Rente</th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y">
-                                          {yearBankSavings.map((asset, idx) => {
+                                          {yearOtherAssets.map((asset, idx) => {
                                             const yearData = asset.yearly_data?.[selectedYear];
                                             const val = yearData?.value_jan_1;
                                             const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                            const interest = yearData?.interest_received;
-                                            const interestAmount = typeof interest === 'object' && interest !== null ? interest.amount : interest;
 
                                             return (
                                               <tr key={asset.id || idx} className="hover:bg-muted/30">
                                                 <td className="px-4 py-3">
                                                   <span className="font-medium">{asset.description}</span>
-                                                  {asset.account_masked && (
-                                                    <span className="text-muted-foreground text-xs block">{asset.account_masked}</span>
-                                                  )}
                                                 </td>
-                                                <td className="px-4 py-3 text-muted-foreground">{asset.bank_name || '—'}</td>
-                                                <td className="px-4 py-3 text-right">{asset.ownership_percentage}%</td>
+                                                <td className="px-4 py-3">
+                                                  <Badge variant="outline" className="text-xs">{typeLabels[asset.type] || asset.type}</Badge>
+                                                </td>
+                                                <td className="px-4 py-3 text-muted-foreground">{asset.country || 'NL'}</td>
                                                 <td className="px-4 py-3 text-right font-semibold">
                                                   {amount != null ? formatCurrency(amount) : '—'}
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-green-600">
-                                                  {interestAmount != null ? formatCurrency(interestAmount) : '—'}
                                                 </td>
                                               </tr>
                                             );
@@ -1544,7 +1846,6 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                           <tr className="font-semibold">
                                             <td className="px-4 py-2" colSpan={3}>Subtotaal</td>
                                             <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
-                                            <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalInterest)}</td>
                                           </tr>
                                         </tfoot>
                                       </table>
@@ -1552,181 +1853,12 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                   </Card>
                                 );
                               })()}
-
-                              {/* Investments for this year */}
-                              {yearInvestments.length > 0 && (() => {
-                                // Calculate totals
-                                let totalValue = 0;
-                                let totalDividend = 0;
-                                yearInvestments.forEach(asset => {
-                                  const yearData = asset.yearly_data?.[selectedYear];
-                                  const val = yearData?.value_jan_1;
-                                  const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                  if (typeof amount === 'number') totalValue += amount;
-                                  const dividend = yearData?.dividend_received;
-                                  const dividendAmount = typeof dividend === 'object' && dividend !== null ? dividend.amount : dividend;
-                                  if (typeof dividendAmount === 'number') totalDividend += dividendAmount;
-                                });
-
-                                return (
-                                <Card>
-                                  <CardHeader className="pb-2">
-                                    <CardTitle className="text-base flex items-center justify-between">
-                                      <span className="flex items-center gap-2">
-                                        <TrendingUp className="h-4 w-4 text-green-500" />
-                                        Beleggingen
-                                      </span>
-                                      <span className="text-sm font-normal text-muted-foreground">
-                                        Totaal: {formatCurrency(totalValue)}
-                                      </span>
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="p-0">
-                                    <table className="w-full text-sm">
-                                      <thead className="bg-muted/50 border-y">
-                                        <tr>
-                                          <th className="text-left px-4 py-2 font-medium">Omschrijving</th>
-                                          <th className="text-left px-4 py-2 font-medium">Type</th>
-                                          <th className="text-right px-4 py-2 font-medium">Eigendom</th>
-                                          <th className="text-right px-4 py-2 font-medium">1 jan {selectedYear}</th>
-                                          <th className="text-right px-4 py-2 font-medium">Dividend</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y">
-                                        {yearInvestments.map((asset, idx) => {
-                                          const yearData = asset.yearly_data?.[selectedYear];
-                                          const val = yearData?.value_jan_1;
-                                          const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                          const dividend = yearData?.dividend_received;
-                                          const dividendAmount = typeof dividend === 'object' && dividend !== null ? dividend.amount : dividend;
-
-                                          return (
-                                            <tr key={asset.id || idx} className="hover:bg-muted/30">
-                                              <td className="px-4 py-3">
-                                                <span className="font-medium">{asset.description}</span>
-                                                {asset.institution && (
-                                                  <span className="text-muted-foreground text-xs block">{asset.institution}</span>
-                                                )}
-                                              </td>
-                                              <td className="px-4 py-3">
-                                                <Badge variant="outline" className="text-xs">{asset.type || 'Overig'}</Badge>
-                                              </td>
-                                              <td className="px-4 py-3 text-right">{asset.ownership_percentage}%</td>
-                                              <td className="px-4 py-3 text-right font-semibold">
-                                                {amount != null ? formatCurrency(amount) : '—'}
-                                              </td>
-                                              <td className="px-4 py-3 text-right text-green-600">
-                                                {dividendAmount != null ? formatCurrency(dividendAmount) : '—'}
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                      <tfoot className="bg-muted/30 border-t-2">
-                                        <tr className="font-semibold">
-                                          <td className="px-4 py-2" colSpan={3}>Subtotaal</td>
-                                          <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
-                                          <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalDividend)}</td>
-                                        </tr>
-                                      </tfoot>
-                                    </table>
-                                  </CardContent>
-                                </Card>
-                                );
-                              })()}
-
-                              {/* Real Estate for this year */}
-                              {yearRealEstate.length > 0 && (() => {
-                                // Calculate totals
-                                let totalValue = 0;
-                                let totalRental = 0;
-                                yearRealEstate.forEach(asset => {
-                                  const yearData = asset.yearly_data?.[selectedYear];
-                                  const val = yearData?.woz_value;
-                                  const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                  if (typeof amount === 'number') totalValue += amount;
-                                  const rental = yearData?.rental_income_gross;
-                                  const rentalAmount = typeof rental === 'object' && rental !== null ? rental.amount : rental;
-                                  if (typeof rentalAmount === 'number') totalRental += rentalAmount;
-                                });
-
-                                return (
-                                <Card>
-                                  <CardHeader className="pb-2">
-                                    <CardTitle className="text-base flex items-center justify-between">
-                                      <span className="flex items-center gap-2">
-                                        <Home className="h-4 w-4 text-orange-500" />
-                                        Onroerend Goed
-                                      </span>
-                                      <span className="text-sm font-normal text-muted-foreground">
-                                        Totaal WOZ: {formatCurrency(totalValue)}
-                                      </span>
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="p-0">
-                                    <table className="w-full text-sm">
-                                      <thead className="bg-muted/50 border-y">
-                                        <tr>
-                                          <th className="text-left px-4 py-2 font-medium">Omschrijving</th>
-                                          <th className="text-left px-4 py-2 font-medium">Type</th>
-                                          <th className="text-right px-4 py-2 font-medium">Eigendom</th>
-                                          <th className="text-right px-4 py-2 font-medium">WOZ {selectedYear}</th>
-                                          <th className="text-right px-4 py-2 font-medium">Huurinkomsten</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y">
-                                        {yearRealEstate.map((asset, idx) => {
-                                          const yearData = asset.yearly_data?.[selectedYear];
-                                          const val = yearData?.woz_value;
-                                          const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                          const rental = yearData?.rental_income_gross;
-                                          const rentalAmount = typeof rental === 'object' && rental !== null ? rental.amount : rental;
-
-                                          return (
-                                            <tr key={asset.id || idx} className="hover:bg-muted/30">
-                                              <td className="px-4 py-3">
-                                                <span className="font-medium">{asset.description}</span>
-                                                {asset.address && (
-                                                  <span className="text-muted-foreground text-xs block">{asset.address}</span>
-                                                )}
-                                              </td>
-                                              <td className="px-4 py-3">
-                                                <Badge variant="outline" className="text-xs">
-                                                  {asset.type === 'rented_residential' ? 'Verhuurpand' :
-                                                   asset.type === 'rented_commercial' ? 'Commercieel' :
-                                                   asset.type === 'land' ? 'Grond' :
-                                                   asset.type === 'other' ? 'Overig' : asset.type}
-                                                </Badge>
-                                              </td>
-                                              <td className="px-4 py-3 text-right">{asset.ownership_percentage}%</td>
-                                              <td className="px-4 py-3 text-right font-semibold">
-                                                {amount != null ? formatCurrency(amount) : '—'}
-                                              </td>
-                                              <td className="px-4 py-3 text-right text-green-600">
-                                                {rentalAmount != null ? formatCurrency(rentalAmount) : '—'}
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                      <tfoot className="bg-muted/30 border-t-2">
-                                        <tr className="font-semibold">
-                                          <td className="px-4 py-2" colSpan={3}>Subtotaal</td>
-                                          <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
-                                          <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalRental)}</td>
-                                        </tr>
-                                      </tfoot>
-                                    </table>
-                                  </CardContent>
-                                </Card>
-                                );
-                              })()}
                             </>
                           );
                         })()}
                       </TabsContent>
 
-                      {/* Debts for selected year */}
+                      {/* TAB 4: Schulden */}
                       <TabsContent value="debts" className="space-y-4">
                         {(() => {
                           const debts = blueprint.debts || [];
