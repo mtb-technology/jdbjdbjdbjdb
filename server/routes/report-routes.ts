@@ -317,24 +317,49 @@ export function registerReportRoutes(
         updateData.status = 'generated'; // Mark as having first version
       }
 
-      // *** STAGE 1a CLEANUP: Strip rawText after successful completion ***
+      // *** STAGE 1a: Always update dossierData with accumulated info (COMPLEET or INCOMPLEET) ***
+      // This ensures that each re-run builds on previous info, so after multiple iterations
+      // the dossier is as complete as if all info was entered at once
       if (stage === '1a_informatiecheck' && stageExecution.stageOutput) {
         try {
           const parsed = parseJsonWithMarkdown(stageExecution.stageOutput);
-          if (parsed.status === 'COMPLEET' && parsed.dossier) {
-            console.log(`🧹 [${id}] Stage 1a COMPLEET - stripping rawText from dossierData`);
-            // Replace dossierData with structured data from AI (no rawText)
-            updateData.dossierData = {
-              klant: {
-                naam: report.clientName,
-                situatie: parsed.dossier.samenvatting_onderwerp || ''
-              },
-              gestructureerde_data: parsed.dossier.gestructureerde_data,
-              samenvatting_onderwerp: parsed.dossier.samenvatting_onderwerp
-            };
+          if (parsed.dossier) {
+            const currentDossier = (report.dossierData as Record<string, any>) || {};
+
+            if (parsed.status === 'COMPLEET') {
+              console.log(`🧹 [${id}] Stage 1a COMPLEET - updating dossierData with complete structured data`);
+              // Replace dossierData with structured data from AI (no rawText needed anymore)
+              updateData.dossierData = {
+                klant: {
+                  naam: report.clientName,
+                  situatie: parsed.dossier.samenvatting_onderwerp || ''
+                },
+                gestructureerde_data: parsed.dossier.gestructureerde_data,
+                samenvatting_onderwerp: parsed.dossier.samenvatting_onderwerp
+              };
+            } else if (parsed.status === 'INCOMPLEET') {
+              console.log(`📝 [${id}] Stage 1a INCOMPLEET - accumulating partial dossierData for next re-run`);
+              // Merge new structured data into existing dossierData
+              // Keep rawText for reference, but add structured data that was extracted
+              updateData.dossierData = {
+                ...currentDossier,
+                klant: {
+                  naam: report.clientName,
+                  situatie: parsed.dossier.samenvatting_onderwerp || currentDossier.klant?.situatie || ''
+                },
+                // Merge gestructureerde_data: new data overwrites old, but keeps fields not in new
+                gestructureerde_data: {
+                  ...(currentDossier.gestructureerde_data || {}),
+                  ...(parsed.dossier.gestructureerde_data || {})
+                },
+                samenvatting_onderwerp: parsed.dossier.samenvatting_onderwerp || currentDossier.samenvatting_onderwerp,
+                // Track what's still missing for context
+                ontbrekende_informatie: parsed.ontbrekende_informatie || parsed.dossier.ontbrekende_informatie
+              };
+            }
           }
         } catch (parseError) {
-          console.warn(`⚠️ [${id}] Could not parse Stage 1a output for rawText cleanup:`, parseError);
+          console.warn(`⚠️ [${id}] Could not parse Stage 1a output for dossierData update:`, parseError);
           // Don't fail the request - just log warning
         }
       }
