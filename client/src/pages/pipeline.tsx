@@ -292,20 +292,29 @@ const Pipeline = memo(function Pipeline() {
       });
 
       if (response.success) {
-        toast({
-          title: "Bijlages opgeslagen",
-          description: `${response.data.successful} bijlage(s) succesvol opgeslagen bij case`,
-        });
-        return true;
+        const { needsOcr, ocrPendingCount } = response.data;
+        if (needsOcr) {
+          toast({
+            title: "Bijlages opgeslagen - OCR bezig",
+            description: `${response.data.successful} bijlage(s) opgeslagen. ${ocrPendingCount} document(en) worden nog verwerkt (scans/afbeeldingen).`,
+          });
+        } else {
+          toast({
+            title: "Bijlages opgeslagen",
+            description: `${response.data.successful} bijlage(s) succesvol opgeslagen`,
+          });
+        }
+        // Return object with success and needsOcr flag
+        return { success: true, needsOcr: needsOcr || false };
       }
-      return false;
+      return { success: false, needsOcr: false };
     } catch (error: any) {
       toast({
         title: "Bijlage upload mislukt",
         description: error.message,
         variant: "destructive",
       });
-      return false;
+      return { success: false, needsOcr: false };
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -332,10 +341,11 @@ const Pipeline = memo(function Pipeline() {
       console.log("🎯 Pipeline: Report created:", { reportId: report?.id });
 
       // Upload attachments BEFORE navigating - Stage 1 needs document data in prompt
+      let needsOcr = false;
       if (pendingFiles.length > 0 && report?.id) {
-        const uploadSuccess = await uploadAttachments(report.id, pendingFiles);
+        const uploadResult = await uploadAttachments(report.id, pendingFiles);
 
-        if (!uploadSuccess) {
+        if (!uploadResult.success) {
           toast({
             title: "Case aangemaakt, maar bijlages niet geüpload",
             description: `Case "${report.title}" is aangemaakt. Ga naar de case om bijlages handmatig toe te voegen.`,
@@ -345,6 +355,18 @@ const Pipeline = memo(function Pipeline() {
           setLocation(`/cases/${report.id}`);
           return;
         }
+        needsOcr = uploadResult.needsOcr;
+      }
+
+      // If OCR is needed, don't auto-start workflow - user must wait for OCR to complete
+      if (needsOcr) {
+        toast({
+          title: "Case aangemaakt - wacht op OCR",
+          description: `Case "${report.title}" aangemaakt. Wacht tot de scans zijn verwerkt voordat je de analyse start.`,
+        });
+        // Navigate WITHOUT autoStart - user must manually start after OCR completes
+        setLocation(`/cases/${report.id}`);
+        return;
       }
 
       toast({

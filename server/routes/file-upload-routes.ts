@@ -7,6 +7,91 @@ import { AIModelFactory } from "../services/ai-models/ai-model-factory";
 
 export const fileUploadRouter = Router();
 
+/**
+ * Process OCR asynchronously for attachments that need it.
+ * This runs AFTER the upload response is sent to keep uploads fast.
+ */
+async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promise<void> {
+  console.log(`📎 [${reportId}] Async OCR starting for ${attachmentIds.length} attachments`);
+
+  for (const attachmentId of attachmentIds) {
+    try {
+      // Get full attachment with file data
+      const attachment = await storage.getAttachment(attachmentId);
+      if (!attachment || !attachment.fileData || !attachment.needsVisionOCR) {
+        console.log(`📎 [${reportId}] Skipping OCR for ${attachmentId}: not needed or no data`);
+        continue;
+      }
+
+      console.log(`📎 [${reportId}] Running OCR for: ${attachment.filename}`);
+
+      const factory = AIModelFactory.getInstance();
+      const handler = factory.getHandler('gemini-2.5-flash');
+      if (!handler) {
+        console.error(`📎 [${reportId}] No Gemini handler available for OCR`);
+        continue;
+      }
+
+      const isPDF = attachment.mimeType === 'application/pdf';
+      const mimeType = isPDF ? 'application/pdf' :
+                       attachment.mimeType.startsWith('image/') ? attachment.mimeType : 'image/jpeg';
+
+      const prompt = isPDF
+        ? `Extract ALL text from this scanned PDF document. Return ONLY the extracted text, no commentary or formatting instructions. Preserve the original structure and formatting as much as possible.`
+        : `Analyseer deze afbeelding en extraheer ALLE relevante informatie. Als het een document of scan is, extraheer dan alle tekst. Return de geëxtraheerde tekst/informatie zonder extra commentaar.`;
+
+      const ocrResult = await handler.call(
+        prompt,
+        {
+          model: 'gemini-2.5-flash',
+          temperature: 0.1,
+          maxOutputTokens: 32768,
+          topP: 0.95,
+          topK: 40,
+          provider: 'google'
+        },
+        {
+          jobId: `async-ocr-${attachmentId.slice(-8)}-${Date.now()}`,
+          visionAttachments: [{
+            mimeType,
+            data: attachment.fileData,
+            filename: attachment.filename
+          }]
+        }
+      );
+
+      if (ocrResult.content && ocrResult.content.trim().length > 50) {
+        // Update attachment with extracted text
+        await storage.updateAttachment(attachmentId, {
+          extractedText: ocrResult.content,
+          needsVisionOCR: false, // OCR complete
+        });
+        console.log(`📎 [${reportId}] ✅ Async OCR complete for ${attachment.filename}: ${ocrResult.content.length} chars`);
+      } else {
+        console.warn(`📎 [${reportId}] ⚠️ Async OCR returned minimal text for ${attachment.filename}`);
+        // Update to mark OCR attempted but failed
+        await storage.updateAttachment(attachmentId, {
+          extractedText: `[OCR kon geen tekst extraheren uit: ${attachment.filename}]`,
+          needsVisionOCR: false,
+        });
+      }
+    } catch (error: any) {
+      console.error(`📎 [${reportId}] ❌ Async OCR failed for ${attachmentId}:`, error.message);
+      // Mark as failed so we don't keep retrying
+      try {
+        await storage.updateAttachment(attachmentId, {
+          extractedText: `[OCR mislukt: ${error.message}]`,
+          needsVisionOCR: false,
+        });
+      } catch (e) {
+        // Ignore update errors
+      }
+    }
+  }
+
+  console.log(`📎 [${reportId}] Async OCR finished for all attachments`);
+}
+
 // ✅ FIX: Import pdf-parse which exports PDFParse as a named export
 // Version 2.4.5+ uses named exports instead of default export
 let pdfParseFunc: any = null;
@@ -524,142 +609,26 @@ fileUploadRouter.post(
 
             if (charsPerPage < MIN_CHARS_PER_PAGE && pages > 0) {
               needsVisionOCR = true;
-              console.log(`📎 [${reportId}] 🔍 PDF detected as SCANNED: ${file.originalname} (${Math.round(charsPerPage)} chars/page) - running Gemini Vision OCR...`);
-
-              // Immediately run Gemini Vision OCR to extract text
-              try {
-                const factory = AIModelFactory.getInstance();
-                const handler = factory.getHandler('gemini-2.5-flash');
-                if (!handler) {
-                  throw new Error('Gemini handler not available');
-                }
-                const base64Data = file.buffer.toString('base64');
-
-                const ocrResult = await handler.call(
-                  `Extract ALL text from this scanned PDF document. Return ONLY the extracted text, no commentary or formatting instructions. Preserve the original structure and formatting as much as possible.`,
-                  {
-                    model: 'gemini-2.5-flash',
-                    temperature: 0.1,
-                    maxOutputTokens: 32768,
-                    topP: 0.95,
-                    topK: 40,
-                    provider: 'google'
-                  },
-                  {
-                    jobId: `ocr-${reportId.slice(-8)}-${Date.now()}`,
-                    visionAttachments: [{
-                      mimeType: 'application/pdf',
-                      data: base64Data,
-                      filename: file.originalname
-                    }]
-                  }
-                );
-
-                if (ocrResult.content && ocrResult.content.trim().length > 50) {
-                  extractedText = ocrResult.content;
-                  console.log(`📎 [${reportId}] ✅ Gemini Vision OCR successful: ${extractedText.length} chars extracted from ${file.originalname}`);
-                } else {
-                  console.warn(`📎 [${reportId}] ⚠️ Gemini Vision OCR returned minimal text for ${file.originalname}`);
-                }
-              } catch (ocrError: any) {
-                console.error(`📎 [${reportId}] ❌ Gemini Vision OCR failed for ${file.originalname}:`, ocrError.message);
-                // Keep needsVisionOCR = true so user knows OCR is needed
-              }
+              console.log(`📎 [${reportId}] 🔍 PDF detected as SCANNED: ${file.originalname} (${Math.round(charsPerPage)} chars/page) - OCR will run async after save`);
+              // OCR will be triggered async after saving - don't block upload
+              extractedText = `[Gescand document: ${file.originalname} - OCR wordt verwerkt...]`;
             } else {
               console.log(`📎 [${reportId}] PDF parsed: ${pageCount} pages, ${extractedText.length} chars (${Math.round(charsPerPage)} chars/page)`);
             }
           } catch (pdfError: any) {
             console.warn(`📎 [${reportId}] PDF text extraction failed for ${file.originalname}:`, pdfError.message);
-            // If we can't extract text at all, assume it needs vision OCR
+            // If we can't extract text at all, mark for async OCR
             needsVisionOCR = true;
-
-            // Try Gemini Vision OCR as fallback
-            try {
-              const factory = AIModelFactory.getInstance();
-              const handler = factory.getHandler('gemini-2.5-flash');
-              if (!handler) {
-                throw new Error('Gemini handler not available for fallback OCR');
-              }
-              const base64Data = file.buffer.toString('base64');
-
-              console.log(`📎 [${reportId}] 🔍 Trying Gemini Vision OCR for ${file.originalname}...`);
-              const ocrResult = await handler.call(
-                `Extract ALL text from this PDF document. Return ONLY the extracted text, no commentary.`,
-                {
-                  model: 'gemini-2.5-flash',
-                  temperature: 0.1,
-                  maxOutputTokens: 32768,
-                  topP: 0.95,
-                  topK: 40,
-                  provider: 'google'
-                },
-                {
-                  jobId: `ocr-fb-${reportId.slice(-8)}-${Date.now()}`,
-                  visionAttachments: [{
-                    mimeType: 'application/pdf',
-                    data: base64Data,
-                    filename: file.originalname
-                  }]
-                }
-              );
-
-              if (ocrResult.content && ocrResult.content.trim().length > 50) {
-                extractedText = ocrResult.content;
-                console.log(`📎 [${reportId}] ✅ Gemini Vision OCR fallback successful: ${extractedText.length} chars`);
-              }
-            } catch (ocrError: any) {
-              console.error(`📎 [${reportId}] ❌ Gemini Vision OCR fallback failed:`, ocrError.message);
-            }
+            extractedText = `[PDF kon niet worden gelezen: ${file.originalname} - OCR wordt verwerkt...]`;
           }
         } else if (isTXT) {
           extractedText = file.buffer.toString('utf-8');
           console.log(`📎 [${reportId}] TXT file read: ${extractedText.length} chars`);
         } else if (file.mimetype.startsWith('image/') || ['jpg', 'jpeg', 'png'].includes(ext || '')) {
-          // Image files - use Gemini Vision to extract text/analyze content
-          console.log(`📎 [${reportId}] 🖼️ Processing image: ${file.originalname}`);
+          // Image files - mark for async OCR
+          console.log(`📎 [${reportId}] 🖼️ Image detected: ${file.originalname} - OCR will run async`);
           needsVisionOCR = true;
-
-          try {
-            const factory = AIModelFactory.getInstance();
-            const handler = factory.getHandler('gemini-2.5-flash');
-            if (!handler) {
-              throw new Error('Gemini handler not available for image OCR');
-            }
-
-            const base64Data = file.buffer.toString('base64');
-            const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
-
-            const ocrResult = await handler.call(
-              `Analyseer deze afbeelding en extraheer ALLE relevante informatie. Als het een document of scan is, extraheer dan alle tekst. Als het een screenshot of foto is, beschrijf dan de relevante inhoud. Return de geëxtraheerde tekst/informatie zonder extra commentaar.`,
-              {
-                model: 'gemini-2.5-flash',
-                temperature: 0.1,
-                maxOutputTokens: 32768,
-                topP: 0.95,
-                topK: 40,
-                provider: 'google'
-              },
-              {
-                jobId: `img-ocr-${reportId.slice(-8)}-${Date.now()}`,
-                visionAttachments: [{
-                  mimeType,
-                  data: base64Data,
-                  filename: file.originalname
-                }]
-              }
-            );
-
-            if (ocrResult.content && ocrResult.content.trim().length > 10) {
-              extractedText = ocrResult.content;
-              console.log(`📎 [${reportId}] ✅ Image OCR successful: ${extractedText.length} chars extracted from ${file.originalname}`);
-            } else {
-              console.warn(`📎 [${reportId}] ⚠️ Image OCR returned minimal text for ${file.originalname}`);
-              extractedText = `[Afbeelding: ${file.originalname}]`;
-            }
-          } catch (ocrError: any) {
-            console.error(`📎 [${reportId}] ❌ Image OCR failed for ${file.originalname}:`, ocrError.message);
-            extractedText = `[Afbeelding: ${file.originalname} - OCR niet beschikbaar]`;
-          }
+          extractedText = `[Afbeelding: ${file.originalname} - OCR wordt verwerkt...]`;
         }
 
         console.log(`📎 [${reportId}] Converting to base64...`);
@@ -695,22 +664,39 @@ fileUploadRouter.post(
       }
     }
 
+    // Check if any attachments need OCR
+    const attachmentsNeedingOcr = results.filter(r => r.needsVisionOCR);
+    const needsOcr = attachmentsNeedingOcr.length > 0;
+
     const responseData = {
       totalFiles: req.files.length,
       successful: results.length,
       failed: errors.length,
       attachments: results,
       errors,
+      needsOcr, // Signal to client that OCR is pending
+      ocrPendingCount: attachmentsNeedingOcr.length,
     };
 
     console.log(`📎 [${reportId}] Sending batch response:`, {
       totalFiles: responseData.totalFiles,
       successful: responseData.successful,
       failed: responseData.failed,
+      needsOcr: responseData.needsOcr,
+      ocrPendingCount: responseData.ocrPendingCount,
       attachmentIds: results.map(r => r.id),
     });
 
+    // Send response immediately - don't wait for OCR
     res.json(createApiSuccessResponse(responseData, `${results.length} van ${req.files.length} bijlages opgeslagen`));
+
+    // Start async OCR for attachments that need it (fire-and-forget)
+    if (needsOcr) {
+      console.log(`📎 [${reportId}] Starting async OCR for ${attachmentsNeedingOcr.length} attachments...`);
+      processAsyncOcr(reportId, attachmentsNeedingOcr.map(a => a.id)).catch(err => {
+        console.error(`📎 [${reportId}] Async OCR failed:`, err.message);
+      });
+    }
   })
 );
 
