@@ -226,14 +226,34 @@ const Pipeline = memo(function Pipeline() {
               reject(new Error(`Invalid JSON response: ${xhr.responseText?.substring(0, 100) || '(empty)'}`));
             }
           } else {
-            // Try to extract error message from response
-            try {
-              const errorResponse = JSON.parse(xhr.responseText);
-              const errorMsg = errorResponse?.error?.message || errorResponse?.error?.userMessage || errorResponse?.message || 'Upload mislukt';
-              reject(new Error(errorMsg));
-            } catch {
-              reject(new Error(`Upload mislukt (status ${xhr.status}): ${xhr.responseText?.substring(0, 100) || '(empty)'}`));
-            }
+            // Map HTTP status codes to user-friendly Dutch error messages
+            const getErrorMessage = (status: number, responseText: string): string => {
+              switch (status) {
+                case 413:
+                  return 'Bestand(en) te groot. Maximum uploadgrootte is 50MB per bestand en 100MB totaal.';
+                case 401:
+                  return 'Sessie verlopen. Ververs de pagina en log opnieuw in.';
+                case 403:
+                  return 'Geen toegang tot deze functie. Neem contact op met de beheerder.';
+                case 404:
+                  return 'Case niet gevonden. Mogelijk is deze verwijderd.';
+                case 500:
+                  return 'Serverfout bij het opslaan. Probeer het opnieuw of neem contact op met support.';
+                case 502:
+                case 503:
+                case 504:
+                  return 'Server tijdelijk niet beschikbaar. Probeer het over enkele minuten opnieuw.';
+                default:
+                  // Try to extract message from JSON response
+                  try {
+                    const errorResponse = JSON.parse(responseText);
+                    return errorResponse?.error?.message || errorResponse?.error?.userMessage || errorResponse?.message || `Upload mislukt (foutcode ${status})`;
+                  } catch {
+                    return `Upload mislukt (foutcode ${status}). Probeer het opnieuw.`;
+                  }
+              }
+            };
+            reject(new Error(getErrorMessage(xhr.status, xhr.responseText)));
           }
         });
 

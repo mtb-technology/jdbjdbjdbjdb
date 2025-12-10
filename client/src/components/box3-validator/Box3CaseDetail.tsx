@@ -21,6 +21,7 @@ import {
   FileText,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Plus,
   Upload,
   Calendar,
@@ -34,7 +35,16 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
+  Eye,
+  X,
+  Download,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
 // Extracted components
@@ -207,10 +217,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   const [isCompressing, setIsCompressing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Document preview state
+  const [previewDocIndex, setPreviewDocIndex] = useState<number | null>(null);
+  const previewDoc = previewDocIndex !== null ? documents[previewDocIndex] : null;
+
   // Year-first navigation: year is the primary selector
   const availableYears = Object.keys(blueprint?.year_summaries || {}).sort((a, b) => Number(b) - Number(a));
   const [selectedYear, setSelectedYear] = useState<string | null>(availableYears[0] || null);
-  const [activeYearTab, setActiveYearTab] = useState("overview");
+  const [activeYearTab, setActiveYearTab] = useState("assets");
 
   // Extract data from blueprint
   const taxYears = dossier.taxYears || [];
@@ -270,8 +284,91 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
   // ============ RENDER ============
 
+  // Build preview URL using the download endpoint
+  const getPreviewUrl = (doc: typeof previewDoc) => {
+    if (!doc) return null;
+    return `/api/box3-validator/documents/${doc.id}/download`;
+  };
+
+  const isImageFile = (mimeType: string) =>
+    mimeType.startsWith('image/');
+
+  const isPdfFile = (mimeType: string) =>
+    mimeType === 'application/pdf';
+
   return (
     <div className="space-y-6">
+      {/* Document Preview Modal */}
+      <Dialog open={previewDocIndex !== null} onOpenChange={(open) => !open && setPreviewDocIndex(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
+          {previewDoc && (
+            <>
+              <DialogHeader className="px-4 py-3 border-b bg-muted/30">
+                <div className="flex items-center justify-between">
+                  <DialogTitle className="text-base font-medium truncate pr-4">
+                    {previewDoc.filename}
+                  </DialogTitle>
+                  <div className="flex items-center gap-2">
+                    {/* Navigation */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={previewDocIndex === 0}
+                      onClick={() => setPreviewDocIndex((i) => i !== null && i > 0 ? i - 1 : i)}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {(previewDocIndex ?? 0) + 1} / {documents.length}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={previewDocIndex === documents.length - 1}
+                      onClick={() => setPreviewDocIndex((i) => i !== null && i < documents.length - 1 ? i + 1 : i)}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    {/* Download */}
+                    <a
+                      href={getPreviewUrl(previewDoc) || '#'}
+                      download={previewDoc.filename}
+                      className="inline-flex"
+                    >
+                      <Button variant="ghost" size="sm">
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </a>
+                  </div>
+                </div>
+              </DialogHeader>
+              <div className="overflow-auto max-h-[calc(90vh-60px)] bg-muted/10">
+                {isImageFile(previewDoc.mimeType) ? (
+                  <img
+                    src={getPreviewUrl(previewDoc) || ''}
+                    alt={previewDoc.filename}
+                    className="w-full h-auto"
+                  />
+                ) : isPdfFile(previewDoc.mimeType) ? (
+                  <iframe
+                    src={getPreviewUrl(previewDoc) || ''}
+                    className="w-full h-[80vh]"
+                    title={previewDoc.filename}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-64 text-muted-foreground">
+                    <div className="text-center">
+                      <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      <p>Preview niet beschikbaar voor dit bestandstype</p>
+                      <p className="text-sm">{previewDoc.mimeType}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -528,14 +625,18 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                       const notes = registryEntry?.notes;
 
                       return (
-                        <div key={doc.id} className="px-3 py-2.5 hover:bg-muted/30 transition-colors">
+                        <div
+                          key={doc.id}
+                          className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer group"
+                          onClick={() => setPreviewDocIndex(docIndex)}
+                        >
                           {/* Main row */}
                           <div className="flex items-center gap-3">
                             {/* Icon */}
                             <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
 
                             {/* Filename */}
-                            <span className="text-sm truncate min-w-0 flex-shrink" title={doc.filename}>
+                            <span className="text-sm truncate min-w-0 flex-shrink group-hover:text-primary" title={doc.filename}>
                               {doc.filename}
                             </span>
 
@@ -581,6 +682,20 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 </span>
                               )
                             )}
+
+                            {/* Preview button - visible on hover */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewDocIndex(docIndex);
+                              }}
+                              title="Preview"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
                           </div>
 
                           {/* Notes row */}
@@ -612,60 +727,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
         </CardContent>
       </Card>
 
-      {/* Validation Flags */}
-      {validationFlags.length > 0 && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-600" />
-              Aandachtspunten ({validationFlags.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {validationFlags.map((flag, idx) => (
-                <div
-                  key={flag.id || idx}
-                  className={`p-3 rounded-md text-sm ${
-                    flag.severity === "high"
-                      ? "bg-red-100 border-red-200"
-                      : flag.severity === "medium"
-                      ? "bg-yellow-100 border-yellow-200"
-                      : "bg-blue-100 border-blue-200"
-                  } border`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="font-medium">{flag.type}</span>
-                      {flag.field_path && (
-                        <span className="text-xs text-muted-foreground ml-2">({flag.field_path})</span>
-                      )}
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={
-                        flag.severity === "high"
-                          ? "border-red-300 text-red-700"
-                          : flag.severity === "medium"
-                          ? "border-yellow-300 text-yellow-700"
-                          : "border-blue-300 text-blue-700"
-                      }
-                    >
-                      {flag.severity}
-                    </Badge>
-                  </div>
-                  <p className="mt-1">{flag.message}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Year-First Navigation Structure */}
       {blueprint && (
         <div className="space-y-6">
-          {/* LEVEL 1: Case Summary (always visible) */}
+          {/* HERO SECTION: Verdict + Next Steps */}
           {(() => {
             const yearSummaries = blueprint.year_summaries || {};
             const years = Object.keys(yearSummaries).sort();
@@ -678,229 +743,306 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             const isProfitable = totalRefund > 0 || profitableYears.length > 0;
             const isComplete = incompleteYears.length === 0 && years.length > 0;
 
+            // Collect ALL missing items across all years
+            const allMissingItems: { year: string; description: string }[] = [];
+            years.forEach(year => {
+              const missing = yearSummaries[year]?.missing_items || [];
+              missing.forEach(item => {
+                allMissingItems.push({ year, description: item.description });
+              });
+            });
+
+            // Determine next step
+            let nextStep = {
+              action: '',
+              description: '',
+              buttonLabel: '',
+              buttonAction: null as (() => void) | null,
+            };
+
+            if (allMissingItems.length > 0) {
+              nextStep = {
+                action: 'Documenten opvragen',
+                description: `${allMissingItems.length} document(en) nodig om volledig te kunnen beoordelen`,
+                buttonLabel: 'Bekijk ontbrekende docs',
+                buttonAction: null,
+              };
+            } else if (isProfitable) {
+              nextStep = {
+                action: 'Bezwaar indienen',
+                description: 'Dossier is compleet en kansrijk - klaar voor bezwaar',
+                buttonLabel: 'Start bezwaarprocedure',
+                buttonAction: null,
+              };
+            } else if (!isComplete) {
+              nextStep = {
+                action: 'Aanvullende info nodig',
+                description: 'Wacht op meer gegevens van de klant',
+                buttonLabel: 'Stuur herinnering',
+                buttonAction: null,
+              };
+            } else {
+              nextStep = {
+                action: 'Afsluiten',
+                description: 'Geen teruggave mogelijk op basis van huidige gegevens',
+                buttonLabel: 'Informeer klant',
+                buttonAction: null,
+              };
+            }
+
             return (
-              <Card className={`border-2 ${isProfitable ? 'border-green-300 bg-green-50/30' : !isComplete ? 'border-yellow-300 bg-yellow-50/30' : 'border-gray-200'}`}>
-                <CardContent className="pt-6">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="space-y-4">
+                {/* Main Verdict Card */}
+                <div className={`rounded-xl p-6 ${
+                  isProfitable
+                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white'
+                    : !isComplete
+                      ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950'
+                      : 'bg-gradient-to-r from-gray-400 to-gray-500 text-white'
+                }`}>
+                  <div className="flex items-start justify-between">
+                    {/* Left: Verdict */}
                     <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-full ${isProfitable ? 'bg-green-100' : !isComplete ? 'bg-yellow-100' : 'bg-gray-100'}`}>
+                      <div className={`p-3 rounded-full ${
+                        isProfitable ? 'bg-white/20' : !isComplete ? 'bg-white/30' : 'bg-white/20'
+                      }`}>
                         {isProfitable ? (
-                          <CheckCircle2 className="h-8 w-8 text-green-600" />
+                          <CheckCircle2 className="h-10 w-10" />
+                        ) : !isComplete ? (
+                          <AlertTriangle className="h-10 w-10" />
                         ) : (
-                          <AlertTriangle className="h-8 w-8 text-yellow-600" />
+                          <Info className="h-10 w-10" />
                         )}
                       </div>
                       <div>
-                        <h3 className="text-lg font-semibold">
-                          {isProfitable ? 'Kansrijk dossier' : isComplete ? 'Niet kansrijk' : 'Onvolledig dossier'}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {years.length} {years.length === 1 ? 'jaar' : 'jaren'} geanalyseerd
-                          {incompleteYears.length > 0 && ` • ${incompleteYears.length} incompleet`}
+                        <p className="text-sm font-medium opacity-90">Beoordeling</p>
+                        <h2 className="text-2xl font-bold">
+                          {isProfitable ? 'Kansrijk' : !isComplete ? 'Onvolledig' : 'Niet kansrijk'}
+                        </h2>
+                        <p className="text-sm opacity-80 mt-1">
+                          {profitableYears.length} van {years.length} jaren kansrijk
                         </p>
                       </div>
                     </div>
+
+                    {/* Right: Total refund */}
                     <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Indicatieve teruggave totaal</p>
-                      <p className={`text-3xl font-bold ${totalRefund > 0 ? 'text-green-600' : totalRefund < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                      <p className="text-sm font-medium opacity-90">Indicatieve teruggave</p>
+                      <p className="text-4xl font-bold tracking-tight">
                         {formatCurrency(totalRefund)}
                       </p>
                     </div>
                   </div>
 
-                  {/* Quick stats */}
-                  <div className="mt-6 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                    <div>
-                      <p className="text-2xl font-semibold">{years.length}</p>
-                      <p className="text-xs text-muted-foreground">Belastingjaren</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-semibold text-green-600">{profitableYears.length}</p>
-                      <p className="text-xs text-muted-foreground">Kansrijk</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-semibold text-yellow-600">{incompleteYears.length}</p>
-                      <p className="text-xs text-muted-foreground">Incompleet</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-semibold">{documents.length}</p>
-                      <p className="text-xs text-muted-foreground">Documenten</p>
-                    </div>
+                  {/* Year pills - compact overview */}
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    {years.map(year => {
+                      const summary = yearSummaries[year];
+                      const refund = summary?.calculated_totals?.indicative_refund || 0;
+                      const yearProfitable = summary?.calculated_totals?.is_profitable || refund > 0;
+                      const yearIncomplete = summary?.status === 'incomplete';
+
+                      return (
+                        <button
+                          key={year}
+                          onClick={() => setSelectedYear(year)}
+                          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                            selectedYear === year
+                              ? 'bg-white text-gray-900 shadow-lg scale-105'
+                              : yearProfitable
+                                ? 'bg-white/20 hover:bg-white/30'
+                                : yearIncomplete
+                                  ? 'bg-black/10 hover:bg-black/20'
+                                  : 'bg-white/10 hover:bg-white/20'
+                          }`}
+                        >
+                          {year}
+                          {yearProfitable && !yearIncomplete && (
+                            <span className="ml-1.5 text-xs">+{formatCurrency(refund).replace('€', '€')}</span>
+                          )}
+                          {yearIncomplete && <span className="ml-1.5">⚠</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Next Step Card - Combined with missing items when applicable */}
+                {allMissingItems.length > 0 ? (
+                  <Card className="border-2 border-amber-300 bg-amber-50">
+                    <CardContent className="py-4">
+                      {/* Header row */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-amber-200">
+                            <FileText className="h-5 w-5 text-amber-800" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-amber-900">Documenten opvragen</p>
+                            <p className="text-sm text-amber-700">{allMissingItems.length} document(en) nodig voor volledige beoordeling</p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="bg-amber-600 hover:bg-amber-700"
+                          onClick={() => setShowAddDocs(true)}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Document toevoegen
+                        </Button>
+                      </div>
+                      {/* Missing items grid */}
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {allMissingItems.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-2 p-2 bg-white rounded-lg border border-amber-200"
+                          >
+                            <span className="text-xs font-mono bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                              {item.year}
+                            </span>
+                            <span className="text-sm text-amber-900">{item.description}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card className="border-2 border-primary/20 bg-primary/5">
+                    <CardContent className="py-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-primary/10">
+                            <ChevronRight className="h-5 w-5 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-primary">{nextStep.action}</p>
+                            <p className="text-sm text-muted-foreground">{nextStep.description}</p>
+                          </div>
+                        </div>
+                        {nextStep.buttonLabel && (
+                          <Button variant="default" size="sm">
+                            {nextStep.buttonLabel}
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Aandachtspunten - After hero, with blocks and human-readable labels */}
+          {validationFlags.length > 0 && (() => {
+            // Map technical flag types to human-readable labels
+            const getFlagLabel = (type: string): string => {
+              const labels: Record<string, string> = {
+                'low_confidence': 'Onzeker',
+                'requires_validation': 'Controleren',
+                'missing_data': 'Ontbreekt',
+                'inconsistency': 'Afwijking',
+                'estimation': 'Schatting',
+                'manual_review': 'Nakijken',
+              };
+              return labels[type] || type.replace(/_/g, ' ');
+            };
+
+            return (
+              <Card className="border-yellow-300 bg-yellow-50">
+                <CardHeader className="pb-3 pt-4">
+                  <CardTitle className="text-base font-bold flex items-center gap-2 text-yellow-800">
+                    <Info className="h-5 w-5" />
+                    Let op ({validationFlags.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 pb-4">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {validationFlags.map((flag, idx) => (
+                      <div
+                        key={flag.id || idx}
+                        className="p-3 bg-white rounded-lg border border-yellow-200"
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="text-xs font-semibold bg-yellow-200 text-yellow-800 px-1.5 py-0.5 rounded shrink-0">
+                            {getFlagLabel(flag.type)}
+                          </span>
+                          <p className="text-sm text-yellow-900">{flag.message}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
             );
           })()}
 
-          {/* Fiscal Entity - Compact two-person display */}
-          <div className={`grid gap-4 ${blueprint.fiscal_entity?.fiscal_partner?.has_partner ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
-            <Card className="border-blue-200 bg-blue-50/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2 text-blue-800">
-                  <User className="h-4 w-4" />
-                  Belastingplichtige
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <p className="font-semibold text-lg">{blueprint.fiscal_entity?.taxpayer?.name || '—'}</p>
-                <p className="text-sm text-muted-foreground">BSN: {blueprint.fiscal_entity?.taxpayer?.bsn_masked || '—'}</p>
-              </CardContent>
-            </Card>
+          {/* Fiscal Entity - Inline compact display */}
+          <div className="flex items-center gap-6 px-4 py-3 bg-muted/30 rounded-lg text-sm">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-blue-600" />
+              <span className="text-muted-foreground">Belastingplichtige:</span>
+              <span className="font-medium">{blueprint.fiscal_entity?.taxpayer?.name || '—'}</span>
+              <span className="text-xs text-muted-foreground">({blueprint.fiscal_entity?.taxpayer?.bsn_masked || '—'})</span>
+            </div>
             {blueprint.fiscal_entity?.fiscal_partner?.has_partner && (
-              <Card className="border-purple-200 bg-purple-50/30">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2 text-purple-800">
-                    <User className="h-4 w-4" />
-                    Fiscaal Partner
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <p className="font-semibold text-lg">{blueprint.fiscal_entity.fiscal_partner.name || '—'}</p>
-                  <p className="text-sm text-muted-foreground">BSN: {blueprint.fiscal_entity.fiscal_partner.bsn_masked || '—'}</p>
-                </CardContent>
-              </Card>
+              <>
+                <span className="text-muted-foreground">|</span>
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-purple-600" />
+                  <span className="text-muted-foreground">Partner:</span>
+                  <span className="font-medium">{blueprint.fiscal_entity.fiscal_partner.name || '—'}</span>
+                  <span className="text-xs text-muted-foreground">({blueprint.fiscal_entity.fiscal_partner.bsn_masked || '—'})</span>
+                </div>
+              </>
             )}
           </div>
 
-          {/* LEVEL 2: Year Selector (PRIMARY NAVIGATION) */}
-          {availableYears.length > 0 && (
+          {/* YEAR DETAIL: Shows when a year is selected */}
+          {availableYears.length > 0 && selectedYear && (
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
-                  Selecteer Belastingjaar
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                {/* Year tabs as buttons */}
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {availableYears.map(year => {
-                    const summary = blueprint.year_summaries?.[year];
-                    const isProfitable = summary?.calculated_totals?.is_profitable || (summary?.calculated_totals?.indicative_refund || 0) > 0;
-                    const isIncomplete = summary?.status === 'incomplete';
-                    const isSelected = selectedYear === year;
-
-                    return (
-                      <button
-                        key={year}
-                        onClick={() => setSelectedYear(year)}
-                        className={`
-                          relative px-4 py-3 rounded-lg border-2 transition-all font-medium
-                          ${isSelected
-                            ? 'border-primary bg-primary text-primary-foreground shadow-md scale-105'
-                            : isProfitable
-                              ? 'border-green-300 bg-green-50 hover:bg-green-100 text-green-800'
-                              : isIncomplete
-                                ? 'border-yellow-300 bg-yellow-50 hover:bg-yellow-100 text-yellow-800'
-                                : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700'
-                          }
-                        `}
-                      >
-                        <div className="text-lg">{year}</div>
-                        <div className="text-xs opacity-80">
-                          {isProfitable ? 'Kansrijk' : isIncomplete ? 'Incompleet' : 'Compleet'}
-                        </div>
-                        {/* Status indicator dot */}
-                        <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ${
-                          isProfitable ? 'bg-green-500' : isIncomplete ? 'bg-yellow-500' : 'bg-gray-400'
-                        }`} />
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* LEVEL 3: Year Detail View with Tabs */}
+              <CardContent className="pt-6">
+                {/* YEAR DETAIL VIEW */}
                 {selectedYear && blueprint.year_summaries?.[selectedYear] && (
-                  <div className="border-t pt-4">
-                    {/* Year header with status */}
+                  <div>
+                    {/* Compact year header - just the essentials */}
                     {(() => {
                       const summary = blueprint.year_summaries[selectedYear];
-                      const isProfitable = summary?.calculated_totals?.is_profitable || (summary?.calculated_totals?.indicative_refund || 0) > 0;
-                      const isIncomplete = summary?.status === 'incomplete';
-                      const taxData = blueprint.tax_authority_data?.[selectedYear];
+                      const refund = summary?.calculated_totals?.indicative_refund || 0;
 
                       return (
-                        <div className={`p-4 rounded-lg mb-4 ${
-                          isProfitable ? 'bg-green-50 border border-green-200' :
-                          isIncomplete ? 'bg-yellow-50 border border-yellow-200' :
-                          'bg-blue-50 border border-blue-200'
-                        }`}>
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <h3 className="text-xl font-bold">Belastingjaar {selectedYear}</h3>
-                              <Badge className={
-                                isProfitable ? 'bg-green-100 text-green-800 border-green-300' :
-                                isIncomplete ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
-                                'bg-blue-100 text-blue-800 border-blue-300'
-                              }>
-                                {isProfitable ? 'Kansrijk' : isIncomplete ? 'Incompleet' : 'Compleet'}
-                              </Badge>
-                            </div>
-                            {summary?.calculated_totals?.indicative_refund != null && (
-                              <div className="text-right">
-                                <span className="text-sm text-muted-foreground">Indicatieve teruggave:</span>
-                                <span className={`text-2xl font-bold ml-2 ${
-                                  (summary.calculated_totals.indicative_refund || 0) > 0 ? 'text-green-600' : 'text-gray-600'
-                                }`}>
-                                  {formatCurrency(summary.calculated_totals.indicative_refund)}
-                                </span>
-                              </div>
-                            )}
+                        <div className="flex items-center justify-between pb-4 border-b mb-4">
+                          <div className="flex items-center gap-3">
+                            <h3 className="text-lg font-semibold">Detail: {selectedYear}</h3>
                           </div>
-
-                          {/* Key numbers for this year */}
-                          {summary?.calculated_totals && (
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                              <div className="p-2 bg-white/50 rounded">
-                                <p className="text-xs text-muted-foreground">Totaal vermogen</p>
-                                <p className="font-semibold">{formatCurrency(summary.calculated_totals.total_assets_jan_1)}</p>
-                              </div>
-                              <div className="p-2 bg-white/50 rounded">
-                                <p className="text-xs text-muted-foreground">Werkelijk rendement</p>
-                                <p className="font-semibold">{formatCurrency(summary.calculated_totals.actual_return?.total)}</p>
-                              </div>
-                              <div className="p-2 bg-white/50 rounded">
-                                <p className="text-xs text-muted-foreground">Forfaitair (BD)</p>
-                                <p className="font-semibold">{formatCurrency(summary.calculated_totals.deemed_return_from_tax_authority)}</p>
-                              </div>
-                              <div className="p-2 bg-white/50 rounded">
-                                <p className="text-xs text-muted-foreground">Verschil</p>
-                                <p className={`font-semibold ${
-                                  (summary.calculated_totals.difference || 0) < 0 ? 'text-green-600' : 'text-red-600'
-                                }`}>
-                                  {formatCurrency(summary.calculated_totals.difference)}
-                                </p>
-                              </div>
+                          <div className="flex items-center gap-6 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Vermogen: </span>
+                              <span className="font-semibold">{formatCurrency(summary?.calculated_totals?.total_assets_jan_1)}</span>
                             </div>
-                          )}
-
-                          {/* Missing items for this year */}
-                          {summary?.missing_items && summary.missing_items.length > 0 && (
-                            <div className="mt-3 p-3 bg-yellow-100 rounded-lg border border-yellow-300">
-                              <p className="text-xs font-medium text-yellow-800 mb-2 flex items-center gap-1">
-                                <AlertTriangle className="h-3 w-3" />
-                                Ontbrekende documenten/gegevens voor {selectedYear}
-                              </p>
-                              <div className="flex flex-wrap gap-1">
-                                {summary.missing_items.map((item, i) => (
-                                  <Badge key={i} variant="outline" className="text-xs bg-white border-yellow-400 text-yellow-800">
-                                    {item.description}
-                                  </Badge>
-                                ))}
-                              </div>
+                            <div>
+                              <span className="text-muted-foreground">Werkelijk: </span>
+                              <span className="font-semibold">{formatCurrency(summary?.calculated_totals?.actual_return?.total)}</span>
                             </div>
-                          )}
+                            <div>
+                              <span className="text-muted-foreground">Forfaitair: </span>
+                              <span className="font-semibold">{formatCurrency(summary?.calculated_totals?.deemed_return_from_tax_authority)}</span>
+                            </div>
+                            <div className={`font-bold ${refund > 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                              {formatCurrency(refund)}
+                            </div>
+                          </div>
                         </div>
                       );
                     })()}
 
-                    {/* Year-specific tabs */}
+                    {/* Year-specific tabs - Box 3 categories */}
                     <Tabs value={activeYearTab} onValueChange={setActiveYearTab}>
                       <TabsList className="mb-4">
-                        <TabsTrigger value="overview">Overzicht</TabsTrigger>
                         <TabsTrigger value="assets">Vermogen</TabsTrigger>
                         <TabsTrigger value="debts">Schulden</TabsTrigger>
-                        <TabsTrigger value="tax_data">Belastingdienst</TabsTrigger>
+                        <TabsTrigger value="overview">Aanslag/Aangifte</TabsTrigger>
                       </TabsList>
 
                       {/* Overview for selected year */}
@@ -1281,87 +1423,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         })()}
                       </TabsContent>
 
-                      {/* Tax Authority Data for selected year */}
-                      <TabsContent value="tax_data" className="space-y-4">
-                        {(() => {
-                          const taxData = blueprint.tax_authority_data?.[selectedYear];
-
-                          if (!taxData) {
-                            return (
-                              <Card className="border-dashed">
-                                <CardContent className="py-8 text-center text-muted-foreground">
-                                  Geen belastingdienst gegevens gevonden voor {selectedYear}
-                                </CardContent>
-                              </Card>
-                            );
-                          }
-
-                          return (
-                            <Card>
-                              <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                  <Landmark className="h-5 w-5 text-purple-500" />
-                                  Belastingdienst Gegevens {selectedYear}
-                                  <Badge variant="outline" className="ml-2">{taxData.document_type}</Badge>
-                                </CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                {taxData.household_totals && (
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                    <DataPointDisplay
-                                      label="Totaal Vermogen"
-                                      dataPoint={taxData.household_totals.total_assets_gross}
-                                      format="currency"
-                                    />
-                                    <DataPointDisplay
-                                      label="Totaal Schulden"
-                                      dataPoint={taxData.household_totals.total_debts}
-                                      format="currency"
-                                    />
-                                    <DataPointDisplay
-                                      label="Grondslag"
-                                      dataPoint={taxData.household_totals.taxable_base}
-                                      format="currency"
-                                    />
-                                    <DataPointDisplay
-                                      label="Box 3 Belasting"
-                                      dataPoint={taxData.household_totals.total_tax_assessed}
-                                      format="currency"
-                                    />
-                                  </div>
-                                )}
-                                {taxData.per_person && Object.keys(taxData.per_person).length > 0 && (
-                                  <div className="border-t pt-3">
-                                    <h5 className="text-sm font-medium mb-2">Per persoon</h5>
-                                    <div className="grid gap-2">
-                                      {Object.entries(taxData.per_person).map(([personId, personData]) => (
-                                        <div key={personId} className="flex items-center justify-between text-sm bg-muted/30 p-2 rounded">
-                                          <span className="font-medium">{personId}</span>
-                                          <div className="flex gap-4">
-                                            <span>Vermogen: {formatCurrency(personData.total_assets_box3)}</span>
-                                            <span>Schulden: {formatCurrency(personData.total_debts_box3)}</span>
-                                            <span>Belasting: {formatCurrency(personData.tax_assessed)}</span>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </CardContent>
-                            </Card>
-                          );
-                        })()}
-                      </TabsContent>
                     </Tabs>
                   </div>
                 )}
 
-                {/* No year selected or no years available */}
-                {!selectedYear && availableYears.length > 0 && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    Selecteer een belastingjaar hierboven om de details te bekijken
-                  </div>
-                )}
               </CardContent>
             </Card>
           )}
