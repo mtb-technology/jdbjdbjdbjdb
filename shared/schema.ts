@@ -1097,6 +1097,7 @@ export type Box3OwnerRef = string; // "tp_01" | "fp_01" | "joint"
 
 /**
  * Bank/Savings Asset
+ * Matches Belastingdienst "Bank- en spaartegoeden" category
  */
 export interface Box3BankSavingsAsset {
   id: string;
@@ -1104,6 +1105,7 @@ export interface Box3BankSavingsAsset {
   description: string;
   account_masked?: string;
   bank_name?: string;
+  country?: string; // NL, BE, etc. - Belastingdienst requires this
   is_joint_account: boolean;
   ownership_percentage: number;
   is_green_investment: boolean;
@@ -1112,18 +1114,21 @@ export interface Box3BankSavingsAsset {
     value_jan_1?: Box3DataPoint;
     value_dec_31?: Box3DataPoint;
     interest_received?: Box3DataPoint;
-    currency_result?: Box3DataPoint;
+    currency_result?: Box3DataPoint; // Valutaresultaten
   }>;
 }
 
 /**
  * Investment Asset
+ * Matches Belastingdienst "Beleggingen" category
  */
 export interface Box3InvestmentAsset {
   id: string;
   owner_id: Box3OwnerRef;
   description: string;
   institution?: string;
+  account_masked?: string; // Rekeningnummer - Belastingdienst shows this
+  country?: string; // NL, BE, etc. - Belastingdienst requires this
   type: 'stocks' | 'bonds' | 'funds' | 'crypto' | 'other';
   ownership_percentage: number;
 
@@ -1131,28 +1136,41 @@ export interface Box3InvestmentAsset {
     value_jan_1?: Box3DataPoint;
     value_dec_31?: Box3DataPoint;
     dividend_received?: Box3DataPoint;
-    deposits?: Box3DataPoint;
-    withdrawals?: Box3DataPoint;
+    deposits?: Box3DataPoint; // Stortingen
+    withdrawals?: Box3DataPoint; // Onttrekkingen
     realized_gains?: Box3DataPoint;
     transaction_costs?: Box3DataPoint;
+    currency_result?: Box3DataPoint; // Valutaresultaten
   }>;
 }
 
 /**
  * Real Estate Asset
+ * Matches Belastingdienst "Onroerende zaken" category
+ * Note: This is part of "Onroerende zaken en overige bezittingen" tab
  */
 export interface Box3RealEstateAsset {
   id: string;
   owner_id: Box3OwnerRef;
   description: string;
   address: string;
+  postcode?: string; // Belastingdienst shows this
+  house_number?: string; // Belastingdienst shows this
+  country?: string; // NL or buitenland - Belastingdienst distinguishes this
   type: 'rented_residential' | 'rented_commercial' | 'vacation_home' | 'land' | 'other';
   ownership_percentage: number;
   ownership_note?: string;
 
+  // Belastingdienst specific fields
+  is_dwelling?: boolean; // Is het een woning?
+  has_rent_protection?: boolean; // Huurbescherming (affects valuation)
+  is_foreign?: boolean; // Buitenland onroerend goed
+
   yearly_data: Record<string, {
     woz_value?: Box3DataPoint & { reference_date?: string };
     economic_value?: Box3DataPoint;
+    rental_value_jan_1?: Box3DataPoint; // Huurwaarde 1 januari
+    rental_value_dec_31?: Box3DataPoint; // Huurwaarde 31 december
     rental_income_gross?: Box3DataPoint;
     maintenance_costs?: Box3DataPoint;
     property_tax?: Box3DataPoint;
@@ -1162,18 +1180,35 @@ export interface Box3RealEstateAsset {
 }
 
 /**
- * Other Asset (VvE, claims, etc.)
+ * Other Asset
+ * Matches Belastingdienst "Overige bezittingen" (part of "Onroerende zaken en overige bezittingen" tab)
+ * Includes: Kapitaalverzekeringen, Uitgeleend geld, Contant geld, Periodieke uitkeringen, etc.
  */
 export interface Box3OtherAsset {
   id: string;
   owner_id: Box3OwnerRef;
   description: string;
-  type: 'vve_share' | 'claims' | 'rights' | 'other';
+  type:
+    | 'vve_share' // VvE reserve
+    | 'claims' // Vorderingen
+    | 'rights' // Rechten
+    | 'capital_insurance' // Kapitaalverzekering eigen woning / Kapitaalverzekering
+    | 'loaned_money' // Uitgeleend geld aan derden
+    | 'cash' // Contant geld
+    | 'periodic_benefits' // Periodieke uitkeringen (lijfrente etc.)
+    | 'other';
+
+  // Extra details afhankelijk van type
+  insurance_policy_number?: string; // Voor kapitaalverzekeringen
+  borrower_name?: string; // Voor uitgeleend geld
+  country?: string; // NL of buitenland
 
   yearly_data: Record<string, {
     value_jan_1?: Box3DataPoint;
     value_dec_31?: Box3DataPoint;
     income_received?: Box3DataPoint;
+    premium_paid?: Box3DataPoint; // Voor verzekeringen
+    interest_received?: Box3DataPoint; // Voor uitgeleend geld
   }>;
 }
 
@@ -1189,6 +1224,8 @@ export interface Box3Assets {
 
 /**
  * Debt
+ * Matches Belastingdienst "Schulden" category
+ * Note: Belastingdienst distinguishes debt types (hypotheek, consumptief, etc.)
  */
 export interface Box3Debt {
   id: string;
@@ -1198,11 +1235,24 @@ export interface Box3Debt {
   linked_asset_id?: string;
   ownership_percentage: number;
 
+  // Belastingdienst categorization
+  debt_type:
+    | 'mortgage_box3' // Hypotheek (niet eigen woning, die is box 1)
+    | 'mortgage_box1_residual' // Restschuld eigen woning
+    | 'consumer_credit' // Consumptief krediet
+    | 'personal_loan' // Persoonlijke lening
+    | 'study_loan' // Studieschuld
+    | 'tax_debt' // Belastingschuld
+    | 'other'; // Overige schulden
+
+  country?: string; // NL of buitenland
+
   yearly_data: Record<string, {
     value_jan_1?: Box3DataPoint;
     value_dec_31?: Box3DataPoint;
-    interest_paid?: Box3DataPoint;
+    interest_paid?: Box3DataPoint; // Betaalde rente
     interest_rate?: Box3DataPoint<number>; // percentage
+    currency_result?: Box3DataPoint; // Valutaresultaten
   }>;
 }
 

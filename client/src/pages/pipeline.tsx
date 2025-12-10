@@ -319,37 +319,29 @@ const Pipeline = memo(function Pipeline() {
 
       console.log("🎯 Pipeline: Report created:", { reportId: report?.id });
 
-      // Navigate immediately - don't wait for upload
-      // Upload happens in background, user sees case detail page right away
-      if (report?.id) {
-        toast({
-          title: "Case aangemaakt",
-          description: pendingFiles.length > 0
-            ? `Case "${report.title}" aangemaakt. Bijlages worden op de achtergrond verwerkt...`
-            : `Case "${report.title}" aangemaakt`,
-        });
+      // Upload attachments BEFORE navigating - Stage 1 needs document data in prompt
+      if (pendingFiles.length > 0 && report?.id) {
+        const uploadSuccess = await uploadAttachments(report.id, pendingFiles);
 
-        // Start upload in background (fire-and-forget) - don't await
-        if (pendingFiles.length > 0) {
-          uploadAttachments(report.id, pendingFiles).then(success => {
-            if (!success) {
-              toast({
-                title: "Bijlage upload mislukt",
-                description: "Ga naar de case om bijlages handmatig toe te voegen.",
-                variant: "destructive",
-              });
-            }
-          }).catch(err => {
-            console.error('Background upload failed:', err);
-            toast({
-              title: "Bijlage upload mislukt",
-              description: err.message || "Upload kon niet worden voltooid",
-              variant: "destructive",
-            });
+        if (!uploadSuccess) {
+          toast({
+            title: "Case aangemaakt, maar bijlages niet geüpload",
+            description: `Case "${report.title}" is aangemaakt. Ga naar de case om bijlages handmatig toe te voegen.`,
+            variant: "destructive",
           });
+          // Navigate without autoStart so user can fix attachments
+          setLocation(`/cases/${report.id}`);
+          return;
         }
+      }
 
-        // Navigate immediately with autoStart
+      toast({
+        title: "Case aangemaakt",
+        description: `Nieuwe case "${report.title}" met ${pendingFiles.length} bijlage(s) opgeslagen`,
+      });
+
+      // Navigate to the case detail page and auto-start workflow
+      if (report?.id) {
         setLocation(`/cases/${report.id}?autoStart=true`);
       }
 
@@ -491,7 +483,11 @@ De AI analyseert zowel geüploade bestanden als tekst input.`}
                 >
                   {isCreatingCase || isUploading ? (
                     <><Loader2 className="mr-3 h-5 w-5 animate-spin" />
-                      {isUploading ? `Uploaden ${uploadProgress}%...` : 'Case aanmaken...'}
+                      {isUploading
+                        ? (uploadProgress >= 100
+                            ? 'Documenten verwerken...'
+                            : `Uploaden ${uploadProgress}%...`)
+                        : 'Case aanmaken...'}
                     </>
                   ) : (
                     <><Play className="mr-3 h-5 w-5" /> Start Fiscale Analyse</>
