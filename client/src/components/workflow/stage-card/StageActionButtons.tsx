@@ -94,11 +94,11 @@ const CustomContextSection = memo(function CustomContextSection({
           <div className="flex items-start gap-2">
             <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
             <div className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
-              <p className="font-semibold">Hoe werkt re-run na INCOMPLEET?</p>
+              <p className="font-semibold">Re-run bouwt voort op vorige analyse</p>
               <ul className="list-disc list-inside space-y-0.5 text-blue-700 dark:text-blue-300">
-                <li><strong>Bestaande bijlages blijven behouden</strong> - je hoeft ze niet opnieuw te uploaden</li>
-                <li><strong>Nieuwe bijlages worden toegevoegd</strong> - upload hier alleen de extra documenten</li>
-                <li>De AI analyseert alle bijlages (oud + nieuw) samen met de originele dossierdata</li>
+                <li><strong>Vorige analyse blijft behouden</strong> - de AI weet wat er eerder ontbrak</li>
+                <li><strong>Nieuwe info wordt toegevoegd</strong> - bijlages en context accumuleren</li>
+                <li>Items die nu compleet zijn worden automatisch als opgelost gemarkeerd</li>
               </ul>
             </div>
           </div>

@@ -327,7 +327,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
     switch (stageName) {
       case "1a_informatiecheck":
-        prompt = this.buildInformatieCheckPrompt(dossier, bouwplan, currentDate, stageConfig);
+        prompt = this.buildInformatieCheckPrompt(dossier, bouwplan, currentDate, stageConfig, previousStageResults);
         break;
       case "1b_informatiecheck_email":
         prompt = this.buildInformatieEmailPrompt(dossier, bouwplan, currentDate, stageConfig, previousStageResults);
@@ -627,12 +627,13 @@ ${errorGuidance}
     dossier: DossierData,
     bouwplan: BouwplanData,
     currentDate: string,
-    stageConfig?: StagePromptConfig
+    stageConfig?: StagePromptConfig,
+    previousStageResults?: Record<string, string>
   ): { systemPrompt: string; userInput: string } {
     this.validateStagePrompt("1a_informatiecheck", stageConfig);
     // After validation, stageConfig is guaranteed to exist
     return this.promptBuilder.build("1a_informatiecheck", stageConfig!, () =>
-      this.promptBuilder.buildInformatieCheckData(dossier)
+      this.promptBuilder.buildInformatieCheckData(dossier, previousStageResults)
     );
   }
 

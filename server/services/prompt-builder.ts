@@ -192,13 +192,37 @@ export class PromptBuilder {
   // ===== STAGE-SPECIFIC DATA EXTRACTORS =====
 
   /**
-   * Extract data for Stage 1: Informatiecheck
+   * Extract data for Stage 1a: Informatiecheck
+   *
+   * Bij een RE-RUN wordt de vorige analyse meegenomen zodat de AI:
+   * - Weet wat er al was geanalyseerd
+   * - Nieuwe info kan toevoegen aan het bestaande beeld
+   * - Een accumulerende "sessie" bouwt over meerdere runs
    */
-  buildInformatieCheckData(dossier: DossierData): string {
-    return dossier.rawText || JSON.stringify({
+  buildInformatieCheckData(dossier: DossierData, previousStageResults?: Record<string, string>): string {
+    const currentDossierData = dossier.rawText || JSON.stringify({
       klant: dossier.klant,
       situatie: dossier.klant?.situatie || ''
     }, null, 2);
+
+    // Check if this is a re-run (previous 1a result exists)
+    const previousAnalysis = previousStageResults?.['1a_informatiecheck'];
+
+    if (previousAnalysis) {
+      // RE-RUN: Include previous analysis as context
+      return `### VORIGE ANALYSE (uit eerdere run):
+${previousAnalysis}
+
+### NIEUWE/AANVULLENDE INFORMATIE:
+Analyseer het volledige dossier opnieuw, inclusief eventuele nieuwe bijlages die zijn toegevoegd.
+Bouw voort op de vorige analyse - als informatie die eerder ontbrak nu WEL aanwezig is, markeer dit als opgelost.
+
+### HUIDIG DOSSIER:
+${currentDossierData}`;
+    }
+
+    // First run: just the dossier data
+    return currentDossierData;
   }
 
   /**
