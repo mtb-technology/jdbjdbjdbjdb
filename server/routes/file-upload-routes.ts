@@ -8,40 +8,43 @@ import { AIModelFactory } from "../services/ai-models/ai-model-factory";
 export const fileUploadRouter = Router();
 
 /**
- * Process OCR asynchronously for attachments that need it.
- * This runs AFTER the upload response is sent to keep uploads fast.
+ * Process OCR for a single attachment with retry logic
+ * @param reportId - Report ID for logging
+ * @param attachmentId - Attachment to process
+ * @param maxRetries - Maximum number of retry attempts (default: 3)
+ * @returns true if OCR succeeded, false otherwise
  */
-async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promise<void> {
-  console.log(`📎 [${reportId}] Async OCR starting for ${attachmentIds.length} attachments`);
+async function processOcrWithRetry(
+  reportId: string,
+  attachmentId: string,
+  maxRetries: number = 3
+): Promise<boolean> {
+  const attachment = await storage.getAttachment(attachmentId);
+  if (!attachment || !attachment.fileData || !attachment.needsVisionOCR) {
+    console.log(`📎 [${reportId}] Skipping OCR for ${attachmentId}: not needed or no data`);
+    return true; // Not an error, just nothing to do
+  }
 
-  for (const attachmentId of attachmentIds) {
+  const factory = AIModelFactory.getInstance();
+  const handler = factory.getHandler('gemini-2.5-flash');
+  if (!handler) {
+    console.error(`📎 [${reportId}] No Gemini handler available for OCR`);
+    return false;
+  }
+
+  const isPDF = attachment.mimeType === 'application/pdf';
+  const mimeType = isPDF ? 'application/pdf' :
+                   attachment.mimeType.startsWith('image/') ? attachment.mimeType : 'image/jpeg';
+
+  const prompt = isPDF
+    ? `Extract ALL text from this scanned PDF document. Return ONLY the extracted text, no commentary or formatting instructions. Preserve the original structure and formatting as much as possible.`
+    : `Analyseer deze afbeelding en extraheer ALLE relevante informatie. Als het een document of scan is, extraheer dan alle tekst. Return de geëxtraheerde tekst/informatie zonder extra commentaar.`;
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // Get full attachment with file data
-      const attachment = await storage.getAttachment(attachmentId);
-      if (!attachment || !attachment.fileData || !attachment.needsVisionOCR) {
-        console.log(`📎 [${reportId}] Skipping OCR for ${attachmentId}: not needed or no data`);
-        continue;
-      }
-
-      // Mark as processing (ocrStatus update skipped - column may not exist in prod yet)
-      // await storage.updateAttachment(attachmentId, { ocrStatus: 'processing' });
-
-      console.log(`📎 [${reportId}] Running OCR for: ${attachment.filename}`);
-
-      const factory = AIModelFactory.getInstance();
-      const handler = factory.getHandler('gemini-2.5-flash');
-      if (!handler) {
-        console.error(`📎 [${reportId}] No Gemini handler available for OCR`);
-        continue;
-      }
-
-      const isPDF = attachment.mimeType === 'application/pdf';
-      const mimeType = isPDF ? 'application/pdf' :
-                       attachment.mimeType.startsWith('image/') ? attachment.mimeType : 'image/jpeg';
-
-      const prompt = isPDF
-        ? `Extract ALL text from this scanned PDF document. Return ONLY the extracted text, no commentary or formatting instructions. Preserve the original structure and formatting as much as possible.`
-        : `Analyseer deze afbeelding en extraheer ALLE relevante informatie. Als het een document of scan is, extraheer dan alle tekst. Return de geëxtraheerde tekst/informatie zonder extra commentaar.`;
+      console.log(`📎 [${reportId}] OCR attempt ${attempt}/${maxRetries} for: ${attachment.filename}`);
 
       const ocrResult = await handler.call(
         prompt,
@@ -64,35 +67,67 @@ async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promi
       );
 
       if (ocrResult.content && ocrResult.content.trim().length > 50) {
-        // Update attachment with extracted text (ocrStatus removed - column may not exist in prod)
         await storage.updateAttachment(attachmentId, {
           extractedText: ocrResult.content,
-          needsVisionOCR: false, // OCR complete
+          needsVisionOCR: false,
         });
-        console.log(`📎 [${reportId}] ✅ Async OCR complete for ${attachment.filename}: ${ocrResult.content.length} chars`);
+        console.log(`📎 [${reportId}] ✅ OCR complete for ${attachment.filename}: ${ocrResult.content.length} chars`);
+        return true;
       } else {
-        console.warn(`📎 [${reportId}] ⚠️ Async OCR returned minimal text for ${attachment.filename}`);
-        // Update to mark OCR attempted but failed (ocrStatus removed - column may not exist in prod)
+        console.warn(`📎 [${reportId}] ⚠️ OCR returned minimal text for ${attachment.filename}`);
         await storage.updateAttachment(attachmentId, {
           extractedText: `[OCR kon geen tekst extraheren uit: ${attachment.filename}]`,
           needsVisionOCR: false,
         });
+        return true; // Completed, just no useful text found
       }
     } catch (error: any) {
-      console.error(`📎 [${reportId}] ❌ Async OCR failed for ${attachmentId}:`, error.message);
-      // Mark as failed so we don't keep retrying (ocrStatus removed - column may not exist in prod)
-      try {
-        await storage.updateAttachment(attachmentId, {
-          extractedText: `[OCR mislukt: ${error.message}]`,
-          needsVisionOCR: false,
-        });
-      } catch (e) {
-        // Ignore update errors
+      lastError = error;
+      console.error(`📎 [${reportId}] ❌ OCR attempt ${attempt}/${maxRetries} failed for ${attachment.filename}:`, error.message);
+
+      if (attempt < maxRetries) {
+        // Exponential backoff: 2s, 4s, 8s
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`📎 [${reportId}] Retrying in ${delay/1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
 
-  console.log(`📎 [${reportId}] Async OCR finished for all attachments`);
+  // All retries failed - mark as failed but allow Stage 1 to proceed
+  console.error(`📎 [${reportId}] ❌ All ${maxRetries} OCR attempts failed for ${attachment.filename}`);
+  try {
+    await storage.updateAttachment(attachmentId, {
+      extractedText: `[OCR mislukt na ${maxRetries} pogingen: ${lastError?.message || 'onbekende fout'}]`,
+      needsVisionOCR: false, // Critical: set to false so Stage 1 is not blocked forever
+    });
+  } catch (e) {
+    console.error(`📎 [${reportId}] Failed to update attachment after OCR failure:`, e);
+  }
+  return false;
+}
+
+/**
+ * Process OCR asynchronously for attachments that need it.
+ * This runs AFTER the upload response is sent to keep uploads fast.
+ * Includes retry logic for robustness.
+ */
+async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promise<void> {
+  console.log(`📎 [${reportId}] Async OCR starting for ${attachmentIds.length} attachments`);
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const attachmentId of attachmentIds) {
+    const success = await processOcrWithRetry(reportId, attachmentId);
+    if (success) {
+      successCount++;
+    } else {
+      failCount++;
+    }
+  }
+
+  console.log(`📎 [${reportId}] Async OCR finished: ${successCount} succeeded, ${failCount} failed`);
 }
 
 // ✅ FIX: Import pdf-parse which exports PDFParse as a named export

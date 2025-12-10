@@ -113,6 +113,23 @@ export function registerStageRoutes(
         throw new Error("Rapport niet gevonden");
       }
 
+      // SERVER-SIDE BLOCKING: Block Stage 1a if OCR is still pending
+      // This prevents race conditions where client-side blocking is bypassed
+      if (stage === '1a_informatiecheck') {
+        const attachments = await storage.getAttachmentsForReport(id);
+        const pendingOcrCount = attachments.filter(att => att.needsVisionOCR === true).length;
+        if (pendingOcrCount > 0) {
+          console.log(`[${id}] ⛔ Stage 1a blocked: ${pendingOcrCount} attachment(s) still awaiting OCR`);
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'OCR_PENDING',
+              message: `Stage 1a kan niet starten: ${pendingOcrCount} bijlage(n) wacht(en) nog op OCR verwerking. Wacht tot de OCR klaar is.`
+            }
+          });
+        }
+      }
+
       // For Stage 1a: Include attachment extracted text AND vision attachments
       let dossierWithAttachments = report.dossierData as DossierData;
       let visionAttachments: Array<{ mimeType: string; data: string; filename: string }> = [];

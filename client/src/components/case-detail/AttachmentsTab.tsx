@@ -42,20 +42,14 @@ function getFileIcon(mimeType: string | undefined) {
 
 /**
  * Check if OCR is still pending
- * Uses ocrStatus field if available, falls back to text-based detection
+ * Simple and reliable: only checks needsVisionOCR flag
+ * When OCR completes (success or failure), needsVisionOCR is set to false
  * Exported for use in workflow blocking logic
  */
 export function isOcrPending(attachment: Attachment): boolean {
-  if (!attachment.needsVisionOCR) return false;
-
-  // Use ocrStatus if available (preferred)
-  if (attachment.ocrStatus) {
-    return attachment.ocrStatus === 'pending' || attachment.ocrStatus === 'processing';
-  }
-
-  // Fallback to text-based detection for backwards compatibility
-  const text = attachment.extractedText || '';
-  return text.includes('OCR wordt verwerkt') || text.includes('OCR mislukt') || text.length < 100;
+  // Simple check: if needsVisionOCR is true, OCR is still pending
+  // Server sets this to false on completion (success or failure)
+  return attachment.needsVisionOCR === true;
 }
 
 /**
