@@ -26,7 +26,8 @@ async function processOcrWithRetry(
   }
 
   const factory = AIModelFactory.getInstance();
-  const handler = factory.getHandler('gemini-2.5-flash');
+  // Use gemini-2.5-pro for better OCR quality (smarter than flash, no thinking overhead)
+  const handler = factory.getHandler('gemini-2.5-pro');
   if (!handler) {
     console.error(`📎 [${reportId}] No Gemini handler available for OCR`);
     return false;
@@ -49,11 +50,11 @@ async function processOcrWithRetry(
       const ocrResult = await handler.call(
         prompt,
         {
-          model: 'gemini-2.5-flash',
+          model: 'gemini-2.5-pro',
           temperature: 0.1,
           maxOutputTokens: 32768,
           topP: 0.95,
-          topK: 40,
+          topK: 20,
           provider: 'google'
         },
         {
@@ -256,7 +257,7 @@ fileUploadRouter.post(
         console.log(`🖼️ Processing image: ${file.originalname} (${file.size} bytes)`);
         try {
           const factory = AIModelFactory.getInstance();
-          const handler = factory.getHandler('gemini-2.5-flash');
+          const handler = factory.getHandler('gemini-2.5-pro');
           if (!handler) {
             throw new Error('Gemini handler not available for image OCR');
           }
@@ -267,7 +268,7 @@ fileUploadRouter.post(
           const ocrResult = await handler.call(
             `Analyseer deze afbeelding en extraheer ALLE relevante informatie. Als het een document of scan is, extraheer dan alle tekst. Als het een screenshot of foto is, beschrijf dan de relevante inhoud. Return de geëxtraheerde tekst/informatie zonder extra commentaar.`,
             {
-              model: 'gemini-2.5-flash',
+              model: 'gemini-2.5-pro',
               temperature: 0.1,
               maxOutputTokens: 32768,
               topP: 0.95,
@@ -926,7 +927,7 @@ fileUploadRouter.post(
     for (const att of scannedPdfs) {
       try {
         const factory = AIModelFactory.getInstance();
-        const handler = factory.getHandler('gemini-2.5-flash');
+        const handler = factory.getHandler('gemini-2.5-pro');
         if (!handler) {
           throw new Error('Gemini handler not available');
         }
@@ -936,7 +937,7 @@ fileUploadRouter.post(
         const ocrResult = await handler.call(
           `Extract ALL text from this scanned PDF document. Return ONLY the extracted text, no commentary or formatting instructions. Preserve the original structure and formatting as much as possible.`,
           {
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.5-pro',
             temperature: 0.1,
             maxOutputTokens: 32768,
             topP: 0.95,

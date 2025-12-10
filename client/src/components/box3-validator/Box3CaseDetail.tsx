@@ -1222,27 +1222,6 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             );
           })()}
 
-          {/* Fiscal Entity - Inline compact display */}
-          <div className="flex items-center gap-6 px-4 py-3 bg-muted/30 rounded-lg text-sm">
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-blue-600" />
-              <span className="text-muted-foreground">Belastingplichtige:</span>
-              <span className="font-medium">{blueprint.fiscal_entity?.taxpayer?.name || '—'}</span>
-              <span className="text-xs text-muted-foreground">({blueprint.fiscal_entity?.taxpayer?.bsn_masked || '—'})</span>
-            </div>
-            {blueprint.fiscal_entity?.fiscal_partner?.has_partner && (
-              <>
-                <span className="text-muted-foreground">|</span>
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 text-purple-600" />
-                  <span className="text-muted-foreground">Partner:</span>
-                  <span className="font-medium">{blueprint.fiscal_entity.fiscal_partner.name || '—'}</span>
-                  <span className="text-xs text-muted-foreground">({blueprint.fiscal_entity.fiscal_partner.bsn_masked || '—'})</span>
-                </div>
-              </>
-            )}
-          </div>
-
           {/* YEAR DETAIL: Shows when a year is selected */}
           {availableYears.length > 0 && selectedYear && (
             <Card>
@@ -1302,38 +1281,42 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           </div>
 
                           {/* Per-person allocation row - only show if partner data exists */}
-                          {hasPartnerData && (
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                              <p className="text-xs font-medium text-blue-800 mb-2">Verdeling per persoon ({selectedYear})</p>
-                              <div className="grid grid-cols-2 gap-4">
-                                {Object.entries(perPerson).map(([personId, personData]) => {
-                                  let personName = personId;
-                                  if (personId === blueprint.fiscal_entity?.taxpayer?.id) {
-                                    personName = blueprint.fiscal_entity.taxpayer.name || 'Belastingplichtige';
-                                  } else if (personId === blueprint.fiscal_entity?.fiscal_partner?.id) {
-                                    personName = blueprint.fiscal_entity.fiscal_partner.name || 'Fiscaal Partner';
-                                  }
-                                  const allocation = personData.allocation_percentage || 50;
-                                  const personRefund = refund * (allocation / 100);
+                          {hasPartnerData && (() => {
+                            // Check if allocations are valid (sum to ~100%)
+                            const allocations = Object.values(perPerson).map(p => p.allocation_percentage).filter(a => a != null);
+                            const totalAlloc = allocations.reduce((sum, a) => sum + (a || 0), 0);
+                            const hasValidAllocations = allocations.length >= 2 && Math.abs(totalAlloc - 100) < 5;
 
-                                  return (
-                                    <div key={personId} className="flex items-center justify-between bg-white rounded p-2">
-                                      <div>
-                                        <p className="font-medium text-sm">{personName}</p>
-                                        <p className="text-xs text-muted-foreground">{allocation}% aandeel</p>
+                            return (
+                              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                <p className="text-xs font-medium text-blue-800 mb-2">Verdeling per persoon ({selectedYear})</p>
+                                <div className="grid grid-cols-2 gap-4">
+                                  {Object.entries(perPerson).map(([personId, personData]) => {
+                                    let personName = personId;
+                                    if (personId === blueprint.fiscal_entity?.taxpayer?.id) {
+                                      personName = blueprint.fiscal_entity.taxpayer.name || 'Belastingplichtige';
+                                    } else if (personId === blueprint.fiscal_entity?.fiscal_partner?.id) {
+                                      personName = blueprint.fiscal_entity.fiscal_partner.name || 'Fiscaal Partner';
+                                    }
+
+                                    return (
+                                      <div key={personId} className="flex items-center justify-between bg-white rounded p-2">
+                                        <div>
+                                          <p className="font-medium text-sm">{personName}</p>
+                                        </div>
+                                        <div className="text-right">
+                                          <CopyableCurrency value={personData.tax_assessed || 0} className="font-semibold text-amber-600" />
+                                          <p className="text-xs text-muted-foreground">
+                                            Inkomen: {formatCurrency(personData.deemed_return)} • Belasting: {formatCurrency(personData.tax_assessed)}
+                                          </p>
+                                        </div>
                                       </div>
-                                      <div className="text-right">
-                                        <CopyableCurrency value={personRefund} className="font-semibold text-green-600" />
-                                        <p className="text-xs text-muted-foreground">
-                                          Inkomen: {formatCurrency(personData.deemed_return)} • Belasting: {formatCurrency(personData.tax_assessed)}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                                    );
+                                  })}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
                         </div>
                       );
                     })()}
@@ -1344,20 +1327,36 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                       const personOptions: { id: string | null; name: string; allocation?: number }[] = [
                         { id: null, name: 'Huishouden (totaal)' },
                       ];
+
+                      // Get allocations from tax_authority_data
+                      const tpId = blueprint.fiscal_entity?.taxpayer?.id || 'tp_01';
+                      const fpId = blueprint.fiscal_entity?.fiscal_partner?.id || 'fp_01';
+                      const tpAllocRaw = blueprint.tax_authority_data?.[selectedYear]?.per_person?.[tpId]?.allocation_percentage;
+                      const fpAllocRaw = blueprint.tax_authority_data?.[selectedYear]?.per_person?.[fpId]?.allocation_percentage;
+
+                      // Validate allocations - must sum to ~100%, both reasonable (10-90 range for partners)
+                      // Reject extreme splits like 0/100 which usually indicate ownership was confused with allocation
+                      const hasValidAllocations = tpAllocRaw != null && fpAllocRaw != null &&
+                        Math.abs((tpAllocRaw + fpAllocRaw) - 100) < 5 && // Sum to 100%
+                        tpAllocRaw > 5 && tpAllocRaw < 95 && // Both partners should have meaningful share
+                        fpAllocRaw > 5 && fpAllocRaw < 95;
+
+                      // Only use allocations if valid, otherwise don't show
+                      const tpAlloc = hasValidAllocations ? tpAllocRaw : undefined;
+                      const fpAlloc = hasValidAllocations ? fpAllocRaw : undefined;
+
                       if (blueprint.fiscal_entity?.taxpayer) {
                         const tp = blueprint.fiscal_entity.taxpayer;
-                        const tpAlloc = blueprint.tax_authority_data?.[selectedYear]?.per_person?.[tp.id || 'tp_01']?.allocation_percentage;
                         personOptions.push({
-                          id: tp.id || 'tp_01',
+                          id: tpId,
                           name: tp.name || 'Belastingplichtige',
                           allocation: tpAlloc,
                         });
                       }
                       if (blueprint.fiscal_entity?.fiscal_partner?.has_partner) {
                         const fp = blueprint.fiscal_entity.fiscal_partner;
-                        const fpAlloc = blueprint.tax_authority_data?.[selectedYear]?.per_person?.[fp.id || 'fp_01']?.allocation_percentage;
                         personOptions.push({
-                          id: fp.id || 'fp_01',
+                          id: fpId,
                           name: fp.name || 'Fiscaal Partner',
                           allocation: fpAlloc,
                         });

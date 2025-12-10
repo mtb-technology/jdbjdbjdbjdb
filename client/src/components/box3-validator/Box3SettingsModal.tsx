@@ -17,10 +17,9 @@ import {
 } from "@/constants/box3.constants";
 
 // =============================================================================
-// NO DEFAULT PROMPTS - User must configure via UI
+// NO DEFAULT PROMPTS - User configures via UI
 // =============================================================================
 
-// Empty defaults - prompts MUST be configured by user via settings UI
 export const DEFAULT_INTAKE_PROMPT = "";
 export const DEFAULT_EMAIL_PROMPT = "";
 

@@ -361,8 +361,9 @@ export const StageActionButtons = memo(function StageActionButtons({
         {isProcessing && onCancel && (
           <Button
             onClick={onCancel}
-            variant="destructive"
+            variant="ghost"
             size="icon"
+            className="text-gray-500 hover:text-gray-700 hover:bg-gray-100"
             title="Stop AI uitvoering"
           >
             <X className="w-4 h-4" />
