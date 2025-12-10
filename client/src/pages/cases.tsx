@@ -145,7 +145,7 @@ function Cases() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
-  const [pendingDeletion, setPendingDeletion] = useState<{ id: string; timeoutId: NodeJS.Timeout } | null>(null);
+  const [pendingDeletions, setPendingDeletions] = useState<Map<string, NodeJS.Timeout>>(new Map());
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { hasActiveJobForReport, byReport } = useAllActiveJobs();
@@ -303,14 +303,12 @@ function Cases() {
     event.target.value = '';
   }, [importCaseMutation, toast]);
 
-  // Cleanup pending deletion on unmount
+  // Cleanup pending deletions on unmount
   useEffect(() => {
     return () => {
-      if (pendingDeletion) {
-        clearTimeout(pendingDeletion.timeoutId);
-      }
+      pendingDeletions.forEach((timeoutId) => clearTimeout(timeoutId));
     };
-  }, [pendingDeletion]);
+  }, [pendingDeletions]);
 
   // Auto-adjust page if current page exceeds total pages after deletion
   useEffect(() => {
@@ -320,21 +318,25 @@ function Cases() {
   }, [casesData, page]);
 
   const handleDelete = useCallback((caseId: string, caseName: string) => {
-    // If there's already a pending deletion, cancel it
-    if (pendingDeletion) {
-      clearTimeout(pendingDeletion.timeoutId);
+    // If this case already has a pending deletion, don't create another
+    if (pendingDeletions.has(caseId)) {
+      return;
     }
 
     // Set up delayed deletion with undo option
     const timeoutId = setTimeout(() => {
       deleteCaseMutation.mutate(caseId);
-      setPendingDeletion(null);
+      setPendingDeletions(prev => {
+        const next = new Map(prev);
+        next.delete(caseId);
+        return next;
+      });
     }, 5000); // 5 second delay
 
-    setPendingDeletion({ id: caseId, timeoutId });
+    setPendingDeletions(prev => new Map(prev).set(caseId, timeoutId));
 
     // Show toast with undo button
-    const toastInstance = toast({
+    toast({
       title: "Case verwijderd",
       description: `"${caseName}" wordt over 5 seconden permanent verwijderd`,
       duration: 5000,
@@ -343,7 +345,11 @@ function Cases() {
           altText="Ongedaan maken"
           onClick={() => {
             clearTimeout(timeoutId);
-            setPendingDeletion(null);
+            setPendingDeletions(prev => {
+              const next = new Map(prev);
+              next.delete(caseId);
+              return next;
+            });
             toast({
               title: "Verwijdering geannuleerd",
               description: `"${caseName}" is behouden`,
@@ -355,7 +361,7 @@ function Cases() {
         </ToastAction>
       ),
     });
-  }, [pendingDeletion, deleteCaseMutation, toast]);
+  }, [pendingDeletions, deleteCaseMutation, toast]);
 
   const getStatusColor = useCallback((status: string): "secondary" | "default" | "outline" | "destructive" | undefined => {
     switch (status) {
