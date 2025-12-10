@@ -88,23 +88,6 @@ const CustomContextSection = memo(function CustomContextSection({
 
   return (
     <div className="bg-purple-50 dark:bg-purple-950/20 border-2 border-purple-200 dark:border-purple-800 rounded-lg p-4">
-      {/* Re-run info box for Stage 1a - always visible when it's a re-run */}
-      {isStage1a && isRerun && (
-        <div className="mb-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
-          <div className="flex items-start gap-2">
-            <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
-              <p className="font-semibold">Re-run bouwt voort op vorige analyse</p>
-              <ul className="list-disc list-inside space-y-0.5 text-blue-700 dark:text-blue-300">
-                <li><strong>Vorige analyse blijft behouden</strong> - de AI weet wat er eerder ontbrak</li>
-                <li><strong>Nieuwe info wordt toegevoegd</strong> - bijlages en context accumuleren</li>
-                <li>Items die nu compleet zijn worden automatisch als opgelost gemarkeerd</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
       <button
         onClick={onToggleCustomContext}
         className="w-full flex items-center justify-between text-left"
@@ -112,10 +95,19 @@ const CustomContextSection = memo(function CustomContextSection({
         <div className="flex items-start gap-3">
           <MessageSquare className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <h4 className="font-semibold text-sm text-purple-900 dark:text-purple-100">
+            <h4 className="font-semibold text-sm text-purple-900 dark:text-purple-100 flex items-center gap-1.5">
               {isRerun
                 ? "Extra Context & Bijlages voor Re-run"
                 : "Extra Context (optioneel)"}
+              {/* Subtle info tooltip for re-run on Stage 1a */}
+              {isStage1a && isRerun && (
+                <span className="relative group">
+                  <Info className="w-3.5 h-3.5 text-purple-400 hover:text-purple-600 cursor-help" />
+                  <span className="absolute left-0 top-full mt-1 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                    Re-run bouwt voort op vorige analyse. De AI weet wat er ontbrak en markeert opgeloste items automatisch.
+                  </span>
+                </span>
+              )}
             </h4>
             <p className="text-xs text-purple-700 dark:text-purple-300 mt-1">
               {isStage1a && isRerun
