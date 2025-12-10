@@ -38,6 +38,8 @@ import {
   Eye,
   X,
   Download,
+  Copy,
+  Check,
 } from "lucide-react";
 import {
   Dialog,
@@ -79,6 +81,47 @@ const formatCurrency = (value: number | null | undefined): string => {
     currency: "EUR",
   }).format(value);
 };
+
+// Copyable currency component - shows copy button on hover
+function CopyableCurrency({
+  value,
+  className = "",
+}: {
+  value: number | null | undefined;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (value == null) return;
+
+    // Copy raw number for easy pasting in forms
+    const rawValue = value.toFixed(2).replace('.', ',');
+    await navigator.clipboard.writeText(rawValue);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [value]);
+
+  if (value == null) return <span className={className}>—</span>;
+
+  return (
+    <span className={`inline-flex items-center gap-1 group ${className}`}>
+      <span>{formatCurrency(value)}</span>
+      <button
+        onClick={handleCopy}
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted"
+        title="Kopieer bedrag"
+      >
+        {copied ? (
+          <Check className="h-3 w-3 text-green-500" />
+        ) : (
+          <Copy className="h-3 w-3 text-muted-foreground" />
+        )}
+      </button>
+    </span>
+  );
+}
 
 // Helper to get status color
 const getStatusColor = (status: string | null | undefined) => {
@@ -733,7 +776,92 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           {/* HERO SECTION: Verdict + Next Steps */}
           {(() => {
             const yearSummaries = blueprint.year_summaries || {};
+            const taxAuthData = blueprint.tax_authority_data || {};
             const years = Object.keys(yearSummaries).sort();
+
+            // Get fiscal entity info
+            const taxpayer = blueprint.fiscal_entity?.taxpayer;
+            const partner = blueprint.fiscal_entity?.fiscal_partner;
+            const hasPartner = partner?.has_partner || false;
+
+            // Calculate per-person totals across all years
+            // We'll estimate indicative refund per person based on their tax_assessed and allocation
+            type PersonSummary = {
+              id: string;
+              name: string;
+              totalTaxAssessed: number;
+              totalIndicativeRefund: number;
+              yearBreakdown: Record<string, { taxAssessed: number; allocation: number; refund: number }>;
+              isProfitable: boolean;
+            };
+
+            const personSummaries: PersonSummary[] = [];
+
+            // Calculate for taxpayer
+            if (taxpayer) {
+              const tpSummary: PersonSummary = {
+                id: taxpayer.id || 'tp_01',
+                name: taxpayer.name || 'Belastingplichtige',
+                totalTaxAssessed: 0,
+                totalIndicativeRefund: 0,
+                yearBreakdown: {},
+                isProfitable: false,
+              };
+
+              years.forEach(year => {
+                const yearTax = taxAuthData[year]?.per_person?.[taxpayer.id || 'tp_01'];
+                const yearSummary = yearSummaries[year];
+                if (yearTax) {
+                  tpSummary.totalTaxAssessed += yearTax.tax_assessed || 0;
+                  // Estimate refund based on allocation percentage
+                  const allocation = yearTax.allocation_percentage || (hasPartner ? 50 : 100);
+                  const totalRefund = yearSummary?.calculated_totals?.indicative_refund || 0;
+                  const personRefund = totalRefund * (allocation / 100);
+                  tpSummary.totalIndicativeRefund += personRefund;
+                  tpSummary.yearBreakdown[year] = {
+                    taxAssessed: yearTax.tax_assessed || 0,
+                    allocation: allocation,
+                    refund: personRefund,
+                  };
+                }
+              });
+              tpSummary.isProfitable = tpSummary.totalIndicativeRefund > 0;
+              personSummaries.push(tpSummary);
+            }
+
+            // Calculate for partner if exists
+            if (hasPartner && partner) {
+              const fpId = partner.id || 'fp_01';
+              const fpSummary: PersonSummary = {
+                id: fpId,
+                name: partner.name || 'Fiscaal partner',
+                totalTaxAssessed: 0,
+                totalIndicativeRefund: 0,
+                yearBreakdown: {},
+                isProfitable: false,
+              };
+
+              years.forEach(year => {
+                const yearTax = taxAuthData[year]?.per_person?.[fpId];
+                const yearSummary = yearSummaries[year];
+                if (yearTax) {
+                  fpSummary.totalTaxAssessed += yearTax.tax_assessed || 0;
+                  const allocation = yearTax.allocation_percentage || 50;
+                  const totalRefund = yearSummary?.calculated_totals?.indicative_refund || 0;
+                  const personRefund = totalRefund * (allocation / 100);
+                  fpSummary.totalIndicativeRefund += personRefund;
+                  fpSummary.yearBreakdown[year] = {
+                    taxAssessed: yearTax.tax_assessed || 0,
+                    allocation: allocation,
+                    refund: personRefund,
+                  };
+                }
+              });
+              fpSummary.isProfitable = fpSummary.totalIndicativeRefund > 0;
+              personSummaries.push(fpSummary);
+            }
+
+            // Overall totals
             const totalRefund = years.reduce((sum, year) => {
               const refund = yearSummaries[year]?.calculated_totals?.indicative_refund;
               return sum + (typeof refund === 'number' ? refund : 0);
@@ -768,10 +896,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 buttonAction: null,
               };
             } else if (isProfitable) {
+              // Box 3 bezwaar is per aanslag = per persoon
+              const numBezwaren = hasPartner ? 2 : 1;
               nextStep = {
                 action: 'Bezwaar indienen',
-                description: 'Dossier is compleet en kansrijk - klaar voor bezwaar',
-                buttonLabel: 'Start bezwaarprocedure',
+                description: hasPartner
+                  ? `${numBezwaren} bezwaarschriften opstellen (per aanslag)`
+                  : 'Bezwaarschrift opstellen',
+                buttonLabel: 'Genereer bezwaar',
                 buttonAction: null,
               };
             } else if (!isComplete) {
@@ -825,12 +957,38 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                       </div>
                     </div>
 
-                    {/* Right: Total refund */}
+                    {/* Right: Per-person breakdown OR total if no partner */}
                     <div className="text-right">
-                      <p className="text-sm font-medium opacity-90">Indicatieve teruggave</p>
-                      <p className="text-4xl font-bold tracking-tight">
-                        {formatCurrency(totalRefund)}
-                      </p>
+                      {hasPartner && personSummaries.length > 1 ? (
+                        <div className="space-y-3">
+                          <p className="text-sm font-medium opacity-90">Indicatieve teruggave per persoon</p>
+                          <div className="flex gap-6">
+                            {personSummaries.map((person) => (
+                              <div key={person.id} className="text-left">
+                                <p className="text-xs opacity-70 truncate max-w-[120px]">{person.name.split(' ')[0]}</p>
+                                <CopyableCurrency
+                                  value={person.totalIndicativeRefund}
+                                  className={`text-xl font-bold ${person.isProfitable ? '' : 'opacity-60'}`}
+                                />
+                                {person.isProfitable ? (
+                                  <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">Kansrijk</span>
+                                ) : (
+                                  <span className="text-xs opacity-60">Niet kansrijk</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="pt-2 border-t border-white/20">
+                            <p className="text-xs opacity-70">Totaal huishouden</p>
+                            <CopyableCurrency value={totalRefund} className="text-2xl font-bold" />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium opacity-90">Indicatieve teruggave</p>
+                          <CopyableCurrency value={totalRefund} className="text-4xl font-bold tracking-tight" />
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1006,33 +1164,88 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 {/* YEAR DETAIL VIEW */}
                 {selectedYear && blueprint.year_summaries?.[selectedYear] && (
                   <div>
-                    {/* Compact year header - just the essentials */}
+                    {/* Enhanced year header with per-person breakdown */}
                     {(() => {
                       const summary = blueprint.year_summaries[selectedYear];
+                      const taxData = blueprint.tax_authority_data?.[selectedYear];
                       const refund = summary?.calculated_totals?.indicative_refund || 0;
+                      const actualReturn = summary?.calculated_totals?.actual_return;
+                      const perPerson = taxData?.per_person || {};
+                      const hasPartnerData = Object.keys(perPerson).length > 1;
 
                       return (
-                        <div className="flex items-center justify-between pb-4 border-b mb-4">
-                          <div className="flex items-center gap-3">
-                            <h3 className="text-lg font-semibold">Detail: {selectedYear}</h3>
+                        <div className="pb-4 border-b mb-4 space-y-3">
+                          {/* Main row */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <h3 className="text-lg font-semibold">Detail: {selectedYear}</h3>
+                              <Badge variant={refund > 0 ? "default" : "secondary"} className={refund > 0 ? "bg-green-600" : ""}>
+                                {refund > 0 ? 'Kansrijk' : 'Niet kansrijk'}
+                              </Badge>
+                            </div>
+                            <CopyableCurrency value={refund} className={`text-2xl font-bold ${refund > 0 ? 'text-green-600' : 'text-gray-500'}`} />
                           </div>
-                          <div className="flex items-center gap-6 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">Vermogen: </span>
-                              <span className="font-semibold">{formatCurrency(summary?.calculated_totals?.total_assets_jan_1)}</span>
+
+                          {/* Stats row */}
+                          <div className="grid grid-cols-4 gap-4 text-sm">
+                            <div className="bg-muted/30 rounded-lg p-2">
+                              <p className="text-xs text-muted-foreground">Totaal vermogen</p>
+                              <CopyableCurrency value={summary?.calculated_totals?.total_assets_jan_1} className="font-semibold" />
                             </div>
-                            <div>
-                              <span className="text-muted-foreground">Werkelijk: </span>
-                              <span className="font-semibold">{formatCurrency(summary?.calculated_totals?.actual_return?.total)}</span>
+                            <div className="bg-muted/30 rounded-lg p-2">
+                              <p className="text-xs text-muted-foreground">Werkelijk rendement</p>
+                              <CopyableCurrency value={actualReturn?.total} className="font-semibold text-green-600" />
+                              {actualReturn && (actualReturn.bank_interest || actualReturn.dividends || actualReturn.rental_income_net) && (
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {[
+                                    actualReturn.bank_interest ? `Rente ${formatCurrency(actualReturn.bank_interest)}` : null,
+                                    actualReturn.dividends ? `Div ${formatCurrency(actualReturn.dividends)}` : null,
+                                    actualReturn.rental_income_net ? `Huur ${formatCurrency(actualReturn.rental_income_net)}` : null,
+                                  ].filter(Boolean).join(' · ')}
+                                </p>
+                              )}
                             </div>
-                            <div>
-                              <span className="text-muted-foreground">Forfaitair: </span>
-                              <span className="font-semibold">{formatCurrency(summary?.calculated_totals?.deemed_return_from_tax_authority)}</span>
+                            <div className="bg-muted/30 rounded-lg p-2">
+                              <p className="text-xs text-muted-foreground">Forfaitair rendement</p>
+                              <CopyableCurrency value={summary?.calculated_totals?.deemed_return_from_tax_authority} className="font-semibold text-red-600" />
                             </div>
-                            <div className={`font-bold ${refund > 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                              {formatCurrency(refund)}
+                            <div className="bg-muted/30 rounded-lg p-2">
+                              <p className="text-xs text-muted-foreground">Verschil (voordeel)</p>
+                              <CopyableCurrency value={(summary?.calculated_totals?.deemed_return_from_tax_authority || 0) - (actualReturn?.total || 0)} className="font-semibold" />
                             </div>
                           </div>
+
+                          {/* Per-person allocation row - only show if partner data exists */}
+                          {hasPartnerData && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                              <p className="text-xs font-medium text-blue-800 mb-2">Verdeling per persoon ({selectedYear})</p>
+                              <div className="grid grid-cols-2 gap-4">
+                                {Object.entries(perPerson).map(([personId, personData]) => {
+                                  let personName = personId;
+                                  if (personId === blueprint.fiscal_entity?.taxpayer?.id) {
+                                    personName = blueprint.fiscal_entity.taxpayer.name || 'Belastingplichtige';
+                                  } else if (personId === blueprint.fiscal_entity?.fiscal_partner?.id) {
+                                    personName = blueprint.fiscal_entity.fiscal_partner.name || 'Fiscaal Partner';
+                                  }
+                                  const allocation = personData.allocation_percentage || 50;
+                                  const personRefund = refund * (allocation / 100);
+
+                                  return (
+                                    <div key={personId} className="flex items-center justify-between bg-white rounded p-2">
+                                      <div>
+                                        <p className="font-medium text-sm">{personName}</p>
+                                        <p className="text-xs text-muted-foreground">{allocation}% aandeel</p>
+                                      </div>
+                                      <div className="text-right">
+                                        <CopyableCurrency value={personRefund} className="font-semibold text-green-600" />
+                                        <p className="text-xs text-muted-foreground">Belasting: {formatCurrency(personData.tax_assessed)}</p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -1097,9 +1310,18 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                               personName = blueprint.fiscal_entity.fiscal_partner.name || 'Fiscaal Partner';
                                             }
 
+                                            const allocation = personData.allocation_percentage;
+
                                             return (
                                               <div key={personId} className="flex items-center justify-between text-sm bg-muted/30 p-2 rounded">
-                                                <span className="font-medium">{personName}</span>
+                                                <div className="flex items-center gap-2">
+                                                  <span className="font-medium">{personName}</span>
+                                                  {allocation != null && (
+                                                    <Badge variant="outline" className="text-xs font-normal">
+                                                      {allocation}% aandeel
+                                                    </Badge>
+                                                  )}
+                                                </div>
                                                 <div className="flex gap-4 text-muted-foreground">
                                                   <span>Vermogen: <span className="text-foreground">{formatCurrency(personData.total_assets_box3)}</span></span>
                                                   <span>Schulden: <span className="text-foreground">{formatCurrency(personData.total_debts_box3)}</span></span>
@@ -1181,65 +1403,111 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                               </div>
 
                               {/* Bank Savings for this year */}
-                              {yearBankSavings.length > 0 && (
-                                <Card>
-                                  <CardHeader className="pb-2">
-                                    <CardTitle className="text-base flex items-center gap-2">
-                                      <PiggyBank className="h-4 w-4 text-blue-500" />
-                                      Banktegoeden
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="p-0">
-                                    <table className="w-full text-sm">
-                                      <thead className="bg-muted/50 border-y">
-                                        <tr>
-                                          <th className="text-left px-4 py-2 font-medium">Omschrijving</th>
-                                          <th className="text-left px-4 py-2 font-medium">Bank</th>
-                                          <th className="text-right px-4 py-2 font-medium">Eigendom</th>
-                                          <th className="text-right px-4 py-2 font-medium">1 jan {selectedYear}</th>
-                                          <th className="text-right px-4 py-2 font-medium">Rente</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y">
-                                        {yearBankSavings.map((asset, idx) => {
-                                          const yearData = asset.yearly_data?.[selectedYear];
-                                          const val = yearData?.value_jan_1;
-                                          const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                          const interest = yearData?.interest_received;
-                                          const interestAmount = typeof interest === 'object' && interest !== null ? interest.amount : interest;
+                              {yearBankSavings.length > 0 && (() => {
+                                // Calculate totals
+                                let totalValue = 0;
+                                let totalInterest = 0;
+                                yearBankSavings.forEach(asset => {
+                                  const yearData = asset.yearly_data?.[selectedYear];
+                                  const val = yearData?.value_jan_1;
+                                  const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                  if (typeof amount === 'number') totalValue += amount;
+                                  const interest = yearData?.interest_received;
+                                  const interestAmount = typeof interest === 'object' && interest !== null ? interest.amount : interest;
+                                  if (typeof interestAmount === 'number') totalInterest += interestAmount;
+                                });
 
-                                          return (
-                                            <tr key={asset.id || idx} className="hover:bg-muted/30">
-                                              <td className="px-4 py-3">
-                                                <span className="font-medium">{asset.description}</span>
-                                                {asset.account_masked && (
-                                                  <span className="text-muted-foreground text-xs block">{asset.account_masked}</span>
-                                                )}
-                                              </td>
-                                              <td className="px-4 py-3 text-muted-foreground">{asset.bank_name || '—'}</td>
-                                              <td className="px-4 py-3 text-right">{asset.ownership_percentage}%</td>
-                                              <td className="px-4 py-3 text-right font-semibold">
-                                                {amount != null ? formatCurrency(amount) : '—'}
-                                              </td>
-                                              <td className="px-4 py-3 text-right text-green-600">
-                                                {interestAmount != null ? formatCurrency(interestAmount) : '—'}
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                    </table>
-                                  </CardContent>
-                                </Card>
-                              )}
+                                return (
+                                  <Card>
+                                    <CardHeader className="pb-2">
+                                      <CardTitle className="text-base flex items-center justify-between">
+                                        <span className="flex items-center gap-2">
+                                          <PiggyBank className="h-4 w-4 text-blue-500" />
+                                          Banktegoeden
+                                        </span>
+                                        <span className="text-sm font-normal text-muted-foreground">
+                                          Totaal: {formatCurrency(totalValue)}
+                                        </span>
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="p-0">
+                                      <table className="w-full text-sm">
+                                        <thead className="bg-muted/50 border-y">
+                                          <tr>
+                                            <th className="text-left px-4 py-2 font-medium">Omschrijving</th>
+                                            <th className="text-left px-4 py-2 font-medium">Bank</th>
+                                            <th className="text-right px-4 py-2 font-medium">Eigendom</th>
+                                            <th className="text-right px-4 py-2 font-medium">1 jan {selectedYear}</th>
+                                            <th className="text-right px-4 py-2 font-medium">Rente</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                          {yearBankSavings.map((asset, idx) => {
+                                            const yearData = asset.yearly_data?.[selectedYear];
+                                            const val = yearData?.value_jan_1;
+                                            const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                            const interest = yearData?.interest_received;
+                                            const interestAmount = typeof interest === 'object' && interest !== null ? interest.amount : interest;
+
+                                            return (
+                                              <tr key={asset.id || idx} className="hover:bg-muted/30">
+                                                <td className="px-4 py-3">
+                                                  <span className="font-medium">{asset.description}</span>
+                                                  {asset.account_masked && (
+                                                    <span className="text-muted-foreground text-xs block">{asset.account_masked}</span>
+                                                  )}
+                                                </td>
+                                                <td className="px-4 py-3 text-muted-foreground">{asset.bank_name || '—'}</td>
+                                                <td className="px-4 py-3 text-right">{asset.ownership_percentage}%</td>
+                                                <td className="px-4 py-3 text-right font-semibold">
+                                                  {amount != null ? formatCurrency(amount) : '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-green-600">
+                                                  {interestAmount != null ? formatCurrency(interestAmount) : '—'}
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                        <tfoot className="bg-muted/30 border-t-2">
+                                          <tr className="font-semibold">
+                                            <td className="px-4 py-2" colSpan={3}>Subtotaal</td>
+                                            <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
+                                            <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalInterest)}</td>
+                                          </tr>
+                                        </tfoot>
+                                      </table>
+                                    </CardContent>
+                                  </Card>
+                                );
+                              })()}
 
                               {/* Investments for this year */}
-                              {yearInvestments.length > 0 && (
+                              {yearInvestments.length > 0 && (() => {
+                                // Calculate totals
+                                let totalValue = 0;
+                                let totalDividend = 0;
+                                yearInvestments.forEach(asset => {
+                                  const yearData = asset.yearly_data?.[selectedYear];
+                                  const val = yearData?.value_jan_1;
+                                  const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                  if (typeof amount === 'number') totalValue += amount;
+                                  const dividend = yearData?.dividend_received;
+                                  const dividendAmount = typeof dividend === 'object' && dividend !== null ? dividend.amount : dividend;
+                                  if (typeof dividendAmount === 'number') totalDividend += dividendAmount;
+                                });
+
+                                return (
                                 <Card>
                                   <CardHeader className="pb-2">
-                                    <CardTitle className="text-base flex items-center gap-2">
-                                      <TrendingUp className="h-4 w-4 text-green-500" />
-                                      Beleggingen
+                                    <CardTitle className="text-base flex items-center justify-between">
+                                      <span className="flex items-center gap-2">
+                                        <TrendingUp className="h-4 w-4 text-green-500" />
+                                        Beleggingen
+                                      </span>
+                                      <span className="text-sm font-normal text-muted-foreground">
+                                        Totaal: {formatCurrency(totalValue)}
+                                      </span>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="p-0">
@@ -1283,18 +1551,45 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                           );
                                         })}
                                       </tbody>
+                                      <tfoot className="bg-muted/30 border-t-2">
+                                        <tr className="font-semibold">
+                                          <td className="px-4 py-2" colSpan={3}>Subtotaal</td>
+                                          <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
+                                          <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalDividend)}</td>
+                                        </tr>
+                                      </tfoot>
                                     </table>
                                   </CardContent>
                                 </Card>
-                              )}
+                                );
+                              })()}
 
                               {/* Real Estate for this year */}
-                              {yearRealEstate.length > 0 && (
+                              {yearRealEstate.length > 0 && (() => {
+                                // Calculate totals
+                                let totalValue = 0;
+                                let totalRental = 0;
+                                yearRealEstate.forEach(asset => {
+                                  const yearData = asset.yearly_data?.[selectedYear];
+                                  const val = yearData?.woz_value;
+                                  const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                  if (typeof amount === 'number') totalValue += amount;
+                                  const rental = yearData?.rental_income_gross;
+                                  const rentalAmount = typeof rental === 'object' && rental !== null ? rental.amount : rental;
+                                  if (typeof rentalAmount === 'number') totalRental += rentalAmount;
+                                });
+
+                                return (
                                 <Card>
                                   <CardHeader className="pb-2">
-                                    <CardTitle className="text-base flex items-center gap-2">
-                                      <Home className="h-4 w-4 text-orange-500" />
-                                      Onroerend Goed
+                                    <CardTitle className="text-base flex items-center justify-between">
+                                      <span className="flex items-center gap-2">
+                                        <Home className="h-4 w-4 text-orange-500" />
+                                        Onroerend Goed
+                                      </span>
+                                      <span className="text-sm font-normal text-muted-foreground">
+                                        Totaal WOZ: {formatCurrency(totalValue)}
+                                      </span>
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="p-0">
@@ -1343,10 +1638,18 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                           );
                                         })}
                                       </tbody>
+                                      <tfoot className="bg-muted/30 border-t-2">
+                                        <tr className="font-semibold">
+                                          <td className="px-4 py-2" colSpan={3}>Subtotaal</td>
+                                          <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
+                                          <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalRental)}</td>
+                                        </tr>
+                                      </tfoot>
                                     </table>
                                   </CardContent>
                                 </Card>
-                              )}
+                                );
+                              })()}
                             </>
                           );
                         })()}
@@ -1368,12 +1671,34 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                             );
                           }
 
+                          // Calculate totals
+                          let totalJan1 = 0;
+                          let totalDec31 = 0;
+                          let totalInterest = 0;
+                          yearDebts.forEach(debt => {
+                            const yearData = debt.yearly_data?.[selectedYear];
+                            const jan1Val = yearData?.value_jan_1;
+                            const jan1Amount = typeof jan1Val === 'object' && jan1Val !== null ? jan1Val.amount : jan1Val;
+                            if (typeof jan1Amount === 'number') totalJan1 += jan1Amount;
+                            const dec31Val = yearData?.value_dec_31;
+                            const dec31Amount = typeof dec31Val === 'object' && dec31Val !== null ? dec31Val.amount : dec31Val;
+                            if (typeof dec31Amount === 'number') totalDec31 += dec31Amount;
+                            const interestVal = yearData?.interest_paid;
+                            const interestAmount = typeof interestVal === 'object' && interestVal !== null ? interestVal.amount : interestVal;
+                            if (typeof interestAmount === 'number') totalInterest += interestAmount;
+                          });
+
                           return (
                             <Card>
                               <CardHeader className="pb-2">
-                                <CardTitle className="text-base flex items-center gap-2">
-                                  <CreditCard className="h-4 w-4 text-red-500" />
-                                  Schulden ({yearDebts.length})
+                                <CardTitle className="text-base flex items-center justify-between">
+                                  <span className="flex items-center gap-2">
+                                    <CreditCard className="h-4 w-4 text-red-500" />
+                                    Schulden ({yearDebts.length})
+                                  </span>
+                                  <span className="text-sm font-normal text-muted-foreground">
+                                    Totaal: {formatCurrency(totalJan1)}
+                                  </span>
                                 </CardTitle>
                               </CardHeader>
                               <CardContent className="p-0">
@@ -1416,6 +1741,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                       );
                                     })}
                                   </tbody>
+                                  <tfoot className="bg-muted/30 border-t-2">
+                                    <tr className="font-semibold">
+                                      <td className="px-4 py-2" colSpan={3}>Subtotaal</td>
+                                      <td className="px-4 py-2 text-right text-red-600">{formatCurrency(totalJan1)}</td>
+                                      <td className="px-4 py-2 text-right text-red-600">{formatCurrency(totalDec31)}</td>
+                                      <td className="px-4 py-2 text-right text-orange-600">{formatCurrency(totalInterest)}</td>
+                                    </tr>
+                                  </tfoot>
                                 </table>
                               </CardContent>
                             </Card>
