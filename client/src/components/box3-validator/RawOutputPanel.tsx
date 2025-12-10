@@ -1,7 +1,8 @@
 /**
- * RawOutputPanel Component
+ * RawOutputPanel Component - V2
  *
  * Debug panel for viewing raw prompt and JSON output.
+ * Works with both V1 (validationResult) and V2 (debugInfo) data.
  */
 
 import { memo, useState, useEffect } from "react";
@@ -9,9 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronUp, Bug, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { Box3ValidationResult } from "@shared/schema";
 
-// Debug info from API response
+// Debug info from API response (V2)
 interface DebugInfo {
   fullPrompt: string;
   rawAiResponse: string;
@@ -20,22 +20,38 @@ interface DebugInfo {
   jaar?: string;
 }
 
-interface RawOutputPanelProps {
-  validationResult: Box3ValidationResult;
+// V2 interface - simplified
+interface RawOutputPanelPropsV2 {
+  debugInfo: DebugInfo;
+  systemPrompt: string;
+}
+
+// Legacy V1 interface - for backwards compatibility
+interface RawOutputPanelPropsV1 {
+  validationResult: Record<string, any>;
   lastUsedPrompt: string | null;
   systemPrompt: string;
   debugInfo?: DebugInfo | null;
 }
 
-export const RawOutputPanel = memo(function RawOutputPanel({
-  validationResult,
-  lastUsedPrompt,
-  systemPrompt,
-  debugInfo,
-}: RawOutputPanelProps) {
+type RawOutputPanelProps = RawOutputPanelPropsV2 | RawOutputPanelPropsV1;
+
+// Type guard
+function isV2Props(props: RawOutputPanelProps): props is RawOutputPanelPropsV2 {
+  return !('validationResult' in props) && 'debugInfo' in props && props.debugInfo !== null;
+}
+
+export const RawOutputPanel = memo(function RawOutputPanel(props: RawOutputPanelProps) {
   const [showRawOutput, setShowRawOutput] = useState(false);
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [localDebugInfo, setLocalDebugInfo] = useState<DebugInfo | null>(null);
+
+  // Determine which props format we're using
+  const isV2 = isV2Props(props);
+  const debugInfo = isV2 ? props.debugInfo : (props as RawOutputPanelPropsV1).debugInfo;
+  const systemPrompt = props.systemPrompt;
+  const validationResult = isV2 ? null : (props as RawOutputPanelPropsV1).validationResult;
+  const lastUsedPrompt = isV2 ? null : (props as RawOutputPanelPropsV1).lastUsedPrompt;
 
   // Try to load from localStorage if not provided
   useEffect(() => {
@@ -135,29 +151,31 @@ export const RawOutputPanel = memo(function RawOutputPanel({
             </div>
           )}
 
-          {/* Parsed JSON Output */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <Label className="text-sm font-semibold text-orange-800">
-                Geparsed validationResult (na JSON parsing)
-              </Label>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => copyToClipboard(JSON.stringify(validationResult, null, 2), 'parsed')}
-                className="h-7 text-xs"
-              >
-                {copiedSection === 'parsed' ? (
-                  <><Check className="h-3 w-3 mr-1" /> Gekopieerd</>
-                ) : (
-                  <><Copy className="h-3 w-3 mr-1" /> Kopieer</>
-                )}
-              </Button>
+          {/* Parsed JSON Output (V1 only) */}
+          {validationResult && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-sm font-semibold text-orange-800">
+                  Geparsed validationResult (na JSON parsing)
+                </Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => copyToClipboard(JSON.stringify(validationResult, null, 2), 'parsed')}
+                  className="h-7 text-xs"
+                >
+                  {copiedSection === 'parsed' ? (
+                    <><Check className="h-3 w-3 mr-1" /> Gekopieerd</>
+                  ) : (
+                    <><Copy className="h-3 w-3 mr-1" /> Kopieer</>
+                  )}
+                </Button>
+              </div>
+              <pre className="bg-white border rounded p-3 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap">
+                {JSON.stringify(validationResult, null, 2)}
+              </pre>
             </div>
-            <pre className="bg-white border rounded p-3 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap">
-              {JSON.stringify(validationResult, null, 2)}
-            </pre>
-          </div>
+          )}
 
           {/* Metadata */}
           {effectiveDebug && (

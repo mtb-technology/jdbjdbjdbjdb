@@ -5,12 +5,32 @@
  */
 
 import type { Box3ValidationResult, Box3ManualOverrides } from "@shared/schema";
-import type { RendementBerekening } from "@/types/box3Validator.types";
 import {
   FORFAITAIRE_RENDEMENTEN,
   BOX3_TARIEVEN,
   type ForfaitaireRendementen,
 } from "@/constants/box3.constants";
+
+/**
+ * Rendement berekening result type (legacy V1)
+ */
+export interface RendementBerekening {
+  bankRente: number | null;
+  beleggingenBegin: number | null;
+  beleggingenEind: number | null;
+  beleggingenDividend: number | null;
+  beleggingenMutatiesGevonden: boolean;
+  schuldenRente: number | null;
+  forfaitairRendement: number | null;
+  belastbaarInkomen: number | null;
+  werkelijkRendement: number | null;
+  verschil: number | null;
+  indicatieveTeruggave: number | null;
+  isKansrijk: boolean | null;
+  missendVoorBerekening: string[];
+  gebruiktTarief: number;
+  gebruiktJaar: string | null;
+}
 
 /**
  * Get forfaitaire rendementen for a specific year

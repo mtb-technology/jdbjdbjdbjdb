@@ -429,7 +429,7 @@ export const KansrijkheidAnalyse = memo(function KansrijkheidAnalyse({
                   Ontbrekend voor nauwkeurige berekening:
                 </p>
                 <ul className="text-muted-foreground mt-1 space-y-0.5">
-                  {kansrijkheid.missendVoorBerekening.map((item, i) => (
+                  {kansrijkheid.missendVoorBerekening.map((item: string, i: number) => (
                     <li key={i}>• {item}</li>
                   ))}
                 </ul>

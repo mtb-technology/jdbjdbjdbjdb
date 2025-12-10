@@ -324,11 +324,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
     }
 
-    // Validate the structure
-    if (!parsedResult.analyse || !parsedResult.concept_email) {
+    // Validate the structure - concept_email is required, analyse is optional (not needed for refinements)
+    if (!parsedResult.concept_email) {
       throw new ServerError(
         ERROR_CODES.AI_RESPONSE_INVALID,
-        "AI antwoord heeft niet de verwachte structuur (ontbrekende 'analyse' of 'concept_email')",
+        "AI antwoord heeft niet de verwachte structuur (ontbrekende 'concept_email')",
         500
       );
     }

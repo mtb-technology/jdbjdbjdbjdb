@@ -1710,6 +1710,7 @@ export interface Box3SourceDocumentEntry {
   detected_type: 'aangifte_ib' | 'aanslag_definitief' | 'aanslag_voorlopig' |
     'jaaropgave_bank' | 'woz_beschikking' | 'email_body' | 'overig';
   detected_tax_year: number | null;
+  for_person?: string | null; // person id (taxpayer/partner) or null = both/unknown
   is_readable: boolean;
   used_for_extraction: boolean;
   notes?: string;
@@ -1814,6 +1815,7 @@ export const box3SourceDocumentEntrySchema = z.object({
   detected_type: z.enum(['aangifte_ib', 'aanslag_definitief', 'aanslag_voorlopig',
     'jaaropgave_bank', 'woz_beschikking', 'email_body', 'overig']),
   detected_tax_year: z.number().nullable(),
+  for_person: z.string().nullable().optional(),
   is_readable: z.boolean(),
   used_for_extraction: z.boolean(),
   notes: z.string().optional(),

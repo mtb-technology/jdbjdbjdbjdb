@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RotateCcw, Info, Calculator, FileInput, RefreshCw, Mail } from "lucide-react";
+import { RotateCcw, Info, Calculator, FileInput, Mail } from "lucide-react";
 import {
   FORFAITAIRE_RENDEMENTEN,
   BOX3_TARIEVEN,
@@ -22,7 +22,6 @@ import {
 
 // Empty defaults - prompts MUST be configured by user via settings UI
 export const DEFAULT_INTAKE_PROMPT = "";
-export const DEFAULT_YEAR_VALIDATION_PROMPT = "";
 export const DEFAULT_EMAIL_PROMPT = "";
 
 // Legacy export for backwards compatibility (also empty)
@@ -34,7 +33,6 @@ export const DEFAULT_BOX3_SYSTEM_PROMPT = "";
 
 export interface Box3Prompts {
   intake: string;
-  yearValidation: string;
   email: string;
 }
 
@@ -64,7 +62,6 @@ export function Box3SettingsModal({
   // If using legacy props, convert to new format
   const effectivePrompts: Box3Prompts = prompts || {
     intake: systemPrompt || DEFAULT_INTAKE_PROMPT,
-    yearValidation: DEFAULT_YEAR_VALIDATION_PROMPT,
     email: DEFAULT_EMAIL_PROMPT,
   };
 
@@ -97,14 +94,12 @@ export function Box3SettingsModal({
   const handleClearAll = () => {
     setLocalPrompts({
       intake: "",
-      yearValidation: "",
       email: "",
     });
   };
 
   // Check if prompts are configured
   const isIntakeConfigured = localPrompts.intake.trim().length > 0;
-  const isYearValidationConfigured = localPrompts.yearValidation.trim().length > 0;
   const isEmailConfigured = localPrompts.email.trim().length > 0;
 
   const updatePrompt = (key: keyof Box3Prompts, value: string) => {
@@ -119,14 +114,10 @@ export function Box3SettingsModal({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="intake" className="flex items-center gap-2">
               <FileInput className="h-4 w-4" />
               Intake
-            </TabsTrigger>
-            <TabsTrigger value="yearValidation" className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Jaar Validatie
             </TabsTrigger>
             <TabsTrigger value="email" className="flex items-center gap-2">
               <Mail className="h-4 w-4" />
@@ -177,49 +168,6 @@ export function Box3SettingsModal({
                 onChange={(e) => updatePrompt("intake", e.target.value)}
                 className="font-mono text-sm min-h-[400px]"
                 placeholder="Voer de intake prompt in... (verplicht)"
-              />
-            </div>
-          </TabsContent>
-
-          {/* Year Validation Prompt Tab */}
-          <TabsContent value="yearValidation" className="space-y-4 mt-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="year-validation-prompt" className="text-base font-medium">
-                    Jaar Validatie Prompt
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Gebruikt bij hervalidatie van een specifiek belastingjaar
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleClear("yearValidation")}
-                  className="h-8"
-                  disabled={!isYearValidationConfigured}
-                >
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Wissen
-                </Button>
-              </div>
-              {!isYearValidationConfigured && (
-                <div className="bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
-                  <p className="text-sm text-orange-700 dark:text-orange-300 font-medium">
-                    Jaar validatie prompt niet geconfigureerd
-                  </p>
-                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                    Configureer een prompt om jaren individueel te kunnen hervalideren.
-                  </p>
-                </div>
-              )}
-              <Textarea
-                id="year-validation-prompt"
-                value={localPrompts.yearValidation}
-                onChange={(e) => updatePrompt("yearValidation", e.target.value)}
-                className="font-mono text-sm min-h-[400px]"
-                placeholder="Voer de jaar validatie prompt in..."
               />
             </div>
           </TabsContent>
@@ -322,7 +270,7 @@ export function Box3SettingsModal({
             variant="ghost"
             size="sm"
             onClick={handleClearAll}
-            disabled={!isIntakeConfigured && !isYearValidationConfigured && !isEmailConfigured}
+            disabled={!isIntakeConfigured && !isEmailConfigured}
           >
             <RotateCcw className="h-4 w-4 mr-2" />
             Wis alle prompts

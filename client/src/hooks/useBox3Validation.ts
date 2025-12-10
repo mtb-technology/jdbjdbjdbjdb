@@ -112,10 +112,20 @@ export function useBox3Validation({
         formData.append("files", pf.file, pf.name);
       }
 
-      const response = await fetch("/api/box3-validator/validate", {
-        method: "POST",
-        body: formData,
-      });
+      // 5 minute timeout for AI processing with multiple images
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+
+      let response;
+      try {
+        response = await fetch("/api/box3-validator/validate", {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -123,11 +133,20 @@ export function useBox3Validation({
       }
 
       const data = await response.json();
+      console.log("📋 [Box3] Raw API response:", JSON.stringify(data, null, 2));
       const result = data.success ? data.data : data;
+      console.log("📋 [Box3] Extracted result:", JSON.stringify(result, null, 2));
 
-      // Update state with V2 response
+      // Validate response BEFORE updating state
+      if (!result.dossier?.id) {
+        console.error("API returned no dossier. Full response:", data);
+        console.error("Extracted result:", result);
+        throw new Error("Server gaf geen dossier terug");
+      }
+
+      // Now safe to update state
       setBlueprint(result.blueprint);
-      setCurrentDossierId(result.dossier?.id || null);
+      setCurrentDossierId(result.dossier.id);
       setBlueprintVersion(result.blueprintVersion || 1);
       setTaxYears(result.taxYears || []);
 
@@ -144,19 +163,26 @@ export function useBox3Validation({
 
       refetchSessions();
 
-      // Return full dossier data for navigation
+      // Return full dossier data for navigation (including documents with classification)
       return {
         dossier: result.dossier,
         blueprint: result.blueprint,
         blueprintVersion: result.blueprintVersion || 1,
-        documents: [], // Documents are in the dossier, fetch separately if needed
+        documents: result.documents || [],
       };
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Unknown error";
+      let message = "Kon documenten niet valideren.";
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          message = "Verzoek duurde te lang (timeout na 5 minuten). Probeer met minder bestanden.";
+        } else {
+          message = error.message;
+        }
+      }
       console.error("Validation failed:", error);
       toast({
         title: "Validatie mislukt",
-        description: message || "Kon documenten niet valideren.",
+        description: message,
         variant: "destructive",
       });
       return null;
@@ -188,16 +214,26 @@ export function useBox3Validation({
     setIsValidating(true);
 
     try {
-      const response = await fetch(
-        `/api/box3-validator/dossiers/${dossierId}/revalidate`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ systemPrompt }),
-        }
-      );
+      // 5 minute timeout for AI processing
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+
+      let response;
+      try {
+        response = await fetch(
+          `/api/box3-validator/dossiers/${dossierId}/revalidate`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ systemPrompt }),
+            signal: controller.signal,
+          }
+        );
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -226,11 +262,18 @@ export function useBox3Validation({
       refetchSessions();
       return result.blueprint;
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Unknown error";
+      let message = "Kon dossier niet opnieuw valideren.";
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          message = "Verzoek duurde te lang (timeout na 5 minuten). Probeer met minder bestanden.";
+        } else {
+          message = error.message;
+        }
+      }
       console.error("Re-validation failed:", error);
       toast({
         title: "Hervalidatie mislukt",
-        description: message || "Kon dossier niet opnieuw valideren.",
+        description: message,
         variant: "destructive",
       });
       return null;

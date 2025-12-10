@@ -59,8 +59,12 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
     queryKey: QUERY_KEYS.box3.sessions(),
     queryFn: async () => {
       const res = await fetch("/api/box3-validator/dossiers");
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${res.status}`);
+      }
       const data = await res.json();
-      return data.success ? data.data : [];
+      return data.success ? data.data : data;
     },
     refetchInterval: 30000,
   });

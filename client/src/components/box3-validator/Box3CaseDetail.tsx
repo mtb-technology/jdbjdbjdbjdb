@@ -1,13 +1,13 @@
 /**
- * Box3CaseDetail Component
+ * Box3CaseDetail Component - V2
  *
- * Displays the detail view of a Box 3 validation case.
- * Supports both legacy single-year and new multi-year dossier structures.
+ * Displays the detail view of a Box 3 dossier.
+ * Uses the new Blueprint data model with source tracking.
  */
 
-import { memo, useState, useCallback, useRef, useMemo } from "react";
+import { memo, useState, useCallback, useRef } from "react";
 import imageCompression from "browser-image-compression";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,199 +24,195 @@ import {
   Plus,
   Upload,
   Calendar,
-  Layers,
+  Users,
+  Building2,
+  Landmark,
+  TrendingUp,
+  Home,
+  PiggyBank,
+  CreditCard,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Extracted components
 import {
-  GlobalStatusBadge,
-  DocumentChecklist,
-  KansrijkheidAnalyse,
-  ConceptMailEditor,
-  GevondenDataCards,
   RawOutputPanel,
   Box3AttachmentsPanel,
-  Box3TotalOverview,
-  Box3YearEntry,
 } from "@/components/box3-validator";
 
-// Utils
-import {
-  extractBelastingjaar,
-  isNewFormat,
-  getMailData,
-  stripHtmlToPlainText,
-} from "@/utils/box3Utils";
-
-// Constants
-import { CATEGORY_LABELS } from "@/constants/box3.constants";
-
 // Types
-import type {
-  Box3ValidatorSession,
-  Box3ValidationResult,
-  Box3ManualOverrides,
-  Box3MultiYearData,
-  Box3YearEntry as Box3YearEntryType,
-} from "@shared/schema";
+import type { Box3Blueprint, Box3Dossier } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
-
-// Box 3 herstel years (2017-2023 are the relevant years)
-const BOX3_YEARS = ["2017", "2018", "2019", "2020", "2021", "2022", "2023"];
-
-// Debug info from API response
-interface DebugInfo {
-  fullPrompt: string;
-  rawAiResponse: string;
-  modelUsed: string;
-  timestamp: string;
-  jaar?: string;
-}
+import type { Box3DossierFull } from "@/hooks/useBox3Sessions";
+import type { DebugInfo } from "@/hooks/useBox3Validation";
 
 interface Box3CaseDetailProps {
-  session: Box3ValidatorSession;
+  dossierFull: Box3DossierFull;
   systemPrompt: string;
   isRevalidating: boolean;
   isAddingDocs: boolean;
-  isGeneratingEmail?: boolean;
   debugInfo?: DebugInfo | null;
   onBack: () => void;
-  onRevalidate: (jaar?: string) => void;
+  onRevalidate: () => void;
   onOpenSettings: () => void;
-  onAddDocuments: (files: PendingFile[], additionalText?: string, jaar?: string) => Promise<void>;
-  onUpdateOverrides: (overrides: Partial<Box3ManualOverrides>, jaar?: string) => Promise<void>;
-  onConvertToMultiYear?: () => Promise<void>;
-  onAddYear?: (jaar: string) => Promise<void>;
-  onGenerateEmail?: () => Promise<{ onderwerp: string; body: string } | null>;
+  onAddDocuments: (files: PendingFile[]) => Promise<void>;
+}
+
+// Helper to format currency
+const formatCurrency = (value: number | null | undefined): string => {
+  if (value == null) return "—";
+  return new Intl.NumberFormat("nl-NL", {
+    style: "currency",
+    currency: "EUR",
+  }).format(value);
+};
+
+// Helper to get status color
+const getStatusColor = (status: string | null | undefined) => {
+  if (!status) return "bg-gray-100 text-gray-800";
+  switch (status) {
+    case "afgerond":
+      return "bg-green-100 text-green-800";
+    case "in_behandeling":
+      return "bg-blue-100 text-blue-800";
+    case "wacht_op_klant":
+      return "bg-yellow-100 text-yellow-800";
+    case "intake":
+      return "bg-gray-100 text-gray-800";
+    default:
+      return "bg-gray-100 text-gray-800";
+  }
+};
+
+const getStatusLabel = (status: string | null | undefined) => {
+  if (!status) return "Onbekend";
+  switch (status) {
+    case "afgerond":
+      return "Afgerond";
+    case "in_behandeling":
+      return "In behandeling";
+    case "wacht_op_klant":
+      return "Wacht op klant";
+    case "intake":
+      return "Intake";
+    default:
+      return status;
+  }
+};
+
+// Component for rendering a data point with source info
+// Works with Box3DataPoint<T> which has 'amount' instead of 'value'
+function DataPointDisplay({
+  label,
+  dataPoint,
+  format = "text",
+}: {
+  label: string;
+  dataPoint: { amount?: any; value?: any; source_snippet?: string; confidence?: number | string } | string | number | boolean | null | undefined;
+  format?: "text" | "currency" | "percentage" | "boolean";
+}) {
+  if (dataPoint == null) return null;
+
+  // Handle primitive values directly
+  if (typeof dataPoint === "string" || typeof dataPoint === "number" || typeof dataPoint === "boolean") {
+    let displayValue: string;
+    switch (format) {
+      case "currency":
+        displayValue = formatCurrency(typeof dataPoint === "number" ? dataPoint : null);
+        break;
+      case "percentage":
+        displayValue = dataPoint != null ? `${dataPoint}%` : "—";
+        break;
+      case "boolean":
+        displayValue = dataPoint ? "Ja" : "Nee";
+        break;
+      default:
+        displayValue = dataPoint?.toString() || "—";
+    }
+    return (
+      <div className="flex flex-col">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="font-medium">{displayValue}</span>
+      </div>
+    );
+  }
+
+  // Handle Box3DataPoint objects (use 'amount' field, fallback to 'value')
+  const rawValue = dataPoint.amount ?? dataPoint.value;
+  let displayValue: string;
+  switch (format) {
+    case "currency":
+      displayValue = formatCurrency(typeof rawValue === "number" ? rawValue : null);
+      break;
+    case "percentage":
+      displayValue = rawValue != null ? `${rawValue}%` : "—";
+      break;
+    case "boolean":
+      displayValue = rawValue ? "Ja" : "Nee";
+      break;
+    default:
+      displayValue = rawValue?.toString() || "—";
+  }
+
+  // Handle confidence as number (0-1) or string
+  const confidence = dataPoint.confidence;
+  let confidenceColor = "text-gray-500";
+  let confidenceLabel = "";
+  if (typeof confidence === "number") {
+    confidenceColor = confidence > 0.8 ? "text-green-600" : confidence > 0.5 ? "text-yellow-600" : "text-red-600";
+    confidenceLabel = `${Math.round(confidence * 100)}%`;
+  } else if (typeof confidence === "string") {
+    confidenceColor = confidence === "high" ? "text-green-600" : confidence === "medium" ? "text-yellow-600" : "text-red-600";
+    confidenceLabel = confidence;
+  }
+
+  return (
+    <div className="flex flex-col">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="font-medium">{displayValue}</span>
+      {dataPoint.source_snippet && (
+        <span className="text-xs text-muted-foreground italic truncate" title={dataPoint.source_snippet}>
+          "{dataPoint.source_snippet}"
+        </span>
+      )}
+      {confidence != null && (
+        <span className={`text-xs ${confidenceColor}`}>
+          {confidenceLabel}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export const Box3CaseDetail = memo(function Box3CaseDetail({
-  session,
+  dossierFull,
   systemPrompt,
   isRevalidating,
   isAddingDocs,
-  isGeneratingEmail = false,
   debugInfo,
   onBack,
   onRevalidate,
   onOpenSettings,
   onAddDocuments,
-  onUpdateOverrides,
-  onConvertToMultiYear,
-  onAddYear,
-  onGenerateEmail,
 }: Box3CaseDetailProps) {
   const { toast } = useToast();
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set(Object.keys(CATEGORY_LABELS))
-  );
+  const { dossier, blueprint, blueprintVersion, documents } = dossierFull;
+
   const [showInputDetails, setShowInputDetails] = useState(false);
   const [showAddDocs, setShowAddDocs] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [isCompressing, setIsCompressing] = useState(false);
-  const [selectedYear, setSelectedYear] = useState<string | null>(null);
-  const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
-  const [showAddYear, setShowAddYear] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Determine if this is a multi-year session
-  const isMultiYear = session.isMultiYear ?? false;
-  const multiYearData = session.multiYearData as Box3MultiYearData | null;
-
-  // Legacy single-year data
-  const validationResult = session.validationResult as Box3ValidationResult | null;
-  const conceptMail = session.conceptMail as {
-    onderwerp?: string;
-    body?: string;
-  } | null;
-  const manualOverrides = session.manualOverrides as Box3ManualOverrides | null;
-
-  const [editedConceptMail, setEditedConceptMail] = useState<{
-    onderwerp: string;
-    body: string;
-  } | null>(
-    conceptMail
-      ? {
-          onderwerp: stripHtmlToPlainText(conceptMail.onderwerp || ""),
-          body: stripHtmlToPlainText(conceptMail.body || ""),
-        }
-      : null
-  );
-
-  // Derived values for legacy mode
-  const belastingjaar = extractBelastingjaar(validationResult);
-  const mailData = getMailData(validationResult);
-  const showNewFormat = isNewFormat(validationResult);
-  const attachments = (session.attachments as any[]) || [];
-
-  // Get years that already have data
-  // Combines years from multiYearData.years AND validationResult.jaren_data (new jurist format)
-  const existingYears = useMemo(() => {
-    const yearsSet = new Set<string>();
-
-    // Add years from multiYearData
-    if (multiYearData?.years) {
-      Object.keys(multiYearData.years).forEach(y => yearsSet.add(y));
-    }
-
-    // Add years from validationResult.jaren_data (new jurist format)
-    if (validationResult?.jaren_data) {
-      Object.keys(validationResult.jaren_data).forEach(y => yearsSet.add(y));
-    }
-
-    return Array.from(yearsSet).sort();
-  }, [multiYearData, validationResult]);
-
-  // Get years that can still be added
-  const availableYears = useMemo(() => {
-    return BOX3_YEARS.filter((y) => !existingYears.includes(y));
-  }, [existingYears]);
-
-  // Category toggle
-  const toggleCategory = useCallback((key: string) => {
-    setExpandedCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
-
-  // Year toggle
-  const toggleYear = useCallback((jaar: string) => {
-    setExpandedYears((prev) => {
-      const next = new Set(prev);
-      if (next.has(jaar)) {
-        next.delete(jaar);
-      } else {
-        next.add(jaar);
-      }
-      return next;
-    });
-  }, []);
-
-  // Copy mail handler
-  const handleCopyMail = useCallback(() => {
-    const onderwerp =
-      editedConceptMail?.onderwerp ||
-      stripHtmlToPlainText(mailData?.onderwerp || "");
-    const body =
-      editedConceptMail?.body || stripHtmlToPlainText(mailData?.body || "");
-
-    if (!onderwerp && !body) return;
-
-    const text = `Onderwerp: ${onderwerp}\n\n${body}`;
-    navigator.clipboard.writeText(text);
-
-    toast({
-      title: "Gekopieerd",
-      description: "Concept mail is naar het klembord gekopieerd.",
-    });
-  }, [editedConceptMail, mailData, toast]);
+  // Extract data from blueprint
+  const taxYears = dossier.taxYears || [];
+  const hasFiscalPartner = blueprint?.fiscal_entity?.fiscal_partner?.has_partner || false;
+  const validationFlags = blueprint?.validation_flags || [];
+  const sourceDocsRegistry = blueprint?.source_documents_registry || [];
 
   // File handling with compression
   const compressionOptions = {
@@ -238,10 +234,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             const isImage = file.type.startsWith("image/");
             if (isImage && file.size > 1024 * 1024) {
               try {
-                const compressedFile = await imageCompression(
-                  file,
-                  compressionOptions
-                );
+                const compressedFile = await imageCompression(file, compressionOptions);
                 return {
                   file: compressedFile,
                   name: file.name,
@@ -271,69 +264,6 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
     setShowAddDocs(false);
   }, [pendingFiles, onAddDocuments]);
 
-  // Multi-year handlers
-  const handleAddDocumentsForYear = useCallback(
-    async (jaar: string, files: PendingFile[]) => {
-      await onAddDocuments(files, undefined, jaar);
-    },
-    [onAddDocuments]
-  );
-
-  const handleRevalidateYear = useCallback(
-    async (jaar: string) => {
-      onRevalidate(jaar);
-    },
-    [onRevalidate]
-  );
-
-  const handleUpdateOverridesForYear = useCallback(
-    async (jaar: string, overrides: Partial<Box3ManualOverrides>) => {
-      await onUpdateOverrides(overrides, jaar);
-    },
-    [onUpdateOverrides]
-  );
-
-  const handleAddYear = useCallback(
-    async (jaar: string) => {
-      if (onAddYear) {
-        await onAddYear(jaar);
-        setShowAddYear(false);
-        setExpandedYears((prev) => {
-          const next = new Set(prev);
-          next.add(jaar);
-          return next;
-        });
-      }
-    },
-    [onAddYear]
-  );
-
-  const handleSelectYearFromOverview = useCallback((jaar: string) => {
-    setExpandedYears((prev) => {
-      const next = new Set(prev);
-      next.add(jaar);
-      return next;
-    });
-    // Scroll to the year if needed
-    const element = document.getElementById(`year-${jaar}`);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, []);
-
-  // Generate email handler for multi-year dossiers
-  const handleGenerateEmail = useCallback(async () => {
-    if (!onGenerateEmail) return;
-
-    const email = await onGenerateEmail();
-    if (email) {
-      setEditedConceptMail({
-        onderwerp: email.onderwerp,
-        body: email.body,
-      });
-    }
-  }, [onGenerateEmail]);
-
   // ============ RENDER ============
 
   return (
@@ -347,17 +277,6 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           </Button>
         </div>
         <div className="flex gap-2">
-          {!isMultiYear && onConvertToMultiYear && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onConvertToMultiYear}
-              title="Converteer naar multi-year dossier voor meerdere belastingjaren"
-            >
-              <Layers className="h-4 w-4 mr-2" />
-              Multi-year
-            </Button>
-          )}
           <Button variant="outline" size="sm" onClick={onOpenSettings}>
             <SettingsIcon className="h-4 w-4 mr-2" />
             Settings
@@ -365,71 +284,81 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
         </div>
       </div>
 
-      {/* Case Info Card */}
+      {/* Dossier Info Card */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-3">
-              <User className="h-5 w-5 text-muted-foreground" />
-              {session.clientName || "Onbekende klant"}
-              {isMultiYear ? (
-                <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                  <Layers className="h-3 w-3 mr-1" />
-                  Multi-year ({existingYears.length} jaar)
+            <div>
+              <CardTitle className="flex items-center gap-3">
+                <User className="h-5 w-5 text-muted-foreground" />
+                {dossier.clientName || "Onbekende klant"}
+                {dossier.dossierNummer && (
+                  <span className="text-sm font-normal text-muted-foreground">
+                    #{dossier.dossierNummer}
+                  </span>
+                )}
+              </CardTitle>
+              <CardDescription className="flex items-center gap-2 mt-1">
+                <Badge className={getStatusColor(dossier.status)}>
+                  {getStatusLabel(dossier.status)}
                 </Badge>
-              ) : (
-                <>
-                  {belastingjaar && (
-                    <Badge variant="outline">Belastingjaar {belastingjaar}</Badge>
-                  )}
-                  {validationResult?.global_status && (
-                    <GlobalStatusBadge status={validationResult.global_status} />
-                  )}
-                </>
-              )}
-            </CardTitle>
-            {!isMultiYear && (
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => setShowAddDocs(!showAddDocs)}
-                  variant="outline"
-                  size="sm"
-                  disabled={isAddingDocs}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Document toevoegen
-                </Button>
-                <Button
-                  onClick={() => onRevalidate()}
-                  variant="default"
-                  size="sm"
-                  disabled={isRevalidating || isAddingDocs}
-                >
-                  {isRevalidating ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                  )}
-                  Opnieuw valideren
-                </Button>
-              </div>
-            )}
+                {taxYears.length > 0 && (
+                  <Badge variant="outline">
+                    <Calendar className="h-3 w-3 mr-1" />
+                    {taxYears.length === 1
+                      ? taxYears[0]
+                      : `${taxYears[0]}-${taxYears[taxYears.length - 1]}`}
+                  </Badge>
+                )}
+                {hasFiscalPartner && (
+                  <Badge variant="outline">
+                    <Users className="h-3 w-3 mr-1" />
+                    Fiscaal partner
+                  </Badge>
+                )}
+                {blueprintVersion > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Blueprint v{blueprintVersion}
+                  </span>
+                )}
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setShowAddDocs(!showAddDocs)}
+                variant="outline"
+                size="sm"
+                disabled={isAddingDocs}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Document toevoegen
+              </Button>
+              <Button
+                onClick={onRevalidate}
+                variant="default"
+                size="sm"
+                disabled={isRevalidating || isAddingDocs}
+              >
+                {isRevalidating ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Opnieuw valideren
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          {/* Add Documents Section - Legacy Mode */}
-          {!isMultiYear && showAddDocs && (
+          {/* Add Documents Section */}
+          {showAddDocs && (
             <div className="mb-4 p-4 border rounded-lg bg-muted/30 space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium flex items-center gap-2">
                   <Upload className="h-4 w-4" />
                   Documenten toevoegen aan dossier
                 </h4>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAddDocs(false)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setShowAddDocs(false)}>
                   Annuleren
                 </Button>
               </div>
@@ -475,40 +404,29 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         <span className="text-xs text-muted-foreground">
                           ({(pf.file.size / 1024).toFixed(1)} KB)
                           {pf.compressed && (
-                            <span className="text-green-600 ml-1">
-                              ✓ gecomprimeerd
-                            </span>
+                            <span className="text-green-600 ml-1">✓ gecomprimeerd</span>
                           )}
                         </span>
                       </div>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() =>
-                          setPendingFiles((prev) =>
-                            prev.filter((_, i) => i !== idx)
-                          )
-                        }
+                        onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
                       >
                         ×
                       </Button>
                     </div>
                   ))}
-                  <Button
-                    onClick={handleAddDocuments}
-                    disabled={isAddingDocs}
-                    className="w-full"
-                  >
+                  <Button onClick={handleAddDocuments} disabled={isAddingDocs} className="w-full">
                     {isAddingDocs ? (
                       <>
                         <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Documenten toevoegen & hervalideren...
+                        Documenten toevoegen...
                       </>
                     ) : (
                       <>
                         <Plus className="h-4 w-4 mr-2" />
-                        {pendingFiles.length} document(en) toevoegen &
-                        hervalideren
+                        {pendingFiles.length} document(en) toevoegen
                       </>
                     )}
                   </Button>
@@ -522,16 +440,12 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             onClick={() => setShowInputDetails(!showInputDetails)}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
           >
-            {showInputDetails ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
+            {showInputDetails ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             <span>Oorspronkelijke input bekijken</span>
-            {attachments.length > 0 && (
+            {documents.length > 0 && (
               <Badge variant="secondary" className="ml-2">
                 <Paperclip className="h-3 w-3 mr-1" />
-                {attachments.length} bijlage(s)
+                {documents.length} document(en)
               </Badge>
             )}
           </button>
@@ -539,250 +453,814 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           {showInputDetails && (
             <div className="mt-4 space-y-4 border-t pt-4">
               {/* Original mail text */}
-              {session.inputText && (
+              {dossier.intakeText && (
                 <div>
                   <div className="flex items-center gap-2 mb-2 text-sm font-medium">
                     <Mail className="h-4 w-4 text-blue-500" />
                     Mail van klant
                   </div>
                   <div className="bg-muted p-3 rounded-md text-sm font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
-                    {session.inputText}
+                    {dossier.intakeText}
                   </div>
                 </div>
               )}
 
-              {/* Attachments - Session level (for both legacy and multi-year) */}
-              {attachments.length > 0 && (
+              {/* Documents - Combined view */}
+              {documents.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-3 text-sm font-medium">
                     <Paperclip className="h-4 w-4 text-green-500" />
-                    Alle bijlages ({attachments.length})
+                    Documenten ({documents.length})
+                    {sourceDocsRegistry.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        • {sourceDocsRegistry.length} geclassificeerd
+                      </span>
+                    )}
                   </div>
-                  <Box3AttachmentsPanel
-                    attachments={attachments}
-                    bijlageAnalyse={validationResult?.bijlage_analyse}
-                  />
+                  <div className="border rounded-lg divide-y">
+                    {documents.map((doc, docIndex) => {
+                      // Match registry entry by index - AI generates them in the same order as uploaded
+                      const registryEntry = sourceDocsRegistry[docIndex];
+                      const docType = registryEntry?.detected_type;
+                      const taxYear = registryEntry?.detected_tax_year;
+                      const forPerson = registryEntry?.for_person;
+
+                      // Determine person name
+                      let personName: string | null = null;
+                      if (forPerson) {
+                        if (forPerson === blueprint?.fiscal_entity?.taxpayer?.id) {
+                          personName = blueprint?.fiscal_entity?.taxpayer?.name || "Belastingplichtige";
+                        } else if (forPerson === blueprint?.fiscal_entity?.fiscal_partner?.id) {
+                          personName = blueprint?.fiscal_entity?.fiscal_partner?.name || "Partner";
+                        } else {
+                          personName = forPerson;
+                        }
+                      }
+
+                      // Format document type for display
+                      const formatDocType = (type: string | undefined) => {
+                        if (!type) return null;
+                        const labels: Record<string, string> = {
+                          'aangifte_ib': 'Aangifte IB',
+                          'definitieve_aanslag': 'Definitieve aanslag',
+                          'voorlopige_aanslag': 'Voorlopige aanslag',
+                          'aanslag_definitief': 'Definitieve aanslag',
+                          'aanslag_voorlopig': 'Voorlopige aanslag',
+                          'jaaroverzicht_bank': 'Jaaroverzicht bank',
+                          'jaaropgave_bank': 'Jaaroverzicht bank',
+                          'spaarrekeningoverzicht': 'Spaarrekening',
+                          'effectenoverzicht': 'Effectenoverzicht',
+                          'dividendnota': 'Dividendnota',
+                          'woz_beschikking': 'WOZ-beschikking',
+                          'hypotheekoverzicht': 'Hypotheekoverzicht',
+                          'leningoverzicht': 'Leningoverzicht',
+                          'email_body': 'E-mail',
+                          'overig': 'Overig',
+                        };
+                        return labels[type] || type;
+                      };
+
+                      const hasTags = docType || taxYear || personName;
+                      const notes = registryEntry?.notes;
+
+                      return (
+                        <div key={doc.id} className="px-3 py-2.5 hover:bg-muted/30 transition-colors">
+                          {/* Main row */}
+                          <div className="flex items-center gap-3">
+                            {/* Icon */}
+                            <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+
+                            {/* Filename */}
+                            <span className="text-sm truncate min-w-0 flex-shrink" title={doc.filename}>
+                              {doc.filename}
+                            </span>
+
+                            {/* Size */}
+                            <span className="text-xs text-muted-foreground flex-shrink-0">
+                              ({(doc.fileSize / 1024).toFixed(0)} KB)
+                            </span>
+
+                            {/* Spacer */}
+                            <div className="flex-1" />
+
+                            {/* Tags */}
+                            {hasTags && (
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {docType && (
+                                  <Badge variant="secondary" className="text-xs font-normal px-2 py-0.5">
+                                    {formatDocType(docType)}
+                                  </Badge>
+                                )}
+                                {taxYear && (
+                                  <Badge variant="outline" className="text-xs font-normal px-2 py-0.5">
+                                    {taxYear}
+                                  </Badge>
+                                )}
+                                {personName && (
+                                  <Badge variant="outline" className="text-xs font-normal px-2 py-0.5 bg-blue-50 border-blue-200">
+                                    <User className="h-3 w-3 mr-1" />
+                                    {personName}
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Readable indicator */}
+                            {registryEntry && (
+                              registryEntry.is_readable ? (
+                                <span title="Document leesbaar">
+                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                </span>
+                              ) : (
+                                <span title="Document niet volledig leesbaar">
+                                  <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                                </span>
+                              )
+                            )}
+                          </div>
+
+                          {/* Notes row */}
+                          {notes && (
+                            <p className="text-xs text-muted-foreground mt-1 ml-7 italic">
+                              {notes}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Hint if no registry data */}
+                  {sourceDocsRegistry.length === 0 && (
+                    <p className="text-xs text-muted-foreground mt-2 italic">
+                      Klik op "Opnieuw valideren" om documenten te classificeren
+                    </p>
+                  )}
                 </div>
               )}
 
               {/* Created date */}
               <div className="text-xs text-muted-foreground">
                 Aangemaakt op{" "}
-                {session.createdAt
-                  ? new Date(session.createdAt).toLocaleString("nl-NL")
-                  : "Onbekend"}
+                {dossier.createdAt ? new Date(dossier.createdAt).toLocaleString("nl-NL") : "Onbekend"}
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* ============ MULTI-YEAR MODE ============ */}
-      {isMultiYear && multiYearData && (
-        <div className="space-y-6">
-          {/* Session-level Raw Output Panel - shows intake analysis prompt/output */}
-          {validationResult && (
-            <RawOutputPanel
-              validationResult={validationResult}
-              lastUsedPrompt={null}
-              systemPrompt={systemPrompt}
-              debugInfo={debugInfo}
-            />
-          )}
-
-          {/* Gevonden Data Cards - shows jaren_data from new jurist format */}
-          {validationResult && (validationResult.jaren_data || validationResult.gevonden_data) && (
-            <GevondenDataCards validationResult={validationResult} />
-          )}
-
-          {/* Total Overview */}
-          <Box3TotalOverview
-            multiYearData={multiYearData}
-            onSelectYear={handleSelectYearFromOverview}
-            sessionBijlageAnalyse={validationResult?.bijlage_analyse}
-            fiscalePartners={validationResult?.fiscale_partners}
-          />
-
-          {/* Add Year Button */}
-          <div className="flex items-center gap-2">
-            {!showAddYear && availableYears.length > 0 && (
-              <Button
-                variant="outline"
-                onClick={() => setShowAddYear(true)}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Belastingjaar toevoegen
-              </Button>
-            )}
-            {showAddYear && (
-              <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
-                <span className="text-sm">Selecteer jaar:</span>
-                {availableYears.map((jaar) => (
-                  <Button
-                    key={jaar}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleAddYear(jaar)}
-                  >
-                    {jaar}
-                  </Button>
-                ))}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAddYear(false)}
+      {/* Validation Flags */}
+      {validationFlags.length > 0 && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-600" />
+              Aandachtspunten ({validationFlags.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {validationFlags.map((flag, idx) => (
+                <div
+                  key={flag.id || idx}
+                  className={`p-3 rounded-md text-sm ${
+                    flag.severity === "high"
+                      ? "bg-red-100 border-red-200"
+                      : flag.severity === "medium"
+                      ? "bg-yellow-100 border-yellow-200"
+                      : "bg-blue-100 border-blue-200"
+                  } border`}
                 >
-                  Annuleren
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {/* Per-Year Entries */}
-          <div className="space-y-4">
-            {existingYears.map((jaar) => {
-              // Get yearData from multiYearData, or create empty entry for years only in jaren_data
-              const yearData = multiYearData?.years?.[jaar] ?? {
-                jaar,
-                attachments: [],
-                validationResult: undefined,
-                manualOverrides: undefined,
-                isComplete: false,
-              };
-              return (
-                <div key={jaar} id={`year-${jaar}`}>
-                  <Box3YearEntry
-                    jaar={jaar}
-                    yearData={yearData}
-                    isExpanded={expandedYears.has(jaar)}
-                    onToggleExpand={() => toggleYear(jaar)}
-                    onAddDocuments={handleAddDocumentsForYear}
-                    onRevalidate={handleRevalidateYear}
-                    onUpdateOverrides={handleUpdateOverridesForYear}
-                    isRevalidating={isRevalidating}
-                    isAddingDocs={isAddingDocs}
-                    sessionBijlageAnalyse={validationResult?.bijlage_analyse}
-                    sessionFiscalePartners={validationResult?.fiscale_partners}
-                    sessionPerPartnerData={validationResult?.gevonden_data?.per_partner}
-                    // Pass jaren_data for this specific year (new format)
-                    sessionJarenData={validationResult?.jaren_data}
-                  />
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="font-medium">{flag.type}</span>
+                      {flag.field_path && (
+                        <span className="text-xs text-muted-foreground ml-2">({flag.field_path})</span>
+                      )}
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        flag.severity === "high"
+                          ? "border-red-300 text-red-700"
+                          : flag.severity === "medium"
+                          ? "border-yellow-300 text-yellow-700"
+                          : "border-blue-300 text-blue-700"
+                      }
+                    >
+                      {flag.severity}
+                    </Badge>
+                  </div>
+                  <p className="mt-1">{flag.message}</p>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-          {/* Concept Mail - Combined for all years */}
-          {editedConceptMail ? (
-            <ConceptMailEditor
-              editedConceptMail={editedConceptMail}
-              mailData={mailData}
-              onEditConceptMail={setEditedConceptMail}
-              onCopyMail={handleCopyMail}
-            />
-          ) : onGenerateEmail && (
+      {/* Blueprint Content Tabs */}
+      {blueprint && (
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="overview">Overzicht</TabsTrigger>
+            <TabsTrigger value="assets">Vermogen</TabsTrigger>
+            <TabsTrigger value="debts">Schulden</TabsTrigger>
+            <TabsTrigger value="tax_data">Belastingdienst</TabsTrigger>
+            <TabsTrigger value="raw">Raw Output</TabsTrigger>
+          </TabsList>
+
+          {/* Overview Tab */}
+          <TabsContent value="overview" className="space-y-6">
+            {/* Case Summary - Kansrijkheid */}
+            {(() => {
+              const yearSummaries = blueprint.year_summaries || {};
+              const years = Object.keys(yearSummaries).sort();
+              const totalRefund = years.reduce((sum, year) => {
+                const refund = yearSummaries[year]?.calculated_totals?.indicative_refund;
+                return sum + (typeof refund === 'number' ? refund : 0);
+              }, 0);
+              const profitableYears = years.filter(y => yearSummaries[y]?.calculated_totals?.is_profitable);
+              const completeYears = years.filter(y => yearSummaries[y]?.status === 'complete' || yearSummaries[y]?.status === 'ready_for_calculation');
+              const incompleteYears = years.filter(y => yearSummaries[y]?.status === 'incomplete');
+
+              // Determine overall case status
+              const isProfitable = totalRefund > 0 || profitableYears.length > 0;
+              const isComplete = incompleteYears.length === 0 && years.length > 0;
+
+              return (
+                <Card className={`border-2 ${isProfitable ? 'border-green-300 bg-green-50/30' : totalRefund < 0 ? 'border-red-300 bg-red-50/30' : 'border-gray-200'}`}>
+                  <CardContent className="pt-6">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                      {/* Left: Status */}
+                      <div className="flex items-center gap-4">
+                        <div className={`p-3 rounded-full ${isProfitable ? 'bg-green-100' : 'bg-gray-100'}`}>
+                          {isProfitable ? (
+                            <CheckCircle2 className="h-8 w-8 text-green-600" />
+                          ) : (
+                            <AlertTriangle className="h-8 w-8 text-gray-500" />
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold">
+                            {isProfitable ? 'Kansrijk dossier' : isComplete ? 'Niet kansrijk' : 'Onvolledig dossier'}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {years.length} {years.length === 1 ? 'jaar' : 'jaren'} geanalyseerd
+                            {incompleteYears.length > 0 && ` • ${incompleteYears.length} incompleet`}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right: Total Refund */}
+                      <div className="text-right">
+                        <p className="text-sm text-muted-foreground">Indicatieve teruggave totaal</p>
+                        <p className={`text-3xl font-bold ${totalRefund > 0 ? 'text-green-600' : totalRefund < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                          {formatCurrency(totalRefund)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Quick stats row */}
+                    <div className="mt-6 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                      <div>
+                        <p className="text-2xl font-semibold">{years.length}</p>
+                        <p className="text-xs text-muted-foreground">Belastingjaren</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-semibold text-green-600">{profitableYears.length}</p>
+                        <p className="text-xs text-muted-foreground">Kansrijk</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-semibold text-yellow-600">{incompleteYears.length}</p>
+                        <p className="text-xs text-muted-foreground">Incompleet</p>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-semibold">{documents.length}</p>
+                        <p className="text-xs text-muted-foreground">Documenten</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
+
+            {/* Fiscal Entity - Compact */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Mail className="h-5 w-5 text-blue-500" />
-                  Concept e-mail genereren
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users className="h-4 w-4 text-blue-500" />
+                  Fiscale Entiteit
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Genereer een concept e-mail op basis van alle belastingjaren in dit dossier.
-                </p>
-                <Button
-                  onClick={handleGenerateEmail}
-                  disabled={isGeneratingEmail || existingYears.length === 0}
-                >
-                  {isGeneratingEmail ? (
+                <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Naam: </span>
+                    <span className="font-medium">{blueprint.fiscal_entity?.taxpayer?.name || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">BSN: </span>
+                    <span className="font-medium">{blueprint.fiscal_entity?.taxpayer?.bsn_masked || '—'}</span>
+                  </div>
+                  {blueprint.fiscal_entity?.fiscal_partner?.has_partner && (
                     <>
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      E-mail genereren...
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="h-4 w-4 mr-2" />
-                      Genereer concept e-mail
+                      <div>
+                        <span className="text-muted-foreground">Partner: </span>
+                        <span className="font-medium">{blueprint.fiscal_entity.fiscal_partner.name || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Partner BSN: </span>
+                        <span className="font-medium">{blueprint.fiscal_entity.fiscal_partner.bsn_masked || '—'}</span>
+                      </div>
                     </>
                   )}
-                </Button>
-                {existingYears.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-2">
-                    Voeg eerst minimaal één belastingjaar toe.
-                  </p>
-                )}
+                </div>
               </CardContent>
             </Card>
-          )}
-        </div>
+
+            {/* Per Year Cards */}
+            {blueprint.year_summaries && Object.keys(blueprint.year_summaries).length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-green-500" />
+                  Overzicht per Jaar
+                </h3>
+
+                {Object.entries(blueprint.year_summaries)
+                  .sort(([a], [b]) => Number(b) - Number(a))
+                  .map(([year, summary]) => {
+                    const isProfitable = summary.calculated_totals?.is_profitable || (summary.calculated_totals?.indicative_refund || 0) > 0;
+                    const isComplete = summary.status === 'complete' || summary.status === 'ready_for_calculation';
+                    const taxData = blueprint.tax_authority_data?.[year];
+
+                    return (
+                      <Card key={year} className={`overflow-hidden ${isProfitable ? 'border-green-200' : ''}`}>
+                        {/* Year Header */}
+                        <div className={`px-4 py-3 flex items-center justify-between ${
+                          isProfitable ? 'bg-green-50' : isComplete ? 'bg-blue-50' : 'bg-yellow-50'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            <h4 className="text-lg font-semibold">Belastingjaar {year}</h4>
+                            <Badge variant="outline" className={
+                              isProfitable ? 'bg-green-100 text-green-700 border-green-300' :
+                              isComplete ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                              'bg-yellow-100 text-yellow-700 border-yellow-300'
+                            }>
+                              {isProfitable ? 'Kansrijk' : isComplete ? 'Compleet' : 'Incompleet'}
+                            </Badge>
+                          </div>
+                          {summary.calculated_totals?.indicative_refund != null && (
+                            <div className="text-right">
+                              <span className="text-sm text-muted-foreground mr-2">Indicatieve teruggave:</span>
+                              <span className={`text-xl font-bold ${
+                                (summary.calculated_totals.indicative_refund || 0) > 0 ? 'text-green-600' : 'text-gray-600'
+                              }`}>
+                                {formatCurrency(summary.calculated_totals.indicative_refund)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        <CardContent className="pt-4">
+                          {/* Key Numbers Grid */}
+                          {summary.calculated_totals && (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                              <div className="p-3 bg-muted/30 rounded-lg">
+                                <p className="text-xs text-muted-foreground">Totaal vermogen</p>
+                                <p className="text-lg font-semibold">{formatCurrency(summary.calculated_totals.total_assets_jan_1)}</p>
+                              </div>
+                              <div className="p-3 bg-muted/30 rounded-lg">
+                                <p className="text-xs text-muted-foreground">Werkelijk rendement</p>
+                                <p className="text-lg font-semibold">{formatCurrency(summary.calculated_totals.actual_return?.total)}</p>
+                              </div>
+                              <div className="p-3 bg-muted/30 rounded-lg">
+                                <p className="text-xs text-muted-foreground">Forfaitair (BD)</p>
+                                <p className="text-lg font-semibold">{formatCurrency(summary.calculated_totals.deemed_return_from_tax_authority)}</p>
+                              </div>
+                              <div className="p-3 bg-muted/30 rounded-lg">
+                                <p className="text-xs text-muted-foreground">Verschil</p>
+                                <p className={`text-lg font-semibold ${
+                                  (summary.calculated_totals.difference || 0) < 0 ? 'text-green-600' : 'text-red-600'
+                                }`}>
+                                  {formatCurrency(summary.calculated_totals.difference)}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Tax Authority Data */}
+                          {taxData?.household_totals && (
+                            <div className="mb-4 p-3 bg-blue-50/50 rounded-lg border border-blue-100">
+                              <p className="text-xs font-medium text-blue-800 mb-2 flex items-center gap-1">
+                                <Landmark className="h-3 w-3" />
+                                Data uit Belastingdienst ({taxData.document_type === 'definitieve_aanslag' ? 'Definitieve aanslag' : taxData.document_type === 'voorlopige_aanslag' ? 'Voorlopige aanslag' : 'Aangifte'})
+                              </p>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                                <div>
+                                  <span className="text-muted-foreground">Totaal vermogen: </span>
+                                  <span className="font-medium">{formatCurrency(taxData.household_totals.total_assets_gross)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Schulden: </span>
+                                  <span className="font-medium">{formatCurrency(taxData.household_totals.total_debts)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Grondslag: </span>
+                                  <span className="font-medium">{formatCurrency(taxData.household_totals.taxable_base)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Box 3 belasting: </span>
+                                  <span className="font-medium">{formatCurrency(taxData.household_totals.total_tax_assessed)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Missing Items */}
+                          {summary.missing_items && summary.missing_items.length > 0 && (
+                            <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                              <p className="text-xs font-medium text-yellow-800 mb-2 flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                Ontbrekende documenten/gegevens
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {summary.missing_items.map((item, i) => (
+                                  <Badge key={i} variant="outline" className="text-xs bg-white border-yellow-300 text-yellow-800">
+                                    {item.description}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Assets Tab */}
+          <TabsContent value="assets" className="space-y-4">
+            {/* Bank Savings */}
+            {blueprint.assets?.bank_savings && blueprint.assets.bank_savings.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <PiggyBank className="h-5 w-5 text-blue-500" />
+                    Banktegoeden ({blueprint.assets.bank_savings.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {blueprint.assets.bank_savings.map((asset, idx) => (
+                      <div key={asset.id || idx} className="p-4 bg-muted/30 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium">{asset.description}</span>
+                          {asset.bank_name && <span className="text-sm text-muted-foreground">{asset.bank_name}</span>}
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <DataPointDisplay label="Rekening" dataPoint={asset.account_masked} />
+                          <DataPointDisplay label="Eigendom" dataPoint={`${asset.ownership_percentage}%`} />
+                          {asset.yearly_data &&
+                            Object.entries(asset.yearly_data).map(([year, data]) => (
+                              <div key={year} className="col-span-2">
+                                <span className="text-xs text-muted-foreground font-medium">{year}</span>
+                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                  <DataPointDisplay
+                                    label="1 jan"
+                                    dataPoint={data.value_jan_1}
+                                    format="currency"
+                                  />
+                                  <DataPointDisplay
+                                    label="31 dec"
+                                    dataPoint={data.value_dec_31}
+                                    format="currency"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Investments */}
+            {blueprint.assets?.investments && blueprint.assets.investments.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-green-500" />
+                    Beleggingen ({blueprint.assets.investments.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {blueprint.assets.investments.map((asset, idx) => (
+                      <div key={asset.id || idx} className="p-4 bg-muted/30 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium">{asset.description}</span>
+                          {asset.institution && <span className="text-sm text-muted-foreground">{asset.institution}</span>}
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <DataPointDisplay label="Type" dataPoint={asset.type} />
+                          <DataPointDisplay label="Eigendom" dataPoint={`${asset.ownership_percentage}%`} />
+                          {asset.yearly_data &&
+                            Object.entries(asset.yearly_data).map(([year, data]) => (
+                              <div key={year} className="col-span-2">
+                                <span className="text-xs text-muted-foreground font-medium">{year}</span>
+                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                  <DataPointDisplay
+                                    label="1 jan"
+                                    dataPoint={data.value_jan_1}
+                                    format="currency"
+                                  />
+                                  <DataPointDisplay
+                                    label="31 dec"
+                                    dataPoint={data.value_dec_31}
+                                    format="currency"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Real Estate */}
+            {blueprint.assets?.real_estate && blueprint.assets.real_estate.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Home className="h-5 w-5 text-orange-500" />
+                    Onroerend Goed ({blueprint.assets.real_estate.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {blueprint.assets.real_estate.map((asset, idx) => (
+                      <div key={asset.id || idx} className="p-4 bg-muted/30 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium">{asset.description}</span>
+                          <Badge variant="outline">{asset.type}</Badge>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <DataPointDisplay label="Adres" dataPoint={asset.address} />
+                          <DataPointDisplay label="Eigendom" dataPoint={`${asset.ownership_percentage}%`} />
+                          {asset.yearly_data &&
+                            Object.entries(asset.yearly_data).map(([year, data]) => (
+                              <div key={year} className="col-span-2">
+                                <span className="text-xs text-muted-foreground font-medium">{year}</span>
+                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                  <DataPointDisplay
+                                    label="WOZ Waarde"
+                                    dataPoint={data.woz_value}
+                                    format="currency"
+                                  />
+                                  {data.rental_income_gross && (
+                                    <DataPointDisplay
+                                      label="Huurinkomsten"
+                                      dataPoint={data.rental_income_gross}
+                                      format="currency"
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Empty state */}
+            {(!blueprint.assets ||
+              ((!blueprint.assets.bank_savings || blueprint.assets.bank_savings.length === 0) &&
+                (!blueprint.assets.investments || blueprint.assets.investments.length === 0) &&
+                (!blueprint.assets.real_estate || blueprint.assets.real_estate.length === 0))) && (
+              <Card className="border-dashed">
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Geen vermogensbestanddelen gevonden in de documenten.
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Debts Tab */}
+          <TabsContent value="debts" className="space-y-4">
+            {blueprint.debts && blueprint.debts.length > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CreditCard className="h-5 w-5 text-red-500" />
+                    Schulden ({blueprint.debts.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {blueprint.debts.map((debt, idx) => (
+                      <div key={debt.id || idx} className="p-4 bg-muted/30 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium">{debt.description}</span>
+                          {debt.lender && <span className="text-sm text-muted-foreground">{debt.lender}</span>}
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <DataPointDisplay label="Eigendom" dataPoint={`${debt.ownership_percentage}%`} />
+                          {debt.yearly_data &&
+                            Object.entries(debt.yearly_data).map(([year, data]) => (
+                              <div key={year} className="col-span-3">
+                                <span className="text-xs text-muted-foreground font-medium">{year}</span>
+                                <div className="grid grid-cols-3 gap-2 mt-1">
+                                  <DataPointDisplay
+                                    label="1 jan"
+                                    dataPoint={data.value_jan_1}
+                                    format="currency"
+                                  />
+                                  <DataPointDisplay
+                                    label="31 dec"
+                                    dataPoint={data.value_dec_31}
+                                    format="currency"
+                                  />
+                                  {data.interest_paid && (
+                                    <DataPointDisplay
+                                      label="Rente betaald"
+                                      dataPoint={data.interest_paid}
+                                      format="currency"
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-dashed">
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Geen schulden gevonden in de documenten.
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Tax Authority Data Tab */}
+          <TabsContent value="tax_data" className="space-y-4">
+            {blueprint.tax_authority_data && Object.keys(blueprint.tax_authority_data).length > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Landmark className="h-5 w-5 text-purple-500" />
+                    Belastingdienst Gegevens
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4">
+                    {Object.entries(blueprint.tax_authority_data).map(([year, data]) => (
+                      <div key={year} className="p-4 bg-muted/30 rounded-lg">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="font-medium">Belastingjaar {year}</h4>
+                          <Badge variant="outline">{data.document_type}</Badge>
+                        </div>
+                        {data.household_totals && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <DataPointDisplay
+                              label="Totaal Vermogen"
+                              dataPoint={data.household_totals.total_assets_gross}
+                              format="currency"
+                            />
+                            <DataPointDisplay
+                              label="Totaal Schulden"
+                              dataPoint={data.household_totals.total_debts}
+                              format="currency"
+                            />
+                            <DataPointDisplay
+                              label="Grondslag"
+                              dataPoint={data.household_totals.taxable_base}
+                              format="currency"
+                            />
+                            <DataPointDisplay
+                              label="Box 3 Belasting"
+                              dataPoint={data.household_totals.total_tax_assessed}
+                              format="currency"
+                            />
+                          </div>
+                        )}
+                        {data.per_person && Object.keys(data.per_person).length > 0 && (
+                          <div className="border-t pt-3">
+                            <h5 className="text-sm font-medium mb-2">Per persoon</h5>
+                            <div className="grid gap-2">
+                              {Object.entries(data.per_person).map(([personId, personData]) => (
+                                <div key={personId} className="flex items-center justify-between text-sm bg-white p-2 rounded">
+                                  <span className="text-muted-foreground">{personId}</span>
+                                  <div className="flex gap-4">
+                                    <span>Vermogen: {formatCurrency(personData.total_assets_box3)}</span>
+                                    <span>Schulden: {formatCurrency(personData.total_debts_box3)}</span>
+                                    <span>Belasting: {formatCurrency(personData.tax_assessed)}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-dashed">
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Geen belastingdienst gegevens gevonden in de documenten.
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Raw Output Tab */}
+          <TabsContent value="raw" className="space-y-4">
+            {/* AI Debug Info (after validation) */}
+            {debugInfo && (
+              <RawOutputPanel
+                debugInfo={debugInfo}
+                systemPrompt={systemPrompt}
+              />
+            )}
+
+            {/* Blueprint Data - Always show if we have a blueprint */}
+            {blueprint && (
+              <Card className="border-2 border-purple-300">
+                <CardHeader className="bg-purple-50 py-3">
+                  <CardTitle className="text-sm font-medium text-purple-800 flex items-center gap-2">
+                    <Info className="h-4 w-4" />
+                    Blueprint Debug Data (v{blueprintVersion})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 space-y-4">
+                  {/* Source Documents Registry */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-purple-800 mb-2">
+                      source_documents_registry ({blueprint.source_documents_registry?.length || 0} entries)
+                    </h4>
+                    {blueprint.source_documents_registry && blueprint.source_documents_registry.length > 0 ? (
+                      <pre className="bg-white border rounded p-3 text-xs font-mono overflow-auto max-h-64 whitespace-pre-wrap">
+                        {JSON.stringify(blueprint.source_documents_registry, null, 2)}
+                      </pre>
+                    ) : (
+                      <p className="text-xs text-orange-600 bg-orange-100 p-2 rounded">
+                        Geen source_documents_registry in blueprint - AI heeft geen document classificatie gegenereerd
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Full Blueprint (collapsible) */}
+                  <details className="group">
+                    <summary className="text-sm font-semibold text-purple-800 cursor-pointer hover:text-purple-600">
+                      Volledige Blueprint JSON (klik om te openen)
+                    </summary>
+                    <pre className="bg-white border rounded p-3 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap mt-2">
+                      {JSON.stringify(blueprint, null, 2)}
+                    </pre>
+                  </details>
+                </CardContent>
+              </Card>
+            )}
+
+            {!debugInfo && !blueprint && (
+              <Card className="border-dashed">
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Geen debug informatie beschikbaar. Voer een validatie uit om data te zien.
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
       )}
 
-      {/* ============ LEGACY SINGLE-YEAR MODE ============ */}
-      {!isMultiYear && (
-        <>
-          {/* Results Section */}
-          {validationResult && (
-            <div className="grid gap-6">
-              {/* Kansrijkheid Analyse */}
-              <KansrijkheidAnalyse
-                validationResult={validationResult}
-                belastingjaar={belastingjaar}
-                manualOverrides={manualOverrides}
-              />
-
-              {/* Raw Output Panel */}
-              <RawOutputPanel
-                validationResult={validationResult}
-                lastUsedPrompt={null}
-                systemPrompt={systemPrompt}
-                debugInfo={debugInfo}
-              />
-
-              {/* New Format: Gevonden Data Dashboard */}
-              {/* Show for legacy format (gevonden_data) OR new jurist format (jaren_data) */}
-              {showNewFormat && (validationResult.gevonden_data || validationResult.jaren_data) && (
-                <GevondenDataCards validationResult={validationResult} />
-              )}
-
-              {/* Document Checklist */}
-              <DocumentChecklist
-                validationResult={validationResult}
-                expandedCategories={expandedCategories}
-                onToggleCategory={toggleCategory}
-                manualOverrides={manualOverrides}
-                onUpdateOverrides={onUpdateOverrides}
-              />
-
-              {/* Concept Mail Editor */}
-              <ConceptMailEditor
-                editedConceptMail={editedConceptMail}
-                mailData={mailData}
-                onEditConceptMail={setEditedConceptMail}
-                onCopyMail={handleCopyMail}
-              />
-            </div>
-          )}
-
-          {!validationResult && (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <p className="text-muted-foreground">
-                  Geen validatie resultaat beschikbaar voor deze case.
-                </p>
-                <Button
-                  onClick={() => onRevalidate()}
-                  className="mt-4"
-                  disabled={isRevalidating}
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Nu valideren
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </>
+      {/* No Blueprint State */}
+      {!blueprint && (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <p className="text-muted-foreground">
+              Geen blueprint beschikbaar voor dit dossier.
+            </p>
+            <Button onClick={onRevalidate} className="mt-4" disabled={isRevalidating}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Nu valideren
+            </Button>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

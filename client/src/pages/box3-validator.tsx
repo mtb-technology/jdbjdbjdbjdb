@@ -1,25 +1,24 @@
 /**
- * Box 3 Validator Page
+ * Box 3 Validator Page - V2
  *
- * Case-based structure similar to dossiers:
- * - List view: Overview of all cases
- * - Detail view: View existing case results
- * - New case view: Create new validation
+ * Uses the new Blueprint data model:
+ * - List view: Overview of all dossiers
+ * - Detail view: View existing dossier with Blueprint data
+ * - New case view: Create new validation (creates dossier + blueprint)
  */
 
 import { useState, useCallback, memo, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { AppHeader } from "@/components/app-header";
 
-// Extracted hooks
-import { useBox3Sessions } from "@/hooks/useBox3Sessions";
+// Hooks
+import { useBox3Sessions, type Box3DossierFull } from "@/hooks/useBox3Sessions";
 import { useBox3Validation } from "@/hooks/useBox3Validation";
 
 // Components
 import {
   Box3SettingsModal,
   DEFAULT_INTAKE_PROMPT,
-  DEFAULT_YEAR_VALIDATION_PROMPT,
   DEFAULT_EMAIL_PROMPT,
   Box3CaseList,
   Box3CaseDetail,
@@ -32,7 +31,6 @@ import { STORAGE_KEY_PROMPTS } from "@/constants/box3.constants";
 
 // Types
 import type { PendingFile } from "@/types/box3Validator.types";
-import type { Box3ValidatorSession, Box3ValidationResult, Box3ManualOverrides } from "@shared/schema";
 
 const Box3Validator = memo(function Box3Validator() {
   // URL-based routing
@@ -42,17 +40,17 @@ const Box3Validator = memo(function Box3Validator() {
 
   // Derive view mode from URL
   const viewMode = matchNew ? "new" : matchDetail && paramsDetail?.id ? "detail" : "list";
-  const urlSessionId = matchDetail && !matchNew ? paramsDetail?.id : null;
+  const urlDossierId = matchDetail && !matchNew ? paramsDetail?.id : null;
 
   // View state
-  const [selectedSession, setSelectedSession] = useState<Box3ValidatorSession | null>(null);
+  const [selectedDossier, setSelectedDossier] = useState<Box3DossierFull | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isAddingDocs, setIsAddingDocs] = useState(false);
 
-  // Load prompts from localStorage (new multi-prompt structure)
+  // Load prompts from localStorage
   const [prompts, setPrompts] = useState<Box3Prompts>(() => {
     const defaults: Box3Prompts = {
       intake: DEFAULT_INTAKE_PROMPT,
-      yearValidation: DEFAULT_YEAR_VALIDATION_PROMPT,
       email: DEFAULT_EMAIL_PROMPT,
     };
     if (typeof window !== "undefined") {
@@ -69,38 +67,29 @@ const Box3Validator = memo(function Box3Validator() {
     return defaults;
   });
 
-  // For backward compatibility: expose intake prompt as systemPrompt
+  // System prompt is the intake prompt
   const systemPrompt = prompts.intake;
 
   // Session management hook
   const {
     sessions,
+    isLoading: isLoadingSessions,
     refetchSessions,
     loadSession,
     deleteSession,
     addDocuments,
-    updateOverrides,
-    convertToMultiYear,
-    addYear,
-    revalidateYear,
-    generateEmail,
   } = useBox3Sessions();
-
-  // State for adding documents and revalidating years
-  const [isAddingDocs, setIsAddingDocs] = useState(false);
-  const [isRevalidatingYear, setIsRevalidatingYear] = useState(false);
-  const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
 
   // Validation hook
   const {
     isValidating,
-    validationResult,
-    currentSessionId,
+    blueprint,
+    currentDossierId,
     debugInfo,
     validate,
     revalidate,
-    setValidationResult,
-    setCurrentSessionId,
+    loadFromDossier,
+    handleReset,
   } = useBox3Validation({
     systemPrompt,
     refetchSessions,
@@ -112,46 +101,45 @@ const Box3Validator = memo(function Box3Validator() {
     localStorage.setItem(STORAGE_KEY_PROMPTS, JSON.stringify(newPrompts));
   }, []);
 
-  // Load session when URL changes to detail view
+  // Load dossier when URL changes to detail view
   useEffect(() => {
-    if (urlSessionId && urlSessionId !== selectedSession?.id) {
-      loadSession(urlSessionId).then((session) => {
-        if (session) {
-          setSelectedSession(session);
-          setValidationResult(session.validationResult as Box3ValidationResult);
-          setCurrentSessionId(session.id);
+    if (urlDossierId && urlDossierId !== selectedDossier?.dossier.id) {
+      loadSession(urlDossierId).then((dossierFull) => {
+        if (dossierFull) {
+          setSelectedDossier(dossierFull);
+          loadFromDossier(dossierFull);
         } else {
-          // Session not found, go back to list
+          // Dossier not found, go back to list
           setLocation("/box3-validator");
         }
       });
     }
-  }, [urlSessionId, selectedSession?.id, loadSession, setValidationResult, setCurrentSessionId, setLocation]);
+  }, [urlDossierId, selectedDossier?.dossier.id, loadSession, loadFromDossier, setLocation]);
 
-  // Navigation handlers - now use URL routing
+  // Navigation handlers
   const handleSelectCase = useCallback(
-    (sessionId: string) => {
-      setLocation(`/box3-validator/${sessionId}`);
+    (dossierId: string) => {
+      setLocation(`/box3-validator/${dossierId}`);
     },
     [setLocation]
   );
 
   const handleNewCase = useCallback(() => {
-    setSelectedSession(null);
-    setValidationResult(null);
-    setCurrentSessionId(null);
+    setSelectedDossier(null);
+    handleReset();
     setLocation("/box3-validator/new");
-  }, [setValidationResult, setCurrentSessionId, setLocation]);
+  }, [handleReset, setLocation]);
 
   const handleBackToList = useCallback(() => {
-    setSelectedSession(null);
-    refetchSessions(); // Refresh list when returning
+    setSelectedDossier(null);
+    handleReset();
+    refetchSessions();
     setLocation("/box3-validator");
-  }, [refetchSessions, setLocation]);
+  }, [handleReset, refetchSessions, setLocation]);
 
   const handleDeleteCase = useCallback(
-    async (sessionId: string) => {
-      const success = await deleteSession(sessionId);
+    async (dossierId: string) => {
+      const success = await deleteSession(dossierId);
       if (success) {
         refetchSessions();
       }
@@ -162,107 +150,51 @@ const Box3Validator = memo(function Box3Validator() {
   // Validation handler for new case
   const handleValidate = useCallback(
     async (clientName: string, inputText: string, files: PendingFile[]) => {
-      await validate(clientName, inputText, files);
-      // After validation, go to detail view with the new session
-      refetchSessions();
+      const result = await validate(clientName, inputText, files);
+      if (result) {
+        // Navigate to the new dossier
+        setLocation(`/box3-validator/${result.dossier.id}`);
+      }
     },
-    [validate, refetchSessions]
+    [validate, setLocation]
   );
 
-  // Watch for validation completion - navigate to detail view
-  useEffect(() => {
-    if (viewMode === "new" && validationResult && currentSessionId && !selectedSession) {
-      setLocation(`/box3-validator/${currentSessionId}`);
-    }
-  }, [viewMode, validationResult, currentSessionId, selectedSession, setLocation]);
+  // Revalidate handler for detail view
+  const handleRevalidate = useCallback(async () => {
+    if (!selectedDossier) return;
 
-  // Revalidate handler for detail view (supports both legacy and multi-year)
-  const handleRevalidate = useCallback(async (jaar?: string) => {
-    if (!selectedSession) return;
-
-    if (jaar && selectedSession.isMultiYear) {
-      // Multi-year: revalidate specific year with yearValidation prompt
-      setIsRevalidatingYear(true);
-      try {
-        const updatedSession = await revalidateYear(selectedSession.id, jaar, prompts.yearValidation);
-        if (updatedSession) {
-          setSelectedSession(updatedSession);
-        }
-      } finally {
-        setIsRevalidatingYear(false);
-      }
-    } else {
-      // Legacy: revalidate entire session with intake prompt
-      await revalidate();
-      const updatedSession = await loadSession(selectedSession.id);
-      if (updatedSession) {
-        setSelectedSession(updatedSession);
+    const newBlueprint = await revalidate(selectedDossier.dossier.id);
+    if (newBlueprint) {
+      // Reload the dossier to get updated data
+      const updatedDossier = await loadSession(selectedDossier.dossier.id);
+      if (updatedDossier) {
+        setSelectedDossier(updatedDossier);
+        loadFromDossier(updatedDossier);
       }
     }
-  }, [selectedSession, revalidate, revalidateYear, loadSession, prompts.yearValidation]);
+  }, [selectedDossier, revalidate, loadSession, loadFromDossier]);
 
-  // Add documents handler (supports both legacy and multi-year)
+  // Add documents handler
   const handleAddDocuments = useCallback(
-    async (files: PendingFile[], additionalText?: string, jaar?: string) => {
-      if (!selectedSession) return;
+    async (files: PendingFile[]) => {
+      if (!selectedDossier) return;
       setIsAddingDocs(true);
       try {
-        const updatedSession = await addDocuments(selectedSession.id, files, additionalText, jaar);
-        if (updatedSession) {
-          setSelectedSession(updatedSession);
-          // For legacy mode, also update validation result
-          if (!jaar && updatedSession.validationResult) {
-            setValidationResult(updatedSession.validationResult as Box3ValidationResult);
+        const success = await addDocuments(selectedDossier.dossier.id, files);
+        if (success) {
+          // Reload the dossier to get updated data
+          const updatedDossier = await loadSession(selectedDossier.dossier.id);
+          if (updatedDossier) {
+            setSelectedDossier(updatedDossier);
+            loadFromDossier(updatedDossier);
           }
         }
       } finally {
         setIsAddingDocs(false);
       }
     },
-    [selectedSession, addDocuments, setValidationResult]
+    [selectedDossier, addDocuments, loadSession, loadFromDossier]
   );
-
-  // Update overrides handler (supports both legacy and multi-year)
-  const handleUpdateOverrides = useCallback(
-    async (overrides: Partial<Box3ManualOverrides>, jaar?: string) => {
-      if (!selectedSession) return;
-      const updatedSession = await updateOverrides(selectedSession.id, overrides, jaar);
-      if (updatedSession) {
-        setSelectedSession(updatedSession);
-      }
-    },
-    [selectedSession, updateOverrides]
-  );
-
-  // Convert to multi-year handler
-  const handleConvertToMultiYear = useCallback(async () => {
-    if (!selectedSession) return;
-    const updatedSession = await convertToMultiYear(selectedSession.id);
-    if (updatedSession) {
-      setSelectedSession(updatedSession);
-    }
-  }, [selectedSession, convertToMultiYear]);
-
-  // Add year handler
-  const handleAddYear = useCallback(async (jaar: string) => {
-    if (!selectedSession) return;
-    const updatedSession = await addYear(selectedSession.id, jaar);
-    if (updatedSession) {
-      setSelectedSession(updatedSession);
-    }
-  }, [selectedSession, addYear]);
-
-  // Generate email handler
-  const handleGenerateEmail = useCallback(async () => {
-    if (!selectedSession) return null;
-    setIsGeneratingEmail(true);
-    try {
-      const email = await generateEmail(selectedSession.id, prompts.email);
-      return email;
-    } finally {
-      setIsGeneratingEmail(false);
-    }
-  }, [selectedSession, generateEmail, prompts.email]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -286,22 +218,17 @@ const Box3Validator = memo(function Box3Validator() {
           />
         )}
 
-        {viewMode === "detail" && selectedSession && (
+        {viewMode === "detail" && selectedDossier && (
           <Box3CaseDetail
-            session={selectedSession}
+            dossierFull={selectedDossier}
             systemPrompt={systemPrompt}
-            isRevalidating={isValidating || isRevalidatingYear}
+            isRevalidating={isValidating}
             isAddingDocs={isAddingDocs}
-            isGeneratingEmail={isGeneratingEmail}
             debugInfo={debugInfo}
             onBack={handleBackToList}
             onRevalidate={handleRevalidate}
             onOpenSettings={() => setSettingsOpen(true)}
             onAddDocuments={handleAddDocuments}
-            onUpdateOverrides={handleUpdateOverrides}
-            onConvertToMultiYear={handleConvertToMultiYear}
-            onAddYear={handleAddYear}
-            onGenerateEmail={handleGenerateEmail}
           />
         )}
 

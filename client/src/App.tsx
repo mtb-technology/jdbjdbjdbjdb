@@ -148,13 +148,13 @@ function Router() {
         <Route path="/text-styler">
           <LazyRoute Component={TextStyler} />
         </Route>
-        <Route path="/box3-validator">
-          <LazyRoute Component={Box3Validator} />
-        </Route>
         <Route path="/box3-validator/new">
           <LazyRoute Component={Box3Validator} />
         </Route>
         <Route path="/box3-validator/:id">
+          <LazyRoute Component={Box3Validator} />
+        </Route>
+        <Route path="/box3-validator">
           <LazyRoute Component={Box3Validator} />
         </Route>
         <Route path="/settings">

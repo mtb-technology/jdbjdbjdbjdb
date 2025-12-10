@@ -266,15 +266,36 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
 
     console.log(`📋 [Box3V2] Calling AI with ${visionAttachments.length} vision attachments`);
 
+    // Generate consistent jobId for this request
+    const jobId = `box3-v2-intake-${dossier.id.substring(0, 8)}-${Date.now()}`;
+
     // Get AI config
     const activeConfig = await storage.getActivePromptConfig();
-    const promptConfig = activeConfig?.config as PromptConfig;
+    if (!activeConfig?.config) {
+      // Cleanup: delete dossier if config is missing
+      await storage.deleteBox3Dossier(dossier.id).catch(() => {});
+      throw ServerError.validation(
+        "No active prompt config",
+        "Geen actieve AI configuratie gevonden. Configureer dit in Instellingen."
+      );
+    }
+    const promptConfig = activeConfig.config as PromptConfig;
 
-    const baseAiConfig = configResolver.resolveForOperation(
-      'box3_validator',
-      promptConfig,
-      `box3-v2-intake-${Date.now()}`
-    );
+    let baseAiConfig;
+    try {
+      baseAiConfig = configResolver.resolveForOperation(
+        'box3_validator',
+        promptConfig,
+        jobId
+      );
+    } catch (configError: any) {
+      // Cleanup on config resolution failure
+      await storage.deleteBox3Dossier(dossier.id).catch(() => {});
+      throw ServerError.validation(
+        "Config resolution failed",
+        `AI configuratie kon niet worden geladen: ${configError.message}`
+      );
+    }
 
     const aiConfig = {
       ...baseAiConfig,
@@ -282,16 +303,24 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       thinkingLevel: 'high' as const,
     };
 
-    // Call AI
+    // Call AI with cleanup on failure
     const factory = AIModelFactory.getInstance();
-    const result = await factory.callModel(
-      aiConfig,
-      `${systemPrompt}\n\n${userPrompt}`,
-      {
-        jobId: `box3-v2-intake-${Date.now()}`,
-        visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
-      }
-    );
+    let result;
+    try {
+      result = await factory.callModel(
+        aiConfig,
+        `${systemPrompt}\n\n${userPrompt}`,
+        {
+          jobId,
+          visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
+        }
+      );
+    } catch (aiError: any) {
+      console.error(`📋 [Box3V2] AI call failed, cleaning up dossier ${dossier.id}:`, aiError.message);
+      // Cleanup: delete dossier and documents on AI failure
+      await storage.deleteBox3Dossier(dossier.id).catch(() => {});
+      throw ServerError.ai(`AI analyse mislukt: ${aiError.message}`, { originalError: aiError.message });
+    }
 
     console.log(`📋 [Box3V2] AI response received: ${result.content.length} chars`);
 
@@ -377,8 +406,21 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       }
     }
 
-    // Fetch updated dossier
-    const updatedDossier = await storage.getBox3Dossier(dossier.id);
+    // Fetch updated dossier with documents (they now have classification)
+    const fullDossier = await storage.getBox3DossierWithLatestBlueprint(dossier.id);
+    const updatedDossier = fullDossier?.dossier || dossier;
+
+    // Return documents with classification (without file data)
+    const documentsLight = (fullDossier?.documents || []).map(d => ({
+      id: d.id,
+      filename: d.filename,
+      mimeType: d.mimeType,
+      fileSize: d.fileSize,
+      uploadedAt: d.uploadedAt,
+      uploadedVia: d.uploadedVia,
+      classification: d.classification,
+      extractionSummary: d.extractionSummary,
+    }));
 
     // Include debug info
     const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
@@ -388,6 +430,7 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       blueprint,
       blueprintVersion: 1,
       taxYears,
+      documents: documentsLight,
       _debug: {
         fullPrompt,
         rawAiResponse: result.content,
@@ -624,7 +667,13 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
 
     // Get AI config
     const activeConfig = await storage.getActivePromptConfig();
-    const promptConfig = activeConfig?.config as PromptConfig;
+    if (!activeConfig?.config) {
+      throw ServerError.validation(
+        "No active prompt config",
+        "Geen actieve AI configuratie gevonden. Configureer dit in Instellingen."
+      );
+    }
+    const promptConfig = activeConfig.config as PromptConfig;
 
     const baseAiConfig = configResolver.resolveForOperation(
       'box3_validator',
@@ -685,6 +734,29 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       taxYears: taxYears.length > 0 ? taxYears : null,
       hasFiscalPartner,
     });
+
+    // Update document classifications from source_documents_registry
+    if (blueprint.source_documents_registry) {
+      for (let i = 0; i < blueprint.source_documents_registry.length; i++) {
+        const regEntry = blueprint.source_documents_registry[i];
+        // Match by index since AI generates its own filenames
+        const matchingDoc = documents[i];
+
+        if (matchingDoc) {
+          const classification: Box3DocumentClassification = {
+            document_type: mapDetectedTypeToClassification(regEntry.detected_type),
+            tax_years: regEntry.detected_tax_year ? [String(regEntry.detected_tax_year)] : [],
+            for_person: null,
+            confidence: regEntry.is_readable ? 'high' : 'low',
+          };
+
+          await storage.updateBox3Document(matchingDoc.id, {
+            classification,
+            extractionSummary: regEntry.notes || null,
+          });
+        }
+      }
+    }
 
     console.log(`📋 [Box3V2] Blueprint v${newVersion} created for dossier ${id}`);
 

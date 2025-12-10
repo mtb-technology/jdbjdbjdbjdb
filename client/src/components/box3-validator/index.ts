@@ -23,7 +23,6 @@ export {
   Box3SettingsModal,
   DEFAULT_BOX3_SYSTEM_PROMPT,
   DEFAULT_INTAKE_PROMPT,
-  DEFAULT_YEAR_VALIDATION_PROMPT,
   DEFAULT_EMAIL_PROMPT,
 } from "./Box3SettingsModal";
 export type { Box3Prompts } from "./Box3SettingsModal";
