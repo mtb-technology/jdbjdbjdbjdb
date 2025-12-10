@@ -1285,6 +1285,7 @@ export interface Box3TaxAuthorityYearData {
     net_assets: number;
     total_exempt: number;
     taxable_base: number;
+    deemed_return?: number; // Box 3 inkomen = belastbaar inkomen uit sparen en beleggen
     total_tax_assessed: number;
   };
 }

@@ -162,8 +162,9 @@ const Pipeline = memo(function Pipeline() {
   }, []);
 
   // Upload attachments to a report (called after case is created)
-  const uploadAttachments = useCallback(async (reportId: string, files: PendingFile[]): Promise<boolean> => {
-    if (files.length === 0) return true;
+  // Returns { success: boolean, needsOcr: boolean }
+  const uploadAttachments = useCallback(async (reportId: string, files: PendingFile[]): Promise<{ success: boolean; needsOcr: boolean }> => {
+    if (files.length === 0) return { success: true, needsOcr: false };
 
     setIsUploading(true);
     setUploadProgress(0);

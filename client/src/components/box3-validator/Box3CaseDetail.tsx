@@ -1241,7 +1241,9 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                       </div>
                                       <div className="text-right">
                                         <CopyableCurrency value={personRefund} className="font-semibold text-green-600" />
-                                        <p className="text-xs text-muted-foreground">Belasting: {formatCurrency(personData.tax_assessed)}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          Inkomen: {formatCurrency(personData.deemed_return)} • Belasting: {formatCurrency(personData.tax_assessed)}
+                                        </p>
                                       </div>
                                     </div>
                                   );
@@ -1333,7 +1335,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="pt-4">
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                                       <div>
                                         <p className="text-xs text-muted-foreground">Totaal vermogen</p>
                                         <p className="font-semibold">{formatCurrency(taxData.household_totals.total_assets_gross)}</p>
@@ -1343,12 +1345,20 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                         <p className="font-semibold">{formatCurrency(taxData.household_totals.total_debts)}</p>
                                       </div>
                                       <div>
+                                        <p className="text-xs text-muted-foreground">Heffingsvrij</p>
+                                        <p className="font-semibold">{formatCurrency(taxData.household_totals.total_exempt)}</p>
+                                      </div>
+                                      <div>
                                         <p className="text-xs text-muted-foreground">Grondslag</p>
                                         <p className="font-semibold">{formatCurrency(taxData.household_totals.taxable_base)}</p>
                                       </div>
-                                      <div>
-                                        <p className="text-xs text-muted-foreground">Box 3 belasting</p>
-                                        <p className="font-semibold">{formatCurrency(taxData.household_totals.total_tax_assessed)}</p>
+                                      <div className="bg-blue-50 p-2 rounded -m-2">
+                                        <p className="text-xs text-blue-700">Box 3 inkomen</p>
+                                        <p className="font-semibold text-blue-800">{formatCurrency(taxData.household_totals.deemed_return)}</p>
+                                      </div>
+                                      <div className="bg-purple-50 p-2 rounded -m-2">
+                                        <p className="text-xs text-purple-700">Box 3 belasting</p>
+                                        <p className="font-semibold text-purple-800">{formatCurrency(taxData.household_totals.total_tax_assessed)}</p>
                                       </div>
                                     </div>
 
@@ -1378,10 +1388,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                                     </Badge>
                                                   )}
                                                 </div>
-                                                <div className="flex gap-4 text-muted-foreground">
+                                                <div className="flex gap-4 text-muted-foreground text-xs">
                                                   <span>Vermogen: <span className="text-foreground">{formatCurrency(personData.total_assets_box3)}</span></span>
                                                   <span>Schulden: <span className="text-foreground">{formatCurrency(personData.total_debts_box3)}</span></span>
-                                                  <span>Belasting: <span className="text-foreground">{formatCurrency(personData.tax_assessed)}</span></span>
+                                                  <span>Inkomen: <span className="text-blue-700 font-medium">{formatCurrency(personData.deemed_return)}</span></span>
+                                                  <span>Belasting: <span className="text-purple-700 font-medium">{formatCurrency(personData.tax_assessed)}</span></span>
                                                 </div>
                                               </div>
                                             );
