@@ -63,8 +63,8 @@ server {
         proxy_send_timeout 3600s;
     }
 
-    # File upload size limit
-    client_max_body_size 10M;
+    # File upload size limit (100MB for batch uploads)
+    client_max_body_size 100M;
 }
 EOF
 
