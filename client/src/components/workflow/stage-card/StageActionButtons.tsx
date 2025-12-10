@@ -299,6 +299,7 @@ export const StageActionButtons = memo(function StageActionButtons({
   onCustomContextChange,
   onExecute,
   onResetStage,
+  onCancel,
   reportDepth = "balanced",
   onReportDepthChange,
   reportId,
@@ -340,6 +341,18 @@ export const StageActionButtons = memo(function StageActionButtons({
       )}
 
       <div className="flex gap-2">
+        {/* Cancel button - only show when processing */}
+        {isProcessing && onCancel && (
+          <Button
+            onClick={onCancel}
+            variant="destructive"
+            size="icon"
+            title="Stop AI uitvoering"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        )}
+
         <Button
           onClick={onExecute}
           disabled={!canExecute || isProcessing}

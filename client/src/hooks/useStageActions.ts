@@ -26,6 +26,7 @@ interface UseStageActionsProps {
 interface UseStageActionsReturn {
   handleExecuteStage: (stageKey: string, customContext?: string, reportDepth?: ReportDepth, pendingAttachments?: PendingFile[]) => void;
   handleResetStage: (stageKey: string) => Promise<void>;
+  handleCancelStage: (stageKey: string) => Promise<void>;
   handleFeedbackProcessed: (stageKey: string, response: ProcessFeedbackResponse) => void;
   handleReloadPrompts: () => Promise<void>;
   isReloadingPrompts: boolean;
@@ -120,6 +121,49 @@ export function useStageActions({
   );
 
   /**
+   * Cancel a running stage execution
+   */
+  const handleCancelStage = useCallback(
+    async (stageKey: string) => {
+      if (!state.currentReport) return;
+
+      try {
+        const response = await apiRequest(
+          "POST",
+          `/api/reports/${state.currentReport.id}/stage/${stageKey}/cancel`
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to cancel stage");
+        }
+
+        // Clear the processing state
+        dispatch({
+          type: "SET_STAGE_PROCESSING",
+          stage: stageKey,
+          isProcessing: false,
+        });
+
+        toast({
+          title: "Uitvoering gestopt",
+          description: `Stage ${stageKey} is geannuleerd`,
+          duration: 3000,
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        console.error("Failed to cancel stage:", error);
+        toast({
+          title: "Kon niet stoppen",
+          description: "Er ging iets mis bij het annuleren",
+          variant: "destructive",
+          duration: 5000,
+        });
+      }
+    },
+    [state.currentReport, toast, dispatch]
+  );
+
+  /**
    * Handle feedback processed for a stage
    */
   const handleFeedbackProcessed = useCallback(
@@ -184,6 +228,7 @@ export function useStageActions({
   return {
     handleExecuteStage,
     handleResetStage,
+    handleCancelStage,
     handleFeedbackProcessed,
     handleReloadPrompts,
     isReloadingPrompts,

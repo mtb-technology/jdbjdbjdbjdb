@@ -59,6 +59,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   isProcessing,
   onExecute,
   onResetStage,
+  onCancel,
   reportDepth: externalReportDepth,
   onReportDepthChange,
   progress,
@@ -180,6 +181,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   onCustomContextChange={setCustomContext}
                   onExecute={handleExecuteClick}
                   onResetStage={onResetStage}
+                  onCancel={onCancel}
                   reportDepth={reportDepth}
                   onReportDepthChange={handleReportDepthChange}
                   reportId={reportId}

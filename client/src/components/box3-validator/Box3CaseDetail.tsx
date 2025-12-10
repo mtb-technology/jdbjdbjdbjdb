@@ -269,6 +269,9 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   const [selectedYear, setSelectedYear] = useState<string | null>(availableYears[0] || null);
   const [activeYearTab, setActiveYearTab] = useState("assets");
 
+  // Per-person view: null = household view, string = specific person id
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+
   // Extract data from blueprint
   const taxYears = dossier.taxYears || [];
   const hasFiscalPartner = blueprint?.fiscal_entity?.fiscal_partner?.has_partner || false;
@@ -1250,13 +1253,64 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                       );
                     })()}
 
-                    {/* Year-specific tabs - Box 3 categories */}
-                    <Tabs value={activeYearTab} onValueChange={setActiveYearTab}>
-                      <TabsList className="mb-4">
-                        <TabsTrigger value="assets">Vermogen</TabsTrigger>
-                        <TabsTrigger value="debts">Schulden</TabsTrigger>
-                        <TabsTrigger value="overview">Aanslag/Aangifte</TabsTrigger>
-                      </TabsList>
+                    {/* Person selector + Year-specific tabs */}
+                    {(() => {
+                      // Build person options
+                      const personOptions: { id: string | null; name: string; allocation?: number }[] = [
+                        { id: null, name: 'Huishouden (totaal)' },
+                      ];
+                      if (blueprint.fiscal_entity?.taxpayer) {
+                        const tp = blueprint.fiscal_entity.taxpayer;
+                        const tpAlloc = blueprint.tax_authority_data?.[selectedYear]?.per_person?.[tp.id || 'tp_01']?.allocation_percentage;
+                        personOptions.push({
+                          id: tp.id || 'tp_01',
+                          name: tp.name || 'Belastingplichtige',
+                          allocation: tpAlloc,
+                        });
+                      }
+                      if (blueprint.fiscal_entity?.fiscal_partner?.has_partner) {
+                        const fp = blueprint.fiscal_entity.fiscal_partner;
+                        const fpAlloc = blueprint.tax_authority_data?.[selectedYear]?.per_person?.[fp.id || 'fp_01']?.allocation_percentage;
+                        personOptions.push({
+                          id: fp.id || 'fp_01',
+                          name: fp.name || 'Fiscaal Partner',
+                          allocation: fpAlloc,
+                        });
+                      }
+
+                      return (
+                        <>
+                          {/* Person selector - only show if there's a partner */}
+                          {personOptions.length > 2 && (
+                            <div className="flex items-center gap-2 mb-4 p-2 bg-muted/30 rounded-lg">
+                              <span className="text-sm text-muted-foreground">Bekijk voor:</span>
+                              <div className="flex gap-1">
+                                {personOptions.map((person) => (
+                                  <button
+                                    key={person.id || 'all'}
+                                    onClick={() => setSelectedPersonId(person.id)}
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                                      selectedPersonId === person.id
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'bg-background hover:bg-muted border'
+                                    }`}
+                                  >
+                                    {person.name}
+                                    {person.allocation != null && (
+                                      <span className="ml-1 text-xs opacity-70">({person.allocation}%)</span>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <Tabs value={activeYearTab} onValueChange={setActiveYearTab}>
+                            <TabsList className="mb-4">
+                              <TabsTrigger value="assets">Vermogen</TabsTrigger>
+                              <TabsTrigger value="debts">Schulden</TabsTrigger>
+                              <TabsTrigger value="overview">Aanslag/Aangifte</TabsTrigger>
+                            </TabsList>
 
                       {/* Overview for selected year */}
                       <TabsContent value="overview" className="space-y-4">
@@ -1358,18 +1412,35 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           const investments = blueprint.assets?.investments || [];
                           const realEstate = blueprint.assets?.real_estate || [];
 
-                          // Filter assets that have data for this year
-                          const yearBankSavings = bankSavings.filter(a => a.yearly_data?.[selectedYear]);
-                          const yearInvestments = investments.filter(a => a.yearly_data?.[selectedYear]);
-                          const yearRealEstate = realEstate.filter(a => a.yearly_data?.[selectedYear]);
+                          // Filter assets that have data for this year AND match selected person (if any)
+                          // owner_id is "tp_01", "fp_01", or "joint"
+                          const matchesPerson = (asset: { owner_id?: string }) => {
+                            if (!selectedPersonId) return true; // Household view shows all
+                            if (asset.owner_id === 'joint') return true; // Joint assets show for both
+                            return asset.owner_id === selectedPersonId;
+                          };
+
+                          const yearBankSavings = bankSavings.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+                          const yearInvestments = investments.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+                          const yearRealEstate = realEstate.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
 
                           const hasYearAssets = yearBankSavings.length > 0 || yearInvestments.length > 0 || yearRealEstate.length > 0;
+
+                          // Get selected person name for display
+                          let selectedPersonName = 'dit huishouden';
+                          if (selectedPersonId) {
+                            if (selectedPersonId === blueprint.fiscal_entity?.taxpayer?.id) {
+                              selectedPersonName = blueprint.fiscal_entity.taxpayer.name || 'de belastingplichtige';
+                            } else if (selectedPersonId === blueprint.fiscal_entity?.fiscal_partner?.id) {
+                              selectedPersonName = blueprint.fiscal_entity.fiscal_partner.name || 'de fiscaal partner';
+                            }
+                          }
 
                           if (!hasYearAssets) {
                             return (
                               <Card className="border-dashed">
                                 <CardContent className="py-8 text-center text-muted-foreground">
-                                  Geen vermogensbestanddelen gevonden voor {selectedYear}
+                                  Geen vermogensbestanddelen gevonden voor {selectedPersonName} in {selectedYear}
                                 </CardContent>
                               </Card>
                             );
@@ -1659,13 +1730,32 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                       <TabsContent value="debts" className="space-y-4">
                         {(() => {
                           const debts = blueprint.debts || [];
-                          const yearDebts = debts.filter(d => d.yearly_data?.[selectedYear]);
+
+                          // Filter debts that have data for this year AND match selected person (if any)
+                          // owner_id is "tp_01", "fp_01", or "joint"
+                          const matchesPerson = (debt: { owner_id?: string }) => {
+                            if (!selectedPersonId) return true; // Household view shows all
+                            if (debt.owner_id === 'joint') return true; // Joint debts show for both
+                            return debt.owner_id === selectedPersonId;
+                          };
+
+                          const yearDebts = debts.filter(d => d.yearly_data?.[selectedYear] && matchesPerson(d));
+
+                          // Get selected person name for display
+                          let selectedPersonName = 'dit huishouden';
+                          if (selectedPersonId) {
+                            if (selectedPersonId === blueprint.fiscal_entity?.taxpayer?.id) {
+                              selectedPersonName = blueprint.fiscal_entity.taxpayer.name || 'de belastingplichtige';
+                            } else if (selectedPersonId === blueprint.fiscal_entity?.fiscal_partner?.id) {
+                              selectedPersonName = blueprint.fiscal_entity.fiscal_partner.name || 'de fiscaal partner';
+                            }
+                          }
 
                           if (yearDebts.length === 0) {
                             return (
                               <Card className="border-dashed">
                                 <CardContent className="py-8 text-center text-muted-foreground">
-                                  Geen schulden gevonden voor {selectedYear}
+                                  Geen schulden gevonden voor {selectedPersonName} in {selectedYear}
                                 </CardContent>
                               </Card>
                             );
@@ -1756,7 +1846,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         })()}
                       </TabsContent>
 
-                    </Tabs>
+                          </Tabs>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
 

@@ -81,6 +81,7 @@ export const WorkflowView = memo(function WorkflowView({
   const {
     handleExecuteStage,
     handleResetStage,
+    handleCancelStage,
     handleFeedbackProcessed,
     handleReloadPrompts,
     isReloadingPrompts,
@@ -276,6 +277,7 @@ export const WorkflowView = memo(function WorkflowView({
                         isProcessing={isProcessing}
                         onExecute={(customContext, reportDepth, pendingAttachments) => handleExecuteStage(stage.key, customContext, reportDepth, pendingAttachments)}
                         onResetStage={() => handleResetStage(stage.key)}
+                        onCancel={() => handleCancelStage(stage.key)}
                         isInputCollapsed={isSectionCollapsed(stage.key, "input")}
                         isOutputCollapsed={isSectionCollapsed(stage.key, "output")}
                         isPromptCollapsed={isSectionCollapsed(stage.key, "prompt")}

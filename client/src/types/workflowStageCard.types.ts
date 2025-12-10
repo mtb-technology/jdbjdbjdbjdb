@@ -56,6 +56,7 @@ export interface WorkflowStageCardProps {
   isProcessing: boolean;
   onExecute: (customContext?: string, reportDepth?: ReportDepth, pendingAttachments?: PendingFile[]) => void;
   onResetStage?: () => void;
+  onCancel?: () => void;
 
   // Stage 1a/1b email generation
   emailOutput?: string;
@@ -153,6 +154,7 @@ export interface StageActionButtonsProps {
   onCustomContextChange: (value: string) => void;
   onExecute: () => void;
   onResetStage?: () => void;
+  onCancel?: () => void;
   /** Report depth for Stage 3 */
   reportDepth?: ReportDepth;
   onReportDepthChange?: (depth: ReportDepth) => void;
