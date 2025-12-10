@@ -23,6 +23,9 @@ async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promi
         continue;
       }
 
+      // Mark as processing
+      await storage.updateAttachment(attachmentId, { ocrStatus: 'processing' });
+
       console.log(`📎 [${reportId}] Running OCR for: ${attachment.filename}`);
 
       const factory = AIModelFactory.getInstance();
@@ -65,6 +68,7 @@ async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promi
         await storage.updateAttachment(attachmentId, {
           extractedText: ocrResult.content,
           needsVisionOCR: false, // OCR complete
+          ocrStatus: 'completed',
         });
         console.log(`📎 [${reportId}] ✅ Async OCR complete for ${attachment.filename}: ${ocrResult.content.length} chars`);
       } else {
@@ -73,6 +77,7 @@ async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promi
         await storage.updateAttachment(attachmentId, {
           extractedText: `[OCR kon geen tekst extraheren uit: ${attachment.filename}]`,
           needsVisionOCR: false,
+          ocrStatus: 'failed',
         });
       }
     } catch (error: any) {
@@ -82,6 +87,7 @@ async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promi
         await storage.updateAttachment(attachmentId, {
           extractedText: `[OCR mislukt: ${error.message}]`,
           needsVisionOCR: false,
+          ocrStatus: 'failed',
         });
       } catch (e) {
         // Ignore update errors
@@ -645,9 +651,10 @@ fileUploadRouter.post(
           fileData,
           extractedText: extractedText || null,
           needsVisionOCR,
+          ocrStatus: needsVisionOCR ? 'pending' : 'none',
           usedInStages: [],
         });
-        console.log(`📎 [${reportId}] Saved attachment: ${attachment.id}${needsVisionOCR ? ' (needs Vision OCR)' : ''}`);
+        console.log(`📎 [${reportId}] Saved attachment: ${attachment.id}${needsVisionOCR ? ' (needs Vision OCR - status: pending)' : ''}`);
 
         const { fileData: _, ...attachmentWithoutData } = attachment;
         results.push({

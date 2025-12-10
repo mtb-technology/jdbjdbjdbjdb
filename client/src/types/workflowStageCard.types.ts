@@ -167,6 +167,8 @@ export interface StageActionButtonsProps {
   pendingAttachments?: PendingFile[];
   onAttachmentsChange?: (files: PendingFile[]) => void;
   isUploadingAttachments?: boolean;
+  /** Block reason - if set, stage execution is blocked */
+  blockReason?: string;
 }
 
 /**

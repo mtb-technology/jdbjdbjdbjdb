@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ReactMarkdown from "react-markdown";
 import {
   Settings as SettingsIcon,
   Mail,
@@ -25,7 +26,9 @@ import {
   XCircle,
   MessageSquare,
   Code2,
-  Check
+  Check,
+  Pencil,
+  Eye
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AppHeader } from "@/components/app-header";
@@ -151,26 +154,6 @@ interface SimpleEmailResponse {
   };
 }
 
-// Helper function to strip markdown formatting for clean copy-paste
-function stripMarkdown(text: string): string {
-  return text
-    // Remove bold **text** or __text__
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    // Remove italic *text* or _text_
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/_([^_]+)_/g, '$1')
-    // Remove headers # ## ### etc
-    .replace(/^#{1,6}\s+/gm, '')
-    // Remove bullet points - or *
-    .replace(/^[\s]*[-*]\s+/gm, '• ')
-    // Remove numbered lists formatting but keep numbers
-    .replace(/^[\s]*(\d+)\.\s+/gm, '$1. ')
-    // Clean up excessive whitespace
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
 const FollowUpAssistant = memo(function FollowUpAssistant() {
   // Tab state
   const [activeTab, setActiveTab] = useState<"rapport" | "simpel" | "extern">("rapport");
@@ -217,6 +200,12 @@ const FollowUpAssistant = memo(function FollowUpAssistant() {
   const [simpleCopied, setSimpleCopied] = useState(false);
   const [simpleBodyCopied, setSimpleBodyCopied] = useState(false);
   const [simpleSubjectCopied, setSimpleSubjectCopied] = useState(false);
+  const [simpleEmailEditMode, setSimpleEmailEditMode] = useState(false);
+
+  // Edit/view mode and copy state for "Met Rapport" tab
+  const [rapportEmailEditMode, setRapportEmailEditMode] = useState(false);
+  const [rapportSubjectCopied, setRapportSubjectCopied] = useState(false);
+  const [rapportBodyCopied, setRapportBodyCopied] = useState(false);
 
   // === External report tab state ===
   const [externalSessionIdToLoad, setExternalSessionIdToLoad] = useState<string | undefined>();
@@ -617,16 +606,7 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
         throw new Error("Server antwoord heeft niet de verwachte structuur");
       }
 
-      // Clean the body from markdown formatting for proper copy-paste
-      const cleanedResult = {
-        ...result,
-        concept_email: {
-          ...result.concept_email,
-          body: stripMarkdown(result.concept_email.body)
-        }
-      };
-
-      setSimpleResponse(cleanedResult);
+      setSimpleResponse(result);
       setShowSimpleOutput(true);
 
       toast({
@@ -723,10 +703,7 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
       if (result.concept_email) {
         setSimpleResponse({
           ...simpleResponse,
-          concept_email: {
-            ...result.concept_email,
-            body: stripMarkdown(result.concept_email.body)
-          },
+          concept_email: result.concept_email,
         });
         setSimpleFeedbackInput("");
         toast({
@@ -1077,9 +1054,27 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
                 {/* Draft Email Block */}
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="concept_onderwerp" className="text-sm font-medium">
-                      Onderwerp:
-                    </Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="concept_onderwerp" className="text-sm font-medium">
+                        Onderwerp:
+                      </Label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2"
+                        onClick={() => {
+                          navigator.clipboard.writeText(assistantResponse.concept_email.onderwerp);
+                          setRapportSubjectCopied(true);
+                          setTimeout(() => setRapportSubjectCopied(false), 2000);
+                        }}
+                      >
+                        {rapportSubjectCopied ? (
+                          <Check className="h-3 w-3 text-green-600" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </Button>
+                    </div>
                     <Input
                       id="concept_onderwerp"
                       value={assistantResponse.concept_email.onderwerp}
@@ -1095,21 +1090,60 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
                   </div>
 
                   <div>
-                    <Label htmlFor="concept_body" className="text-sm font-medium">
-                      E-mail Body:
-                    </Label>
-                    <Textarea
-                      id="concept_body"
-                      value={assistantResponse.concept_email.body}
-                      onChange={(e) => setAssistantResponse({
-                        ...assistantResponse,
-                        concept_email: {
-                          ...assistantResponse.concept_email,
-                          body: e.target.value,
-                        },
-                      })}
-                      className="mt-2 min-h-64 font-sans"
-                    />
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="concept_body" className="text-sm font-medium">
+                        E-mail Body:
+                      </Label>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2"
+                          onClick={() => setRapportEmailEditMode(!rapportEmailEditMode)}
+                          title={rapportEmailEditMode ? "Bekijk preview" : "Bewerken"}
+                        >
+                          {rapportEmailEditMode ? (
+                            <Eye className="h-3 w-3" />
+                          ) : (
+                            <Pencil className="h-3 w-3" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2"
+                          onClick={() => {
+                            navigator.clipboard.writeText(assistantResponse.concept_email.body);
+                            setRapportBodyCopied(true);
+                            setTimeout(() => setRapportBodyCopied(false), 2000);
+                          }}
+                        >
+                          {rapportBodyCopied ? (
+                            <Check className="h-3 w-3 text-green-600" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    {rapportEmailEditMode ? (
+                      <Textarea
+                        id="concept_body"
+                        value={assistantResponse.concept_email.body}
+                        onChange={(e) => setAssistantResponse({
+                          ...assistantResponse,
+                          concept_email: {
+                            ...assistantResponse.concept_email,
+                            body: e.target.value,
+                          },
+                        })}
+                        className="mt-2 min-h-64 font-sans"
+                      />
+                    ) : (
+                      <div className="mt-2 min-h-64 p-4 border rounded-md bg-background prose prose-sm max-w-none dark:prose-invert">
+                        <ReactMarkdown>{assistantResponse.concept_email.body}</ReactMarkdown>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1358,35 +1392,56 @@ Pas de e-mail aan op basis van deze feedback. Genereer ALLEEN de volgende JSON (
                             <Label htmlFor="simple_body" className="text-sm font-medium">
                               E-mail Body:
                             </Label>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-2"
-                              onClick={() => {
-                                navigator.clipboard.writeText(simpleResponse.concept_email.body);
-                                setSimpleBodyCopied(true);
-                                setTimeout(() => setSimpleBodyCopied(false), 2000);
-                              }}
-                            >
-                              {simpleBodyCopied ? (
-                                <Check className="h-3 w-3 text-green-600" />
-                              ) : (
-                                <Copy className="h-3 w-3" />
-                              )}
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2"
+                                onClick={() => setSimpleEmailEditMode(!simpleEmailEditMode)}
+                                title={simpleEmailEditMode ? "Bekijk preview" : "Bewerken"}
+                              >
+                                {simpleEmailEditMode ? (
+                                  <Eye className="h-3 w-3" />
+                                ) : (
+                                  <Pencil className="h-3 w-3" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(simpleResponse.concept_email.body);
+                                  setSimpleBodyCopied(true);
+                                  setTimeout(() => setSimpleBodyCopied(false), 2000);
+                                }}
+                              >
+                                {simpleBodyCopied ? (
+                                  <Check className="h-3 w-3 text-green-600" />
+                                ) : (
+                                  <Copy className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </div>
                           </div>
-                          <Textarea
-                            id="simple_body"
-                            value={simpleResponse.concept_email.body}
-                            onChange={(e) => setSimpleResponse({
-                              ...simpleResponse,
-                              concept_email: {
-                                ...simpleResponse.concept_email,
-                                body: e.target.value,
-                              },
-                            })}
-                            className="mt-2 min-h-64 font-sans"
-                          />
+                          {simpleEmailEditMode ? (
+                            <Textarea
+                              id="simple_body"
+                              value={simpleResponse.concept_email.body}
+                              onChange={(e) => setSimpleResponse({
+                                ...simpleResponse,
+                                concept_email: {
+                                  ...simpleResponse.concept_email,
+                                  body: e.target.value,
+                                },
+                              })}
+                              className="mt-2 min-h-64 font-sans"
+                            />
+                          ) : (
+                            <div className="mt-2 min-h-64 p-4 border rounded-md bg-background prose prose-sm max-w-none dark:prose-invert">
+                              <ReactMarkdown>{simpleResponse.concept_email.body}</ReactMarkdown>
+                            </div>
+                          )}
                         </div>
                       </div>
 

@@ -309,16 +309,32 @@ export const StageActionButtons = memo(function StageActionButtons({
   pendingAttachments,
   onAttachmentsChange,
   isUploadingAttachments,
+  blockReason,
 }: StageActionButtonsProps) {
   // Check if this is Stage 3 (generatie)
   const isStage3 = stageKey === "3_generatie";
   // Check if this is Stage 2 (complexiteitscheck)
   const isStage2 = stageKey === "2_complexiteitscheck";
+  // Execution is blocked if there's a blockReason
+  const isBlocked = !!blockReason;
+  // Effective canExecute takes blockReason into account
+  const effectiveCanExecute = canExecute && !isBlocked;
 
   return (
     <div className="space-y-3">
+      {/* Block Reason Warning - Show when stage is blocked */}
+      {isBlocked && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+          <Loader2 className="w-4 h-4 text-amber-600 animate-spin flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-amber-800">Stage geblokkeerd</p>
+            <p className="text-xs text-amber-700 mt-0.5">{blockReason}</p>
+          </div>
+        </div>
+      )}
+
       {/* Report Depth Selector - Only show for Stage 3 */}
-      {isStage3 && canExecute && onReportDepthChange && (
+      {isStage3 && effectiveCanExecute && onReportDepthChange && (
         <ReportDepthSelector
           reportDepth={reportDepth}
           onReportDepthChange={onReportDepthChange}
@@ -326,7 +342,7 @@ export const StageActionButtons = memo(function StageActionButtons({
       )}
 
       {/* Custom Context Section - Always show when stage can execute */}
-      {canExecute && (
+      {effectiveCanExecute && (
         <CustomContextSection
           stageKey={stageKey}
           stageStatus={stageStatus}
@@ -355,9 +371,10 @@ export const StageActionButtons = memo(function StageActionButtons({
 
         <Button
           onClick={onExecute}
-          disabled={!canExecute || isProcessing}
+          disabled={!effectiveCanExecute || isProcessing}
           className="flex-1"
           variant={stageStatus === "completed" ? "outline" : "default"}
+          title={isBlocked ? blockReason : undefined}
         >
           {isProcessing ? (
             <>

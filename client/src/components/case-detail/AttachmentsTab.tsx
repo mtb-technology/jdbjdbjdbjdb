@@ -41,11 +41,19 @@ function getFileIcon(mimeType: string | undefined) {
 }
 
 /**
- * Check if OCR is still pending (placeholder text present)
+ * Check if OCR is still pending
+ * Uses ocrStatus field if available, falls back to text-based detection
  * Exported for use in workflow blocking logic
  */
 export function isOcrPending(attachment: Attachment): boolean {
   if (!attachment.needsVisionOCR) return false;
+
+  // Use ocrStatus if available (preferred)
+  if (attachment.ocrStatus) {
+    return attachment.ocrStatus === 'pending' || attachment.ocrStatus === 'processing';
+  }
+
+  // Fallback to text-based detection for backwards compatibility
   const text = attachment.extractedText || '';
   return text.includes('OCR wordt verwerkt') || text.includes('OCR mislukt') || text.length < 100;
 }
@@ -54,12 +62,25 @@ export function isOcrPending(attachment: Attachment): boolean {
  * Get status badge for attachment
  */
 function getStatusBadge(attachment: Attachment) {
+  // Check OCR status first if available
+  if (attachment.ocrStatus === 'failed') {
+    return (
+      <Badge
+        variant="outline"
+        className="bg-red-50 text-red-700 border-red-200"
+      >
+        <AlertCircle className="h-3 w-3 mr-1" />
+        OCR mislukt
+      </Badge>
+    );
+  }
+
   // Check if OCR is still in progress
   if (attachment.needsVisionOCR && isOcrPending(attachment)) {
     return (
       <Badge
         variant="outline"
-        className="bg-blue-50 text-blue-700 border-blue-200 animate-pulse"
+        className="bg-blue-50 text-blue-700 border-blue-200"
       >
         <Loader2 className="h-3 w-3 mr-1 animate-spin" />
         OCR bezig...

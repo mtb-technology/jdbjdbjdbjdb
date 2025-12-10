@@ -122,6 +122,8 @@ export function useStageActions({
 
   /**
    * Cancel a running stage execution
+   * Note: Cancel only works for SSE streaming sessions. For regular API calls,
+   * the request cannot be cancelled once sent.
    */
   const handleCancelStage = useCallback(
     async (stageKey: string) => {
@@ -134,7 +136,23 @@ export function useStageActions({
         );
 
         if (!response.ok) {
-          throw new Error("Failed to cancel stage");
+          const errorData = await response.json().catch(() => ({}));
+          // Check if error is "no active session" - this is expected for non-streaming calls
+          if (errorData.code === 'SESSION_NOT_FOUND') {
+            // Clear local processing state anyway - the API call may have finished
+            dispatch({
+              type: "SET_STAGE_PROCESSING",
+              stage: stageKey,
+              isProcessing: false,
+            });
+            toast({
+              title: "Geen actieve sessie",
+              description: "De AI-aanroep kan niet worden geannuleerd. Wacht tot deze is voltooid of ververs de pagina.",
+              duration: 4000,
+            });
+            return;
+          }
+          throw new Error(errorData.message || "Failed to cancel stage");
         }
 
         // Clear the processing state
@@ -152,9 +170,15 @@ export function useStageActions({
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";
         console.error("Failed to cancel stage:", error);
+        // Clear local processing state on error - allow user to retry
+        dispatch({
+          type: "SET_STAGE_PROCESSING",
+          stage: stageKey,
+          isProcessing: false,
+        });
         toast({
           title: "Kon niet stoppen",
-          description: "Er ging iets mis bij het annuleren",
+          description: "De AI-aanroep kan niet worden geannuleerd. Ververs de pagina indien nodig.",
           variant: "destructive",
           duration: 5000,
         });

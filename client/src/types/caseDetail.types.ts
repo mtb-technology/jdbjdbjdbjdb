@@ -29,6 +29,8 @@ export interface Attachment {
   pageCount?: number;
   extractedText?: string;
   needsVisionOCR?: boolean;
+  /** OCR processing status: 'none' | 'pending' | 'processing' | 'completed' | 'failed' */
+  ocrStatus?: 'none' | 'pending' | 'processing' | 'completed' | 'failed';
   usedInStages?: string[];
 }
 

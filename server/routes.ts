@@ -24,7 +24,7 @@ import { fileUploadRouter } from "./routes/file-upload-routes";
 import { registerHealthRoutes } from "./routes/health-routes";
 import { registerPromptRoutes } from "./routes/prompt-routes";
 import { registerCaseRoutes } from "./routes/case-routes";
-import { registerReportRoutes } from "./routes/report-routes";
+import { registerReportRoutes } from "./routes/report-routes/index";
 import { registerJobRoutes } from "./routes/job-routes";
 import { box3V2Router } from "./routes/box3-v2-routes";
 import { externalReportRouter } from "./routes/external-report-routes";

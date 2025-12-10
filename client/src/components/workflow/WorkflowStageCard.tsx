@@ -191,6 +191,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   pendingAttachments={pendingAttachments}
                   onAttachmentsChange={setPendingAttachments}
                   isUploadingAttachments={isProcessing}
+                  blockReason={blockReason}
                 />
               )}
 
