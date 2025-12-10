@@ -23,12 +23,13 @@ async function getPdfParse() {
 }
 
 // Configure multer for memory storage (we'll process files in memory)
+// ✅ FIXED: Increased limits to handle large PDFs (up to 50MB per file)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 25 * 1024 * 1024, // 25MB max per file
+    fileSize: 50 * 1024 * 1024, // 50MB max per file (was 25MB - too small for large PDFs)
     files: 20, // Max 20 files per request
-    fieldSize: 100 * 1024 * 1024, // 100MB total field size
+    fieldSize: 200 * 1024 * 1024, // 200MB total field size (doubled for safety)
   },
   fileFilter: (req, file, cb) => {
     // Accept PDF, TXT, images, and common document formats
@@ -334,7 +335,28 @@ fileUploadRouter.post(
  */
 fileUploadRouter.post(
   "/attachments/:reportId",
-  upload.single('file'),
+  (req: Request, res: Response, next: NextFunction) => {
+    console.log(`📎 [${req.params.reportId}] Single file upload request, Content-Length: ${req.headers['content-length']} bytes`);
+
+    upload.single('file')(req, res, (err: any) => {
+      if (err) {
+        console.error('📎 Multer single upload error:', err.code, err.message);
+
+        let userMessage = err.message || 'Bestand upload mislukt';
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          userMessage = `Bestand is te groot. Maximum grootte is 50MB.`;
+        }
+
+        return res.status(400).json(createApiErrorResponse(
+          'VALIDATION_ERROR',
+          ERROR_CODES.VALIDATION_FAILED,
+          userMessage,
+          err.message
+        ));
+      }
+      next();
+    });
+  },
   asyncHandler(async (req: Request, res: Response) => {
     const { reportId } = req.params;
 
@@ -409,15 +431,37 @@ fileUploadRouter.post(
   "/attachments/:reportId/batch",
   (req: Request, res: Response, next: NextFunction) => {
     console.log(`📎 [${req.params.reportId}] Batch upload request received`);
-    // Wrap multer to catch file filter errors
+    console.log(`📎 Content-Length: ${req.headers['content-length']} bytes`);
+
+    // Wrap multer to catch file filter and size limit errors
     upload.array('files', 20)(req, res, (err: any) => {
       if (err) {
-        console.error('📎 Multer error:', err.message, err.stack);
+        console.error('📎 Multer error:', err.code, err.message, err.stack);
+
+        // Provide clear error messages for common issues
+        let userMessage = err.message || 'Bestand upload mislukt';
+        let technicalMessage = err.message;
+
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          const maxSizeMB = 50;
+          userMessage = `Bestand is te groot. Maximum grootte is ${maxSizeMB}MB per bestand.`;
+          technicalMessage = `File exceeds ${maxSizeMB}MB limit`;
+        } else if (err.code === 'LIMIT_FILE_COUNT') {
+          userMessage = 'Te veel bestanden. Maximum is 20 bestanden per keer.';
+          technicalMessage = 'Too many files (max 20)';
+        } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+          userMessage = 'Onverwacht bestandsveld. Gebruik het veld "files" voor uploads.';
+          technicalMessage = 'Unexpected field name';
+        } else if (err.code === 'LIMIT_FIELD_VALUE') {
+          userMessage = 'Totale upload grootte te groot. Probeer minder bestanden tegelijk.';
+          technicalMessage = 'Total field value too large';
+        }
+
         return res.status(400).json(createApiErrorResponse(
           'VALIDATION_ERROR',
           ERROR_CODES.VALIDATION_FAILED,
-          err.message || 'Bestand upload mislukt',
-          err.message
+          userMessage,
+          technicalMessage
         ));
       }
       console.log(`📎 [${req.params.reportId}] Multer processing complete, files:`, req.files?.length || 0);

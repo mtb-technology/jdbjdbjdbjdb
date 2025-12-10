@@ -1,17 +1,6 @@
-import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type Box3ValidatorSession, type InsertBox3ValidatorSession, type ExternalReportSession, type InsertExternalReportSession, type ExternalReportAdjustment, type InsertExternalReportAdjustment, type Job, type InsertJob, type Box3Dossier, type InsertBox3Dossier, type Box3Document, type InsertBox3Document, type Box3BlueprintRecord, type InsertBox3BlueprintRecord, type Box3Blueprint } from "@shared/schema";
+import { type User, type InsertUser, type Report, type InsertReport, type Source, type InsertSource, type PromptConfigRecord, type InsertPromptConfig, type FollowUpSession, type InsertFollowUpSession, type FollowUpThread, type InsertFollowUpThread, type Attachment, type InsertAttachment, type ExternalReportSession, type InsertExternalReportSession, type ExternalReportAdjustment, type InsertExternalReportAdjustment, type Job, type InsertJob, type Box3Dossier, type InsertBox3Dossier, type Box3Document, type InsertBox3Document, type Box3BlueprintRecord, type InsertBox3BlueprintRecord, type Box3Blueprint } from "@shared/schema";
 
-// Light version of Box3ValidatorSession for list views (excludes large binary data)
-export type Box3ValidatorSessionLight = {
-  id: string;
-  clientName: string;
-  belastingjaar: string | null;
-  attachmentNames: string[] | null;
-  isMultiYear: boolean | null;
-  dossierStatus: string | null;
-  createdAt: Date | null;
-  updatedAt: Date | null;
-};
-import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, box3ValidatorSessions, externalReportSessions, externalReportAdjustments, jobs, box3Dossiers, box3Documents, box3Blueprints } from "@shared/schema";
+import { users, reports, sources, promptConfigs, followUpSessions, followUpThreads, attachments, externalReportSessions, externalReportAdjustments, jobs, box3Dossiers, box3Documents, box3Blueprints } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql, inArray } from "drizzle-orm";
 import * as fs from "fs";
@@ -63,13 +52,7 @@ export interface IStorage {
   updateAttachment(id: string, data: Partial<Attachment>): Promise<Attachment | undefined>;
   deleteAttachment(id: string): Promise<void>;
 
-  // Box 3 Validator Sessions
-  getBox3ValidatorSession(id: string): Promise<Box3ValidatorSession | undefined>;
-  getAllBox3ValidatorSessions(): Promise<Box3ValidatorSession[]>;
-  getAllBox3ValidatorSessionsLight(): Promise<Box3ValidatorSessionLight[]>;
-  createBox3ValidatorSession(session: InsertBox3ValidatorSession): Promise<Box3ValidatorSession>;
-  updateBox3ValidatorSession(id: string, data: Partial<Box3ValidatorSession>): Promise<Box3ValidatorSession | undefined>;
-  deleteBox3ValidatorSession(id: string): Promise<void>;
+  // Box 3 Validator V1 Sessions - REMOVED (see V2 methods below)
 
   // External Report Sessions
   getExternalReportSession(id: string): Promise<ExternalReportSession | undefined>;
@@ -680,47 +663,8 @@ export class DatabaseStorage implements IStorage {
     await db.delete(attachments).where(eq(attachments.id, id));
   }
 
-  // Box 3 Validator Session methods
-  async getBox3ValidatorSession(id: string): Promise<Box3ValidatorSession | undefined> {
-    const [session] = await db.select().from(box3ValidatorSessions).where(eq(box3ValidatorSessions.id, id));
-    return session || undefined;
-  }
-
-  async getAllBox3ValidatorSessions(): Promise<Box3ValidatorSession[]> {
-    return await db.select().from(box3ValidatorSessions).orderBy(desc(box3ValidatorSessions.createdAt));
-  }
-
-  async getAllBox3ValidatorSessionsLight(): Promise<Box3ValidatorSessionLight[]> {
-    // Only select columns needed for list view - excludes large binary data (attachments, validationResult, etc.)
-    return await db.select({
-      id: box3ValidatorSessions.id,
-      clientName: box3ValidatorSessions.clientName,
-      belastingjaar: box3ValidatorSessions.belastingjaar,
-      attachmentNames: box3ValidatorSessions.attachmentNames,
-      isMultiYear: box3ValidatorSessions.isMultiYear,
-      dossierStatus: box3ValidatorSessions.dossierStatus,
-      createdAt: box3ValidatorSessions.createdAt,
-      updatedAt: box3ValidatorSessions.updatedAt,
-    }).from(box3ValidatorSessions).orderBy(desc(box3ValidatorSessions.createdAt));
-  }
-
-  async createBox3ValidatorSession(insertSession: InsertBox3ValidatorSession): Promise<Box3ValidatorSession> {
-    const [session] = await db.insert(box3ValidatorSessions).values(insertSession).returning();
-    return session;
-  }
-
-  async updateBox3ValidatorSession(id: string, updateData: Partial<Box3ValidatorSession>): Promise<Box3ValidatorSession | undefined> {
-    const [updated] = await db
-      .update(box3ValidatorSessions)
-      .set({ ...updateData, updatedAt: new Date() })
-      .where(eq(box3ValidatorSessions.id, id))
-      .returning();
-    return updated || undefined;
-  }
-
-  async deleteBox3ValidatorSession(id: string): Promise<void> {
-    await db.delete(box3ValidatorSessions).where(eq(box3ValidatorSessions.id, id));
-  }
+  // Box 3 Validator V1 Session methods - REMOVED
+  // Use Box 3 V2 methods below: getBox3Dossier, createBox3Dossier, etc.
 
   // External Report Session methods
   async getExternalReportSession(id: string): Promise<ExternalReportSession | undefined> {

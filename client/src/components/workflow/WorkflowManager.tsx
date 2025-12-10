@@ -158,11 +158,24 @@ function WorkflowManagerContent({
     },
   });
 
+  // ✅ File size validation constants
+  const MAX_FILE_SIZE_MB = 50;
+  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
   // Execute stage mutation
   const executeStageM = useMutation({
     mutationFn: async ({ reportId, stage, customInput, reportDepth, pendingAttachments }: { reportId: string; stage: string; customInput?: string; reportDepth?: string; pendingAttachments?: Array<{ file: File; name: string }> }) => {
       // Upload attachments first if present (only for Stage 1a re-run)
       if (pendingAttachments && pendingAttachments.length > 0 && stage === "1a_informatiecheck") {
+        // ✅ Client-side file size validation
+        const oversizedFiles = pendingAttachments.filter(pf => pf.file.size > MAX_FILE_SIZE_BYTES);
+        if (oversizedFiles.length > 0) {
+          const names = oversizedFiles
+            .map(f => `${f.name} (${(f.file.size / 1024 / 1024).toFixed(1)}MB)`)
+            .join(', ');
+          throw new Error(`Bestand(en) te groot (max ${MAX_FILE_SIZE_MB}MB): ${names}`);
+        }
+
         console.log(`📎 Uploading ${pendingAttachments.length} attachment(s) before Stage 1a re-run...`);
 
         const formData = new FormData();
@@ -183,6 +196,9 @@ function WorkflowManagerContent({
 
         const uploadResult = await uploadResponse.json();
         console.log(`📎 Upload complete: ${uploadResult.data?.successful || 0} file(s) uploaded`);
+
+        // Invalidate attachments query so the bijlage-tab updates
+        queryClient.invalidateQueries({ queryKey: [`/api/upload/attachments/${reportId}`] });
       }
 
       const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {

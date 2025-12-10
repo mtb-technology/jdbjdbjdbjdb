@@ -25,6 +25,7 @@ import {
   X,
   Loader2,
   Paperclip,
+  Info,
 } from "lucide-react";
 import { ExpressModeButton } from "../ExpressModeButton";
 import type { StageActionButtonsProps, ReportDepth, PendingFile } from "@/types/workflowStageCard.types";
@@ -83,8 +84,27 @@ const CustomContextSection = memo(function CustomContextSection({
     onAttachmentsChange(pendingAttachments.filter(f => f.name !== fileName));
   };
 
+  const isRerun = stageStatus === "completed";
+
   return (
     <div className="bg-purple-50 dark:bg-purple-950/20 border-2 border-purple-200 dark:border-purple-800 rounded-lg p-4">
+      {/* Re-run info box for Stage 1a - always visible when it's a re-run */}
+      {isStage1a && isRerun && (
+        <div className="mb-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
+          <div className="flex items-start gap-2">
+            <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
+              <p className="font-semibold">Hoe werkt re-run na INCOMPLEET?</p>
+              <ul className="list-disc list-inside space-y-0.5 text-blue-700 dark:text-blue-300">
+                <li><strong>Bestaande bijlages blijven behouden</strong> - je hoeft ze niet opnieuw te uploaden</li>
+                <li><strong>Nieuwe bijlages worden toegevoegd</strong> - upload hier alleen de extra documenten</li>
+                <li>De AI analyseert alle bijlages (oud + nieuw) samen met de originele dossierdata</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       <button
         onClick={onToggleCustomContext}
         className="w-full flex items-center justify-between text-left"
@@ -93,13 +113,16 @@ const CustomContextSection = memo(function CustomContextSection({
           <MessageSquare className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <h4 className="font-semibold text-sm text-purple-900 dark:text-purple-100">
-              {stageStatus === "completed"
-                ? "Extra Context voor Re-run (optioneel)"
+              {isRerun
+                ? "Extra Context & Bijlages voor Re-run"
                 : "Extra Context (optioneel)"}
             </h4>
             <p className="text-xs text-purple-700 dark:text-purple-300 mt-1">
-              Voeg extra instructies of context toe die de AI moet gebruiken
-              {isStage1a && " • Upload extra bijlages voor heranalyse"}
+              {isStage1a && isRerun
+                ? "Upload aanvullende documenten of voeg extra instructies toe"
+                : isStage1a
+                  ? "Voeg extra instructies of context toe die de AI moet gebruiken"
+                  : "Voeg extra instructies of context toe die de AI moet gebruiken"}
             </p>
           </div>
         </div>
@@ -135,7 +158,7 @@ const CustomContextSection = memo(function CustomContextSection({
                   {isUploadingAttachments ? (
                     <><Loader2 className="h-4 w-4 animate-spin" /> Uploaden...</>
                   ) : (
-                    <><Upload className="h-4 w-4" /> Extra Bijlages</>
+                    <><Upload className="h-4 w-4" /> {isRerun ? "Aanvullende Bijlages" : "Extra Bijlages"}</>
                   )}
                 </Button>
                 <span className="text-xs text-purple-600">PDF, TXT, JPG, PNG</span>
@@ -167,14 +190,18 @@ const CustomContextSection = memo(function CustomContextSection({
           <Textarea
             value={customContext}
             onChange={(e) => onCustomContextChange(e.target.value)}
-            placeholder="Bijv: 'De klant heeft bevestigd dat het vermogen €500k is, niet €300k zoals eerder vermeld. Neem dit mee in de analyse.'"
+            placeholder={isStage1a && isRerun
+              ? "Bijv: 'Hierbij de gevraagde bankafschriften. Let op: de waarde van het pand is €450k (zie taxatierapport).'"
+              : "Bijv: 'De klant heeft bevestigd dat het vermogen €500k is, niet €300k zoals eerder vermeld. Neem dit mee in de analyse.'"}
             className="min-h-[100px] text-sm"
           />
           <div className="flex items-start gap-2 text-xs text-purple-700 dark:text-purple-300">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <p>
-              {isStage1a && pendingAttachments.length > 0
-                ? `${pendingAttachments.length} nieuwe bijlage(s) + bestaande bijlages worden meegenomen bij re-run.`
+              {isStage1a && isRerun
+                ? pendingAttachments.length > 0
+                  ? `${pendingAttachments.length} nieuwe bijlage(s) worden toegevoegd aan de bestaande bijlages. Alle documenten worden opnieuw geanalyseerd.`
+                  : "Alle eerder geüploade bijlages worden automatisch meegenomen. Upload hier alleen aanvullende documenten."
                 : "Deze context wordt toegevoegd aan de originele prompt. De AI zal rekening houden met deze extra informatie."}
             </p>
           </div>
