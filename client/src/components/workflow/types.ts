@@ -118,4 +118,7 @@ export interface SimplifiedWorkflowViewProps {
 
   /** Function to determine stage status based on index */
   getStageStatus: GetStageStatus;
+
+  /** Whether OCR is still pending for attachments - blocks Stage 1 */
+  hasOcrPending?: boolean;
 }

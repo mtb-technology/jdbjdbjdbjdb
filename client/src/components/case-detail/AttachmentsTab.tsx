@@ -23,6 +23,7 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import type { AttachmentsTabProps, Attachment } from "@/types/caseDetail.types";
 
@@ -40,9 +41,32 @@ function getFileIcon(mimeType: string | undefined) {
 }
 
 /**
+ * Check if OCR is still pending (placeholder text present)
+ * Exported for use in workflow blocking logic
+ */
+export function isOcrPending(attachment: Attachment): boolean {
+  if (!attachment.needsVisionOCR) return false;
+  const text = attachment.extractedText || '';
+  return text.includes('OCR wordt verwerkt') || text.includes('OCR mislukt') || text.length < 100;
+}
+
+/**
  * Get status badge for attachment
  */
 function getStatusBadge(attachment: Attachment) {
+  // Check if OCR is still in progress
+  if (attachment.needsVisionOCR && isOcrPending(attachment)) {
+    return (
+      <Badge
+        variant="outline"
+        className="bg-blue-50 text-blue-700 border-blue-200 animate-pulse"
+      >
+        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+        OCR bezig...
+      </Badge>
+    );
+  }
+  // OCR completed (Vision was used but text is now available)
   if (attachment.needsVisionOCR) {
     return (
       <Badge
@@ -50,7 +74,7 @@ function getStatusBadge(attachment: Attachment) {
         className="bg-amber-50 text-amber-700 border-amber-200"
       >
         <FileImage className="h-3 w-3 mr-1" />
-        Gemini Vision
+        Vision OCR
       </Badge>
     );
   }
@@ -226,10 +250,24 @@ const AttachmentsSummary = memo(function AttachmentsSummary({
   const textCount = attachments.filter(
     (a) => a.extractedText && !a.needsVisionOCR
   ).length;
-  const visionCount = attachments.filter((a) => a.needsVisionOCR).length;
+  const ocrPendingCount = attachments.filter((a) => isOcrPending(a)).length;
+  const visionCompletedCount = attachments.filter((a) => a.needsVisionOCR && !isOcrPending(a)).length;
 
   return (
     <div className="mt-4 pt-4 border-t">
+      {ocrPendingCount > 0 && (
+        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center gap-2 text-blue-700">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="font-medium">
+              {ocrPendingCount} document(en) worden nog verwerkt (OCR)
+            </span>
+          </div>
+          <p className="text-sm text-blue-600 mt-1">
+            Wacht tot OCR klaar is voordat je de analyse start. Ververs de pagina om de status te updaten.
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>Totaal: {attachments.length} bijlage(s)</span>
         <div className="flex items-center gap-4">
@@ -237,10 +275,18 @@ const AttachmentsSummary = memo(function AttachmentsSummary({
             <CheckCircle className="h-4 w-4 text-green-500" />
             {textCount} tekst
           </span>
-          <span className="flex items-center gap-1">
-            <FileImage className="h-4 w-4 text-amber-500" />
-            {visionCount} vision OCR
-          </span>
+          {ocrPendingCount > 0 && (
+            <span className="flex items-center gap-1">
+              <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+              {ocrPendingCount} bezig
+            </span>
+          )}
+          {visionCompletedCount > 0 && (
+            <span className="flex items-center gap-1">
+              <FileImage className="h-4 w-4 text-amber-500" />
+              {visionCompletedCount} vision
+            </span>
+          )}
         </div>
       </div>
     </div>

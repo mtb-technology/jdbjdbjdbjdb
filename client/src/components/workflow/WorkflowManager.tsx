@@ -22,6 +22,8 @@ import { WORKFLOW_STAGES } from "./constants";
 import { cleanStageResults } from "@/lib/stageResultsHelper";
 import { isInformatieCheckComplete } from "@/lib/workflowParsers";
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
+import type { Attachment } from "@/types/caseDetail.types";
+import { isOcrPending } from "@/components/case-detail/AttachmentsTab";
 import {
   handleStageCompletion,
   handleSubstepCompletion,
@@ -54,6 +56,17 @@ function WorkflowManagerContent({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const timerInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Query attachments to check OCR status
+  const reportId = existingReport?.id || state.currentReport?.id;
+  const { data: attachmentsData } = useQuery<Attachment[]>({
+    queryKey: [`/api/upload/attachments/${reportId}`],
+    enabled: !!reportId,
+    refetchInterval: 5000, // Poll every 5 seconds to check OCR status
+  });
+
+  // Check if any attachments have OCR pending
+  const hasOcrPending = attachmentsData?.some(att => isOcrPending(att)) ?? false;
 
   // Timer effect
   useEffect(() => {
@@ -555,9 +568,16 @@ function WorkflowManagerContent({
     }
   }, [existingReport, state.currentReport, createReportMutation, dispatch]);
 
-  // Auto-start first stage if autoStart is true
+  // Auto-start first stage if autoStart is true (but NOT if OCR is pending)
   useEffect(() => {
     const isAnyStageProcessing = Object.values(state.stageProcessing).some(v => v);
+
+    // Block auto-start if OCR is still pending
+    if (hasOcrPending) {
+      console.log('⏳ Auto-start blocked: OCR still pending for attachments');
+      return;
+    }
+
     if (autoStart && state.currentReport && state.currentStageIndex === 0 && !isAnyStageProcessing) {
       const stageResults = state.currentReport.stageResults as Record<string, string> || {};
       const firstStageKey = WORKFLOW_STAGES[0].key;
@@ -572,7 +592,7 @@ function WorkflowManagerContent({
         });
       }
     }
-  }, [autoStart, state.currentReport, state.currentStageIndex, state.stageProcessing]);
+  }, [autoStart, state.currentReport, state.currentStageIndex, state.stageProcessing, hasOcrPending]);
 
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
   const progressPercentage = Math.round((Object.keys(state.stageResults).length / WORKFLOW_STAGES.length) * 100);
@@ -588,6 +608,7 @@ function WorkflowManagerContent({
       rawText={rawText}
       clientName={clientName}
       getStageStatus={getStageStatus}
+      hasOcrPending={hasOcrPending}
     />
   );
 }

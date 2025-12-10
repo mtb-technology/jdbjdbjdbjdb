@@ -62,6 +62,7 @@ export const WorkflowView = memo(function WorkflowView({
   rawText,
   clientName,
   getStageStatus,
+  hasOcrPending = false,
 }: SimplifiedWorkflowViewProps) {
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
   const { toggleSection: toggleSectionCollapse, isSectionCollapsed } = useCollapsibleSections();
@@ -232,9 +233,11 @@ export const WorkflowView = memo(function WorkflowView({
                   // Map status to WorkflowStageCard expected type
                   const stageStatus = mapToCardStatus(rawStageStatus, isFeedbackReady, isProcessing);
 
-                  // Block reason for Stage 2
+                  // Block reason for Stage 1a (OCR pending) and Stage 2
                   let blockReason: string | undefined | null;
-                  if (stage.key === "2_complexiteitscheck") {
+                  if (stage.key === "1a_informatiecheck" && hasOcrPending) {
+                    blockReason = "Wacht tot OCR verwerking klaar is. Ga naar Bijlages tab om status te zien.";
+                  } else if (stage.key === "2_complexiteitscheck") {
                     const stage1aResult = state.stageResults["1a_informatiecheck"];
                     if (!isInformatieCheckComplete(stage1aResult)) {
                       blockReason = getStage2BlockReason(stage1aResult);
