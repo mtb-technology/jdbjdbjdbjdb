@@ -925,172 +925,255 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
               };
             }
 
+            // Get missing items for selected year only
+            const selectedYearMissingItems = selectedYear
+              ? (yearSummaries[selectedYear]?.missing_items || []).map(item => ({
+                  year: selectedYear,
+                  description: item.description,
+                }))
+              : [];
+
             return (
               <div className="space-y-4">
-                {/* Main Verdict Card */}
-                <div className={`rounded-xl p-6 ${
-                  isProfitable
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white'
-                    : !isComplete
-                      ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950'
-                      : 'bg-gradient-to-r from-gray-400 to-gray-500 text-white'
-                }`}>
-                  <div className="flex items-start justify-between">
-                    {/* Left: Verdict */}
-                    <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-full ${
-                        isProfitable ? 'bg-white/20' : !isComplete ? 'bg-white/30' : 'bg-white/20'
-                      }`}>
-                        {isProfitable ? (
-                          <CheckCircle2 className="h-10 w-10" />
-                        ) : !isComplete ? (
-                          <AlertTriangle className="h-10 w-10" />
-                        ) : (
-                          <Info className="h-10 w-10" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium opacity-90">Beoordeling</p>
-                        <h2 className="text-2xl font-bold">
-                          {isProfitable ? 'Kansrijk' : !isComplete ? 'Onvolledig' : 'Niet kansrijk'}
-                        </h2>
-                        <p className="text-sm opacity-80 mt-1">
-                          {profitableYears.length} van {years.length} jaren kansrijk
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Right: Per-person breakdown OR total if no partner */}
-                    <div className="text-right">
-                      {hasPartner && personSummaries.length > 1 ? (
-                        <div className="space-y-3">
-                          <p className="text-sm font-medium opacity-90">Indicatieve teruggave per persoon</p>
-                          <div className="flex gap-6">
-                            {personSummaries.map((person) => (
-                              <div key={person.id} className="text-left">
-                                <p className="text-xs opacity-70 truncate max-w-[120px]">{person.name.split(' ')[0]}</p>
-                                <CopyableCurrency
-                                  value={person.totalIndicativeRefund}
-                                  className={`text-xl font-bold ${person.isProfitable ? '' : 'opacity-60'}`}
-                                />
-                                {person.isProfitable ? (
-                                  <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">Kansrijk</span>
-                                ) : (
-                                  <span className="text-xs opacity-60">Niet kansrijk</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                          <div className="pt-2 border-t border-white/20">
-                            <p className="text-xs opacity-70">Totaal huishouden</p>
-                            <CopyableCurrency value={totalRefund} className="text-2xl font-bold" />
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <p className="text-sm font-medium opacity-90">Indicatieve teruggave</p>
-                          <CopyableCurrency value={totalRefund} className="text-4xl font-bold tracking-tight" />
-                        </>
-                      )}
-                    </div>
+                {/* Compact Summary Bar - Always visible */}
+                <div className="flex items-center gap-4 p-4 bg-white rounded-xl border">
+                  {/* Status Badge */}
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
+                    isProfitable
+                      ? 'bg-green-100 text-green-700'
+                      : !isComplete
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {isProfitable ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : !isComplete ? (
+                      <AlertTriangle className="h-5 w-5" />
+                    ) : (
+                      <Info className="h-5 w-5" />
+                    )}
+                    <span className="font-semibold">
+                      {isProfitable ? 'Kansrijk' : !isComplete ? 'Onvolledig' : 'Niet kansrijk'}
+                    </span>
+                    <span className="text-xs opacity-75">({profitableYears.length}/{years.length})</span>
                   </div>
 
-                  {/* Year pills - compact overview */}
-                  <div className="mt-6 flex flex-wrap gap-2">
+                  {/* Divider */}
+                  <div className="h-8 w-px bg-gray-200" />
+
+                  {/* Total */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Totaal:</span>
+                    <CopyableCurrency
+                      value={totalRefund}
+                      className={`text-xl font-bold ${totalRefund > 0 ? 'text-green-600' : 'text-gray-400'}`}
+                    />
+                  </div>
+
+                  {/* Per person (compact) - only if partner */}
+                  {hasPartner && personSummaries.length > 1 && (
+                    <>
+                      <div className="h-8 w-px bg-gray-200" />
+                      <div className="flex items-center gap-4">
+                        {personSummaries.map((person) => (
+                          <div key={person.id} className="flex items-center gap-2">
+                            <User className={`h-4 w-4 ${person.isProfitable ? 'text-green-500' : 'text-gray-400'}`} />
+                            <span className="text-sm text-muted-foreground">{person.name.split(' ')[0]}:</span>
+                            <CopyableCurrency
+                              value={person.totalIndicativeRefund}
+                              className={`font-semibold ${person.isProfitable ? 'text-green-600' : 'text-gray-400'}`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Missing docs alert */}
+                  {allMissingItems.length > 0 && (
+                    <>
+                      <div className="flex-1" />
+                      <div className="flex items-center gap-2 text-amber-600">
+                        <FileText className="h-4 w-4" />
+                        <span className="text-sm font-medium">{allMissingItems.length} documenten nodig</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Integrated Year Detail Card */}
+                <div className="bg-white rounded-xl border overflow-hidden">
+                  {/* Year Tabs - Integrated header */}
+                  <div className="flex items-stretch border-b bg-gray-50">
                     {years.map(year => {
                       const summary = yearSummaries[year];
                       const refund = summary?.calculated_totals?.indicative_refund || 0;
                       const yearProfitable = summary?.calculated_totals?.is_profitable || refund > 0;
                       const yearIncomplete = summary?.status === 'incomplete';
+                      const isSelected = selectedYear === year;
 
                       return (
                         <button
                           key={year}
                           onClick={() => setSelectedYear(year)}
-                          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                            selectedYear === year
-                              ? 'bg-white text-gray-900 shadow-lg scale-105'
-                              : yearProfitable
-                                ? 'bg-white/20 hover:bg-white/30'
-                                : yearIncomplete
-                                  ? 'bg-black/10 hover:bg-black/20'
-                                  : 'bg-white/10 hover:bg-white/20'
+                          className={`flex-1 px-6 py-4 transition-all relative ${
+                            isSelected
+                              ? 'bg-white'
+                              : 'hover:bg-gray-100'
                           }`}
                         >
-                          {year}
-                          {yearProfitable && !yearIncomplete && (
-                            <span className="ml-1.5 text-xs">+{formatCurrency(refund).replace('€', '€')}</span>
+                          {/* Active indicator */}
+                          {isSelected && (
+                            <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${
+                              yearProfitable ? 'bg-green-500' : yearIncomplete ? 'bg-amber-500' : 'bg-gray-400'
+                            }`} />
                           )}
-                          {yearIncomplete && <span className="ml-1.5">⚠</span>}
+
+                          <div className="flex items-center justify-center gap-2">
+                            {yearIncomplete && (
+                              <AlertTriangle className={`h-4 w-4 ${isSelected ? 'text-amber-500' : 'text-amber-400'}`} />
+                            )}
+                            {yearProfitable && !yearIncomplete && (
+                              <CheckCircle2 className={`h-4 w-4 ${isSelected ? 'text-green-500' : 'text-green-400'}`} />
+                            )}
+                            {!yearProfitable && !yearIncomplete && (
+                              <Info className={`h-4 w-4 ${isSelected ? 'text-gray-500' : 'text-gray-400'}`} />
+                            )}
+                            <span className={`font-bold ${isSelected ? 'text-gray-900' : 'text-gray-500'}`}>
+                              {year}
+                            </span>
+                          </div>
+                          <p className={`text-xs mt-1 ${
+                            yearProfitable && !yearIncomplete
+                              ? 'text-green-600'
+                              : yearIncomplete
+                                ? 'text-amber-600'
+                                : 'text-gray-400'
+                          }`}>
+                            {yearProfitable && !yearIncomplete
+                              ? `+${formatCurrency(refund)}`
+                              : yearIncomplete
+                                ? 'Onvolledig'
+                                : '€ 0,00'
+                            }
+                          </p>
                         </button>
                       );
                     })}
                   </div>
-                </div>
 
-                {/* Next Step Card - Combined with missing items when applicable */}
-                {allMissingItems.length > 0 ? (
-                  <Card className="border-2 border-amber-300 bg-amber-50">
-                    <CardContent className="py-4">
-                      {/* Header row */}
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-amber-200">
-                            <FileText className="h-5 w-5 text-amber-800" />
+                  {/* Year Detail Content */}
+                  {selectedYear && (() => {
+                    const summary = yearSummaries[selectedYear];
+                    const refund = summary?.calculated_totals?.indicative_refund || 0;
+                    const yearProfitable = summary?.calculated_totals?.is_profitable || refund > 0;
+                    const yearIncomplete = summary?.status === 'incomplete';
+                    const yearMissingItems = summary?.missing_items || [];
+
+                    return (
+                      <div className="p-5">
+                        {/* Year Header with status */}
+                        <div className="flex items-center justify-between mb-5">
+                          <div className="flex items-center gap-3">
+                            <h3 className="text-lg font-bold">Detail {selectedYear}</h3>
+                            <Badge variant={yearProfitable ? "default" : yearIncomplete ? "secondary" : "outline"}
+                                   className={yearProfitable ? 'bg-green-100 text-green-700 hover:bg-green-100' : yearIncomplete ? 'bg-amber-100 text-amber-700' : ''}>
+                              {yearProfitable ? 'Kansrijk' : yearIncomplete ? 'Onvolledig' : 'Niet kansrijk'}
+                            </Badge>
                           </div>
-                          <div>
-                            <p className="font-semibold text-amber-900">Documenten opvragen</p>
-                            <p className="text-sm text-amber-700">{allMissingItems.length} document(en) nodig voor volledige beoordeling</p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="bg-amber-600 hover:bg-amber-700"
-                          onClick={() => setShowAddDocs(true)}
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Document toevoegen
-                        </Button>
-                      </div>
-                      {/* Missing items grid */}
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {allMissingItems.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center gap-2 p-2 bg-white rounded-lg border border-amber-200"
-                          >
-                            <span className="text-xs font-mono bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                              {item.year}
-                            </span>
-                            <span className="text-sm text-amber-900">{item.description}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card className="border-2 border-primary/20 bg-primary/5">
-                    <CardContent className="py-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-primary/10">
-                            <ChevronRight className="h-5 w-5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-semibold text-primary">{nextStep.action}</p>
-                            <p className="text-sm text-muted-foreground">{nextStep.description}</p>
+                          <div className="text-right">
+                            <p className="text-xs text-muted-foreground">Indicatieve teruggave {selectedYear}</p>
+                            <CopyableCurrency
+                              value={refund}
+                              className={`text-2xl font-bold ${yearProfitable ? 'text-green-600' : 'text-gray-400'}`}
+                            />
                           </div>
                         </div>
-                        {nextStep.buttonLabel && (
-                          <Button variant="default" size="sm">
-                            {nextStep.buttonLabel}
-                          </Button>
+
+                        {/* Missing items for THIS year */}
+                        {yearMissingItems.length > 0 && (
+                          <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-amber-600" />
+                                <span className="font-medium text-amber-800">Ontbrekend voor {selectedYear}</span>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-amber-300 text-amber-700 hover:bg-amber-100"
+                                onClick={() => setShowAddDocs(true)}
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Toevoegen
+                              </Button>
+                            </div>
+                            <ul className="space-y-1">
+                              {yearMissingItems.map((item, idx) => (
+                                <li key={idx} className="flex items-center gap-2 text-sm text-amber-900">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                  {item.description}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Per person breakdown for THIS year */}
+                        {hasPartner && personSummaries.length > 1 && (
+                          <div className="grid grid-cols-2 gap-4 mb-5">
+                            {personSummaries.map((person) => {
+                              const yearData = person.yearBreakdown[selectedYear];
+                              return (
+                                <div
+                                  key={person.id}
+                                  className="p-4 bg-gray-50 rounded-lg border"
+                                >
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <User className="h-4 w-4 text-gray-500" />
+                                    <span className="font-medium">{person.name}</span>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Vermogen</p>
+                                      <p className="font-medium">{yearData?.taxAssessed ? formatCurrency(yearData.taxAssessed) : '—'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Teruggave</p>
+                                      <p className={`font-medium ${yearData?.refund && yearData.refund > 0 ? 'text-green-600' : ''}`}>
+                                        {yearData?.refund ? formatCurrency(yearData.refund) : '—'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Next step for complete years */}
+                        {!yearIncomplete && yearProfitable && (
+                          <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-green-100">
+                                  <ChevronRight className="h-4 w-4 text-green-600" />
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-green-800">Klaar voor bezwaar</p>
+                                  <p className="text-sm text-green-700">Bezwaarschrift opstellen voor {selectedYear}</p>
+                                </div>
+                              </div>
+                              <Button variant="default" size="sm" className="bg-green-600 hover:bg-green-700">
+                                Genereer bezwaar
+                              </Button>
+                            </div>
+                          </div>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
-                )}
+                    );
+                  })()}
+                </div>
               </div>
             );
           })()}

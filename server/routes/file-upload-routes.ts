@@ -23,8 +23,8 @@ async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promi
         continue;
       }
 
-      // Mark as processing
-      await storage.updateAttachment(attachmentId, { ocrStatus: 'processing' });
+      // Mark as processing (ocrStatus update skipped - column may not exist in prod yet)
+      // await storage.updateAttachment(attachmentId, { ocrStatus: 'processing' });
 
       console.log(`📎 [${reportId}] Running OCR for: ${attachment.filename}`);
 
@@ -64,30 +64,27 @@ async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promi
       );
 
       if (ocrResult.content && ocrResult.content.trim().length > 50) {
-        // Update attachment with extracted text
+        // Update attachment with extracted text (ocrStatus removed - column may not exist in prod)
         await storage.updateAttachment(attachmentId, {
           extractedText: ocrResult.content,
           needsVisionOCR: false, // OCR complete
-          ocrStatus: 'completed',
         });
         console.log(`📎 [${reportId}] ✅ Async OCR complete for ${attachment.filename}: ${ocrResult.content.length} chars`);
       } else {
         console.warn(`📎 [${reportId}] ⚠️ Async OCR returned minimal text for ${attachment.filename}`);
-        // Update to mark OCR attempted but failed
+        // Update to mark OCR attempted but failed (ocrStatus removed - column may not exist in prod)
         await storage.updateAttachment(attachmentId, {
           extractedText: `[OCR kon geen tekst extraheren uit: ${attachment.filename}]`,
           needsVisionOCR: false,
-          ocrStatus: 'failed',
         });
       }
     } catch (error: any) {
       console.error(`📎 [${reportId}] ❌ Async OCR failed for ${attachmentId}:`, error.message);
-      // Mark as failed so we don't keep retrying
+      // Mark as failed so we don't keep retrying (ocrStatus removed - column may not exist in prod)
       try {
         await storage.updateAttachment(attachmentId, {
           extractedText: `[OCR mislukt: ${error.message}]`,
           needsVisionOCR: false,
-          ocrStatus: 'failed',
         });
       } catch (e) {
         // Ignore update errors
@@ -651,10 +648,10 @@ fileUploadRouter.post(
           fileData,
           extractedText: extractedText || null,
           needsVisionOCR,
-          ocrStatus: needsVisionOCR ? 'pending' : 'none',
+          // ocrStatus removed - column may not exist in prod yet
           usedInStages: [],
         });
-        console.log(`📎 [${reportId}] Saved attachment: ${attachment.id}${needsVisionOCR ? ' (needs Vision OCR - status: pending)' : ''}`);
+        console.log(`📎 [${reportId}] Saved attachment: ${attachment.id}${needsVisionOCR ? ' (needs Vision OCR)' : ''}`);
 
         const { fileData: _, ...attachmentWithoutData } = attachment;
         results.push({
