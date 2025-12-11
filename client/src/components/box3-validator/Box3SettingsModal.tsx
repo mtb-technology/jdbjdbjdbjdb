@@ -10,17 +10,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RotateCcw, Info, Calculator, FileInput, Mail } from "lucide-react";
+import { RotateCcw, Info, Calculator, Mail } from "lucide-react";
 import {
   FORFAITAIRE_RENDEMENTEN,
   BOX3_TARIEVEN,
 } from "@/constants/box3.constants";
 
 // =============================================================================
-// NO DEFAULT PROMPTS - User configures via UI
+// NOTE: Intake prompt is NO LONGER used - pipeline has built-in prompts
+// Only email prompt remains configurable
 // =============================================================================
 
-export const DEFAULT_INTAKE_PROMPT = "";
+export const DEFAULT_INTAKE_PROMPT = ""; // Deprecated - pipeline uses built-in prompts
 export const DEFAULT_EMAIL_PROMPT = "";
 
 // Legacy export for backwards compatibility (also empty)
@@ -31,7 +32,7 @@ export const DEFAULT_BOX3_SYSTEM_PROMPT = "";
 // =============================================================================
 
 export interface Box3Prompts {
-  intake: string;
+  intake: string; // Deprecated - kept for backwards compat
   email: string;
 }
 
@@ -65,7 +66,7 @@ export function Box3SettingsModal({
   };
 
   const [localPrompts, setLocalPrompts] = useState<Box3Prompts>(effectivePrompts);
-  const [activeTab, setActiveTab] = useState("intake");
+  const [activeTab, setActiveTab] = useState("email");
 
   useEffect(() => {
     if (prompts) {
@@ -98,7 +99,6 @@ export function Box3SettingsModal({
   };
 
   // Check if prompts are configured
-  const isIntakeConfigured = localPrompts.intake.trim().length > 0;
   const isEmailConfigured = localPrompts.email.trim().length > 0;
 
   const updatePrompt = (key: keyof Box3Prompts, value: string) => {
@@ -113,63 +113,16 @@ export function Box3SettingsModal({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="intake" className="flex items-center gap-2">
-              <FileInput className="h-4 w-4" />
-              Intake
-            </TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="email" className="flex items-center gap-2">
               <Mail className="h-4 w-4" />
-              E-mail
+              E-mail Prompt
             </TabsTrigger>
             <TabsTrigger value="reference" className="flex items-center gap-2">
               <Calculator className="h-4 w-4" />
               Referentie
             </TabsTrigger>
           </TabsList>
-
-          {/* Intake Prompt Tab */}
-          <TabsContent value="intake" className="space-y-4 mt-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="intake-prompt" className="text-base font-medium">
-                    Intake Prompt
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Gebruikt bij het aanmaken van een nieuw dossier en initiële document uploads
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleClear("intake")}
-                  className="h-8"
-                  disabled={!isIntakeConfigured}
-                >
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Wissen
-                </Button>
-              </div>
-              {!isIntakeConfigured && (
-                <div className="bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
-                  <p className="text-sm text-orange-700 dark:text-orange-300 font-medium">
-                    Intake prompt is verplicht
-                  </p>
-                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                    Configureer een intake prompt om nieuwe dossiers te kunnen analyseren.
-                  </p>
-                </div>
-              )}
-              <Textarea
-                id="intake-prompt"
-                value={localPrompts.intake}
-                onChange={(e) => updatePrompt("intake", e.target.value)}
-                className="font-mono text-sm min-h-[400px]"
-                placeholder="Voer de intake prompt in... (verplicht)"
-              />
-            </div>
-          </TabsContent>
 
           {/* Email Prompt Tab */}
           <TabsContent value="email" className="space-y-4 mt-4">
@@ -269,10 +222,10 @@ export function Box3SettingsModal({
             variant="ghost"
             size="sm"
             onClick={handleClearAll}
-            disabled={!isIntakeConfigured && !isEmailConfigured}
+            disabled={!isEmailConfigured}
           >
             <RotateCcw className="h-4 w-4 mr-2" />
-            Wis alle prompts
+            Wis prompt
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>

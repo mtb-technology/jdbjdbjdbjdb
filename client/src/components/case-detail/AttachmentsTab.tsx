@@ -42,35 +42,42 @@ function getFileIcon(mimeType: string | undefined) {
 
 /**
  * Check if OCR is still pending
- * Simple and reliable: only checks needsVisionOCR flag
- * When OCR completes (success or failure), needsVisionOCR is set to false
+ * Uses needsVisionOCR flag AND checks if extractedText already exists.
+ * If we have substantial extractedText (>100 chars), OCR is effectively done
+ * even if the flag wasn't properly updated.
  * Exported for use in workflow blocking logic
  */
 export function isOcrPending(attachment: Attachment): boolean {
-  // Simple check: if needsVisionOCR is true, OCR is still pending
-  // Server sets this to false on completion (success or failure)
-  return attachment.needsVisionOCR === true;
+  // If needsVisionOCR is false, definitely not pending
+  if (attachment.needsVisionOCR !== true) {
+    return false;
+  }
+
+  // needsVisionOCR is true - but check if we already have substantial text
+  // This handles cases where OCR completed but flag wasn't updated (legacy data)
+  const hasSubstantialText = attachment.extractedText &&
+    attachment.extractedText.length > 100 &&
+    !attachment.extractedText.startsWith('[OCR') && // Not an error message
+    !attachment.extractedText.startsWith('[Afbeelding') && // Not a placeholder
+    !attachment.extractedText.startsWith('[PDF'); // Not a placeholder
+
+  if (hasSubstantialText) {
+    // We have real text, OCR must have completed
+    return false;
+  }
+
+  // needsVisionOCR is true and no substantial text - OCR is pending
+  return true;
 }
 
 /**
  * Get status badge for attachment
  */
 function getStatusBadge(attachment: Attachment) {
-  // Check OCR status first if available
-  if (attachment.ocrStatus === 'failed') {
-    return (
-      <Badge
-        variant="outline"
-        className="bg-red-50 text-red-700 border-red-200"
-      >
-        <AlertCircle className="h-3 w-3 mr-1" />
-        OCR mislukt
-      </Badge>
-    );
-  }
+  const ocrPending = isOcrPending(attachment);
 
   // Check if OCR is still in progress
-  if (attachment.needsVisionOCR && isOcrPending(attachment)) {
+  if (ocrPending) {
     return (
       <Badge
         variant="outline"
@@ -81,8 +88,9 @@ function getStatusBadge(attachment: Attachment) {
       </Badge>
     );
   }
-  // OCR completed (Vision was used but text is now available)
-  if (attachment.needsVisionOCR) {
+
+  // OCR completed via Vision (needsVisionOCR was true but we have text now)
+  if (attachment.needsVisionOCR && attachment.extractedText && attachment.extractedText.length > 100) {
     return (
       <Badge
         variant="outline"
@@ -93,7 +101,9 @@ function getStatusBadge(attachment: Attachment) {
       </Badge>
     );
   }
-  if (attachment.extractedText) {
+
+  // Regular text extraction succeeded
+  if (attachment.extractedText && attachment.extractedText.length > 50) {
     return (
       <Badge
         variant="outline"
@@ -104,6 +114,8 @@ function getStatusBadge(attachment: Attachment) {
       </Badge>
     );
   }
+
+  // No usable text
   return (
     <Badge variant="outline" className="bg-gray-50 text-gray-500">
       <AlertCircle className="h-3 w-3 mr-1" />
@@ -158,7 +170,7 @@ const AttachmentItem = memo(function AttachmentItem({
                   </span>
                   <span>•</span>
                   <span>
-                    {Math.round(parseInt(attachment.fileSize) / 1024)} KB
+                    {Math.round(parseInt(attachment.fileSize, 10) / 1024)} KB
                   </span>
                   {attachment.extractedText && (
                     <>
@@ -262,11 +274,15 @@ interface AttachmentsSummaryProps {
 const AttachmentsSummary = memo(function AttachmentsSummary({
   attachments,
 }: AttachmentsSummaryProps) {
-  const textCount = attachments.filter(
-    (a) => a.extractedText && !a.needsVisionOCR
-  ).length;
   const ocrPendingCount = attachments.filter((a) => isOcrPending(a)).length;
-  const visionCompletedCount = attachments.filter((a) => a.needsVisionOCR && !isOcrPending(a)).length;
+  // Vision completed = needsVisionOCR was true but we have substantial text now
+  const visionCompletedCount = attachments.filter(
+    (a) => a.needsVisionOCR && !isOcrPending(a) && a.extractedText && a.extractedText.length > 100
+  ).length;
+  // Regular text = has text and was not a vision OCR case
+  const textCount = attachments.filter(
+    (a) => a.extractedText && a.extractedText.length > 50 && !a.needsVisionOCR
+  ).length;
 
   return (
     <div className="mt-4 pt-4 border-t">

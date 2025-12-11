@@ -117,7 +117,18 @@ export function registerStageRoutes(
       // This prevents race conditions where client-side blocking is bypassed
       if (stage === '1a_informatiecheck') {
         const attachments = await storage.getAttachmentsForReport(id);
-        const pendingOcrCount = attachments.filter(att => att.needsVisionOCR === true).length;
+        // OCR is pending if: needsVisionOCR=true AND no substantial text yet
+        // This handles legacy data where OCR completed but flag wasn't updated
+        const pendingOcrCount = attachments.filter(att => {
+          if (att.needsVisionOCR !== true) return false;
+          // Check if we have substantial text (OCR must have completed)
+          const hasSubstantialText = att.extractedText &&
+            att.extractedText.length > 100 &&
+            !att.extractedText.startsWith('[OCR') &&
+            !att.extractedText.startsWith('[Afbeelding') &&
+            !att.extractedText.startsWith('[PDF');
+          return !hasSubstantialText;
+        }).length;
         if (pendingOcrCount > 0) {
           console.log(`[${id}] ⛔ Stage 1a blocked: ${pendingOcrCount} attachment(s) still awaiting OCR`);
           return res.status(400).json({

@@ -7,21 +7,24 @@
 
 import { memo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, Loader2 } from "lucide-react";
 import { WORKFLOW_STAGES, type WorkflowStage } from "./constants";
 import { STAGE_GROUPS, type StageGroupConfig } from "@/utils/workflowUtils";
+import type { JobStageProgress } from "@/hooks/useJobPolling";
 
 interface StageGroupNavigatorProps {
   stageResults: Record<string, string>;
   conceptReportVersions: Record<string, unknown>;
   currentStageIndex: number;
   onNavigate: (stageKey: string) => void;
+  jobStageProgress?: JobStageProgress[];
 }
 
 interface StageButtonProps {
   stage: WorkflowStage;
   hasResult: boolean;
   isActive: boolean;
+  isProcessing: boolean;
   displayName: string;
   onClick: () => void;
 }
@@ -33,22 +36,26 @@ const StageButton = memo(function StageButton({
   stage,
   hasResult,
   isActive,
+  isProcessing,
   displayName,
   onClick,
 }: StageButtonProps) {
   return (
     <button
-      key={stage.key}
       onClick={onClick}
       className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
-        isActive
+        isProcessing
+          ? "bg-blue-50 text-blue-600 font-medium"
+          : isActive
           ? "bg-jdb-blue-primary/10 text-jdb-blue-primary font-medium"
           : hasResult
           ? "text-jdb-success hover:bg-jdb-bg"
           : "text-jdb-text-subtle hover:bg-jdb-bg"
       }`}
     >
-      {hasResult ? (
+      {isProcessing ? (
+        <Loader2 className="w-3 h-3 text-blue-600 flex-shrink-0 animate-spin" />
+      ) : hasResult ? (
         <CheckCircle className="w-3 h-3 text-jdb-success flex-shrink-0" />
       ) : isActive ? (
         <div className="w-3 h-3 rounded-full border-2 border-jdb-blue-primary flex-shrink-0" />
@@ -67,6 +74,7 @@ interface StageGroupSectionProps {
   conceptReportVersions: Record<string, unknown>;
   currentStageIndex: number;
   onNavigate: (stageKey: string) => void;
+  jobStageProgress?: JobStageProgress[];
 }
 
 /**
@@ -79,6 +87,7 @@ const StageGroupSection = memo(function StageGroupSection({
   conceptReportVersions,
   currentStageIndex,
   onNavigate,
+  jobStageProgress,
 }: StageGroupSectionProps) {
   return (
     <div>
@@ -86,11 +95,18 @@ const StageGroupSection = memo(function StageGroupSection({
         {group.label}
       </p>
       {stages.map((stage) => {
+        // Check job progress for this stage
+        const jobStage = jobStageProgress?.find((s) => s.stageId === stage.key);
+        const isProcessing = jobStage?.status === "processing";
+        const isCompletedByJob = jobStage?.status === "completed";
+
         // Check for result - special case for stage 3 which uses conceptReportVersions
+        // Also consider job progress completed status
         const hasResult =
-          stage.key === "3_generatie"
+          isCompletedByJob ||
+          (stage.key === "3_generatie"
             ? !!stageResults[stage.key] || !!conceptReportVersions[stage.key]
-            : !!stageResults[stage.key];
+            : !!stageResults[stage.key]);
 
         const stageIndex = WORKFLOW_STAGES.findIndex((s) => s.key === stage.key);
         const isActive = stageIndex === currentStageIndex;
@@ -102,6 +118,7 @@ const StageGroupSection = memo(function StageGroupSection({
             stage={stage}
             hasResult={hasResult}
             isActive={isActive}
+            isProcessing={isProcessing}
             displayName={displayName}
             onClick={() => onNavigate(stage.key)}
           />
@@ -119,6 +136,7 @@ export const StageGroupNavigator = memo(function StageGroupNavigator({
   conceptReportVersions,
   currentStageIndex,
   onNavigate,
+  jobStageProgress,
 }: StageGroupNavigatorProps) {
   return (
     <div className="hidden 2xl:block w-44 flex-shrink-0">
@@ -142,6 +160,7 @@ export const StageGroupNavigator = memo(function StageGroupNavigator({
                     conceptReportVersions={conceptReportVersions}
                     currentStageIndex={currentStageIndex}
                     onNavigate={onNavigate}
+                    jobStageProgress={jobStageProgress}
                   />
                 );
               })}

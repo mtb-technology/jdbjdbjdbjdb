@@ -20,12 +20,8 @@ import multer from "multer";
 import { asyncHandler, ServerError } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { storage } from "../storage";
-import { AIModelFactory } from "../services/ai-models/ai-model-factory";
-import { AIConfigResolver } from "../services/ai-config-resolver";
-import { box3BlueprintPartialSchema, createEmptyBox3Blueprint } from "@shared/schema";
-import type { PromptConfig, Box3Blueprint, Box3DocumentClassification } from "@shared/schema";
-
-const configResolver = new AIConfigResolver();
+import { Box3ExtractionPipeline, type PipelineDocument } from "../services/box3-extraction-pipeline";
+import type { Box3Blueprint, Box3DocumentClassification } from "@shared/schema";
 
 export const box3V2Router = Router();
 
@@ -58,77 +54,6 @@ const upload = multer({
     }
   }
 });
-
-/**
- * Process files for AI analysis
- * Returns extracted text and vision attachments
- */
-async function processFilesForAI(files: Array<{ filename: string; mimeType: string; fileData: string }>) {
-  const attachmentTexts: string[] = [];
-  const visionAttachments: { mimeType: string; data: string; filename: string }[] = [];
-
-  for (const file of files) {
-    const ext = file.filename.toLowerCase().split('.').pop();
-    const isPDF = file.mimeType === 'application/pdf' ||
-                  (file.mimeType === 'application/octet-stream' && ext === 'pdf');
-    const isTXT = file.mimeType === 'text/plain' ||
-                  (file.mimeType === 'application/octet-stream' && ext === 'txt');
-    const isImage = file.mimeType === 'image/jpeg' || file.mimeType === 'image/png' ||
-                    (file.mimeType === 'application/octet-stream' && ['jpg', 'jpeg', 'png'].includes(ext || ''));
-
-    let extractedText = "";
-    let needsVision = false;
-
-    if (isImage) {
-      const mimeType = file.mimeType.startsWith('image/') ? file.mimeType :
-                       (ext === 'png' ? 'image/png' : 'image/jpeg');
-      visionAttachments.push({
-        mimeType,
-        data: file.fileData,
-        filename: file.filename
-      });
-      console.log(`📋 [Box3V2] Image added to vision: ${file.filename}`);
-    } else if (isPDF) {
-      try {
-        const PDFParseClass = await getPdfParse();
-        const buffer = Buffer.from(file.fileData, 'base64');
-        const parser = new PDFParseClass({ data: buffer });
-        const result = await parser.getText();
-        const pages = Array.isArray(result.pages) ? result.pages.length :
-                     (typeof result.pages === 'object' ? Object.keys(result.pages).length : 1);
-        extractedText = result.text || "";
-
-        // Detect scanned PDFs
-        const charsPerPage = extractedText.length / Math.max(pages, 1);
-        if (charsPerPage < 100 && pages > 0) {
-          needsVision = true;
-          console.log(`📋 [Box3V2] Scanned PDF detected: ${file.filename}`);
-        }
-      } catch (err: any) {
-        console.warn(`📋 [Box3V2] PDF parse failed: ${file.filename}`, err.message);
-        needsVision = true;
-      }
-
-      if (needsVision || extractedText.length < 100) {
-        visionAttachments.push({
-          mimeType: 'application/pdf',
-          data: file.fileData,
-          filename: file.filename
-        });
-        console.log(`📋 [Box3V2] Added to vision: ${file.filename}`);
-      }
-    } else if (isTXT) {
-      const buffer = Buffer.from(file.fileData, 'base64');
-      extractedText = buffer.toString('utf-8');
-    }
-
-    if (extractedText.trim().length > 0) {
-      attachmentTexts.push(`\n=== DOCUMENT: ${file.filename} ===\n${extractedText}`);
-    }
-  }
-
-  return { attachmentTexts, visionAttachments };
-}
 
 /**
  * Extract tax years from blueprint
@@ -206,19 +131,20 @@ box3V2Router.post(
     });
   },
   asyncHandler(async (req: Request, res: Response) => {
-    const { inputText, clientName, clientEmail, systemPrompt } = req.body;
+    const { inputText, clientName, clientEmail } = req.body;
+    // Note: systemPrompt is no longer required - pipeline has built-in prompts
 
     if (!clientName || clientName.trim().length === 0) {
       throw ServerError.validation("clientName is required", "Klantnaam is verplicht");
     }
 
-    if (!systemPrompt || systemPrompt.trim().length === 0) {
-      throw ServerError.validation("systemPrompt is required", "Configureer eerst een intake prompt in de instellingen");
-    }
-
     const files = req.files as Express.Multer.File[] || [];
 
-    console.log(`📋 [Box3V2] Intake for ${clientName}: ${files.length} files`);
+    if (files.length === 0) {
+      throw ServerError.validation("No files", "Upload minimaal één document");
+    }
+
+    console.log(`📋 [Box3V2] Pipeline intake for ${clientName}: ${files.length} files`);
 
     // Create dossier first
     const dossier = await storage.createBox3Dossier({
@@ -230,8 +156,8 @@ box3V2Router.post(
 
     console.log(`📋 [Box3V2] Dossier created: ${dossier.id}`);
 
-    // Store documents
-    const storedDocs: Array<{ id: string; filename: string; mimeType: string; fileData: string }> = [];
+    // Store documents and prepare for pipeline
+    const pipelineDocs: PipelineDocument[] = [];
 
     for (const file of files) {
       const doc = await storage.createBox3Document({
@@ -242,122 +168,59 @@ box3V2Router.post(
         fileData: file.buffer.toString('base64'),
         uploadedVia: 'intake',
       });
-      storedDocs.push({
+
+      // Extract text from PDFs for pipeline
+      let extractedText: string | undefined;
+      const ext = file.originalname.toLowerCase().split('.').pop();
+      const isPDF = file.mimetype === 'application/pdf' ||
+                    (file.mimetype === 'application/octet-stream' && ext === 'pdf');
+      const isTXT = file.mimetype === 'text/plain' ||
+                    (file.mimetype === 'application/octet-stream' && ext === 'txt');
+
+      if (isPDF) {
+        try {
+          const PDFParseClass = await getPdfParse();
+          const parser = new PDFParseClass({ data: file.buffer });
+          const result = await parser.getText();
+          extractedText = result.text || "";
+        } catch {
+          // Vision will handle it
+        }
+      } else if (isTXT) {
+        extractedText = file.buffer.toString('utf-8');
+      }
+
+      pipelineDocs.push({
         id: doc.id,
         filename: doc.filename,
         mimeType: doc.mimeType,
         fileData: doc.fileData,
+        extractedText,
       });
     }
 
-    console.log(`📋 [Box3V2] ${storedDocs.length} documents stored`);
+    console.log(`📋 [Box3V2] ${pipelineDocs.length} documents prepared for pipeline`);
 
-    // Process files for AI
-    const { attachmentTexts, visionAttachments } = await processFilesForAI(storedDocs);
+    // Run extraction pipeline
+    const pipeline = new Box3ExtractionPipeline((progress) => {
+      console.log(`📋 [Pipeline] Step ${progress.stepNumber}/${progress.totalSteps}: ${progress.message}`);
+    });
 
-    // Build user prompt
-    const userPrompt = `## Mail van klant:
-${inputText || "(geen mail tekst)"}
-
-## Bijlages (${storedDocs.length} documenten):
-${attachmentTexts.length > 0 ? attachmentTexts.join('\n\n') : 'Geen tekst-extractie beschikbaar - documenten worden via vision geanalyseerd.'}
-
-Analyseer alle bovenstaande input en geef je validatie als JSON.`;
-
-    console.log(`📋 [Box3V2] Calling AI with ${visionAttachments.length} vision attachments`);
-
-    // Generate consistent jobId for this request
-    const jobId = `box3-v2-intake-${dossier.id.substring(0, 8)}-${Date.now()}`;
-
-    // Get AI config
-    const activeConfig = await storage.getActivePromptConfig();
-    if (!activeConfig?.config) {
-      // Cleanup: delete dossier if config is missing
-      await storage.deleteBox3Dossier(dossier.id).catch(() => {});
-      throw ServerError.validation(
-        "No active prompt config",
-        "Geen actieve AI configuratie gevonden. Configureer dit in Instellingen."
-      );
-    }
-    const promptConfig = activeConfig.config as PromptConfig;
-
-    let baseAiConfig;
+    let pipelineResult;
     try {
-      baseAiConfig = configResolver.resolveForOperation(
-        'box3_validator',
-        promptConfig,
-        jobId
-      );
-    } catch (configError: any) {
-      // Cleanup on config resolution failure
+      pipelineResult = await pipeline.run(pipelineDocs, inputText || null);
+    } catch (pipelineError: any) {
+      console.error(`📋 [Box3V2] Pipeline failed, cleaning up dossier ${dossier.id}:`, pipelineError.message);
       await storage.deleteBox3Dossier(dossier.id).catch(() => {});
-      throw ServerError.validation(
-        "Config resolution failed",
-        `AI configuratie kon niet worden geladen: ${configError.message}`
-      );
+      throw ServerError.ai(`Pipeline extractie mislukt: ${pipelineError.message}`, { originalError: pipelineError.message });
     }
 
-    const aiConfig = {
-      ...baseAiConfig,
-      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384),
-      thinkingLevel: 'high' as const,
-    };
+    const blueprint = pipelineResult.blueprint;
+    console.log(`📋 [Box3V2] Pipeline completed successfully`);
 
-    // Call AI with cleanup on failure
-    const factory = AIModelFactory.getInstance();
-    let result;
-    try {
-      result = await factory.callModel(
-        aiConfig,
-        `${systemPrompt}\n\n${userPrompt}`,
-        {
-          jobId,
-          visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
-        }
-      );
-    } catch (aiError: any) {
-      console.error(`📋 [Box3V2] AI call failed, cleaning up dossier ${dossier.id}:`, aiError.message);
-      // Cleanup: delete dossier and documents on AI failure
-      await storage.deleteBox3Dossier(dossier.id).catch(() => {});
-      throw ServerError.ai(`AI analyse mislukt: ${aiError.message}`, { originalError: aiError.message });
-    }
-
-    console.log(`📋 [Box3V2] AI response received: ${result.content.length} chars`);
-
-    // Parse JSON from response
-    let blueprint: Box3Blueprint;
-    try {
-      let jsonText = result.content.match(/```json\s*([\s\S]*?)\s*```/)?.[1];
-      if (!jsonText) {
-        jsonText = result.content.match(/\{[\s\S]*\}/)?.[0];
-      }
-      if (!jsonText && result.content.trim().startsWith('{')) {
-        jsonText = result.content.trim();
-      }
-
-      if (!jsonText) {
-        throw new Error('No JSON found in AI response');
-      }
-
-      const parsed = JSON.parse(jsonText);
-
-      // Validate with partial schema (lenient)
-      blueprint = box3BlueprintPartialSchema.parse(parsed) as Box3Blueprint;
-      console.log(`📋 [Box3V2] Blueprint parsed successfully`);
-    } catch (parseError: any) {
-      console.error(`📋 [Box3V2] JSON parse error:`, parseError.message);
-      console.error(`📋 [Box3V2] Raw response:`, result.content.substring(0, 500));
-
-      // Create empty blueprint on parse failure
-      blueprint = createEmptyBox3Blueprint();
-      blueprint.validation_flags = [{
-        id: 'parse_error',
-        field_path: 'root',
-        type: 'requires_validation',
-        message: `AI response kon niet geparsed worden: ${parseError.message}`,
-        severity: 'high',
-        created_at: new Date().toISOString(),
-      }];
+    // Log any pipeline errors
+    if (pipelineResult.errors.length > 0) {
+      console.warn(`📋 [Box3V2] Pipeline had ${pipelineResult.errors.length} non-fatal errors:`, pipelineResult.errors);
     }
 
     // Extract tax years from blueprint
@@ -372,11 +235,11 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
     });
 
     // Store blueprint version 1
-    const blueprintRecord = await storage.createBox3Blueprint({
+    await storage.createBox3Blueprint({
       dossierId: dossier.id,
       version: 1,
       blueprint,
-      createdBy: 'intake',
+      createdBy: 'pipeline',
     });
 
     console.log(`📋 [Box3V2] Blueprint v1 created for dossier ${dossier.id}`);
@@ -384,7 +247,7 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
     // Update document classifications from source_documents_registry
     if (blueprint.source_documents_registry) {
       for (const regEntry of blueprint.source_documents_registry) {
-        const matchingDoc = storedDocs.find(d =>
+        const matchingDoc = pipelineDocs.find(d =>
           d.filename.toLowerCase() === regEntry.filename.toLowerCase() ||
           d.filename.toLowerCase().includes(regEntry.filename.toLowerCase()) ||
           regEntry.filename.toLowerCase().includes(d.filename.toLowerCase())
@@ -422,9 +285,6 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       extractionSummary: d.extractionSummary,
     }));
 
-    // Include debug info
-    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
-
     res.json(createApiSuccessResponse({
       dossier: updatedDossier,
       blueprint,
@@ -432,9 +292,9 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       taxYears,
       documents: documentsLight,
       _debug: {
-        fullPrompt,
-        rawAiResponse: result.content,
-        modelUsed: aiConfig.model,
+        pipelineSteps: pipelineResult.stepResults,
+        pipelineErrors: pipelineResult.errors,
+        model: 'gemini-3-pro-preview',
         timestamp: new Date().toISOString(),
       }
     }, "Dossier aangemaakt en gevalideerd"));
@@ -629,11 +489,7 @@ box3V2Router.post(
   "/dossiers/:id/revalidate",
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { systemPrompt } = req.body;
-
-    if (!systemPrompt || systemPrompt.trim().length === 0) {
-      throw ServerError.validation("systemPrompt is required", "Configureer eerst een intake prompt in de instellingen");
-    }
+    // Note: systemPrompt is no longer required - pipeline has built-in prompts
 
     const dossier = await storage.getBox3Dossier(id);
     if (!dossier) {
@@ -646,72 +502,55 @@ box3V2Router.post(
       throw ServerError.validation("No documents", "Geen documenten om te valideren");
     }
 
-    console.log(`📋 [Box3V2] Revalidating dossier ${id} with ${documents.length} documents`);
+    console.log(`📋 [Box3V2] Revalidating dossier ${id} with ${documents.length} documents using pipeline`);
 
-    // Process files for AI
-    const filesForAI = documents.map(d => ({
-      filename: d.filename,
-      mimeType: d.mimeType,
-      fileData: d.fileData,
-    }));
-    const { attachmentTexts, visionAttachments } = await processFilesForAI(filesForAI);
+    // Prepare documents for pipeline
+    const pipelineDocs: PipelineDocument[] = [];
+    for (const doc of documents) {
+      // Extract text from PDFs
+      let extractedText: string | undefined;
+      const ext = doc.filename.toLowerCase().split('.').pop();
+      const isPDF = doc.mimeType === 'application/pdf' ||
+                    (doc.mimeType === 'application/octet-stream' && ext === 'pdf');
+      const isTXT = doc.mimeType === 'text/plain' ||
+                    (doc.mimeType === 'application/octet-stream' && ext === 'txt');
 
-    // Build user prompt
-    const userPrompt = `## Mail van klant:
-${dossier.intakeText || "(geen mail tekst)"}
-
-## Bijlages (${documents.length} documenten):
-${attachmentTexts.length > 0 ? attachmentTexts.join('\n\n') : 'Geen tekst-extractie beschikbaar - documenten worden via vision geanalyseerd.'}
-
-Analyseer alle bovenstaande input en geef je validatie als JSON.`;
-
-    // Get AI config
-    const activeConfig = await storage.getActivePromptConfig();
-    if (!activeConfig?.config) {
-      throw ServerError.validation(
-        "No active prompt config",
-        "Geen actieve AI configuratie gevonden. Configureer dit in Instellingen."
-      );
-    }
-    const promptConfig = activeConfig.config as PromptConfig;
-
-    const baseAiConfig = configResolver.resolveForOperation(
-      'box3_validator',
-      promptConfig,
-      `box3-v2-revalidate-${Date.now()}`
-    );
-
-    const aiConfig = {
-      ...baseAiConfig,
-      maxOutputTokens: Math.max(baseAiConfig.maxOutputTokens || 8192, 16384),
-      thinkingLevel: 'high' as const,
-    };
-
-    // Call AI
-    const factory = AIModelFactory.getInstance();
-    const result = await factory.callModel(
-      aiConfig,
-      `${systemPrompt}\n\n${userPrompt}`,
-      {
-        jobId: `box3-v2-revalidate-${Date.now()}`,
-        visionAttachments: visionAttachments.length > 0 ? visionAttachments : undefined
+      if (isPDF) {
+        try {
+          const PDFParseClass = await getPdfParse();
+          const buffer = Buffer.from(doc.fileData, 'base64');
+          const parser = new PDFParseClass({ data: buffer });
+          const result = await parser.getText();
+          extractedText = result.text || "";
+        } catch {
+          // Vision will handle it
+        }
+      } else if (isTXT) {
+        extractedText = Buffer.from(doc.fileData, 'base64').toString('utf-8');
       }
-    );
 
-    console.log(`📋 [Box3V2] Revalidation AI response: ${result.content.length} chars`);
+      pipelineDocs.push({
+        id: doc.id,
+        filename: doc.filename,
+        mimeType: doc.mimeType,
+        fileData: doc.fileData,
+        extractedText,
+      });
+    }
 
-    // Parse JSON
-    let blueprint: Box3Blueprint;
-    try {
-      let jsonText = result.content.match(/```json\s*([\s\S]*?)\s*```/)?.[1];
-      if (!jsonText) jsonText = result.content.match(/\{[\s\S]*\}/)?.[0];
-      if (!jsonText && result.content.trim().startsWith('{')) jsonText = result.content.trim();
-      if (!jsonText) throw new Error('No JSON found');
+    // Run extraction pipeline
+    const pipeline = new Box3ExtractionPipeline((progress) => {
+      console.log(`📋 [Pipeline] Step ${progress.stepNumber}/${progress.totalSteps}: ${progress.message}`);
+    });
 
-      blueprint = box3BlueprintPartialSchema.parse(JSON.parse(jsonText)) as Box3Blueprint;
-    } catch (parseError: any) {
-      console.error(`📋 [Box3V2] Parse error:`, parseError.message);
-      throw ServerError.ai('Kon AI response niet parsen', { error: parseError.message });
+    const pipelineResult = await pipeline.run(pipelineDocs, dossier.intakeText || null);
+    const blueprint = pipelineResult.blueprint;
+
+    console.log(`📋 [Box3V2] Pipeline revalidation completed`);
+
+    // Log any pipeline errors
+    if (pipelineResult.errors.length > 0) {
+      console.warn(`📋 [Box3V2] Pipeline had ${pipelineResult.errors.length} non-fatal errors:`, pipelineResult.errors);
     }
 
     // Get current version and increment
@@ -723,7 +562,7 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
       dossierId: id,
       version: newVersion,
       blueprint,
-      createdBy: 'hervalidatie',
+      createdBy: 'pipeline',
     });
 
     // Update dossier
@@ -760,16 +599,14 @@ Analyseer alle bovenstaande input en geef je validatie als JSON.`;
 
     console.log(`📋 [Box3V2] Blueprint v${newVersion} created for dossier ${id}`);
 
-    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
-
     res.json(createApiSuccessResponse({
       blueprint,
       blueprintVersion: newVersion,
       taxYears,
       _debug: {
-        fullPrompt,
-        rawAiResponse: result.content,
-        modelUsed: aiConfig.model,
+        pipelineSteps: pipelineResult.stepResults,
+        pipelineErrors: pipelineResult.errors,
+        model: 'gemini-3-pro-preview',
         timestamp: new Date().toISOString(),
       }
     }, `Dossier opnieuw gevalideerd (v${newVersion})`));

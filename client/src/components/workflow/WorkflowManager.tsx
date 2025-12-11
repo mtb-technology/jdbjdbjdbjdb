@@ -212,6 +212,45 @@ function WorkflowManagerContent({
 
         // Invalidate attachments query so the bijlage-tab updates
         queryClient.invalidateQueries({ queryKey: [`/api/upload/attachments/${reportId}`] });
+
+        // Wait for OCR to complete on newly uploaded files before proceeding
+        // This prevents the race condition where stage execution fails because OCR is still pending
+        console.log(`⏳ Waiting for OCR to complete on uploaded files...`);
+        const maxWaitMs = 120000; // 2 minutes max wait
+        const pollIntervalMs = 2000; // Check every 2 seconds
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < maxWaitMs) {
+          const attachmentsResponse = await fetch(`/api/upload/attachments/${reportId}`, {
+            credentials: 'include',
+          });
+          if (attachmentsResponse.ok) {
+            const attachmentsResult = await attachmentsResponse.json();
+            const attachments = attachmentsResult.success ? attachmentsResult.data : attachmentsResult;
+            const pendingOcr = attachments?.filter((att: any) => isOcrPending(att)) || [];
+
+            if (pendingOcr.length === 0) {
+              console.log(`✅ OCR complete for all attachments`);
+              break;
+            }
+
+            console.log(`⏳ Still waiting for OCR: ${pendingOcr.length} file(s) pending...`);
+          }
+
+          // Wait before next poll
+          await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+        }
+
+        // Re-check one final time and throw if still pending
+        const finalCheck = await fetch(`/api/upload/attachments/${reportId}`, { credentials: 'include' });
+        if (finalCheck.ok) {
+          const finalResult = await finalCheck.json();
+          const finalAttachments = finalResult.success ? finalResult.data : finalResult;
+          const stillPending = finalAttachments?.filter((att: any) => isOcrPending(att)) || [];
+          if (stillPending.length > 0) {
+            throw new Error(`OCR verwerking duurt te lang. ${stillPending.length} bijlage(n) worden nog verwerkt. Probeer later opnieuw.`);
+          }
+        }
       }
 
       const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
@@ -566,7 +605,7 @@ function WorkflowManagerContent({
         }, 100);
       }
     }
-  }, [existingReport, state.currentReport, createReportMutation, dispatch]);
+  }, [existingReport, state.currentReport, createReportMutation, dispatch, executeStageM]);
 
   // Auto-start first stage if autoStart is true (but NOT if OCR is pending)
   useEffect(() => {
@@ -592,7 +631,7 @@ function WorkflowManagerContent({
         });
       }
     }
-  }, [autoStart, state.currentReport, state.currentStageIndex, state.stageProcessing, hasOcrPending]);
+  }, [autoStart, state.currentReport, state.currentStageIndex, state.stageProcessing, hasOcrPending, executeStageM]);
 
   const currentStage = WORKFLOW_STAGES[state.currentStageIndex];
   const progressPercentage = Math.round((Object.keys(state.stageResults).length / WORKFLOW_STAGES.length) * 100);

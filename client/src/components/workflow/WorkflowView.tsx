@@ -35,6 +35,7 @@ import { ActiveJobsBanner } from "./ActiveJobsBanner";
 import { useCollapsibleSections } from "@/hooks/useCollapsibleSections";
 import { useManualModeHandlers } from "@/hooks/useManualModeHandlers";
 import { useStageActions } from "@/hooks/useStageActions";
+import { useActiveJobs, useJobPolling, type JobStageProgress } from "@/hooks/useJobPolling";
 
 // Utils
 import {
@@ -68,6 +69,15 @@ export const WorkflowView = memo(function WorkflowView({
   const { toggleSection: toggleSectionCollapse, isSectionCollapsed } = useCollapsibleSections();
   const queryClient = useQueryClient();
   const shouldReduceMotion = useReducedMotion();
+
+  // Track active job progress for real-time sidebar updates
+  const { activeJobs } = useActiveJobs(state.currentReport?.id || null);
+  const activeJob = activeJobs[0]; // Get first active job if any
+  const { progress: jobProgress } = useJobPolling({
+    jobId: activeJob?.id || null,
+    reportId: state.currentReport?.id || "",
+    enabled: !!activeJob,
+  });
 
   // Custom hooks for handlers
   const {
@@ -109,7 +119,7 @@ export const WorkflowView = memo(function WorkflowView({
         return newExpanded;
       });
     }
-  }, [currentStage.key, state.stageResults]);
+  }, [currentStage.key, state.stageResults, expandedStages]);
 
   // Toggle stage expansion
   const toggleStageExpansion = useCallback(
@@ -187,6 +197,7 @@ export const WorkflowView = memo(function WorkflowView({
             conceptReportVersions={state.conceptReportVersions}
             currentStageIndex={state.currentStageIndex}
             onNavigate={handleNavigateToStage}
+            jobStageProgress={jobProgress?.stages}
           />
 
           {/* Main Workflow Content */}
