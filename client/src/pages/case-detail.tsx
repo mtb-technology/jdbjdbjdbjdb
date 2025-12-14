@@ -76,6 +76,7 @@ export default function CaseDetail() {
 
   // UI State
   const [showFullScreen, setShowFullScreen] = useState(false);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("workflow");
   const [expandedAttachments, setExpandedAttachments] = useState<Set<string>>(
     new Set()
@@ -214,7 +215,7 @@ export default function CaseDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => window.open(`/api/reports/${reportId}/preview-pdf`, '_blank')}
+              onClick={() => setShowPdfPreview(true)}
               title="Bekijk rapport in PDF formaat"
             >
               <BookOpen className="mr-2 h-4 w-4" />
@@ -413,6 +414,45 @@ export default function CaseDetail() {
             }
             onClose={() => setShowFullScreen(false)}
           />
+        )}
+
+        {/* PDF Preview Overlay */}
+        {showPdfPreview && (
+          <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b bg-background">
+              <div className="flex items-center gap-3">
+                <BookOpen className="h-5 w-5" />
+                <span className="font-semibold">Rapport Preview</span>
+                <span className="text-sm text-muted-foreground">
+                  {report.title} - {report.clientName}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(`/api/reports/${reportId}/preview-pdf`, '_blank')}
+                >
+                  <Eye className="mr-2 h-4 w-4" />
+                  Open in Nieuw Tabblad
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowPdfPreview(false)}
+                >
+                  Sluiten
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 p-4">
+              <iframe
+                src={`/api/reports/${reportId}/preview-pdf`}
+                className="w-full h-full rounded-lg border shadow-sm"
+                title="Rapport Preview"
+              />
+            </div>
+          </div>
         )}
 
         {/* Floating Action Button for Preview (visible below XL) */}
