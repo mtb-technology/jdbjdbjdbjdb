@@ -513,14 +513,15 @@ export function registerStageRoutes(
     }
 
     const rawText = (report.dossierData as any)?.rawText || "";
-    if (!rawText) {
+    const stage1Output = (report.stageResults as any)?.["1a_informatiecheck"] || "";
+
+    // Fallback: use stage1Output if rawText is missing
+    if (!rawText && !stage1Output) {
       return res.json({
-        summary: "Geen ruwe tekst beschikbaar voor dit rapport. Dit is een ouder rapport zonder opgeslagen brondata.",
+        summary: "Geen brondata beschikbaar voor dit rapport. Voer eerst Stap 1 uit.",
         generated: false
       });
     }
-
-    const stage1Output = (report.stageResults as any)?.["1a_informatiecheck"] || "";
 
     let promptTemplate = customPrompt || `Je bent een fiscaal assistent. Maak een compacte samenvatting van deze casus voor snelle referentie.
 
@@ -532,13 +533,13 @@ Geef alleen de essentie:
 
 Gebruik bullet points. Max 150 woorden.
 
-{stage1Output}RAW INPUT:
-{rawText}`;
+{stage1Output}{rawTextSection}`;
 
     const stage1Section = stage1Output ? `STAP 1 ANALYSE:\n${stage1Output}\n\n` : '';
+    const rawTextSection = rawText ? `RAW INPUT:\n${rawText}` : '';
     const finalPrompt = promptTemplate
       .replace('{stage1Output}', stage1Section)
-      .replace('{rawText}', rawText);
+      .replace('{rawTextSection}', rawTextSection);
 
     let summary;
     try {

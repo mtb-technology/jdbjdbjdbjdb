@@ -40,6 +40,7 @@ import {
   Activity,
   Paperclip,
   PanelRight,
+  BookOpen,
 } from "lucide-react";
 
 // Feature Components
@@ -210,6 +211,15 @@ export default function CaseDetail() {
                 report.stageResults as Record<string, unknown>
               )}
             </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(`/api/reports/${reportId}/preview-pdf`, '_blank')}
+              title="Bekijk rapport in PDF formaat"
+            >
+              <BookOpen className="mr-2 h-4 w-4" />
+              Bekijk
+            </Button>
             <ExportDialog
               reportId={reportId || ""}
               reportTitle={report.title}
