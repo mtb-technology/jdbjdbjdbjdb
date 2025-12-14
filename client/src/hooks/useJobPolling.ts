@@ -66,7 +66,7 @@ export function useJobPolling({
   onComplete,
   onError,
   enabled = true,
-  pollInterval = 3000,
+  pollInterval = 5000, // Default 5s instead of 3s to reduce network requests
 }: UseJobPollingOptions): UseJobPollingReturn {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -174,10 +174,11 @@ export function useActiveJobs(reportId: string | null) {
     enabled: !!reportId,
     refetchInterval: (query) => {
       const data = query.state.data;
-      // Poll more frequently when there are active jobs
-      return data?.hasActiveJobs ? 3000 : 30000;
+      // Poll more frequently when there are active jobs (5s), otherwise very slowly (60s)
+      return data?.hasActiveJobs ? 5000 : 60000;
     },
-    staleTime: 2000,
+    // High staleTime to prevent re-fetching when multiple components use this hook
+    staleTime: 4000,
   });
 
   const invalidate = useCallback(() => {
@@ -214,10 +215,10 @@ export function useAllActiveJobs() {
     },
     refetchInterval: (query) => {
       const data = query.state.data;
-      // Poll more frequently when there are active jobs
-      return data?.totalActiveJobs ? 5000 : 30000;
+      // Poll more frequently when there are active jobs (10s), otherwise slowly (60s)
+      return data?.totalActiveJobs ? 10000 : 60000;
     },
-    staleTime: 2000,
+    staleTime: 5000,
   });
 
   return {

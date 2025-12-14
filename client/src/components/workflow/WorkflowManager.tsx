@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo, useRef } from "react";
+import React, { useEffect, useCallback, memo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -32,7 +32,7 @@ import {
   handleSubstepStart
 } from "@/lib/mutationHelpers";
 import { ErrorBoundary, WorkflowErrorFallback } from "@/components/ErrorBoundary";
-import { useCreateJob, useActiveJobs } from "@/hooks/useJobPolling";
+import { useCreateJob } from "@/hooks/useJobPolling";
 import { QUERY_KEYS } from "@/lib/queryKeys";
 
 // Stages that run as background jobs (survive tab close)
@@ -72,28 +72,18 @@ function WorkflowManagerContent({
   const { data: attachmentsData } = useQuery<Attachment[]>({
     queryKey: [`/api/upload/attachments/${reportId}`],
     enabled: !!reportId,
-    refetchInterval: 5000, // Poll every 5 seconds to check OCR status
+    // No polling - attachments don't change often. OCR wait is handled in mutation.
+    // Query is invalidated after upload, so we get fresh data when needed.
+    refetchInterval: false,
+    staleTime: 60000,
   });
 
-  // Check if any attachments have OCR pending
+  // Check if any attachments have OCR pending (used to block Stage 1a button)
   const hasOcrPending = attachmentsData?.some(att => isOcrPending(att)) ?? false;
 
   // Job-based execution for stages 1a, 1b, 2, 3 (runs in background, survives tab close)
   const { createStageJob } = useCreateJob();
-  const { hasActiveJobs, activeJobs } = useActiveJobs(reportId || null);
-
-  // Check for active jobs on mount and mark stages as processing
-  useEffect(() => {
-    if (activeJobs.length > 0) {
-      activeJobs.forEach((job) => {
-        const config = (job as any).result;
-        if (config?.stageId) {
-          console.log(`🔄 Found active job ${job.id} for stage ${config.stageId}`);
-          dispatch({ type: "SET_STAGE_PROCESSING", stage: config.stageId, isProcessing: true });
-        }
-      });
-    }
-  }, [activeJobs, dispatch]);
+  // Note: useActiveJobs polling is handled in WorkflowView/ActiveJobsBanner to avoid duplicate queries
 
   // Timer effect
   useEffect(() => {
