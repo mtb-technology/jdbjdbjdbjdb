@@ -32,6 +32,16 @@ import {
   handleSubstepStart
 } from "@/lib/mutationHelpers";
 import { ErrorBoundary, WorkflowErrorFallback } from "@/components/ErrorBoundary";
+import { useCreateJob, useActiveJobs } from "@/hooks/useJobPolling";
+import { QUERY_KEYS } from "@/lib/queryKeys";
+
+// Stages that run as background jobs (survive tab close)
+const JOB_BASED_STAGES = [
+  "1a_informatiecheck",
+  "1b_informatiecheck_email",
+  "2_complexiteitscheck",
+  "3_generatie",
+] as const;
 
 interface WorkflowManagerProps {
   dossier: DossierData;
@@ -67,6 +77,23 @@ function WorkflowManagerContent({
 
   // Check if any attachments have OCR pending
   const hasOcrPending = attachmentsData?.some(att => isOcrPending(att)) ?? false;
+
+  // Job-based execution for stages 1a, 1b, 2, 3 (runs in background, survives tab close)
+  const { createStageJob } = useCreateJob();
+  const { hasActiveJobs, activeJobs } = useActiveJobs(reportId || null);
+
+  // Check for active jobs on mount and mark stages as processing
+  useEffect(() => {
+    if (activeJobs.length > 0) {
+      activeJobs.forEach((job) => {
+        const config = (job as any).result;
+        if (config?.stageId) {
+          console.log(`🔄 Found active job ${job.id} for stage ${config.stageId}`);
+          dispatch({ type: "SET_STAGE_PROCESSING", stage: config.stageId, isProcessing: true });
+        }
+      });
+    }
+  }, [activeJobs, dispatch]);
 
   // Timer effect
   useEffect(() => {
@@ -175,7 +202,10 @@ function WorkflowManagerContent({
   const MAX_FILE_SIZE_MB = 50;
   const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-  // Execute stage mutation
+  // Helper to check if a stage should run as a background job
+  const isJobBasedStage = (stage: string) => JOB_BASED_STAGES.includes(stage as typeof JOB_BASED_STAGES[number]);
+
+  // Execute stage mutation - uses job queue for 1a, 1b, 2, 3 (background) or direct API for review stages
   const executeStageM = useMutation({
     mutationFn: async ({ reportId, stage, customInput, reportDepth, pendingAttachments }: { reportId: string; stage: string; customInput?: string; reportDepth?: string; pendingAttachments?: Array<{ file: File; name: string }> }) => {
       // Upload attachments first if present (only for Stage 1a re-run)
@@ -253,6 +283,27 @@ function WorkflowManagerContent({
         }
       }
 
+      // ✅ Use job queue for stages 1a, 1b, 2, 3 (runs in background, survives tab close)
+      if (isJobBasedStage(stage)) {
+        console.log(`🚀 [${reportId}] Starting background job for ${stage}`);
+
+        // Create job via existing hook - polling is handled by WorkflowView's useActiveJobs/useJobPolling
+        const jobId = await createStageJob(reportId, stage, customInput);
+        if (!jobId) {
+          throw new Error(`Failed to create background job for ${stage}`);
+        }
+
+        // Return a marker that this is a job-based execution
+        // The actual completion is handled by useJobPolling in WorkflowView + ActiveJobsBanner
+        return {
+          isJobBased: true,
+          jobId,
+          stage,
+          message: `${stage} draait op de achtergrond`,
+        };
+      }
+
+      // Direct API call for review stages (4a-4f) - these are faster and use SSE
       const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
         customInput,
         reportDepth,
@@ -269,7 +320,15 @@ function WorkflowManagerContent({
       handleStageStart(stage, { dispatch });
     },
     onSuccess: async (data: any, variables) => {
-      // Use centralized handler
+      // ✅ Skip normal completion for job-based stages - handled by useJobPolling in WorkflowView
+      if (data?.isJobBased) {
+        console.log(`📋 [${variables.stage}] Job-based execution started - completion handled by job polling`);
+        // Don't clear processing state - job is still running in background
+        // WorkflowView's ActiveJobsBanner and useJobPolling handle the completion
+        return;
+      }
+
+      // Use centralized handler for direct API stages (review stages 4a-4f)
       handleStageCompletion(data, variables, {
         dispatch,
         queryClient,
@@ -282,35 +341,8 @@ function WorkflowManagerContent({
       const stageResult = data.stageResult || data.stageOutput || "";
       const updatedReport = data.report;
 
-      // Auto-trigger dossier context generation after Stage 1a completes
-      if (variables.stage === "1a_informatiecheck" && updatedReport?.id) {
-        // Check completion status FIRST, before any async operations
-        const isComplete = isInformatieCheckComplete(stageResult);
+      // NOTE: Auto-trigger logic for 1a -> 1b is now handled in useJobExecution onJobComplete
 
-        // Auto-trigger stage 1b (email generation) IMMEDIATELY if 1a is INCOMPLEET
-        if (!isComplete) {
-          console.log('📧 Stage 1a is INCOMPLEET - auto-triggering stage 1b (email generation)');
-          dispatch({ type: "SET_STAGE_PROCESSING", stage: "1b_informatiecheck_email", isProcessing: true });
-
-          // Execute 1b in background - don't wait
-          executeStageM.mutate({
-            reportId: updatedReport.id,
-            stage: "1b_informatiecheck_email",
-            customInput: undefined,
-          });
-        }
-
-        // Trigger dossier context in background (don't block with await)
-        console.log('📋 Stage 1a completed - triggering dossier context generation');
-        apiRequest("POST", `/api/reports/${updatedReport.id}/dossier-context`, {})
-          .then(() => {
-            queryClient.invalidateQueries({ queryKey: [`/api/reports/${updatedReport.id}`] });
-          })
-          .catch((error) => {
-            console.error('Failed to generate dossier context:', error);
-          });
-      }
-      
       // Only auto-advance if we're still on the same stage that was executed
       console.log(`🎯 Auto-advance evaluation: executedStage="${variables.stage}", currentStageKey="${currentStage.key}", currentIndex=${state.currentStageIndex}`);
       if (variables.stage === currentStage.key) {
@@ -320,7 +352,7 @@ function WorkflowManagerContent({
           [variables.stage]: stageResult,
           ...((updatedReport?.stageResults as Record<string, string>) || {})
         };
-        
+
         // Calculate next index using a temporary state with updated results
         const tempCurrentIndex = state.currentStageIndex;
         const tempCurrentStage = WORKFLOW_STAGES[tempCurrentIndex];
@@ -349,7 +381,7 @@ function WorkflowManagerContent({
         else if (tempCurrentStage.key === "3_generatie") {
           nextIndex = WORKFLOW_STAGES.findIndex(s => s.key === "4a_BronnenSpecialist");
         }
-        
+
         console.log(`🎯 Auto-advance check: current=${state.currentStageIndex}, next=${nextIndex}, stage=${variables.stage}`);
         console.log(`🎯 Stage results after completion:`, Object.keys(updatedStageResults));
         // AUTO-ADVANCE DISABLED: User moet zelf op "Volgende Stap" klikken om output te kunnen bekijken
