@@ -86,7 +86,10 @@ export function VersionTimeline({
             <div className="space-y-4">
               {sortedVersions.map((checkpoint, index) => {
                 const isLast = index === sortedVersions.length - 1;
-                const isCurrent = checkpoint.version === currentVersion || checkpoint.isCurrent;
+                // HOTFIX: Only use checkpoint.isCurrent (set by useVersionManagement)
+                // because currentVersion matches by number only, not stageId+version
+                // This caused multiple items with same version number to show "Huidig"
+                const isCurrent = checkpoint.isCurrent === true;
 
                 return (
                   <div key={`${checkpoint.stageKey}-${checkpoint.version}-${index}`} className="relative pl-12">
@@ -302,7 +305,8 @@ export function CompactVersionTimeline({ versions, currentVersion }: CompactTime
   return (
     <div className="flex items-center gap-1 overflow-x-auto pb-2">
       {sortedVersions.map((checkpoint, index) => {
-        const isCurrent = checkpoint.version === currentVersion || checkpoint.isCurrent;
+        // HOTFIX: Only use checkpoint.isCurrent - see comment above
+        const isCurrent = checkpoint.isCurrent === true;
         const isLast = index === sortedVersions.length - 1;
         const shortLabel = getShortStageLabel(checkpoint.stageKey);
         const displayName = formatStageName(checkpoint.stageName, checkpoint.stageKey);
