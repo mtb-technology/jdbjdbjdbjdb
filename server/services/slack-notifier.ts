@@ -9,6 +9,8 @@
  * Only active when SLACK_WEBHOOK_URL environment variable is configured.
  */
 
+import { config } from "../config";
+
 interface ReportInfo {
   id: string;
   dossierNumber: number;
@@ -49,7 +51,7 @@ function getPortalUrl(): string {
 }
 
 function getEnvPrefix(): string {
-  return process.env.NODE_ENV === "production" ? "" : "[DEV] ";
+  return config.IS_PRODUCTION ? "" : "[DEV] ";
 }
 
 async function sendSlackMessage(payload: object): Promise<void> {

@@ -13,6 +13,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { DossierData, BouwplanData, Report } from "@shared/schema";
 import DOMPurify from "isomorphic-dompurify";
 import imageCompression from "browser-image-compression";
+import { UPLOAD_LIMITS, getOversizedFilesMessage } from "@/constants/upload.constants";
 
 // Type for pending file uploads (stored in memory until case is created)
 interface PendingFile {
@@ -96,10 +97,6 @@ const Pipeline = memo(function Pipeline() {
   }, []);
 
   // Stage files for upload (stored in memory until case is created)
-  // ✅ Client-side validation: max 50MB per file to match server limit
-  const MAX_FILE_SIZE_MB = 50;
-  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -109,7 +106,7 @@ const Pipeline = memo(function Pipeline() {
     const rejectedFiles: { name: string; size: number }[] = [];
 
     Array.from(files).forEach(file => {
-      if (file.size > MAX_FILE_SIZE_BYTES) {
+      if (file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES) {
         rejectedFiles.push({ name: file.name, size: file.size });
       } else {
         validFiles.push(file);
@@ -123,7 +120,7 @@ const Pipeline = memo(function Pipeline() {
         .join(', ');
       toast({
         title: "Bestand(en) te groot",
-        description: `Maximum grootte is ${MAX_FILE_SIZE_MB}MB per bestand. Geweigerd: ${rejectedNames}`,
+        description: getOversizedFilesMessage(rejectedNames),
         variant: "destructive",
       });
     }

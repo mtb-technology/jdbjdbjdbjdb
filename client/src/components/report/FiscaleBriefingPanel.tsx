@@ -45,6 +45,7 @@ import {
   MessageSquare,
   HelpCircle,
   RefreshCw,
+  Code,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -284,16 +285,19 @@ const CompactBriefingView = memo(function CompactBriefingView({
  */
 const FullScreenBriefingView = memo(function FullScreenBriefingView({
   briefing,
+  rawJson,
   onClose,
 }: {
   briefing: FiscaleBriefing;
+  rawJson: string;
   onClose: () => void;
 }) {
   const [isReasoningOpen, setIsReasoningOpen] = useState(true);
   const [isChecklistOpen, setIsChecklistOpen] = useState(true);
-  const [isTwijfelOpen, setIsTwijfelOpen] = useState(false);
-  const [isAlternativesOpen, setIsAlternativesOpen] = useState(false);
-  const [isReviewerOpen, setIsReviewerOpen] = useState(false);
+  const [isTwijfelOpen, setIsTwijfelOpen] = useState(true);
+  const [isAlternativesOpen, setIsAlternativesOpen] = useState(true);
+  const [isReviewerOpen, setIsReviewerOpen] = useState(true);
+  const [isDebugOpen, setIsDebugOpen] = useState(false);
 
   const confidenceStyle = getConfidenceStyle(briefing.totaal_confidence);
   const ConfidenceIcon = confidenceStyle.icon;
@@ -573,6 +577,29 @@ const FullScreenBriefingView = memo(function FullScreenBriefingView({
           <div className="text-sm text-muted-foreground italic px-2 py-3 bg-gray-50 dark:bg-gray-900 rounded-lg border-t">
             💡 {briefing.confidence_toelichting}
           </div>
+
+          {/* Debug / Developer Tools */}
+          <Collapsible open={isDebugOpen} onOpenChange={setIsDebugOpen}>
+            <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-300 dark:border-gray-700">
+              <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg transition-colors">
+                <div className="flex items-center gap-3">
+                  <Code className="h-5 w-5 text-gray-500" />
+                  <div className="text-left">
+                    <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Developer Tools</h3>
+                    <p className="text-xs text-muted-foreground">Bekijk ruwe JSON output</p>
+                  </div>
+                </div>
+                {isDebugOpen ? <ChevronUp className="h-4 w-4 text-gray-500" /> : <ChevronDown className="h-4 w-4 text-gray-500" />}
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="px-4 pb-4">
+                  <pre className="bg-gray-100 dark:bg-gray-800 p-3 rounded text-xs overflow-x-auto max-h-96 overflow-y-auto font-mono">
+                    {rawJson}
+                  </pre>
+                </div>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
         </div>
       </DialogContent>
     </Dialog>
@@ -696,6 +723,7 @@ export const FiscaleBriefingPanel = memo(function FiscaleBriefingPanel({
       {showFullScreen && (
         <FullScreenBriefingView
           briefing={briefing}
+          rawJson={briefingJson || ""}
           onClose={() => setShowFullScreen(false)}
         />
       )}

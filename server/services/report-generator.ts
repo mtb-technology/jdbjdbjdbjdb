@@ -8,6 +8,7 @@ import { PromptBuilder, StagePromptConfig } from "./prompt-builder";
 import { storage } from "../storage";
 import { ServerError } from "../middleware/errorHandler";
 import { ERROR_CODES, getErrorCategory, isAIError } from "@shared/errors";
+import { getStageName } from "@shared/constants";
 import { REPORT_CONFIG, getStageConfig } from "../config/index";
 
 export class ReportGenerator {
@@ -26,19 +27,7 @@ export class ReportGenerator {
   }
 
   private getStageDisplayName(stageName: string): string {
-    const stageNames: Record<string, string> = {
-      '1a_informatiecheck': 'Informatie Analyse',
-      '1b_informatiecheck_email': 'Email Generatie',
-      '2_complexiteitscheck': 'Complexiteits Check',
-      '3_generatie': 'Rapport Generatie',
-      '4a_BronnenSpecialist': 'Bronnen Specialist Review',
-      '4b_FiscaalTechnischSpecialist': 'Fiscaal Technisch Review',
-      '4c_ScenarioGatenAnalist': 'Scenario Analyse',
-      '4e_DeAdvocaat': 'Juridisch Review',
-      '4f_HoofdCommunicatie': 'Hoofd Communicatie Review',
-      '6_change_summary': 'Change Summary'
-    };
-    return stageNames[stageName] || stageName;
+    return getStageName(stageName);
   }
 
   private sourceValidator: SourceValidator;
@@ -783,6 +772,17 @@ ${errorGuidance}
       provider: aiConfig.provider,
       model: aiConfig.model
     });
+
+    // DEBUG: Log the full prompt for troubleshooting
+    console.log(`📝 [${jobId}] === FISCALE BRIEFING PROMPT DEBUG ===`);
+    console.log(`📝 [${jobId}] System Prompt (first 500 chars):`, promptResult.systemPrompt.substring(0, 500));
+    console.log(`📝 [${jobId}] User Input keys:`, Object.keys(JSON.parse(promptResult.userInput)));
+    console.log(`📝 [${jobId}] workflow_uitleg:`, JSON.parse(promptResult.userInput).workflow_uitleg);
+    console.log(`📝 [${jobId}] reviewer_feedback status:`,
+      Object.entries(JSON.parse(promptResult.userInput).reviewer_feedback || {})
+        .map(([k, v]: [string, any]) => `${k}: ${v.status}`)
+    );
+    console.log(`📝 [${jobId}] === END PROMPT DEBUG ===`);
 
     try {
       const response = await this.modelFactory.callModel(aiConfig, promptResult, options);

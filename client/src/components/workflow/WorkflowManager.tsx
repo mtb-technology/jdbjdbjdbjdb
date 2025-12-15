@@ -2,6 +2,7 @@ import React, { useEffect, useCallback, memo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { UPLOAD_LIMITS } from "@/constants/upload.constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -188,10 +189,6 @@ function WorkflowManagerContent({
     },
   });
 
-  // ✅ File size validation constants
-  const MAX_FILE_SIZE_MB = 50;
-  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-
   // Helper to check if a stage should run as a background job
   const isJobBasedStage = (stage: string) => JOB_BASED_STAGES.includes(stage as typeof JOB_BASED_STAGES[number]);
 
@@ -201,12 +198,12 @@ function WorkflowManagerContent({
       // Upload attachments first if present (only for Stage 1a re-run)
       if (pendingAttachments && pendingAttachments.length > 0 && stage === "1a_informatiecheck") {
         // ✅ Client-side file size validation
-        const oversizedFiles = pendingAttachments.filter(pf => pf.file.size > MAX_FILE_SIZE_BYTES);
+        const oversizedFiles = pendingAttachments.filter(pf => pf.file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES);
         if (oversizedFiles.length > 0) {
           const names = oversizedFiles
             .map(f => `${f.name} (${(f.file.size / 1024 / 1024).toFixed(1)}MB)`)
             .join(', ');
-          throw new Error(`Bestand(en) te groot (max ${MAX_FILE_SIZE_MB}MB): ${names}`);
+          throw new Error(`Bestand(en) te groot (max ${UPLOAD_LIMITS.MAX_FILE_SIZE_MB}MB): ${names}`);
         }
 
         console.log(`📎 Uploading ${pendingAttachments.length} attachment(s) before Stage 1a re-run...`);

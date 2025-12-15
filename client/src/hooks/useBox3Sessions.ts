@@ -10,6 +10,7 @@ import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import type { Box3Blueprint, Box3Dossier } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
+import { UPLOAD_LIMITS, getOversizedFilesMessage } from "@/constants/upload.constants";
 
 // Light session type for list view
 export interface Box3DossierLight {
@@ -115,24 +116,20 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
     }
   };
 
-  // ✅ File size validation constants
-  const MAX_FILE_SIZE_MB = 50;
-  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-
   // Add documents to existing dossier
   const addDocuments = async (
     sessionId: string,
     files: PendingFile[]
   ): Promise<boolean> => {
     // ✅ Client-side file size validation
-    const oversizedFiles = files.filter(pf => pf.file.size > MAX_FILE_SIZE_BYTES);
+    const oversizedFiles = files.filter(pf => pf.file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES);
     if (oversizedFiles.length > 0) {
       const names = oversizedFiles
         .map(f => `${f.name} (${(f.file.size / 1024 / 1024).toFixed(1)}MB)`)
         .join(', ');
       toast({
         title: "Bestand(en) te groot",
-        description: `Maximum grootte is ${MAX_FILE_SIZE_MB}MB per bestand. Geweigerd: ${names}`,
+        description: getOversizedFilesMessage(names),
         variant: "destructive",
       });
       return false;
