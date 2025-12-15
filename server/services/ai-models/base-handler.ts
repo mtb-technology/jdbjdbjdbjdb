@@ -47,6 +47,8 @@ export interface AIModelParameters {
   signal?: AbortSignal;
   // Response format - use 'json' to force structured JSON output (Google AI only)
   responseFormat?: 'json' | 'text';
+  // Report language for Stage 3 generation
+  reportLanguage?: "nl" | "en";
 }
 
 export interface CircuitBreakerState {

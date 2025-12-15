@@ -23,10 +23,8 @@ export class GoogleAIHandler extends BaseAIHandler {
         timeout: 900000  // 15 minutes in milliseconds
       }
     });
-    // Only create orchestrator if deep research is enabled
-    if (!skipDeepResearch) {
-      this.orchestrator = new ResearchOrchestrator(apiKey);
-    }
+    // Orchestrator is created lazily when deep research is actually used
+    // This avoids unnecessary initialization and misleading log messages
   }
 
   async callInternal(

@@ -26,9 +26,10 @@ import {
   Loader2,
   Paperclip,
   Info,
+  Languages,
 } from "lucide-react";
 import { ExpressModeButton } from "../ExpressModeButton";
-import type { StageActionButtonsProps, ReportDepth, PendingFile } from "@/types/workflowStageCard.types";
+import type { StageActionButtonsProps, ReportDepth, ReportLanguage, PendingFile } from "@/types/workflowStageCard.types";
 
 /**
  * Custom context input section
@@ -288,6 +289,72 @@ const ReportDepthSelector = memo(function ReportDepthSelector({
   );
 });
 
+/**
+ * Report language selector for Stage 3
+ */
+interface ReportLanguageSelectorProps {
+  reportLanguage: ReportLanguage;
+  onReportLanguageChange: (language: ReportLanguage) => void;
+}
+
+const LANGUAGE_OPTIONS: { value: ReportLanguage; label: string; flag: string }[] = [
+  {
+    value: "nl",
+    label: "Nederlands",
+    flag: "🇳🇱"
+  },
+  {
+    value: "en",
+    label: "English",
+    flag: "🇬🇧"
+  },
+];
+
+const ReportLanguageSelector = memo(function ReportLanguageSelector({
+  reportLanguage,
+  onReportLanguageChange,
+}: ReportLanguageSelectorProps) {
+  return (
+    <div className="bg-green-50 dark:bg-green-950/20 border-2 border-green-200 dark:border-green-800 rounded-lg p-4">
+      <div className="flex items-start gap-3 mb-3">
+        <Languages className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <h4 className="font-semibold text-sm text-green-900 dark:text-green-100">
+            Rapport Taal
+          </h4>
+          <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+            In welke taal moet het rapport worden geschreven?
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {LANGUAGE_OPTIONS.map((option) => {
+          const isSelected = reportLanguage === option.value;
+          return (
+            <button
+              key={option.value}
+              onClick={() => onReportLanguageChange(option.value)}
+              className={`
+                flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all
+                ${isSelected
+                  ? "border-green-500 bg-green-100 dark:bg-green-900/40"
+                  : "border-gray-200 dark:border-gray-700 hover:border-green-300 hover:bg-green-50 dark:hover:bg-green-950/30"
+                }
+              `}
+            >
+              <span className="text-xl">{option.flag}</span>
+              <span className={`text-sm font-medium ${isSelected ? "text-green-700 dark:text-green-300" : "text-gray-700 dark:text-gray-300"}`}>
+                {option.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
 export const StageActionButtons = memo(function StageActionButtons({
   stageKey,
   stageStatus,
@@ -302,6 +369,8 @@ export const StageActionButtons = memo(function StageActionButtons({
   onCancel,
   reportDepth = "balanced",
   onReportDepthChange,
+  reportLanguage = "nl",
+  onReportLanguageChange,
   reportId,
   showExpressMode,
   hasStage3,
@@ -338,6 +407,14 @@ export const StageActionButtons = memo(function StageActionButtons({
         <ReportDepthSelector
           reportDepth={reportDepth}
           onReportDepthChange={onReportDepthChange}
+        />
+      )}
+
+      {/* Report Language Selector - Only show for Stage 3 */}
+      {isStage3 && effectiveCanExecute && onReportLanguageChange && (
+        <ReportLanguageSelector
+          reportLanguage={reportLanguage}
+          onReportLanguageChange={onReportLanguageChange}
         />
       )}
 

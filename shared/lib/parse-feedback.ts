@@ -777,6 +777,64 @@ function finalizeProposal(
 
 // ===== SERIALIZATION FUNCTIONS =====
 
+// ===== DENKWIJZE EXTRACTION =====
+
+/**
+ * Extract AI denkwijze/reasoning from reviewer feedback
+ *
+ * Looks for "denkwijze" object in the JSON output from reviewer stages.
+ * Returns null for legacy feedback without reasoning.
+ */
+export interface ReviewerDenkwijze {
+  analyse_aanpak?: string;
+  focus_punten?: string[];
+  belangrijkste_conclusie?: string;
+  overwegingen?: Array<{ punt: string; conclusie: string }>;
+}
+
+export function extractDenkwijzeFromFeedback(rawFeedback: string): ReviewerDenkwijze | null {
+  if (!rawFeedback?.trim()) return null;
+
+  try {
+    // Try to extract JSON from markdown code blocks first
+    let jsonContent = rawFeedback.trim();
+    const markdownMatch = rawFeedback.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+    if (markdownMatch) {
+      jsonContent = markdownMatch[1];
+    }
+
+    // Try direct parse or find JSON object
+    let parsed: any;
+    if (jsonContent.startsWith('{')) {
+      parsed = JSON.parse(jsonContent);
+    } else {
+      const jsonMatch = rawFeedback.match(/\{[\s\S]*"denkwijze"[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      }
+    }
+
+    if (!parsed) return null;
+
+    // Extract denkwijze from various possible locations
+    const denkwijze = parsed.denkwijze || parsed;
+
+    // Validate it looks like a denkwijze object
+    if (denkwijze.analyse_aanpak || denkwijze.focus_punten || denkwijze.belangrijkste_conclusie) {
+      return {
+        analyse_aanpak: denkwijze.analyse_aanpak,
+        focus_punten: Array.isArray(denkwijze.focus_punten) ? denkwijze.focus_punten : undefined,
+        belangrijkste_conclusie: denkwijze.belangrijkste_conclusie,
+        overwegingen: Array.isArray(denkwijze.overwegingen) ? denkwijze.overwegingen : undefined
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Convert change proposals with user decisions to filtered JSON for Editor
  * Only returns accepted and modified proposals (rejects are filtered out)

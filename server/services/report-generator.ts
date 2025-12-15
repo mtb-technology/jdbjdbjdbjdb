@@ -423,7 +423,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     onProgress?: (progress: { stage: string; message: string; progress: number }) => void,
     visionAttachments?: Array<{ mimeType: string; data: string; filename: string }>,
     reportDepth?: "concise" | "balanced" | "comprehensive",
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    reportLanguage?: "nl" | "en"
   ): Promise<{ stageOutput: string; conceptReport: string; prompt: string }> {
     // Generate the prompt using the new method
     const promptResult = await this.generatePromptForStage(
@@ -436,9 +437,28 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     );
 
     // Convert prompt to string for logging (backward compatibility)
-    const promptString = typeof promptResult === 'string'
+    let promptString = typeof promptResult === 'string'
       ? promptResult
       : `${promptResult.systemPrompt}\n\n### USER INPUT:\n${promptResult.userInput}`;
+
+    // Add language instruction for Stage 3 generation
+    if (reportLanguage && stageName === "3_generatie") {
+      const languageInstruction = reportLanguage === "en"
+        ? "\n\n[LANGUAGE INSTRUCTION]\nIMPORTANT: Write the entire report in English. All headings, paragraphs, and content should be in professional English. Do NOT use Dutch anywhere in the output."
+        : ""; // Default is Dutch, no extra instruction needed
+
+      if (typeof promptResult === 'string') {
+        promptString = promptResult + languageInstruction;
+      } else {
+        // Append to system prompt for structured prompts
+        promptResult.systemPrompt = promptResult.systemPrompt + languageInstruction;
+        promptString = `${promptResult.systemPrompt}\n\n### USER INPUT:\n${promptResult.userInput}`;
+      }
+
+      if (reportLanguage === "en") {
+        console.log(`🌐 [${jobId}] Generating report in ENGLISH`);
+      }
+    }
 
     // Get active prompt configuration from database for AI config
     const promptConfig = await storage.getActivePromptConfig();
@@ -477,7 +497,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     }
     
     // Call the AI model using the factory with stage-specific timeout
-    const options: AIModelParameters & { jobId?: string; signal?: AbortSignal } = {
+    const options: AIModelParameters & { jobId?: string; signal?: AbortSignal; reportLanguage?: "nl" | "en" } = {
       jobId,
       useWebSearch,
       useGrounding,
@@ -485,7 +505,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       onProgress, // Pass through for deep research progress updates
       visionAttachments, // Pass through for multimodal PDF/image processing
       reportDepth, // Pass through for Stage 3 deep research depth control
-      signal // Pass through for graceful cancellation
+      signal, // Pass through for graceful cancellation
+      reportLanguage // Pass through for language selection
     };
 
     if (visionAttachments && visionAttachments.length > 0) {

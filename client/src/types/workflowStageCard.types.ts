@@ -54,7 +54,7 @@ export interface WorkflowStageCardProps {
   // Controls
   canExecute: boolean;
   isProcessing: boolean;
-  onExecute: (customContext?: string, reportDepth?: ReportDepth, pendingAttachments?: PendingFile[]) => void;
+  onExecute: (customContext?: string, reportDepth?: ReportDepth, pendingAttachments?: PendingFile[], reportLanguage?: ReportLanguage) => void;
   onResetStage?: () => void;
   onCancel?: () => void;
 
@@ -65,6 +65,10 @@ export interface WorkflowStageCardProps {
   // Report depth for Stage 3
   reportDepth?: ReportDepth;
   onReportDepthChange?: (depth: ReportDepth) => void;
+
+  // Report language for Stage 3
+  reportLanguage?: ReportLanguage;
+  onReportLanguageChange?: (language: ReportLanguage) => void;
 
   // Progress
   progress?: StageProgress;
@@ -131,6 +135,11 @@ export interface ManualModePanelProps {
 export type ReportDepth = "concise" | "balanced" | "comprehensive";
 
 /**
+ * Report language options for Stage 3.
+ */
+export type ReportLanguage = "nl" | "en";
+
+/**
  * Pending file for upload
  */
 export interface PendingFile {
@@ -158,6 +167,9 @@ export interface StageActionButtonsProps {
   /** Report depth for Stage 3 */
   reportDepth?: ReportDepth;
   onReportDepthChange?: (depth: ReportDepth) => void;
+  /** Report language for Stage 3 */
+  reportLanguage?: ReportLanguage;
+  onReportLanguageChange?: (language: ReportLanguage) => void;
   /** Express Mode props - show inline Express button */
   reportId?: string;
   showExpressMode?: boolean;

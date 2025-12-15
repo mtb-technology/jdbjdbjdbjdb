@@ -19,7 +19,9 @@ import { REVIEW_STAGES, getLatestConceptText } from "@shared/constants";
 // Schema for creating single stage job
 const createSingleStageJobSchema = z.object({
   stageId: z.string(),
-  customInput: z.string().optional()
+  customInput: z.string().optional(),
+  reportDepth: z.enum(["quick", "balanced", "comprehensive"]).optional(),
+  reportLanguage: z.enum(["nl", "en"]).optional()
 });
 
 // Schema for creating express mode job
@@ -70,7 +72,9 @@ export function registerJobRoutes(app: Express): void {
       reportId: id,
       result: {
         stageId: validatedData.stageId,
-        customInput: validatedData.customInput
+        customInput: validatedData.customInput,
+        reportDepth: validatedData.reportDepth,
+        reportLanguage: validatedData.reportLanguage
       } as SingleStageJobConfig
     });
 

@@ -37,6 +37,8 @@ export interface JobProgress {
 export interface SingleStageJobConfig {
   stageId: string;
   customInput?: string;
+  reportDepth?: "quick" | "balanced" | "comprehensive";
+  reportLanguage?: "nl" | "en";
 }
 
 export interface ExpressModeJobConfig {
@@ -176,7 +178,7 @@ class JobProcessor {
    * Process a single stage job
    */
   private async processSingleStage(job: Job, config: SingleStageJobConfig): Promise<void> {
-    const { stageId, customInput } = config;
+    const { stageId, customInput, reportDepth, reportLanguage } = config;
     const reportId = job.reportId!;
 
     // Update progress
@@ -247,7 +249,10 @@ class JobProcessor {
       customInput,
       reportId,
       undefined, // onProgress callback
-      visionAttachments.length > 0 ? visionAttachments : undefined
+      visionAttachments.length > 0 ? visionAttachments : undefined,
+      reportDepth === "quick" ? "concise" : reportDepth, // Map quick -> concise for backward compat
+      undefined, // signal
+      reportLanguage
     );
 
     // Update progress

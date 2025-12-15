@@ -197,7 +197,7 @@ function WorkflowManagerContent({
 
   // Execute stage mutation - uses job queue for 1a, 1b, 2, 3 (background) or direct API for review stages
   const executeStageM = useMutation({
-    mutationFn: async ({ reportId, stage, customInput, reportDepth, pendingAttachments }: { reportId: string; stage: string; customInput?: string; reportDepth?: string; pendingAttachments?: Array<{ file: File; name: string }> }) => {
+    mutationFn: async ({ reportId, stage, customInput, reportDepth, reportLanguage, pendingAttachments }: { reportId: string; stage: string; customInput?: string; reportDepth?: string; reportLanguage?: string; pendingAttachments?: Array<{ file: File; name: string }> }) => {
       // Upload attachments first if present (only for Stage 1a re-run)
       if (pendingAttachments && pendingAttachments.length > 0 && stage === "1a_informatiecheck") {
         // ✅ Client-side file size validation
@@ -278,7 +278,7 @@ function WorkflowManagerContent({
         console.log(`🚀 [${reportId}] Starting background job for ${stage}`);
 
         // Create job via existing hook - polling is handled by WorkflowView's useActiveJobs/useJobPolling
-        const jobId = await createStageJob(reportId, stage, customInput);
+        const jobId = await createStageJob(reportId, stage, customInput, reportDepth, reportLanguage);
         if (!jobId) {
           throw new Error(`Failed to create background job for ${stage}`);
         }
@@ -297,6 +297,7 @@ function WorkflowManagerContent({
       const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
         customInput,
         reportDepth,
+        reportLanguage,
       });
       const data = await response.json();
 

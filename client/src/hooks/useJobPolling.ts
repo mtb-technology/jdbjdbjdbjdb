@@ -285,11 +285,19 @@ export function useCreateJob() {
   const { toast } = useToast();
 
   const createStageJob = useCallback(
-    async (reportId: string, stageId: string, customInput?: string): Promise<string | null> => {
+    async (
+      reportId: string,
+      stageId: string,
+      customInput?: string,
+      reportDepth?: string,
+      reportLanguage?: string
+    ): Promise<string | null> => {
       try {
         const response = await apiRequest("POST", `/api/reports/${reportId}/jobs/stage`, {
           stageId,
           customInput,
+          reportDepth,
+          reportLanguage,
         });
 
         if (!response.ok) {

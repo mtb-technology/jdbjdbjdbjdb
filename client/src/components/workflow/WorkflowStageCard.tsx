@@ -39,7 +39,7 @@ import {
 } from "@/utils/stageCardUtils";
 
 // Types
-import type { WorkflowStageCardProps, ReportDepth, PendingFile } from "@/types/workflowStageCard.types";
+import type { WorkflowStageCardProps, ReportDepth, ReportLanguage, PendingFile } from "@/types/workflowStageCard.types";
 
 // Re-export props type for consumers
 export type { WorkflowStageCardProps } from "@/types/workflowStageCard.types";
@@ -62,6 +62,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   onCancel,
   reportDepth: externalReportDepth,
   onReportDepthChange,
+  reportLanguage: externalReportLanguage,
+  onReportLanguageChange,
   progress,
   isInputCollapsed,
   isOutputCollapsed,
@@ -90,11 +92,16 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   const [customContext, setCustomContext] = useState("");
   const [showCustomContext, setShowCustomContext] = useState(false);
   const [localReportDepth, setLocalReportDepth] = useState<ReportDepth>("balanced");
+  const [localReportLanguage, setLocalReportLanguage] = useState<ReportLanguage>("nl");
   const [pendingAttachments, setPendingAttachments] = useState<PendingFile[]>([]);
 
   // Use external or local reportDepth
   const reportDepth = externalReportDepth ?? localReportDepth;
   const handleReportDepthChange = onReportDepthChange ?? setLocalReportDepth;
+
+  // Use external or local reportLanguage
+  const reportLanguage = externalReportLanguage ?? localReportLanguage;
+  const handleReportLanguageChange = onReportLanguageChange ?? setLocalReportLanguage;
 
   // Calculated values
   const resultLabel = useMemo(() => getResultLabel(stageKey), [stageKey]);
@@ -106,10 +113,10 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
   // Handlers
   const handleExecuteClick = useCallback(() => {
-    onExecute(customContext.trim() || undefined, reportDepth, pendingAttachments.length > 0 ? pendingAttachments : undefined);
+    onExecute(customContext.trim() || undefined, reportDepth, pendingAttachments.length > 0 ? pendingAttachments : undefined, reportLanguage);
     // Clear pending attachments after execute
     setPendingAttachments([]);
-  }, [onExecute, customContext, reportDepth, pendingAttachments]);
+  }, [onExecute, customContext, reportDepth, pendingAttachments, reportLanguage]);
 
   const handleCopy = useCallback((text: string) => {
     copyToClipboard(text);
@@ -184,6 +191,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   onCancel={onCancel}
                   reportDepth={reportDepth}
                   onReportDepthChange={handleReportDepthChange}
+                  reportLanguage={reportLanguage}
+                  onReportLanguageChange={handleReportLanguageChange}
                   reportId={reportId}
                   showExpressMode={showExpressMode}
                   hasStage3={hasStage3}

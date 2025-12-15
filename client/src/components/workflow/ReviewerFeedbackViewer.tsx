@@ -2,6 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, CheckCircle, Info, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DenkwijzeSummary, extractDenkwijzeFromRaw } from "./DenkwijzeSummary";
+import type { StageDenkwijze } from "@shared/schema";
 
 interface FeedbackItem {
   bevinding_categorie?: string;
@@ -28,41 +30,54 @@ export function ReviewerFeedbackViewer({
   rawOutput,
   className
 }: ReviewerFeedbackViewerProps) {
+  // Extract denkwijze (AI reasoning) from raw output
+  const denkwijze = extractDenkwijzeFromRaw(rawOutput);
+
   // Check for "geen_wijzigingen" status first (all verified, no changes needed)
   const noChangesResult = parseNoChangesStatus(rawOutput);
   if (noChangesResult) {
     return (
-      <Card className={cn("border-green-200 bg-green-50/50", className)}>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              {stageName} - Alles Correct
-            </CardTitle>
-            <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300">
-              Geen wijzigingen
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {noChangesResult.samenvatting && (
-            <p className="text-sm text-green-800">{noChangesResult.samenvatting}</p>
-          )}
-          {noChangesResult.geverifieerde_cijfers && noChangesResult.geverifieerde_cijfers.length > 0 && (
-            <div className="space-y-1">
-              <h4 className="text-xs font-semibold text-green-700">Geverifieerde cijfers:</h4>
-              <ul className="text-xs text-green-700 space-y-0.5">
-                {noChangesResult.geverifieerde_cijfers.map((cijfer, idx) => (
-                  <li key={idx} className="flex items-start gap-1">
-                    <CheckCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                    <span>{cijfer}</span>
-                  </li>
-                ))}
-              </ul>
+      <div className={cn("space-y-3", className)}>
+        {/* AI Denkwijze - shown even when no changes needed */}
+        {denkwijze && (
+          <DenkwijzeSummary
+            stageName={stageName}
+            denkwijze={denkwijze}
+            compact
+          />
+        )}
+        <Card className="border-green-200 bg-green-50/50">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                {stageName} - Alles Correct
+              </CardTitle>
+              <Badge variant="outline" className="text-xs bg-green-100 text-green-800 border-green-300">
+                Geen wijzigingen
+              </Badge>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {noChangesResult.samenvatting && (
+              <p className="text-sm text-green-800">{noChangesResult.samenvatting}</p>
+            )}
+            {noChangesResult.geverifieerde_cijfers && noChangesResult.geverifieerde_cijfers.length > 0 && (
+              <div className="space-y-1">
+                <h4 className="text-xs font-semibold text-green-700">Geverifieerde cijfers:</h4>
+                <ul className="text-xs text-green-700 space-y-0.5">
+                  {noChangesResult.geverifieerde_cijfers.map((cijfer, idx) => (
+                    <li key={idx} className="flex items-start gap-1">
+                      <CheckCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                      <span>{cijfer}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -94,23 +109,33 @@ export function ReviewerFeedbackViewer({
   const hasIssues = critical.length > 0 || warnings.length > 0;
 
   return (
-    <Card className={cn("border-gray-200 max-w-full overflow-hidden", className)}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            {hasIssues ? (
-              <AlertCircle className="h-4 w-4 text-orange-500" />
-            ) : (
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            )}
-            {stageName} Feedback
-          </CardTitle>
-          <Badge variant="outline" className="text-xs">
-            {totalItems} bevinding{totalItems !== 1 ? 'en' : ''}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3 overflow-hidden">
+    <div className={cn("space-y-3", className)}>
+      {/* AI Denkwijze - shown above feedback */}
+      {denkwijze && (
+        <DenkwijzeSummary
+          stageName={stageName}
+          denkwijze={denkwijze}
+          compact
+        />
+      )}
+
+      <Card className="border-gray-200 max-w-full overflow-hidden">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              {hasIssues ? (
+                <AlertCircle className="h-4 w-4 text-orange-500" />
+              ) : (
+                <CheckCircle className="h-4 w-4 text-green-500" />
+              )}
+              {stageName} Feedback
+            </CardTitle>
+            <Badge variant="outline" className="text-xs">
+              {totalItems} bevinding{totalItems !== 1 ? 'en' : ''}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 overflow-hidden">
         {/* Samenvatting */}
         <div className="flex gap-2 text-xs">
           {critical.length > 0 && (
@@ -194,8 +219,9 @@ export function ReviewerFeedbackViewer({
             Geen bevindingen - alles ziet er goed uit!
           </div>
         )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

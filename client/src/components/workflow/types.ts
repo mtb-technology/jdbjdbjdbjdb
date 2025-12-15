@@ -26,6 +26,12 @@ export interface StageExecutionResponse {
 export type ReportDepth = "concise" | "balanced" | "comprehensive";
 
 /**
+ * Report language options for Stage 3.
+ * Controls the language in which the report is written.
+ */
+export type ReportLanguage = "nl" | "en";
+
+/**
  * Pending file for attachment upload
  */
 export interface PendingFile {
@@ -44,6 +50,8 @@ export interface ExecuteStageVariables {
   customInput?: string;
   /** Report depth for Stage 3 - controls detail level */
   reportDepth?: ReportDepth;
+  /** Report language for Stage 3 - controls output language */
+  reportLanguage?: ReportLanguage;
   /** Pending attachments to upload for Stage 1a re-run */
   pendingAttachments?: PendingFile[];
 }

@@ -289,7 +289,7 @@ export const WorkflowView = memo(function WorkflowView({
                         stage1Result={state.stageResults["1a_informatiecheck"]}
                         canExecute={canExecute}
                         isProcessing={isProcessing}
-                        onExecute={(customContext, reportDepth, pendingAttachments) => handleExecuteStage(stage.key, customContext, reportDepth, pendingAttachments)}
+                        onExecute={(customContext, reportDepth, pendingAttachments, reportLanguage) => handleExecuteStage(stage.key, customContext, reportDepth, pendingAttachments, reportLanguage)}
                         onResetStage={() => handleResetStage(stage.key)}
                         onCancel={() => handleCancelStage(stage.key)}
                         isInputCollapsed={isSectionCollapsed(stage.key, "input")}

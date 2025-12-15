@@ -811,17 +811,77 @@ export type InformatieCheckOutput = z.infer<typeof informatieCheckOutputSchema>;
 
 // ===== STAGE 2: COMPLEXITEITSCHECK (BOUWPLAN) STRUCTURED OUTPUT =====
 
+/**
+ * ## Bouwplan Thema met Reasoning
+ *
+ * Ondersteunt zowel oude format (string) als nieuwe format (object met reden).
+ * Dit maakt backward compatibility mogelijk met bestaande rapporten.
+ */
+export const bouwplanThemaSchema = z.union([
+  z.string(), // Legacy format: "Terbeschikkingstellingsregeling"
+  z.object({  // New format with reasoning
+    thema: z.string(),
+    reden: z.string().optional().describe("Waarom dit thema is geselecteerd")
+  })
+]);
+
+/**
+ * ## Bouwplan Risico met Reasoning
+ *
+ * Ondersteunt zowel oude format (string) als nieuwe format (object met reden en ernst).
+ */
+export const bouwplanRisicoSchema = z.union([
+  z.string(), // Legacy format: "Onzakelijke lening"
+  z.object({  // New format with reasoning
+    risico: z.string(),
+    reden: z.string().optional().describe("Waarom dit risico is geïdentificeerd"),
+    ernst: z.enum(["laag", "middel", "hoog"]).optional().describe("Ernst van het risico")
+  })
+]);
+
+/**
+ * ## Bouwplan Sectie met Reasoning
+ *
+ * Rapportstructuur sectie, nu met optionele reden_inclusie.
+ */
+export const bouwplanSectieSchema = z.object({
+  koptekst: z.string(),
+  subdoelen: z.array(z.string()).optional(),
+  reden_inclusie: z.string().optional().describe("Waarom deze sectie is opgenomen")
+});
+
 // Schema for Stage 2 (Complexiteitscheck) structured JSON output
 export const bouwplanDataSchema = z.object({
-  fiscale_kernthemas: z.array(z.string()).describe("Gedetecteerde fiscale kernthema's"),
-  geidentificeerde_risicos: z.array(z.string()).describe("Geïdentificeerde risico's"),
-  bouwplan_voor_rapport: z.record(z.string(), z.object({
-    koptekst: z.string(),
-    subdoelen: z.array(z.string()).optional()
-  })).describe("Voorgestelde rapportstructuur met secties")
-}).strict();
+  // NEW: High-level reasoning summary for the entire analysis
+  denkwijze_samenvatting: z.string().optional().describe("High-level samenvatting van de analyse-aanpak en belangrijkste overwegingen"),
+
+  fiscale_kernthemas: z.array(bouwplanThemaSchema).describe("Gedetecteerde fiscale kernthema's (met optionele redenering)"),
+  geidentificeerde_risicos: z.array(bouwplanRisicoSchema).describe("Geïdentificeerde risico's (met optionele redenering)"),
+  bouwplan_voor_rapport: z.record(z.string(), bouwplanSectieSchema).describe("Voorgestelde rapportstructuur met secties en optionele redenering")
+});
 
 export type BouwplanData = z.infer<typeof bouwplanDataSchema>;
+export type BouwplanThema = z.infer<typeof bouwplanThemaSchema>;
+export type BouwplanRisico = z.infer<typeof bouwplanRisicoSchema>;
+export type BouwplanSectie = z.infer<typeof bouwplanSectieSchema>;
+
+/**
+ * ## Stage Denkwijze/Reasoning Schema
+ *
+ * Generiek schema voor AI reasoning output per stage.
+ * Wordt gebruikt door reviewer stages (4a-4f) om hun denkproces te documenteren.
+ */
+export const stageDenkwijzeSchema = z.object({
+  analyse_aanpak: z.string().optional().describe("Hoe de AI deze review heeft aangepakt"),
+  focus_punten: z.array(z.string()).optional().describe("Waar de AI specifiek op heeft gelet"),
+  belangrijkste_conclusie: z.string().optional().describe("Kern van de bevindingen in 1 zin"),
+  overwegingen: z.array(z.object({
+    punt: z.string(),
+    conclusie: z.string()
+  })).optional().describe("Gedetailleerde overwegingen")
+});
+
+export type StageDenkwijze = z.infer<typeof stageDenkwijzeSchema>;
 
 // ===== FOLLOW-UP ASSISTANT TYPES =====
 

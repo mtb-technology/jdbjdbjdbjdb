@@ -106,7 +106,7 @@ export function registerStageRoutes(
     }),
     asyncHandler(async (req: Request, res: Response) => {
       const { id, stage } = req.params;
-      const { customInput, reportDepth } = req.body;
+      const { customInput, reportDepth, reportLanguage } = req.body;
 
       const report = await storage.getReport(id);
       if (!report) {
@@ -192,7 +192,9 @@ export function registerStageRoutes(
           id,
           undefined,
           visionAttachments.length > 0 ? visionAttachments : undefined,
-          reportDepth
+          reportDepth,
+          undefined, // signal
+          reportLanguage
         );
       } catch (stageError: unknown) {
         console.error(`Stage execution failed but recovering gracefully:`, getErrorMessage(stageError));
