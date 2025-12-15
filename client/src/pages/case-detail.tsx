@@ -53,6 +53,7 @@ import {
 } from "@/components/report/StickyReportPreview";
 import { ExportDialog } from "@/components/export/ExportDialog";
 import { DossierContextPanel } from "@/components/report/DossierContextPanel";
+import { FiscaleBriefingPanel } from "@/components/report/FiscaleBriefingPanel";
 import { AppHeader } from "@/components/app-header";
 
 // Extracted Components
@@ -66,7 +67,7 @@ import { useVersionManagement } from "@/hooks/useVersionManagement";
 import { getStatusColor, getStatusLabel, isWorkflowEditable } from "@/utils/caseDetailUtils";
 
 // Types & Constants
-import type { Report } from "@shared/schema";
+import type { Report, DossierData, BouwplanData } from "@shared/schema";
 import { STAGE_NAMES } from "@shared/constants";
 import type { Attachment } from "@/types/caseDetail.types";
 
@@ -288,13 +289,11 @@ export default function CaseDetail() {
               <TabsContent value="workflow" className="mt-6">
                 {isWorkflowEditable(report.status) ? (
                   <WorkflowInterface
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    dossier={report.dossierData as any}
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    bouwplan={report.bouwplanData as any}
+                    dossier={report.dossierData as DossierData}
+                    bouwplan={report.bouwplanData as BouwplanData}
                     clientName={report.clientName}
                     rawText={
-                      (report.dossierData as { rawText?: string })?.rawText || ""
+                      (report.dossierData as DossierData & { rawText?: string })?.rawText || ""
                     }
                     existingReport={report}
                     autoStart={autoStart}
@@ -389,6 +388,10 @@ export default function CaseDetail() {
                 (report.dossierData as Record<string, unknown>)?.rawText as string || ""
               }
             />
+            <FiscaleBriefingPanel
+              reportId={reportId!}
+              stageResults={report.stageResults as Record<string, string> | null}
+            />
             <StickyReportPreview
               content={currentContent}
               version={currentVersion}
@@ -477,6 +480,10 @@ export default function CaseDetail() {
                   rawText={
                     (report.dossierData as Record<string, unknown>)?.rawText as string || ""
                   }
+                />
+                <FiscaleBriefingPanel
+                  reportId={reportId!}
+                  stageResults={report.stageResults as Record<string, string> | null}
                 />
                 <StickyReportPreview
                   content={currentContent}

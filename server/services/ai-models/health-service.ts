@@ -5,7 +5,7 @@
  * Simplified version - just validates API keys and tracks basic health status.
  */
 
-import { AIError } from "@shared/errors";
+import { AIError, isAIError, getErrorCategory } from "@shared/errors";
 import { GoogleAIHandler } from "./google-handler";
 import { OpenAIStandardHandler } from "./openai-standard-handler";
 import type { AiConfig } from "@shared/schema";
@@ -85,19 +85,29 @@ export class AIHealthService {
 
     } catch (error: any) {
       const responseTime = Date.now() - startTime;
-      
-      // Parse specific error types based on message content
+
+      // Use typed error category detection instead of string matching
+      const errorCategory = getErrorCategory(error);
       let errorMessage = error.message || 'Unknown error';
-      if (error instanceof AIError) {
-        if (errorMessage.includes('authentication') || errorMessage.includes('API key')) {
-          errorMessage = 'Invalid API key';
-        } else if (errorMessage.includes('network') || errorMessage.includes('ENOTFOUND')) {
-          errorMessage = 'Network connectivity issue';
-        } else if (errorMessage.includes('rate limit') || errorMessage.includes('quota')) {
-          errorMessage = 'Rate limit exceeded (key may be valid)';
+
+      if (isAIError(error)) {
+        // Map error categories to user-friendly messages
+        switch (errorCategory) {
+          case 'authentication':
+            errorMessage = 'Invalid API key';
+            break;
+          case 'network':
+            errorMessage = 'Network connectivity issue';
+            break;
+          case 'rate_limit':
+            errorMessage = 'Rate limit exceeded (key may be valid)';
+            break;
+          default:
+            // Keep the original error message for other cases
+            break;
         }
       }
-      
+
       return {
         valid: false,
         error: errorMessage,
@@ -124,7 +134,8 @@ export class AIHealthService {
 
       if (!keyValidation.valid) {
         // Rate limit errors mean key is probably valid but temporarily blocked
-        if (keyValidation.error?.includes('rate limit')) {
+        // Check for rate limit in the error message (this comes from our own typed error messages)
+        if (keyValidation.error?.toLowerCase().includes('rate limit')) {
           status = 'degraded';
         } else {
           status = 'unhealthy';

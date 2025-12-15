@@ -232,6 +232,7 @@ export const WorkflowProgressHeader = memo(function WorkflowProgressHeader({
               finalContent={latestConceptContent}
               finalVersion={latestVersion}
               initialRolledBackChanges={rolledBackChanges}
+              fiscaleBriefing={stageResults['7_fiscale_briefing']}
               onClose={() => setShowExpressResults(false)}
               onSaveComplete={onAdjustmentApplied}
             />

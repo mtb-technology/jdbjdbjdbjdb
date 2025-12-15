@@ -19,7 +19,8 @@ export const STAGE_NAMES: Record<string, string> = {
   '4c_ScenarioGatenAnalist': 'Scenario Analyse',
   '4e_DeAdvocaat': 'Juridisch Review',
   '4f_HoofdCommunicatie': 'Hoofd Communicatie',
-  '6_change_summary': 'Wijzigingen Samenvatting'
+  '6_change_summary': 'Wijzigingen Samenvatting',
+  '7_fiscale_briefing': 'Fiscale Briefing'
 } as const;
 
 /**
@@ -98,9 +99,9 @@ function extractSnapshotContent(snapshot: any): string | undefined {
 export function getLatestConceptText(conceptVersions: ConceptVersionsMap | null | undefined): string {
   if (!conceptVersions) return '';
 
-  // 1. Probeer de 'latest' pointer te volgen
+  // 1. Probeer de 'latest' pointer te volgen (skip stage 7 briefing)
   const latest = conceptVersions.latest;
-  if (latest?.pointer) {
+  if (latest?.pointer && !latest.pointer.startsWith('7')) {
     const snapshot = conceptVersions[latest.pointer];
     const content = extractSnapshotContent(snapshot);
     if (content) return content;
@@ -110,10 +111,10 @@ export function getLatestConceptText(conceptVersions: ConceptVersionsMap | null 
   const stage3Content = extractSnapshotContent(conceptVersions['3_generatie']);
   if (stage3Content) return stage3Content;
 
-  // 3. Zoek naar enige geldige snapshot (excl. metadata en reviewer stages)
+  // 3. Zoek naar enige geldige snapshot (excl. metadata, reviewer stages, en briefing)
   const foundEntry = Object.entries(conceptVersions).find(([key, value]) => {
-    // Skip metadata keys en reviewer stages (bevatten geen concept)
-    if (key === 'latest' || key === 'history' || key.startsWith('4')) return false;
+    // Skip metadata keys, reviewer stages (4*), en fiscale briefing (7*)
+    if (key === 'latest' || key === 'history' || key.startsWith('4') || key.startsWith('7')) return false;
     return extractSnapshotContent(value) !== undefined;
   });
 

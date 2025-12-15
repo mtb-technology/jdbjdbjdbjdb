@@ -44,6 +44,7 @@ import { parseFeedbackToProposals } from '@/lib/parse-feedback';
 import { STAGE_NAMES, REVIEW_STAGES } from '@shared/constants';
 import { QUERY_KEYS } from '@/lib/queryKeys';
 import { useToast } from '@/hooks/use-toast';
+import { FiscaleBriefingViewer } from './FiscaleBriefingViewer';
 import type { ExpressModeSummary, ExpressModeStageSummary, ExpressModeChange } from '@shared/types/api';
 
 interface ExpressModeResultsProps {
@@ -58,6 +59,8 @@ interface ExpressModeResultsProps {
   finalVersion?: number;
   /** Previously rolled back changes (loaded from database) */
   initialRolledBackChanges?: Record<string, { rolledBackAt: string }>;
+  /** Fiscale Briefing JSON (from Stage 7) */
+  fiscaleBriefing?: string;
   onClose: () => void;
   onSaveComplete?: () => void;
 }
@@ -119,6 +122,7 @@ export function ExpressModeResults({
   finalContent,
   finalVersion = 1,
   initialRolledBackChanges,
+  fiscaleBriefing,
   onClose,
   onSaveComplete,
 }: ExpressModeResultsProps) {
@@ -314,6 +318,11 @@ export function ExpressModeResults({
             Sluiten
           </Button>
         </div>
+
+        {/* Fiscale Briefing - Executive Summary for Fiscalist */}
+        {fiscaleBriefing && (
+          <FiscaleBriefingViewer briefingJson={fiscaleBriefing} />
+        )}
 
         {/* Stats bar */}
         <div className="flex gap-4 mb-6">

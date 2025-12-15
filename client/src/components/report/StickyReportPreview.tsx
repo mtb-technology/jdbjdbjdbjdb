@@ -18,9 +18,18 @@ import { CompactVersionTimeline } from "./VersionTimeline";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+// Strip markdown code fences that wrap the entire content
+function stripCodeFences(content: string): string {
+  // Remove leading ``` (with optional language) and trailing ```
+  return content
+    .replace(/^```[\w]*\n?/, '')  // Remove opening fence
+    .replace(/\n?```\s*$/, '');   // Remove closing fence
+}
+
 // Transform numbered chapters (1. Title, 2. Title) to markdown H1 headers
 function transformChaptersToHeaders(content: string): string {
-  return content.replace(
+  const stripped = stripCodeFences(content);
+  return stripped.replace(
     /^(\d+)\.\s+([A-Z][^\n]*)/gm,
     '# $1. $2'
   );
@@ -131,11 +140,11 @@ export function StickyReportPreview({
           )}
         </CardHeader>
 
-        <CardContent className="flex-1 flex flex-col p-0 min-h-0">
+        <CardContent className="flex-1 flex flex-col p-0 min-h-0 bg-white dark:bg-gray-900">
           {/* Content preview */}
-          <ScrollArea className="flex-1 px-4">
+          <ScrollArea className="flex-1 px-4 bg-white dark:bg-gray-900">
             {content ? (
-              <div className="prose prose-xs max-w-none pb-4 dark:prose-invert">
+              <div className="prose prose-xs max-w-none pb-4 pt-2 dark:prose-invert bg-white dark:bg-gray-900">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   children={transformChaptersToHeaders(content)}
@@ -182,6 +191,59 @@ export function StickyReportPreview({
                       <blockquote className="border-l-2 border-blue-400 pl-2 italic text-xs text-gray-600 dark:text-gray-400">
                         {children}
                       </blockquote>
+                    ),
+                    table: ({ children }) => (
+                      <div className="overflow-x-auto my-2">
+                        <table className="min-w-full text-xs border-collapse border border-gray-300 dark:border-gray-600">
+                          {children}
+                        </table>
+                      </div>
+                    ),
+                    thead: ({ children }) => (
+                      <thead className="bg-gray-100 dark:bg-gray-800">
+                        {children}
+                      </thead>
+                    ),
+                    tbody: ({ children }) => (
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {children}
+                      </tbody>
+                    ),
+                    tr: ({ children }) => (
+                      <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                        {children}
+                      </tr>
+                    ),
+                    th: ({ children }) => (
+                      <th className="px-2 py-1 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600">
+                        {children}
+                      </th>
+                    ),
+                    td: ({ children }) => (
+                      <td className="px-2 py-1 text-xs text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600">
+                        {children}
+                      </td>
+                    ),
+                    // Override code blocks to use light styling instead of dark
+                    pre: ({ children }) => (
+                      <pre className="bg-gray-50 dark:bg-gray-800 p-2 rounded text-xs overflow-x-auto my-2">
+                        {children}
+                      </pre>
+                    ),
+                    code: ({ children, className }) => {
+                      // Inline code vs code block
+                      const isInline = !className;
+                      return isInline ? (
+                        <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">
+                          {children}
+                        </code>
+                      ) : (
+                        <code className="text-xs">{children}</code>
+                      );
+                    },
+                    // Horizontal rule
+                    hr: () => (
+                      <hr className="my-3 border-gray-200 dark:border-gray-700" />
                     ),
                   }}
                 />
@@ -331,6 +393,38 @@ export function FullScreenReportPreview({
                       <blockquote className="border-l-4 border-blue-500 pl-4 italic my-4 text-gray-600 dark:text-gray-400">
                         {children}
                       </blockquote>
+                    ),
+                    table: ({ children }) => (
+                      <div className="overflow-x-auto my-4">
+                        <table className="min-w-full text-sm border-collapse border border-gray-300 dark:border-gray-600">
+                          {children}
+                        </table>
+                      </div>
+                    ),
+                    thead: ({ children }) => (
+                      <thead className="bg-gray-100 dark:bg-gray-800">
+                        {children}
+                      </thead>
+                    ),
+                    tbody: ({ children }) => (
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {children}
+                      </tbody>
+                    ),
+                    tr: ({ children }) => (
+                      <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                        {children}
+                      </tr>
+                    ),
+                    th: ({ children }) => (
+                      <th className="px-3 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600">
+                        {children}
+                      </th>
+                    ),
+                    td: ({ children }) => (
+                      <td className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600">
+                        {children}
+                      </td>
                     ),
                   }}
                 />

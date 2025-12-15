@@ -349,6 +349,57 @@ export function registerExpressModeRoutes(
       const totalChanges = stageSummaries.reduce((sum, s) => sum + s.changesCount, 0);
       const totalProcessingTimeMs = Date.now() - expressStartTime;
 
+      // Generate Fiscale Briefing (Stage 7) - executive summary for fiscalist
+      let fiscaleBriefing: string | null = null;
+      try {
+        sendEvent({
+          type: 'stage_start',
+          stageId: '7_fiscale_briefing',
+          stageNumber: stages.length + 1,
+          totalStages: stages.length + 1,
+          message: 'Generating Fiscale Briefing...',
+          timestamp: new Date().toISOString()
+        });
+
+        const briefingResult = await reportGenerator.generateFiscaleBriefing({
+          dossier: finalReport?.dossierData as DossierData,
+          bouwplan: finalReport?.bouwplanData as BouwplanData,
+          conceptReport: finalContent,
+          stageResults: finalReport?.stageResults as Record<string, string> || {},
+          jobId: `${id}-briefing`
+        });
+
+        fiscaleBriefing = briefingResult.briefing;
+
+        // Save briefing to stageResults
+        const updatedStageResults = {
+          ...(finalReport?.stageResults as Record<string, string> || {}),
+          '7_fiscale_briefing': fiscaleBriefing
+        };
+        await storage.updateReport(id, { stageResults: updatedStageResults });
+
+        sendEvent({
+          type: 'stage_complete',
+          stageId: '7_fiscale_briefing',
+          stageNumber: stages.length + 1,
+          totalStages: stages.length + 1,
+          message: 'Fiscale Briefing generated',
+          timestamp: new Date().toISOString()
+        });
+
+        console.log(`[${id}] Fiscale Briefing generated successfully`);
+      } catch (briefingError: any) {
+        console.error(`[${id}] Failed to generate Fiscale Briefing:`, briefingError.message);
+        // Non-fatal - continue without briefing
+        sendEvent({
+          type: 'stage_error',
+          stageId: '7_fiscale_briefing',
+          error: briefingError.message || 'Briefing generation failed',
+          canRetry: true,
+          timestamp: new Date().toISOString()
+        });
+      }
+
       sendEvent({
         type: 'express_summary',
         stages: stageSummaries,
@@ -356,6 +407,7 @@ export function registerExpressModeRoutes(
         finalVersion,
         totalProcessingTimeMs,
         finalContent,
+        fiscaleBriefing, // Include briefing in summary
         timestamp: new Date().toISOString()
       });
 
@@ -380,6 +432,62 @@ export function registerExpressModeRoutes(
 
       res.end();
     }
+  }));
+
+  // ============================================================
+  // FISCALE BRIEFING (STANDALONE)
+  // ============================================================
+
+  /**
+   * Generate Fiscale Briefing standalone (Stage 7)
+   * POST /api/reports/:id/fiscale-briefing
+   */
+  app.post("/api/reports/:id/fiscale-briefing", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    console.log(`[${id}] Generating Fiscale Briefing standalone`);
+
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Get the latest concept report content
+    const conceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
+    const latestPointer = conceptVersions.latest?.pointer;
+    const finalContent = latestPointer
+      ? (conceptVersions[latestPointer]?.content || report.generatedContent || "")
+      : (report.generatedContent || "");
+
+    if (!finalContent) {
+      throw ServerError.validation(
+        "No report content available",
+        "Er is geen rapport content beschikbaar. Genereer eerst een rapport."
+      );
+    }
+
+    // Generate the briefing
+    const briefingResult = await reportGenerator.generateFiscaleBriefing({
+      dossier: report.dossierData as DossierData,
+      bouwplan: report.bouwplanData as BouwplanData,
+      conceptReport: finalContent,
+      stageResults: report.stageResults as Record<string, string> || {},
+      jobId: `${id}-briefing-standalone`
+    });
+
+    // Save briefing to stageResults
+    const updatedStageResults = {
+      ...(report.stageResults as Record<string, string> || {}),
+      '7_fiscale_briefing': briefingResult.briefing
+    };
+    await storage.updateReport(id, { stageResults: updatedStageResults });
+
+    console.log(`[${id}] Fiscale Briefing generated and saved`);
+
+    res.json({
+      success: true,
+      briefing: briefingResult.briefing
+    });
   }));
 
   // ============================================================

@@ -15,6 +15,12 @@ import { getLatestConceptText } from "@shared/constants";
 import { summarizeFeedback } from "../utils/feedback-summarizer";
 import { notifyStageComplete, notifyExpressModeComplete, notifyJobFailed, isSlackEnabled } from "./slack-notifier";
 import type { Job, DossierData, BouwplanData, StageId, PromptConfig } from "@shared/schema";
+import type {
+  ConceptReportVersions,
+  StageResults,
+  DossierDataExtended,
+  PromptConfigData,
+} from "@shared/types/report-data";
 
 // Job types
 export type JobType = "single_stage" | "express_mode" | "generation";
@@ -152,7 +158,7 @@ class JobProcessor {
       await storage.startJob(job.id);
 
       // Get the job config from result field (stored at creation time)
-      const config = job.result as Record<string, any> || {};
+      const config = (job.result ?? {}) as SingleStageJobConfig | ExpressModeJobConfig;
 
       switch (job.type) {
         case "single_stage":
@@ -204,7 +210,7 @@ class JobProcessor {
     });
 
     // Handle attachments for Stage 1a
-    let dossierWithAttachments = report.dossierData as DossierData;
+    let dossierWithAttachments = report.dossierData as DossierDataExtended;
     let visionAttachments: Array<{ mimeType: string; data: string; filename: string }> = [];
 
     if (stageId === "1a_informatiecheck") {
@@ -218,7 +224,7 @@ class JobProcessor {
             .map(att => `\n\n=== BIJLAGE: ${att.filename} ===\n${att.extractedText}`)
             .join("");
 
-          const existingRawText = (dossierWithAttachments as any).rawText || "";
+          const existingRawText = dossierWithAttachments.rawText ?? "";
           dossierWithAttachments = {
             ...dossierWithAttachments,
             rawText: existingRawText + attachmentTexts
@@ -242,10 +248,10 @@ class JobProcessor {
     // Execute stage
     const result = await this.reportGenerator.executeStage(
       stageId,
-      dossierWithAttachments,
+      dossierWithAttachments as DossierData,
       report.bouwplanData as BouwplanData,
-      report.stageResults as Record<string, string> || {},
-      report.conceptReportVersions as Record<string, string> || {},
+      (report.stageResults as StageResults) ?? {},
+      (report.conceptReportVersions as ConceptReportVersions) ?? {},
       customInput,
       reportId,
       undefined, // onProgress callback
@@ -264,31 +270,35 @@ class JobProcessor {
     });
 
     // Update stage results
-    const updatedStageResults = {
-      ...(report.stageResults as Record<string, string> || {}),
+    const existingStageResults = (report.stageResults as StageResults) ?? {};
+    const updatedStageResults: StageResults = {
+      ...existingStageResults,
       [stageId]: result.stageOutput
     };
 
+    const existingPrompts = (report.stagePrompts as Record<string, string>) ?? {};
     await storage.updateReport(reportId, {
       stageResults: updatedStageResults,
       stagePrompts: {
-        ...(report.stagePrompts as Record<string, string> || {}),
+        ...existingPrompts,
         [stageId]: result.prompt
       }
     });
 
     // Handle concept report for stage 3
     if (stageId === "3_generatie") {
-      const initialConceptVersions = {
+      const timestamp = new Date().toISOString();
+      const initialConceptVersions: ConceptReportVersions = {
         "3_generatie": {
           v: 1,
           content: result.stageOutput,
-          createdAt: new Date().toISOString()
+          createdAt: timestamp
         },
         latest: {
+          pointer: "3_generatie",
           v: 1,
           content: result.stageOutput,
-          createdAt: new Date().toISOString()
+          createdAt: timestamp
         }
       };
 
@@ -384,15 +394,19 @@ class JobProcessor {
 
       try {
         const isGenerationStage = stageId === "3_generatie";
+        const dossierData = report.dossierData as DossierData;
+        const bouwplanData = report.bouwplanData as BouwplanData;
+        const currentStageResults = (report.stageResults as StageResults) ?? {};
+        const currentConceptVersions = (report.conceptReportVersions as ConceptReportVersions) ?? {};
 
         if (isGenerationStage) {
           // Stage 3: Generate concept report
           const stageExecution = await this.reportGenerator.executeStage(
             stageId,
-            report.dossierData as DossierData,
-            report.bouwplanData as BouwplanData,
-            report.stageResults as Record<string, string> || {},
-            report.conceptReportVersions as Record<string, string> || {},
+            dossierData,
+            bouwplanData,
+            currentStageResults,
+            currentConceptVersions,
             undefined,
             reportId
           );
@@ -404,16 +418,15 @@ class JobProcessor {
           }
 
           // Update stageResults
-          const updatedStageResults = {
-            ...(report.stageResults as Record<string, string> || {}),
+          const updatedStageResults: StageResults = {
+            ...currentStageResults,
             [stageId]: stageExecution.stageOutput
           };
 
           // Store as first concept version
-          const existingConceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
           const timestamp = new Date().toISOString();
-          const newConceptVersions = {
-            ...existingConceptVersions,
+          const newConceptVersions: ConceptReportVersions = {
+            ...currentConceptVersions,
             "3_generatie": {
               content: stageExecution.stageOutput,
               v: 1,
@@ -425,7 +438,7 @@ class JobProcessor {
               v: 1
             },
             history: [
-              ...(existingConceptVersions.history || []),
+              ...(currentConceptVersions.history ?? []),
               { stageId: "3_generatie", v: 1, timestamp }
             ]
           };
@@ -443,10 +456,10 @@ class JobProcessor {
           // Reviewer stages (4a-4f): Generate feedback then process it
           const stageExecution = await this.reportGenerator.executeStage(
             stageId,
-            report.dossierData as DossierData,
-            report.bouwplanData as BouwplanData,
-            report.stageResults as Record<string, string> || {},
-            report.conceptReportVersions as Record<string, string> || {},
+            dossierData,
+            bouwplanData,
+            currentStageResults,
+            currentConceptVersions,
             undefined,
             reportId
           );
@@ -458,8 +471,8 @@ class JobProcessor {
           }
 
           // Update stageResults with feedback
-          const updatedStageResults = {
-            ...(report.stageResults as Record<string, string> || {}),
+          const updatedStageResults: StageResults = {
+            ...currentStageResults,
             [stageId]: stageExecution.stageOutput
           };
 
@@ -482,16 +495,17 @@ class JobProcessor {
 
           // Auto-accept and process feedback
           if (autoAccept) {
-            let feedbackJSON;
+            let feedbackJSON: unknown;
             try {
               feedbackJSON = JSON.parse(stageExecution.stageOutput);
             } catch {
               feedbackJSON = stageExecution.stageOutput;
             }
 
-            let latestConceptText = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
+            const conceptVersions = (report.conceptReportVersions as ConceptReportVersions) ?? {};
+            let latestConceptText = getLatestConceptText(conceptVersions);
             if (!latestConceptText && report.generatedContent) {
-              latestConceptText = report.generatedContent.toString();
+              latestConceptText = String(report.generatedContent);
             }
 
             if (!latestConceptText) {
@@ -504,14 +518,18 @@ class JobProcessor {
               throw new Error("No active Editor prompt configuration found");
             }
 
-            const parsedConfig = activeConfig.config as PromptConfig;
-            const editorPromptConfig = parsedConfig.editor || (parsedConfig as any)["5_feedback_verwerker"];
+            const parsedConfig = activeConfig.config as PromptConfigData;
+            const editorPromptConfig = parsedConfig.editor ?? parsedConfig["5_feedback_verwerker"];
+
+            if (!editorPromptConfig) {
+              throw new Error("No Editor prompt configuration found in active config");
+            }
 
             // Build Editor prompt
             const promptBuilder = new PromptBuilder();
             const { systemPrompt, userInput } = promptBuilder.build(
               "editor",
-              editorPromptConfig,
+              editorPromptConfig as Parameters<typeof promptBuilder.build>[1],
               () => ({
                 BASISTEKST: latestConceptText,
                 WIJZIGINGEN_JSON: feedbackJSON
@@ -614,22 +632,65 @@ class JobProcessor {
 
     // Get final report state
     const finalReport = await storage.getReport(reportId);
-    const finalConceptVersions = (finalReport?.conceptReportVersions as Record<string, any>) || {};
+    const finalConceptVersions = (finalReport?.conceptReportVersions as ConceptReportVersions) ?? {};
     const latestPointer = finalConceptVersions.latest?.pointer;
-    const finalVersion = finalConceptVersions.latest?.v || 1;
-    const finalContent = latestPointer
-      ? (finalConceptVersions[latestPointer]?.content || finalReport?.generatedContent || "")
-      : (finalReport?.generatedContent || "");
+    const finalVersion = finalConceptVersions.latest?.v ?? 1;
+    const finalContent = latestPointer && finalConceptVersions[latestPointer as keyof ConceptReportVersions]
+      ? ((finalConceptVersions[latestPointer as keyof ConceptReportVersions] as { content?: string })?.content ?? String(finalReport?.generatedContent ?? ""))
+      : String(finalReport?.generatedContent ?? "");
 
     // Calculate totals
     const totalChanges = stageSummaries.reduce((sum, s) => sum + s.changesCount, 0);
+
+    // Generate Fiscale Briefing (Stage 7) - executive summary for fiscalist
+    let fiscaleBriefing: string | null = null;
+    try {
+      await this.updateProgress(job.id, {
+        currentStage: "7_fiscale_briefing",
+        percentage: 95,
+        message: "Generating Fiscale Briefing...",
+        stages: [
+          ...stages.map(s => ({
+            stageId: s,
+            status: "completed" as const,
+            percentage: 100,
+            changesCount: stageSummaries.find(ss => ss.stageId === s)?.changesCount
+          })),
+          { stageId: "7_fiscale_briefing", status: "processing" as const, percentage: 50 }
+        ]
+      });
+
+      const finalStageResults = (finalReport?.stageResults as StageResults) ?? {};
+      const briefingResult = await this.reportGenerator.generateFiscaleBriefing({
+        dossier: finalReport?.dossierData as DossierData,
+        bouwplan: finalReport?.bouwplanData as BouwplanData,
+        conceptReport: finalContent,
+        stageResults: finalStageResults,
+        jobId: job.id
+      });
+
+      fiscaleBriefing = briefingResult.briefing;
+
+      // Save briefing to stageResults
+      const updatedStageResults: StageResults = {
+        ...finalStageResults,
+        "7_fiscale_briefing": fiscaleBriefing
+      };
+      await storage.updateReport(reportId, { stageResults: updatedStageResults });
+
+      console.log(`✅ [JobProcessor] Fiscale Briefing generated for job ${job.id}`);
+    } catch (briefingError: any) {
+      console.error(`⚠️ [JobProcessor] Failed to generate Fiscale Briefing:`, briefingError.message);
+      // Non-fatal - continue without briefing
+    }
 
     // Complete the job with results
     await storage.completeJob(job.id, {
       stages: stageSummaries,
       totalChanges,
       finalVersion,
-      finalContent
+      finalContent,
+      fiscaleBriefing // Include briefing in result
     });
 
     // Update final progress

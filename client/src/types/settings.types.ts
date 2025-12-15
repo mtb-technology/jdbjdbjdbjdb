@@ -33,6 +33,7 @@ export type StageKey =
   | "4c_ScenarioGatenAnalist"
   | "4e_DeAdvocaat"
   | "4f_HoofdCommunicatie"
+  | "7_fiscale_briefing"
   | "editor"
   | "adjustment";
 

@@ -1,4 +1,6 @@
 import type { DossierData, BouwplanData } from "@shared/schema";
+import type { StageResults, ConceptReportVersions } from "@shared/types/report-data";
+import { extractSnapshotContent } from "@shared/types/report-data";
 
 /**
  * StagePromptConfig interface - configuratie per stage
@@ -199,7 +201,7 @@ export class PromptBuilder {
    * - Nieuwe info kan toevoegen aan het bestaande beeld
    * - Een accumulerende "sessie" bouwt over meerdere runs
    */
-  buildInformatieCheckData(dossier: DossierData, previousStageResults?: Record<string, string>): string {
+  buildInformatieCheckData(dossier: DossierData, previousStageResults?: StageResults): string {
     const currentDossierData = dossier.rawText || JSON.stringify({
       klant: dossier.klant,
       situatie: dossier.klant?.situatie || ''
@@ -229,21 +231,21 @@ ${currentDossierData}`;
    * Extract data for Stage 1b: Informatie Email (only runs if 1a returns INCOMPLEET)
    * Passes the 1a analysis result to the email generator
    */
-  buildInformatieEmailData(previousStageResults: Record<string, string>): string {
+  buildInformatieEmailData(previousStageResults: StageResults): string {
     return previousStageResults?.['1a_informatiecheck'] || '{}';
   }
 
   /**
    * Extract data for Stage 2: Complexiteitscheck
    */
-  buildComplexiteitsCheckData(previousStageResults: Record<string, string>): string {
+  buildComplexiteitsCheckData(previousStageResults: StageResults): string {
     return previousStageResults?.['1a_informatiecheck'] || '{}';
   }
 
   /**
    * Extract data for Stage 3: Generatie
    */
-  buildGeneratieData(previousStageResults: Record<string, string>): string {
+  buildGeneratieData(previousStageResults: StageResults): string {
     return previousStageResults?.['2_complexiteitscheck'] || '{}';
   }
 
@@ -327,16 +329,17 @@ ${currentDossierData}`;
   /**
    * Extract data for Change Summary Stage (6)
    */
-  buildChangeSummaryData(conceptReportVersions: Record<string, string>): string {
+  buildChangeSummaryData(conceptReportVersions: ConceptReportVersions): string {
     const versions = Object.entries(conceptReportVersions)
       .filter(([key]) => !['latest', 'history'].includes(key))
-      .map(([stage, content]) => ({
-        stage,
-        contentLength: typeof content === 'string' ? content.length : JSON.stringify(content).length,
-        preview: typeof content === 'string'
-          ? content.substring(0, 200)
-          : JSON.stringify(content).substring(0, 200)
-      }));
+      .map(([stage, content]) => {
+        const extractedContent = extractSnapshotContent(content);
+        return {
+          stage,
+          contentLength: extractedContent?.length ?? 0,
+          preview: extractedContent?.substring(0, 200) ?? ''
+        };
+      });
 
     return JSON.stringify({ versions }, null, 2);
   }
@@ -345,8 +348,8 @@ ${currentDossierData}`;
    * Extract data for Editor Stage (5)
    */
   buildEditorData(
-    previousStageResults: Record<string, string>,
-    conceptReportVersions: Record<string, string>
+    previousStageResults: StageResults,
+    conceptReportVersions: ConceptReportVersions
   ): string {
     // Get all reviewer feedback
     const reviewerFeedback = {
@@ -357,11 +360,16 @@ ${currentDossierData}`;
       '4f_HoofdCommunicatie': previousStageResults?.['4f_HoofdCommunicatie']
     };
 
-    // Get latest concept report - prioritize 'latest', then '3_generatie', then any other key
-    const latestConcept = conceptReportVersions?.['latest']
-      || conceptReportVersions?.['3_generatie']
-      || Object.values(conceptReportVersions).find(v => v)
-      || '';
+    // Get latest concept report - use extractSnapshotContent for type safety
+    const latestSnapshot = conceptReportVersions?.latest;
+    let latestConcept = '';
+
+    if (latestSnapshot && typeof latestSnapshot === 'object' && 'pointer' in latestSnapshot && latestSnapshot.pointer) {
+      latestConcept = extractSnapshotContent(conceptReportVersions[latestSnapshot.pointer]) ?? '';
+    }
+    if (!latestConcept) {
+      latestConcept = extractSnapshotContent(conceptReportVersions?.['3_generatie']) ?? '';
+    }
 
     console.log('[Editor Data] Concept report length:', latestConcept.length);
     console.log('[Editor Data] Reviewer feedback keys:', Object.keys(reviewerFeedback).filter(k => reviewerFeedback[k as keyof typeof reviewerFeedback]));
@@ -370,5 +378,102 @@ ${currentDossierData}`;
       reviewer_feedback: reviewerFeedback,
       latest_concept_report: latestConcept
     }, null, 2);
+  }
+
+  /**
+   * Extract data for Stage 7: Fiscale Briefing
+   *
+   * Combines all available context to generate an executive summary:
+   * - Dossier data (client info, fiscal data)
+   * - Bouwplan (analysis from Stage 2)
+   * - Final report (from Stage 3 + reviewer modifications)
+   * - All reviewer feedback (4a-4f)
+   *
+   * This gives the AI everything it needs to create a comprehensive briefing
+   * that explains the case, strategy, decisions, and review findings.
+   *
+   * IMPORTANT: Reviewer feedback contains OBSERVATIONS that were SUCCESSFULLY
+   * processed by Express Mode. They are NOT errors or failures. The feedback
+   * describes what each specialist found and suggested - these suggestions
+   * have already been incorporated into the final report.
+   */
+  buildFiscaleBriefingData(
+    dossier: DossierData,
+    bouwplan: BouwplanData,
+    conceptReport: string,
+    stageResults: StageResults
+  ): object {
+    // Clean dossier - remove rawText as it's not needed for the briefing
+    const { rawText, ...cleanDossier } = dossier;
+
+    // Define all possible reviewers with their descriptions
+    const reviewerDefinitions = {
+      '4a_BronnenSpecialist': {
+        naam: 'Bronnen Specialist',
+        focus: 'Controle van bronverwijzingen en citaten'
+      },
+      '4b_FiscaalTechnischSpecialist': {
+        naam: 'Fiscaal Technisch Specialist',
+        focus: 'Technische fiscale correctheid van berekeningen en regelgeving'
+      },
+      '4c_ScenarioGatenAnalist': {
+        naam: 'Scenario & Gaten Analist',
+        focus: 'Blinde vlekken, impliciete aannames, alternatieve scenarios'
+      },
+      '4e_DeAdvocaat': {
+        naam: 'De Advocaat (Juridisch)',
+        focus: 'Juridische risicos, garantietaal, claims'
+      },
+      '4f_HoofdCommunicatie': {
+        naam: 'Hoofd Communicatie',
+        focus: 'Schrijfstijl, toon, leesbaarheid'
+      }
+    };
+
+    // Build reviewer summary with status
+    const reviewerSummary: Record<string, {
+      naam: string;
+      focus: string;
+      status: 'uitgevoerd' | 'niet_uitgevoerd';
+      feedback: string | null;
+      toelichting: string;
+    }> = {};
+
+    for (const [stageId, def] of Object.entries(reviewerDefinitions)) {
+      const feedback = stageResults?.[stageId] || null;
+      reviewerSummary[stageId] = {
+        naam: def.naam,
+        focus: def.focus,
+        status: feedback ? 'uitgevoerd' : 'niet_uitgevoerd',
+        feedback: feedback,
+        toelichting: feedback
+          ? 'Review is succesvol uitgevoerd. De bevindingen hieronder zijn observaties/suggesties die REEDS VERWERKT zijn in het eindrapport.'
+          : 'Deze review stap is niet uitgevoerd in Express Mode (optioneel of overgeslagen).'
+      };
+    }
+
+    // Count how many reviewers actually ran
+    const aantalUitgevoerd = Object.values(reviewerSummary).filter(r => r.status === 'uitgevoerd').length;
+
+    return {
+      // Client and case context
+      dossier_context: cleanDossier,
+
+      // Analysis structure from Stage 2
+      bouwplan_analyse: bouwplan,
+
+      // The final report content (ALREADY includes all reviewer improvements)
+      gegenereerd_rapport: conceptReport,
+
+      // Important context for the briefing AI
+      workflow_uitleg: {
+        beschrijving: 'Express Mode heeft het rapport automatisch gegenereerd en door meerdere AI reviewers geleid. Elke reviewer heeft feedback gegeven die DIRECT VERWERKT is in het eindrapport. De feedback hieronder zijn dus HISTORISCHE observaties - het rapport is al bijgewerkt.',
+        reviewers_uitgevoerd: aantalUitgevoerd,
+        reviewers_totaal: Object.keys(reviewerDefinitions).length
+      },
+
+      // Reviewer feedback with clear context
+      reviewer_feedback: reviewerSummary
+    };
   }
 }

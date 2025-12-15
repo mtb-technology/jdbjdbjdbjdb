@@ -1,17 +1,22 @@
 /**
  * StageConfigCard Component
  *
- * Main stage configuration card.
+ * Main stage configuration card with collapsible content for better navigation.
  * Extracted from the 476-line map block (lines 637-1113) of settings.tsx.
  */
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, CheckCircle, Search, Brain } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { AlertCircle, CheckCircle, Search, Brain, ChevronDown, ChevronRight } from "lucide-react";
 import { AiProviderSelect } from "./AiProviderSelect";
 import { GoogleAiConfigPanel } from "./GoogleAiConfigPanel";
 import { OpenAiConfigPanel } from "./OpenAiConfigPanel";
@@ -30,6 +35,8 @@ export const StageConfigCard = memo(function StageConfigCard({
   onStageOpenAIParamsChange,
   onProviderChange,
 }: StageConfigCardProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
   const prompt = stageConfig?.prompt || "";
   const useGrounding = stageConfig?.useGrounding || false;
   const useWebSearch = stageConfig?.useWebSearch || false;
@@ -49,50 +56,57 @@ export const StageConfigCard = memo(function StageConfigCard({
   const effectiveVerbosity = stageConfig?.aiConfig?.verbosity;
 
   return (
-    <Card
-      className={`shadow-sm ${
-        isReviewer
-          ? "border-l-4 border-l-orange-400"
-          : isProcessor
-          ? "border-l-4 border-l-purple-400"
-          : "border-l-4 border-l-blue-400"
-      }`}
-    >
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                isEmpty
-                  ? "bg-muted text-muted-foreground"
-                  : isReviewer
-                  ? "bg-orange-500 text-white"
-                  : isProcessor
-                  ? "bg-purple-500 text-white"
-                  : "bg-blue-500 text-white"
-              }`}
-            >
-              {isEmpty ? <AlertCircle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <CardTitle className="text-lg">{stage.label}</CardTitle>
-                <Badge
-                  variant={isReviewer ? "destructive" : isProcessor ? "secondary" : "default"}
-                  className="text-xs"
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <Card
+        className={`shadow-sm ${
+          isReviewer
+            ? "border-l-4 border-l-orange-400"
+            : isProcessor
+            ? "border-l-4 border-l-purple-400"
+            : "border-l-4 border-l-blue-400"
+        }`}
+      >
+        <CollapsibleTrigger asChild>
+          <CardHeader className="pb-3 cursor-pointer hover:bg-muted/50 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center justify-center w-6 h-6 text-muted-foreground">
+                  {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                </div>
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                    isEmpty
+                      ? "bg-muted text-muted-foreground"
+                      : isReviewer
+                      ? "bg-orange-500 text-white"
+                      : isProcessor
+                      ? "bg-purple-500 text-white"
+                      : "bg-blue-500 text-white"
+                  }`}
                 >
-                  {isReviewer ? "🔍 Review" : isProcessor ? "⚙️ Processor" : "📝 Generator"}
-                </Badge>
+                  {isEmpty ? <AlertCircle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <CardTitle className="text-lg">{stage.label}</CardTitle>
+                    <Badge
+                      variant={isReviewer ? "destructive" : isProcessor ? "secondary" : "default"}
+                      className="text-xs"
+                    >
+                      {isReviewer ? "🔍 Review" : isProcessor ? "⚙️ Processor" : "📝 Generator"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{stage.description}</p>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">{stage.description}</p>
+
+              <Badge variant={isEmpty ? "secondary" : "default"}>{isEmpty ? "Niet Ingesteld" : "Actief"}</Badge>
             </div>
-          </div>
+          </CardHeader>
+        </CollapsibleTrigger>
 
-          <Badge variant={isEmpty ? "secondary" : "default"}>{isEmpty ? "Niet Ingesteld" : "Actief"}</Badge>
-        </div>
-      </CardHeader>
-
-      <CardContent>
+        <CollapsibleContent>
+          <CardContent>
         <div className="space-y-4">
           {/* Step Type Indicator - Reviewer */}
           {isReviewer && (
@@ -291,7 +305,9 @@ export const StageConfigCard = memo(function StageConfigCard({
             </div>
           )}
         </div>
-      </CardContent>
-    </Card>
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 });

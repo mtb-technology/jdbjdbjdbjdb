@@ -51,7 +51,8 @@ function buildCheckpointsFromHistory(
   const latestPointer = latest?.pointer;
   const latestVersion = latest?.v;
 
-  return history.map((entry) => {
+  // Filter out stage 7 entries (Fiscale Briefing is not a concept version)
+  return history.filter((entry) => !entry.stageId.startsWith("7")).map((entry) => {
     const isLatest =
       entry.stageId === latestPointer && entry.v === latestVersion;
     return {
@@ -72,7 +73,7 @@ function buildCheckpointsFromStageKeys(
   versions: ConceptReportVersions
 ): VersionCheckpoint[] {
   return Object.keys(versions)
-    .filter((key) => key !== "latest" && key !== "history")
+    .filter((key) => key !== "latest" && key !== "history" && !key.startsWith("7"))
     .map((stageKey) => {
       const versionData = versions[stageKey] as {
         v?: number;

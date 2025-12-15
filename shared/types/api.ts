@@ -4,12 +4,20 @@
  */
 
 import { z } from 'zod';
-import type { 
-  Report, InsertReport, 
-  DossierData, BouwplanData, 
+import type {
+  Report, InsertReport,
+  DossierData, BouwplanData,
   PromptConfig, AiConfig,
-  User, InsertUser 
+  User, InsertUser
 } from '../schema';
+import {
+  conceptReportVersionsSchema,
+  substepResultEntrySchema,
+  type ConceptReportVersions,
+  type SubstepResults,
+  type StageResults,
+  type StagePrompts,
+} from './report-data';
 
 // ===== REQUEST SCHEMAS =====
 
@@ -58,8 +66,35 @@ export const generateReportRequestSchema = z.object({
 export const updateReportRequestSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   clientName: z.string().min(1).max(200).optional(),
-  dossierData: z.record(z.any()).optional(),
-  bouwplanData: z.record(z.any()).optional(),
+  dossierData: z.object({
+    klant: z.object({
+      naam: z.string(),
+      situatie: z.string(),
+    }),
+    fiscale_gegevens: z.object({
+      vermogen: z.number(),
+      inkomsten: z.number(),
+    }),
+    datum: z.string().optional(),
+    rawText: z.string().optional(),
+    context: z.string().optional(),
+  }).optional(),
+  bouwplanData: z.object({
+    denkwijze_samenvatting: z.string().optional(),
+    fiscale_kernthemas: z.array(z.union([
+      z.string(),
+      z.object({ thema: z.string(), reden: z.string().optional() })
+    ])).optional(),
+    geidentificeerde_risicos: z.array(z.union([
+      z.string(),
+      z.object({ risico: z.string(), reden: z.string().optional(), ernst: z.enum(['laag', 'middel', 'hoog']).optional() })
+    ])).optional(),
+    bouwplan_voor_rapport: z.record(z.object({
+      koptekst: z.string(),
+      subdoelen: z.array(z.string()).optional(),
+      reden_inclusie: z.string().optional(),
+    })).optional(),
+  }).optional(),
   generatedContent: z.string().optional(),
   status: z.enum(["draft", "processing", "generated", "exported"]).optional(),
 });
@@ -67,9 +102,15 @@ export const updateReportRequestSchema = z.object({
 // Stage Execution Request
 export const executeStageRequestSchema = z.object({
   stage: z.string().min(1),
-  input: z.record(z.any()).optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
   overrideConfig: z.object({
-    aiConfig: z.record(z.any()).optional(),
+    aiConfig: z.object({
+      provider: z.enum(["google", "openai"]).optional(),
+      model: z.string().optional(),
+      temperature: z.number().optional(),
+      topP: z.number().optional(),
+      maxOutputTokens: z.number().optional(),
+    }).optional(),
     prompt: z.string().optional(),
   }).optional(),
 });
@@ -101,10 +142,10 @@ export const loginUserRequestSchema = z.object({
   password: z.string().min(1, "Wachtwoord is verplicht"),
 });
 
-// Prompt Config Request
+// Prompt Config Request - uses PromptConfig type from schema
 export const savePromptConfigRequestSchema = z.object({
   name: z.string().min(1, "Naam is verplicht").max(100, "Naam te lang"),
-  config: z.record(z.any()), // PromptConfig object
+  config: z.record(z.string(), z.unknown()), // PromptConfig object - validated separately
   isActive: z.boolean().default(false),
 });
 
@@ -130,20 +171,48 @@ export const reportListResponseSchema = z.array(z.object({
   updatedAt: z.string(),
 }));
 
+// Dossier data schema for responses
+const dossierDataResponseSchema = z.object({
+  klant: z.object({
+    naam: z.string(),
+    situatie: z.string(),
+  }),
+  fiscale_gegevens: z.object({
+    vermogen: z.number(),
+    inkomsten: z.number(),
+  }),
+  datum: z.string().optional(),
+  rawText: z.string().optional(),
+  context: z.string().optional(),
+}).passthrough(); // Allow extra fields
+
+// Bouwplan data schema for responses
+const bouwplanDataResponseSchema = z.object({
+  denkwijze_samenvatting: z.string().optional(),
+  fiscale_kernthemas: z.array(z.unknown()).optional(),
+  geidentificeerde_risicos: z.array(z.unknown()).optional(),
+  bouwplan_voor_rapport: z.record(z.unknown()).optional(),
+}).passthrough(); // Allow extra fields
+
 // Report Detail Response
 export const reportDetailResponseSchema = z.object({
   id: z.string(),
   title: z.string(),
   clientName: z.string(),
-  dossierData: z.record(z.any()),
-  bouwplanData: z.record(z.any()),
+  dossierData: dossierDataResponseSchema,
+  bouwplanData: bouwplanDataResponseSchema,
   generatedContent: z.string().nullable(),
-  stageResults: z.record(z.any()).nullable(),
-  conceptReportVersions: z.record(z.string()).nullable(),
-  substepResults: z.record(z.object({
+  stageResults: z.record(z.string(), z.union([z.string(), z.object({
     review: z.string().optional(),
-    processing: z.string().optional(),
-  })).nullable(),
+    metadata: z.object({
+      model: z.string().optional(),
+      timestamp: z.string().optional(),
+      duration: z.number().optional(),
+      tokensUsed: z.number().optional(),
+    }).optional(),
+  })])).nullable(),
+  conceptReportVersions: conceptReportVersionsSchema.nullable(),
+  substepResults: z.record(z.string(), substepResultEntrySchema).nullable(),
   currentStage: z.string(),
   status: z.string(),
   createdAt: z.string(),
@@ -156,7 +225,11 @@ export const stageExecutionResponseSchema = z.object({
   success: z.boolean(),
   output: z.string().optional(),
   nextStage: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.object({
+    model: z.string().optional(),
+    duration: z.number().optional(),
+    tokensUsed: z.number().optional(),
+  }).optional(),
 });
 
 // User Profile Response
@@ -230,6 +303,7 @@ export const expressModeSummarySchema = z.object({
   finalVersion: z.number(),
   totalProcessingTimeMs: z.number(),
   finalContent: z.string(), // The final report content for editing
+  fiscaleBriefing: z.string().optional(), // Stage 7: Executive summary for fiscalist
 });
 
 export type ExpressModeChange = z.infer<typeof expressModeChangeSchema>;

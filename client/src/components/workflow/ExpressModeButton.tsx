@@ -64,6 +64,7 @@ export function ExpressModeButton({
           finalVersion: completedJob.result.finalVersion || 1,
           totalProcessingTimeMs: 0, // Not tracked in job
           finalContent: completedJob.result.finalContent || '',
+          fiscaleBriefing: completedJob.result.fiscaleBriefing || undefined,
         };
         summaryRef.current = summaryData;
         setSummary(summaryData);
@@ -353,6 +354,7 @@ export function ExpressModeButton({
         <ExpressModeResults
           reportId={reportId}
           summary={summary}
+          fiscaleBriefing={summary.fiscaleBriefing}
           onClose={handleCloseResults}
           onSaveComplete={onComplete}
         />

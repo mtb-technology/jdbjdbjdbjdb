@@ -1,11 +1,13 @@
 import type { DossierData, BouwplanData, PromptConfig, AiConfig, StageConfig } from "@shared/schema";
+import type { ConceptReportVersions, ConceptReportSnapshot, StageResults, PromptConfigData, StagePromptConfig as StagePromptConfigType } from "@shared/types/report-data";
+import { extractSnapshotContent } from "@shared/types/report-data";
 import { SourceValidator } from "./source-validator";
 import { AIModelFactory, AIModelParameters } from "./ai-models/ai-model-factory";
 import { AIConfigResolver } from "./ai-config-resolver";
 import { PromptBuilder, StagePromptConfig } from "./prompt-builder";
 import { storage } from "../storage";
 import { ServerError } from "../middleware/errorHandler";
-import { ERROR_CODES } from "@shared/errors";
+import { ERROR_CODES, getErrorCategory, isAIError } from "@shared/errors";
 import { REPORT_CONFIG, getStageConfig } from "../config/index";
 
 export class ReportGenerator {
@@ -269,8 +271,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     stageName: string,
     dossier: DossierData,
     bouwplan: BouwplanData,
-    previousStageResults: Record<string, string>,
-    conceptReportVersions: Record<string, any>,
+    previousStageResults: StageResults,
+    conceptReportVersions: ConceptReportVersions,
     customInput?: string
   ): Promise<string | { systemPrompt: string; userInput: string }> {
     const currentDate = new Date().toLocaleDateString('nl-NL', {
@@ -281,41 +283,29 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
     // Get active prompt configuration from database
     const promptConfig = await storage.getActivePromptConfig();
-    const stageConfig: any = promptConfig?.config?.[stageName as keyof typeof promptConfig.config] || {};
+    const configData = promptConfig?.config as PromptConfigData | undefined;
+    const stageConfig = configData?.[stageName as keyof PromptConfigData] as StagePromptConfig | undefined;
 
     // Helper function to resolve 'latest' pointer to actual content
     const resolveLatestContent = (): string => {
-      let latestContent = "";
-      const latest = conceptReportVersions?.["latest"];
+      const latest = conceptReportVersions?.latest;
 
-      if (latest && typeof latest === 'object' && latest.pointer) {
+      if (latest && typeof latest === 'object' && 'pointer' in latest && latest.pointer) {
         // Resolve the pointer to get the actual snapshot
         const snapshot = conceptReportVersions[latest.pointer];
-        if (snapshot && snapshot.content) {
-          latestContent = snapshot.content;
-          console.log(`📖 [${stageName}] Using concept from ${latest.pointer} v${latest.v} (${latestContent.length} chars)`);
-          return latestContent;
-        }
-        // Handle case where snapshot is a direct string
-        if (typeof snapshot === 'string' && snapshot.length > 0) {
-          console.log(`📖 [${stageName}] Using concept string from ${latest.pointer} (${snapshot.length} chars)`);
-          return snapshot;
+        const content = extractSnapshotContent(snapshot);
+        if (content) {
+          console.log(`📖 [${stageName}] Using concept from ${latest.pointer} v${latest.v} (${content.length} chars)`);
+          return content;
         }
       }
 
       // Fallback: Try stage 3 if no latest or resolution failed
       const stage3Snapshot = conceptReportVersions?.["3_generatie"];
-      // Handle both object format {content: "..."} and direct string format
-      if (stage3Snapshot) {
-        if (typeof stage3Snapshot === 'object' && stage3Snapshot.content) {
-          latestContent = stage3Snapshot.content;
-          console.log(`📖 [${stageName}] Fallback to stage 3_generatie object (${latestContent.length} chars)`);
-          return latestContent;
-        }
-        if (typeof stage3Snapshot === 'string' && stage3Snapshot.length > 0) {
-          console.log(`📖 [${stageName}] Fallback to stage 3_generatie string (${stage3Snapshot.length} chars)`);
-          return stage3Snapshot;
-        }
+      const stage3Content = extractSnapshotContent(stage3Snapshot);
+      if (stage3Content) {
+        console.log(`📖 [${stageName}] Fallback to stage 3_generatie (${stage3Content.length} chars)`);
+        return stage3Content;
       }
 
       console.warn(`⚠️ [${stageName}] No concept content found - using empty string`);
@@ -393,8 +383,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     stageName: string,
     dossier: DossierData,
     bouwplan: BouwplanData,
-    previousStageResults: Record<string, string>,
-    conceptReportVersions: Record<string, any>
+    previousStageResults: StageResults,
+    conceptReportVersions: ConceptReportVersions
   ): Promise<string> {
     const promptResult = await this.generatePromptForStage(
       stageName,
@@ -416,8 +406,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     stageName: string,
     dossier: DossierData,
     bouwplan: BouwplanData,
-    previousStageResults: Record<string, string>,
-    conceptReportVersions: Record<string, any>,
+    previousStageResults: StageResults,
+    conceptReportVersions: ConceptReportVersions,
     customInput?: string,
     jobId?: string,
     onProgress?: (progress: { stage: string; message: string; progress: number }) => void,
@@ -461,21 +451,21 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     }
 
     // Get active prompt configuration from database for AI config
-    const promptConfig = await storage.getActivePromptConfig();
-    const stageConfig: any = promptConfig?.config?.[stageName as keyof typeof promptConfig.config] || {};
-    const globalConfig: any = promptConfig?.config || {};
+    const promptConfigRecord = await storage.getActivePromptConfig();
+    const globalConfig = (promptConfigRecord?.config as PromptConfigData) ?? {};
+    const stageConfigForAI = globalConfig[stageName as keyof PromptConfigData] as StagePromptConfigType | undefined;
 
     // ✅ REFACTORED: Use centralized AIConfigResolver instead of duplicated logic
     const aiConfig = this.configResolver.resolveForStage(
       stageName,
-      stageConfig,
+      stageConfigForAI ?? {},
       globalConfig,
       jobId
     );
 
     // Get stage-specific settings
-    const useGrounding = stageConfig?.useGrounding ?? globalConfig?.useGrounding ?? false;
-    const useWebSearch = stageConfig?.useWebSearch ?? globalConfig?.useWebSearch ?? false;
+    const useGrounding = stageConfigForAI?.useGrounding ?? false;
+    const useWebSearch = stageConfigForAI?.useWebSearch ?? false;
 
     console.log(`🎯 [${jobId}] Starting stage ${stageName}:`, {
       provider: aiConfig.provider,
@@ -531,13 +521,10 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       }
       // For other stages, keep the previous concept report
       else {
-        const latest = conceptReportVersions?.["latest"];
-        if (latest && typeof latest === 'object' && latest.pointer) {
+        const latest = conceptReportVersions?.latest;
+        if (latest && typeof latest === 'object' && 'pointer' in latest && latest.pointer) {
           // Resolve pointer to get actual content
-          const snapshot = conceptReportVersions[latest.pointer];
-          conceptReport = snapshot?.content || "";
-        } else if (typeof latest === 'string') {
-          conceptReport = latest;
+          conceptReport = extractSnapshotContent(conceptReportVersions[latest.pointer]) ?? "";
         } else {
           conceptReport = "";
         }
@@ -548,11 +535,9 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     } catch (error: any) {
       console.error(`🚨 [${jobId}] Model failed (${aiConfig.model}):`, error.message);
 
-      // Check for rate limits - these should FAIL IMMEDIATELY with no placeholder
-      const isRateLimitError = error.message?.includes('Rate limit') ||
-                              error.message?.includes('rate_limit') ||
-                              error.message?.includes('rate limit') ||
-                              error.errorCode === 'AI_RATE_LIMITED';
+      // Use typed error category detection instead of fragile string matching
+      const errorCategory = getErrorCategory(error);
+      const isRateLimitError = errorCategory === 'rate_limit';
 
       if (isRateLimitError) {
         // Rate limits ALWAYS fail - no placeholders, no fallbacks
@@ -563,11 +548,9 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       // NO FALLBACKS - use only configured model for quality consistency
       const stageDisplayName = this.getStageDisplayName(stageName);
 
-      // Check for other specific error types
-      const isAuthError = error.message?.includes('Authentication failed') || error.message?.includes('API key');
-      const isTokenLimitError = error.message?.includes('maxOutputTokens') ||
-                                error.message?.includes('token limit') ||
-                                error.message?.includes('incomplete');
+      // Use typed error categories for specific error handling
+      const isAuthError = errorCategory === 'authentication';
+      const isTokenLimitError = errorCategory === 'token_limit';
 
       let errorGuidance = '';
       if (isAuthError) {
@@ -621,12 +604,9 @@ ${errorGuidance}
       // For reviewer stages, don't return a concept report even on error
       let errorConceptReport = "";
       if (!stageName.startsWith("4")) {
-        const latest = conceptReportVersions?.["latest"];
-        if (latest && typeof latest === 'object' && latest.pointer) {
-          const snapshot = conceptReportVersions[latest.pointer];
-          errorConceptReport = snapshot?.content || placeholderResponse;
-        } else if (typeof latest === 'string') {
-          errorConceptReport = latest;
+        const latest = conceptReportVersions?.latest;
+        if (latest && typeof latest === 'object' && 'pointer' in latest && latest.pointer) {
+          errorConceptReport = extractSnapshotContent(conceptReportVersions[latest.pointer]) ?? placeholderResponse;
         } else {
           errorConceptReport = placeholderResponse;
         }
@@ -714,12 +694,12 @@ ${errorGuidance}
   }
 
   private buildChangeSummaryPrompt(
-    conceptReportVersions: Record<string, string>,
+    conceptReportVersions: ConceptReportVersions,
     dossier: DossierData,
     bouwplan: BouwplanData,
     currentDate: string,
     stageConfig?: StagePromptConfig,
-    previousStageResults?: Record<string, string>
+    previousStageResults?: StageResults
   ): string {
     this.validateStagePrompt("6_change_summary", stageConfig);
     return this.promptBuilder.buildCombined("6_change_summary", stageConfig!, () =>
@@ -729,20 +709,117 @@ ${errorGuidance}
 
   private buildEditorPrompt(
     currentReportText: string,
-    previousStageResults: Record<string, string>,
+    previousStageResults: StageResults,
     currentDate: string,
     stageConfig?: StagePromptConfig
   ): string {
     this.validateStagePrompt("editor", stageConfig);
 
     // Build concept versions object with the current report text
-    const conceptVersions = {
-      '3_generatie': currentReportText,
-      latest: currentReportText
+    const conceptVersions: ConceptReportVersions = {
+      '3_generatie': {
+        v: 1,
+        content: currentReportText,
+      },
+      latest: {
+        pointer: '3_generatie',
+        v: 1,
+        content: currentReportText,
+      }
     };
 
     return this.promptBuilder.buildCombined("5_eindredactie", stageConfig!, () =>
       this.promptBuilder.buildEditorData(previousStageResults, conceptVersions)
     );
+  }
+
+  /**
+   * Generate Fiscale Briefing (Stage 7)
+   *
+   * Creates an executive summary for the fiscalist after Express Mode completes.
+   * Combines dossier data, generated report, and all reviewer feedback into
+   * a concise briefing that helps the fiscalist quickly onboard to the case.
+   */
+  async generateFiscaleBriefing(params: {
+    dossier: DossierData;
+    bouwplan: BouwplanData;
+    conceptReport: string;
+    stageResults: StageResults;
+    jobId?: string;
+  }): Promise<{ briefing: string; prompt: string }> {
+    const { dossier, bouwplan, conceptReport, stageResults, jobId } = params;
+    const stageName = "7_fiscale_briefing";
+
+    // Get active prompt configuration
+    const promptConfig = await storage.getActivePromptConfig();
+    const stageConfig: any = promptConfig?.config?.[stageName as keyof typeof promptConfig.config] || {};
+    const globalConfig: any = promptConfig?.config || {};
+
+    // Validate that we have a prompt configured
+    this.validateStagePrompt(stageName, stageConfig);
+
+    // Build the prompt using PromptBuilder
+    const promptResult = this.promptBuilder.build(stageName, stageConfig, () =>
+      this.promptBuilder.buildFiscaleBriefingData(dossier, bouwplan, conceptReport, stageResults)
+    );
+
+    const promptString = `${promptResult.systemPrompt}\n\n### USER INPUT:\n${promptResult.userInput}`;
+
+    // Resolve AI config for this stage
+    const aiConfig = this.configResolver.resolveForStage(
+      stageName,
+      stageConfig,
+      globalConfig,
+      jobId
+    );
+
+    // Force JSON response format for structured output
+    const options: AIModelParameters & { jobId?: string } = {
+      jobId,
+      responseFormat: 'json' // Force JSON output
+    };
+
+    console.log(`🎯 [${jobId}] Generating Fiscale Briefing:`, {
+      provider: aiConfig.provider,
+      model: aiConfig.model
+    });
+
+    try {
+      const response = await this.modelFactory.callModel(aiConfig, promptResult, options);
+
+      return {
+        briefing: response.content,
+        prompt: promptString
+      };
+    } catch (error: any) {
+      console.error(`🚨 [${jobId}] Fiscale Briefing generation failed:`, error.message);
+
+      // Return error as structured JSON so frontend can handle it gracefully
+      const errorBriefing = JSON.stringify({
+        error: true,
+        message: `Fiscale Briefing kon niet worden gegenereerd: ${error.message}`,
+        client_context: {
+          type: "onbekend",
+          jaren: [],
+          korte_omschrijving: "Briefing generatie mislukt"
+        },
+        fiscaal_vraagstuk: "Er is een fout opgetreden bij het genereren van de briefing.",
+        gekozen_strategie: {
+          hoofdlijn: "Niet beschikbaar",
+          onderbouwing: []
+        },
+        aandachtspunten_review: [{
+          punt: "Bekijk het rapport handmatig",
+          urgentie: "hoog"
+        }],
+        confidence_level: "laag",
+        confidence_toelichting: "Automatische briefing mislukt"
+      });
+
+      return {
+        briefing: errorBriefing,
+        prompt: promptString
+      };
+    }
   }
 }

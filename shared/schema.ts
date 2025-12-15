@@ -883,6 +883,86 @@ export const stageDenkwijzeSchema = z.object({
 
 export type StageDenkwijze = z.infer<typeof stageDenkwijzeSchema>;
 
+// ===== STAGE 7: FISCALE BRIEFING SCHEMA =====
+
+/**
+ * ## Fiscale Briefing Schema - Executive Summary
+ *
+ * Output van Stage 7 - een executive summary voor de fiscalist die een case oppakt.
+ * Focus op **reasoning transparency**: de fiscalist moet begrijpen WAAROM de AI
+ * bepaalde keuzes heeft gemaakt, zodat ze snel kunnen beoordelen of het klopt.
+ *
+ * Design principes:
+ * - Exec summary format: snel overzicht voor drukke fiscalisten
+ * - Reasoning first: niet alleen WAT maar vooral WAAROM
+ * - Confidence per onderdeel: waar is de AI zeker, waar twijfelt hij?
+ * - Triage ready: wat moet de fiscalist absoluut checken?
+ */
+export const fiscaleBriefingSchema = z.object({
+  // === DEEL 1: CASE CONTEXT (30 sec leestijd) ===
+  case_in_een_oogopslag: z.object({
+    client_type: z.string().describe("Particulier, ondernemer, BV, etc."),
+    belastingjaren: z.array(z.string()).describe("Relevante belastingjaren"),
+    kernvraag: z.string().describe("De centrale fiscale vraag in één zin"),
+    complexiteit: z.enum(["eenvoudig", "gemiddeld", "complex"]).describe("Inschatting complexiteit"),
+    geschatte_financiele_impact: z.string().optional().describe("Geschat belang in euros indien bekend")
+  }),
+
+  // === DEEL 2: MIJN ADVIES & REASONING (kern van de briefing) ===
+  mijn_advies: z.object({
+    conclusie: z.string().describe("Het hoofdadvies in 2-3 zinnen"),
+    confidence: z.enum(["hoog", "medium", "laag"]).describe("Vertrouwen in dit advies"),
+
+    // Reasoning chain - de kern van transparency
+    redenering: z.array(z.object({
+      stap: z.number().describe("Volgnummer van de redeneerstap"),
+      vraag: z.string().describe("Welke vraag moest ik beantwoorden?"),
+      analyse: z.string().describe("Wat ik heb onderzocht/afgewogen"),
+      conclusie: z.string().describe("Mijn conclusie op deze stap"),
+      bronnen: z.array(z.string()).optional().describe("Wetsartikelen, jurisprudentie, etc."),
+      confidence: z.enum(["hoog", "medium", "laag"]).describe("Zekerheid op deze stap")
+    })).describe("Stap-voor-stap reasoning chain"),
+
+    // Alternatieven die overwogen zijn
+    overwogen_alternatieven: z.array(z.object({
+      optie: z.string().describe("Welk alternatief was er"),
+      waarom_niet: z.string().describe("Waarom niet gekozen"),
+      wanneer_wel: z.string().optional().describe("In welke situatie zou dit wel gelden")
+    })).optional().describe("Alternatieven die ik heb afgewogen")
+  }),
+
+  // === DEEL 3: WAAR IK TWIJFELDE (eerlijkheid over onzekerheid) ===
+  twijfelpunten: z.array(z.object({
+    onderwerp: z.string().describe("Waar twijfelde ik over"),
+    opties: z.array(z.string()).describe("Welke interpretaties waren mogelijk"),
+    gekozen: z.string().describe("Welke heb ik gekozen en waarom"),
+    risico: z.string().describe("Wat is het risico als dit fout is")
+  })).optional().describe("Punten waar meerdere interpretaties mogelijk waren"),
+
+  // === DEEL 4: CHECK DIT (triage voor de fiscalist) ===
+  check_voor_verzending: z.array(z.object({
+    wat: z.string().describe("Wat moet gecheckt worden"),
+    waarom: z.string().describe("Waarom is dit belangrijk"),
+    prioriteit: z.enum(["must_check", "should_check", "nice_to_check"]).describe("Prioriteit"),
+    geschatte_tijd: z.string().optional().describe("Hoeveel tijd kost dit (5 min, 15 min, etc.)")
+  })).describe("Concrete checklist voor de fiscalist"),
+
+  // === DEEL 5: REVIEWER INZICHTEN (wat hebben de AI reviewers gezegd) ===
+  reviewer_highlights: z.array(z.object({
+    reviewer: z.string().describe("Welke AI reviewer"),
+    belangrijkste_feedback: z.string().describe("Kernpunt van de feedback"),
+    actie_genomen: z.string().describe("Wat is er mee gedaan"),
+    impact: z.enum(["hoog", "medium", "laag"]).describe("Impact op eindresultaat")
+  })).optional().describe("Highlights van de AI review rondes"),
+
+  // === META ===
+  totaal_confidence: z.enum(["hoog", "medium", "laag"]).describe("Overall confidence in het rapport"),
+  confidence_toelichting: z.string().describe("Waarom dit confidence level"),
+  aanbeveling_review_diepte: z.enum(["vluchtig", "normaal", "grondig"]).describe("Hoe diep moet de fiscalist reviewen")
+});
+
+export type FiscaleBriefing = z.infer<typeof fiscaleBriefingSchema>;
+
 // ===== FOLLOW-UP ASSISTANT TYPES =====
 
 // TypeScript types for Follow-up Sessions
