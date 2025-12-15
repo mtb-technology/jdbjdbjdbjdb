@@ -403,8 +403,29 @@ ${currentDossierData}`;
     conceptReport: string | null,
     stageResults: StageResults
   ): object {
-    // Clean dossier - remove rawText as it's not needed for the briefing
-    const { rawText, ...cleanDossier } = dossier;
+    // For briefing, we KEEP rawText if structured data is minimal
+    // This ensures we can still brief on early-stage cases
+    const { rawText, ...structuredDossier } = dossier;
+
+    // Check if structured data has meaningful content
+    const hasStructuredContent =
+      (dossier?.klant?.situatie?.length || 0) > 50 ||
+      (dossier?.fiscale_gegevens?.vermogen || 0) > 0;
+
+    // Debug: Log what data we're working with
+    console.log('📋 [FiscaleBriefing] Dossier data received:', {
+      hasKlant: !!dossier?.klant,
+      klantNaam: dossier?.klant?.naam || 'MISSING',
+      hasSituatie: !!dossier?.klant?.situatie,
+      situatieLength: dossier?.klant?.situatie?.length || 0,
+      hasFiscaleGegevens: !!dossier?.fiscale_gegevens,
+      vermogen: dossier?.fiscale_gegevens?.vermogen,
+      inkomsten: dossier?.fiscale_gegevens?.inkomsten,
+      hasRawText: !!rawText,
+      rawTextLength: rawText?.length || 0,
+      hasStructuredContent,
+      willIncludeRawText: !hasStructuredContent && !!rawText
+    });
 
     // Determine workflow phase based on available data
     const hasReport = !!conceptReport && conceptReport.trim().length > 0;
@@ -479,9 +500,19 @@ ${currentDossierData}`;
       workflowBeschrijving = 'Dit is een VROEGE briefing na Stap 1 (informatiecheck). Er is alleen dossier informatie beschikbaar. Maak een eerste intake briefing gebaseerd op de beschikbare klantgegevens. Geef duidelijk aan welke secties nog niet ingevuld kunnen worden.';
     }
 
+    // Build dossier context - include rawText if structured data is minimal
+    const dossierContext = hasStructuredContent
+      ? structuredDossier  // Structured data is good, no need for raw text
+      : {
+          ...structuredDossier,
+          // Include raw intake text for early-stage briefings
+          originele_intake_tekst: rawText || null,
+          _opmerking: 'Gestructureerde data is minimaal. Gebruik de originele_intake_tekst voor context.'
+        };
+
     return {
       // Client and case context
-      dossier_context: cleanDossier,
+      dossier_context: dossierContext,
 
       // Analysis structure from Stage 2 (may be null in early phases)
       bouwplan_analyse: bouwplan || null,
@@ -495,6 +526,8 @@ ${currentDossierData}`;
         beschrijving: workflowBeschrijving,
         beschikbare_data: {
           dossier: true,
+          dossier_gestructureerd: hasStructuredContent,
+          dossier_raw_text: !hasStructuredContent && !!rawText,
           bouwplan: hasBouwplan,
           rapport: hasReport,
           stage1_compleet: hasStage1,

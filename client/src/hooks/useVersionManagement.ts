@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
-import { STAGE_NAMES, getLatestConceptText } from "@shared/constants";
+import { getStageName, getLatestConceptText } from "@shared/constants";
 import type { VersionCheckpoint } from "@/types/caseDetail.types";
 import type { Report } from "@shared/schema";
 
@@ -58,7 +58,7 @@ function buildCheckpointsFromHistory(
     return {
       version: entry.v,
       stageKey: entry.stageId,
-      stageName: `${STAGE_NAMES[entry.stageId] || entry.stageId} v${entry.v}`,
+      stageName: `${getStageName(entry.stageId)} v${entry.v}`,
       changeCount: undefined,
       timestamp: entry.timestamp,
       isCurrent: isLatest,
@@ -85,7 +85,7 @@ function buildCheckpointsFromStageKeys(
       return {
         version: v,
         stageKey,
-        stageName: `${STAGE_NAMES[stageKey] || stageKey} v${v}`,
+        stageName: `${getStageName(stageKey)} v${v}`,
         changeCount: versionData?.changeCount,
         timestamp: versionData?.createdAt || versionData?.timestamp,
         isCurrent: versions.latest?.pointer === stageKey,

@@ -7,7 +7,7 @@
 
 import { storage } from '../storage';
 import { parseFeedbackToProposals, type ChangeProposal } from '@shared/lib/parse-feedback';
-import { STAGE_NAMES, getLatestConceptText, REVIEW_STAGES } from '@shared/constants';
+import { getStageName, getLatestConceptText, REVIEW_STAGES } from '@shared/constants';
 
 interface RollbackResult {
   success: boolean;
@@ -44,7 +44,7 @@ export async function rollbackChange(params: RollbackChangeParams): Promise<Roll
     }
 
     // 3. Parse the feedback to get change proposals
-    const stageName = STAGE_NAMES[stageId] || stageId;
+    const stageName = getStageName(stageId);
     const proposals = parseFeedbackToProposals(rawFeedback, stageName, stageId);
 
     if (changeIndex < 0 || changeIndex >= proposals.length) {
@@ -281,7 +281,7 @@ function findPossibleOverwritingStages(
     if (!laterRawFeedback) continue; // Stage not executed
 
     // Parse later stage's changes
-    const laterStageName = STAGE_NAMES[laterStageId] || laterStageId;
+    const laterStageName = getStageName(laterStageId);
     const laterProposals = parseFeedbackToProposals(laterRawFeedback, laterStageName, laterStageId);
 
     // Check if any change in later stage might have modified this text
@@ -326,7 +326,7 @@ export async function getRollbackableChanges(
       return { changes: [], error: `Geen resultaat voor stage ${stageId}` };
     }
 
-    const stageName = STAGE_NAMES[stageId] || stageId;
+    const stageName = getStageName(stageId);
     const proposals = parseFeedbackToProposals(rawFeedback, stageName, stageId);
 
     return { changes: proposals };

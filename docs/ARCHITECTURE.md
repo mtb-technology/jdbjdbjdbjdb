@@ -186,6 +186,115 @@ TIMEOUTS.AI_REASONING    // 10 min - o3/o4 models
 '3_generatie': { timeout: 600000 }  // 10 min voor rapport generatie
 ```
 
+## AI Config Resolution: Deep Dive
+
+> Dit is het meest verwarrende deel van de codebase. Hier is hoe het ECHT werkt.
+
+### Het Probleem
+
+Je hebt een AI call nodig voor Stage 3. Welke config wordt gebruikt?
+
+```
+Optie A: AI_MODELS['gemini-2.5-pro'].defaultConfig        (Layer 1)
+Optie B: promptConfig['3_generatie'].aiConfig             (Layer 2 - stage)
+Optie C: promptConfig.aiConfig                            (Layer 2 - global)
+```
+
+### De Oplossing: Merge Strategie
+
+```typescript
+// Pseudo-code van AIConfigResolver.resolveForStage():
+
+function resolveForStage(stageName, stageConfig, globalConfig) {
+  // 1. Start met stage-specifieke config (hoogste prioriteit)
+  const stageAiConfig = stageConfig?.aiConfig;
+
+  // 2. Fallback naar global config
+  const globalAiConfig = globalConfig?.aiConfig;
+
+  // 3. Merge: stage values override global values
+  const baseConfig = {
+    ...globalAiConfig,  // Base: global defaults
+    ...stageAiConfig,   // Override: stage-specific
+  };
+
+  // 4. Infer provider van model naam
+  if (!baseConfig.provider) {
+    baseConfig.provider = inferProvider(baseConfig.model);
+  }
+
+  // 5. Apply provider token limits (Layer 1)
+  const modelInfo = AI_MODELS[baseConfig.model];
+  if (baseConfig.maxOutputTokens > modelInfo.limits.maxTokensPerRequest) {
+    baseConfig.maxOutputTokens = modelInfo.limits.maxTokensPerRequest;
+  }
+
+  return baseConfig;
+}
+```
+
+### Precedence Diagram
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    PRIORITEIT (hoog → laag)                    │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  1. stageConfig.aiConfig.temperature = 0.8                     │
+│     ↓ (als niet gezet, fallback naar:)                         │
+│                                                                │
+│  2. globalConfig.aiConfig.temperature = 0.5                    │
+│     ↓ (als niet gezet, fallback naar:)                         │
+│                                                                │
+│  3. AI_MODELS[model].defaultConfig.temperature = 0.1           │
+│     ↓ (als niet gezet, fallback naar:)                         │
+│                                                                │
+│  4. Zod schema default (shared/schema.ts)                      │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Voorbeeld: "Waarom is mijn temperature 0.5?"
+
+```typescript
+// Database prompt_config:
+{
+  "3_generatie": {
+    "prompt": "...",
+    "aiConfig": {
+      "model": "gemini-2.5-pro"
+      // NOTE: temperature NIET gezet!
+    }
+  },
+  "aiConfig": {  // Global
+    "provider": "google",
+    "model": "gemini-2.5-pro",
+    "temperature": 0.5  // ← Dit wordt gebruikt
+  }
+}
+
+// Resultaat na resolve:
+// temperature = 0.5 (van global, want stage heeft het niet)
+```
+
+### Special Cases
+
+| Scenario | Gedrag |
+|----------|--------|
+| Stage 3 met `gemini-3-pro-preview` | Auto-enable `useDeepResearch: true` |
+| `maxOutputTokens > model limit` | Silently capped naar model limit |
+| OpenAI model met `useGrounding: true` | Validation error (grounding = Google only) |
+| Geen `provider` in config | Inferred van model naam |
+
+### Debug Checklist
+
+Als je config niet werkt zoals verwacht:
+
+1. **Check database**: Wat staat er in `prompt_configs` voor deze stage?
+2. **Check global**: Wat is de global `aiConfig` fallback?
+3. **Check logs**: `[resolveForStage]` log toont de merged config
+4. **Check model limits**: Wordt je value gecapped door Layer 1?
+
 ## Bekende Architectuur Quirks
 
 ### 1. Timeout Duplicatie
@@ -199,6 +308,9 @@ TIMEOUTS bestaan in zowel `shared/constants.ts` als `server/config/constants.ts`
 
 ### 3. Shadow Defaults
 `REPORT_CONFIG.defaultModel`, `reviewerModel` etc. zijn hardcoded in code terwijl de filosofie is "alles uit database". Deze worden gebruikt als fallback.
+
+### 4. Config Sources zijn Verspreid
+Zie de precedence diagram hierboven. Dit is intentioneel (flexibiliteit) maar verwarrend voor nieuwe developers.
 
 ## Debugging Tips
 

@@ -1,7 +1,46 @@
 /**
  * Feedback Processing Routes
  *
- * Handles feedback preview and processing for review stages.
+ * ## Wat doet deze module?
+ *
+ * Verwerkt feedback van reviewer stages (4a-4f) en past deze toe op het rapport.
+ *
+ * ## Data Flow (BELANGRIJK om te begrijpen!)
+ *
+ * ```
+ * 1. Reviewer stage (4a-4f) draait
+ *    ↓
+ *    Output: stageResults[stageId] = { review: "...", changeProposals: [...] }
+ *
+ * 2. User klikt "Process Feedback" in UI
+ *    ↓
+ *    POST /api/reports/:id/stage/:stageId/process-feedback
+ *
+ * 3. Deze route haalt op:
+ *    - rawFeedback: stageResults[stageId] (reviewer output)
+ *    - conceptReport: getLatestConceptText(conceptReportVersions)
+ *
+ * 4. Roept "editor" stage aan (NIET een reviewer!)
+ *    ↓
+ *    reportGenerator.executeStage('editor', ...)
+ *
+ * 5. Editor stage past feedback toe
+ *    ↓
+ *    Output: Gewijzigd rapport
+ *
+ * 6. Sla nieuwe versie op
+ *    ↓
+ *    conceptReportVersions[stageId] = { v: N+1, content: "...", from: "..." }
+ * ```
+ *
+ * ## Waarom "editor" stage?
+ *
+ * De "editor" is een speciale helper stage die:
+ * - Feedback van reviewers ontvangt
+ * - Het concept rapport aanpast
+ * - NIET in STAGE_ORDER staat (het is geen workflow stage)
+ *
+ * @see docs/STAGES.md voor uitgebreide uitleg
  */
 
 import type { Request, Response, Express } from "express";

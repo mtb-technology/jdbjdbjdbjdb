@@ -3,7 +3,7 @@
  * Uses shared parser for consistent feedback extraction across client and server
  */
 
-import { STAGE_NAMES } from '@shared/constants';
+import { getStageName } from '@shared/constants';
 import { parseFeedbackToProposals, type ChangeProposal } from '@shared/lib/parse-feedback';
 import type { ExpressModeChange, ExpressModeStageSummary } from '@shared/types/api';
 
@@ -16,7 +16,7 @@ export function summarizeFeedback(
   rawFeedback: string,
   processingTimeMs?: number
 ): ExpressModeStageSummary {
-  const stageName = STAGE_NAMES[stageId] || stageId;
+  const stageName = getStageName(stageId);
 
   // Use shared parser to extract proposals
   const proposals = parseFeedbackToProposals(rawFeedback, stageName, stageId);
