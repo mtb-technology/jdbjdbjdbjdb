@@ -774,12 +774,16 @@ ${errorGuidance}
     });
 
     // DEBUG: Log the full prompt for troubleshooting
+    const parsedInput = JSON.parse(promptResult.userInput);
     console.log(`📝 [${jobId}] === FISCALE BRIEFING PROMPT DEBUG ===`);
     console.log(`📝 [${jobId}] System Prompt (first 500 chars):`, promptResult.systemPrompt.substring(0, 500));
-    console.log(`📝 [${jobId}] User Input keys:`, Object.keys(JSON.parse(promptResult.userInput)));
-    console.log(`📝 [${jobId}] workflow_uitleg:`, JSON.parse(promptResult.userInput).workflow_uitleg);
+    console.log(`📝 [${jobId}] User Input keys:`, Object.keys(parsedInput));
+    console.log(`📝 [${jobId}] dossier_context keys:`, Object.keys(parsedInput.dossier_context || {}));
+    console.log(`📝 [${jobId}] Has originele_intake_tekst:`, !!parsedInput.dossier_context?.originele_intake_tekst);
+    console.log(`📝 [${jobId}] originele_intake_tekst length:`, parsedInput.dossier_context?.originele_intake_tekst?.length || 0);
+    console.log(`📝 [${jobId}] workflow_uitleg:`, parsedInput.workflow_uitleg);
     console.log(`📝 [${jobId}] reviewer_feedback status:`,
-      Object.entries(JSON.parse(promptResult.userInput).reviewer_feedback || {})
+      Object.entries(parsedInput.reviewer_feedback || {})
         .map(([k, v]: [string, any]) => `${k}: ${v.status}`)
     );
     console.log(`📝 [${jobId}] === END PROMPT DEBUG ===`);
