@@ -441,6 +441,12 @@ export function registerExpressModeRoutes(
   /**
    * Generate Fiscale Briefing standalone (Stage 7)
    * POST /api/reports/:id/fiscale-briefing
+   *
+   * Works at any workflow phase:
+   * - After Stage 1: Intake briefing with dossier context only
+   * - After Stage 2: Analysis briefing with bouwplan
+   * - After Stage 3: Full concept briefing
+   * - After Express Mode: Complete briefing with all reviewer feedback
    */
   app.post("/api/reports/:id/fiscale-briefing", asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
@@ -452,26 +458,34 @@ export function registerExpressModeRoutes(
       throw ServerError.notFound("Report");
     }
 
-    // Get the latest concept report content
+    // Get the latest concept report content (may be null/empty for early phases)
     const conceptVersions = (report.conceptReportVersions as Record<string, any>) || {};
     const latestPointer = conceptVersions.latest?.pointer;
     const finalContent = latestPointer
-      ? (conceptVersions[latestPointer]?.content || report.generatedContent || "")
-      : (report.generatedContent || "");
+      ? (conceptVersions[latestPointer]?.content || report.generatedContent || null)
+      : (report.generatedContent || null);
 
-    if (!finalContent) {
-      throw ServerError.validation(
-        "No report content available",
-        "Er is geen rapport content beschikbaar. Genereer eerst een rapport."
-      );
-    }
+    // Determine workflow phase for logging
+    const stageResults = report.stageResults as Record<string, string> || {};
+    const hasStage1 = !!stageResults['1a_informatiecheck'];
+    const hasStage2 = !!stageResults['2_complexiteitscheck'];
+    const hasBouwplan = !!report.bouwplanData;
+    const hasReport = !!finalContent;
 
-    // Generate the briefing
+    console.log(`[${id}] Briefing context:`, {
+      hasStage1,
+      hasStage2,
+      hasBouwplan,
+      hasReport,
+      phase: hasReport ? 'concept/reviewed' : hasBouwplan ? 'analyse' : 'intake'
+    });
+
+    // Generate the briefing - works with partial data
     const briefingResult = await reportGenerator.generateFiscaleBriefing({
       dossier: report.dossierData as DossierData,
-      bouwplan: report.bouwplanData as BouwplanData,
+      bouwplan: (report.bouwplanData as BouwplanData) || null,
       conceptReport: finalContent,
-      stageResults: report.stageResults as Record<string, string> || {},
+      stageResults,
       jobId: `${id}-briefing-standalone`
     });
 

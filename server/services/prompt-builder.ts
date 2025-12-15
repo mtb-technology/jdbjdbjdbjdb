@@ -399,12 +399,18 @@ ${currentDossierData}`;
    */
   buildFiscaleBriefingData(
     dossier: DossierData,
-    bouwplan: BouwplanData,
-    conceptReport: string,
+    bouwplan: BouwplanData | null,
+    conceptReport: string | null,
     stageResults: StageResults
   ): object {
     // Clean dossier - remove rawText as it's not needed for the briefing
     const { rawText, ...cleanDossier } = dossier;
+
+    // Determine workflow phase based on available data
+    const hasReport = !!conceptReport && conceptReport.trim().length > 0;
+    const hasBouwplan = !!bouwplan;
+    const hasStage1 = !!stageResults?.['1a_informatiecheck'];
+    const hasStage2 = !!stageResults?.['2_complexiteitscheck'];
 
     // Define all possible reviewers with their descriptions
     const reviewerDefinitions = {
@@ -448,32 +454,58 @@ ${currentDossierData}`;
         feedback: feedback,
         toelichting: feedback
           ? 'Review is succesvol uitgevoerd. De bevindingen hieronder zijn observaties/suggesties die REEDS VERWERKT zijn in het eindrapport.'
-          : 'Deze review stap is niet uitgevoerd in Express Mode (optioneel of overgeslagen).'
+          : 'Deze review stap is niet uitgevoerd (optioneel of overgeslagen).'
       };
     }
 
     // Count how many reviewers actually ran
     const aantalUitgevoerd = Object.values(reviewerSummary).filter(r => r.status === 'uitgevoerd').length;
 
+    // Determine workflow phase and description
+    let workflowFase: 'intake' | 'analyse' | 'concept' | 'reviewed';
+    let workflowBeschrijving: string;
+
+    if (hasReport && aantalUitgevoerd > 0) {
+      workflowFase = 'reviewed';
+      workflowBeschrijving = 'Express Mode heeft het rapport automatisch gegenereerd en door meerdere AI reviewers geleid. Elke reviewer heeft feedback gegeven die DIRECT VERWERKT is in het eindrapport. De feedback hieronder zijn dus HISTORISCHE observaties - het rapport is al bijgewerkt.';
+    } else if (hasReport) {
+      workflowFase = 'concept';
+      workflowBeschrijving = 'Er is een concept rapport gegenereerd (Stap 3). De review stappen zijn nog niet uitgevoerd. Baseer je briefing op het dossier, bouwplan en concept rapport.';
+    } else if (hasBouwplan || hasStage2) {
+      workflowFase = 'analyse';
+      workflowBeschrijving = 'De analyse fase (Stap 2) is voltooid. Er is een bouwplan opgesteld maar nog geen rapport gegenereerd. Baseer je briefing op het dossier en het bouwplan/analyse. Geef aan welke velden je niet kunt invullen omdat er nog geen rapport is.';
+    } else {
+      workflowFase = 'intake';
+      workflowBeschrijving = 'Dit is een VROEGE briefing na Stap 1 (informatiecheck). Er is alleen dossier informatie beschikbaar. Maak een eerste intake briefing gebaseerd op de beschikbare klantgegevens. Geef duidelijk aan welke secties nog niet ingevuld kunnen worden.';
+    }
+
     return {
       // Client and case context
       dossier_context: cleanDossier,
 
-      // Analysis structure from Stage 2
-      bouwplan_analyse: bouwplan,
+      // Analysis structure from Stage 2 (may be null in early phases)
+      bouwplan_analyse: bouwplan || null,
 
-      // The final report content (ALREADY includes all reviewer improvements)
-      gegenereerd_rapport: conceptReport,
+      // The final report content (null if not yet generated)
+      gegenereerd_rapport: conceptReport || null,
 
       // Important context for the briefing AI
       workflow_uitleg: {
-        beschrijving: 'Express Mode heeft het rapport automatisch gegenereerd en door meerdere AI reviewers geleid. Elke reviewer heeft feedback gegeven die DIRECT VERWERKT is in het eindrapport. De feedback hieronder zijn dus HISTORISCHE observaties - het rapport is al bijgewerkt.',
+        fase: workflowFase,
+        beschrijving: workflowBeschrijving,
+        beschikbare_data: {
+          dossier: true,
+          bouwplan: hasBouwplan,
+          rapport: hasReport,
+          stage1_compleet: hasStage1,
+          stage2_compleet: hasStage2
+        },
         reviewers_uitgevoerd: aantalUitgevoerd,
         reviewers_totaal: Object.keys(reviewerDefinitions).length
       },
 
-      // Reviewer feedback with clear context
-      reviewer_feedback: reviewerSummary
+      // Reviewer feedback with clear context (empty if no reviews done)
+      reviewer_feedback: aantalUitgevoerd > 0 ? reviewerSummary : null
     };
   }
 }

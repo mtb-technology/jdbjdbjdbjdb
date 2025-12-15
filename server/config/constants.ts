@@ -26,6 +26,7 @@ export const HTTP_STATUS = {
   OK: 200,
   CREATED: 201,
   NO_CONTENT: 204,
+  NOT_MODIFIED: 304,
 
   // Client errors
   BAD_REQUEST: 400,

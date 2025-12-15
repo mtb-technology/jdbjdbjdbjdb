@@ -731,8 +731,8 @@ ${errorGuidance}
    */
   async generateFiscaleBriefing(params: {
     dossier: DossierData;
-    bouwplan: BouwplanData;
-    conceptReport: string;
+    bouwplan: BouwplanData | null;
+    conceptReport: string | null;
     stageResults: StageResults;
     jobId?: string;
   }): Promise<{ briefing: string; prompt: string }> {

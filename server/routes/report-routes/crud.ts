@@ -13,6 +13,7 @@ import type { DossierData, BouwplanData } from "@shared/schema";
 import { createReportRequestSchema } from "@shared/types/api";
 import { asyncHandler, ServerError } from "../../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
+import { HTTP_STATUS } from "../../config/constants";
 import type { ReportRouteDependencies } from "./types";
 
 export function registerCrudRoutes(
@@ -94,9 +95,12 @@ export function registerCrudRoutes(
       const reports = await storage.getAllReports();
       res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
       res.json(createApiSuccessResponse(reports));
-    } catch (error) {
-      console.error("Error fetching reports:", error);
-      res.status(500).json({ message: "Fout bij ophalen rapporten" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching reports:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen rapporten")
+      );
     }
   });
 
@@ -120,7 +124,9 @@ export function registerCrudRoutes(
     try {
       const report = await storage.getReport(req.params.id);
       if (!report) {
-        res.status(404).json({ message: "Rapport niet gevonden" });
+        res.status(HTTP_STATUS.NOT_FOUND).json(
+          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Report not found", "Rapport niet gevonden")
+        );
         return;
       }
 
@@ -130,7 +136,7 @@ export function registerCrudRoutes(
 
       const clientETag = req.headers['if-none-match'];
       if (clientETag === etag) {
-        res.status(304).end();
+        res.status(HTTP_STATUS.NOT_MODIFIED).end();
         return;
       }
 
@@ -139,9 +145,12 @@ export function registerCrudRoutes(
       res.set('Last-Modified', lastModified.toUTCString());
 
       res.json(createApiSuccessResponse(report));
-    } catch (error) {
-      console.error("Error fetching report:", error);
-      res.status(500).json({ message: "Fout bij ophalen rapport" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching report:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen rapport")
+      );
     }
   });
 
@@ -157,15 +166,20 @@ export function registerCrudRoutes(
     try {
       const { url } = req.body;
       if (!url || typeof url !== 'string') {
-        res.status(400).json({ message: "URL is verplicht" });
+        res.status(HTTP_STATUS.BAD_REQUEST).json(
+          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "URL is required", "URL is verplicht")
+        );
         return;
       }
 
       const isValid = await sourceValidator.validateSource(url);
       res.json(createApiSuccessResponse({ valid: isValid }));
-    } catch (error) {
-      console.error("Error validating source:", error);
-      res.status(500).json({ message: "Fout bij valideren bron" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error validating source:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("ValidationError", ERROR_CODES.SOURCE_VALIDATION_FAILED, message, "Fout bij valideren bron")
+      );
     }
   });
 
@@ -178,9 +192,12 @@ export function registerCrudRoutes(
       const sources = await storage.getAllSources();
       res.set('Cache-Control', 'public, max-age=600, stale-while-revalidate=1200');
       res.json(createApiSuccessResponse(sources));
-    } catch (error) {
-      console.error("Error fetching sources:", error);
-      res.status(500).json({ message: "Fout bij ophalen bronnen" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching sources:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen bronnen")
+      );
     }
   });
 
@@ -195,11 +212,12 @@ export function registerCrudRoutes(
   app.get("/api/prompt-templates/:stageKey", async (req, res) => {
     try {
       const { stageKey } = req.params;
-      const { rawText, clientName } = req.query;
 
       const promptConfig = await storage.getActivePromptConfig();
       if (!promptConfig?.config?.[stageKey as keyof typeof promptConfig.config]) {
-        res.status(404).json({ message: "Prompt template niet gevonden voor deze stap" });
+        res.status(HTTP_STATUS.NOT_FOUND).json(
+          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Prompt template not found", "Prompt template niet gevonden voor deze stap")
+        );
         return;
       }
 
@@ -216,9 +234,12 @@ export function registerCrudRoutes(
       const templatePrompt = `${prompt}\n\n### Datum: ${currentDate}`;
 
       res.json(createApiSuccessResponse({ prompt: templatePrompt }));
-    } catch (error) {
-      console.error("Error fetching prompt template:", error);
-      res.status(500).json({ message: "Fout bij ophalen prompt template" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching prompt template:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen prompt template")
+      );
     }
   });
 
