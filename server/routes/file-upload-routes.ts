@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import multer from "multer";
 import { asyncHandler, ServerError } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
+import { HTTP_STATUS } from "../config/constants";
 import { storage } from "../storage";
 import { AIModelFactory } from "../services/ai-models/ai-model-factory";
 
@@ -473,11 +474,11 @@ fileUploadRouter.post(
           userMessage = `Bestand is te groot. Maximum grootte is 50MB.`;
         }
 
-        return res.status(400).json(createApiErrorResponse(
-          'VALIDATION_ERROR',
+        return res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+          'ValidationError',
           ERROR_CODES.VALIDATION_FAILED,
-          userMessage,
-          err.message
+          err.message,
+          userMessage
         ));
       }
       next();
@@ -583,11 +584,11 @@ fileUploadRouter.post(
           technicalMessage = 'Total field value too large';
         }
 
-        return res.status(400).json(createApiErrorResponse(
-          'VALIDATION_ERROR',
+        return res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+          'ValidationError',
           ERROR_CODES.VALIDATION_FAILED,
-          userMessage,
-          technicalMessage
+          technicalMessage,
+          userMessage
         ));
       }
       console.log(`📎 [${req.params.reportId}] Multer processing complete, files:`, req.files?.length || 0);

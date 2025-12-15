@@ -10,6 +10,7 @@ import { AIHealthService } from "../services/ai-models/health-service";
 import { checkDatabaseConnection } from "../db";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
+import { HTTP_STATUS } from "../config/constants";
 
 export function registerHealthRoutes(app: Express): void {
   const healthService = new AIHealthService();
@@ -85,8 +86,8 @@ export function registerHealthRoutes(app: Express): void {
                          authHeader.substring(7) === process.env.ADMIN_API_KEY;
 
     if (!isValidKey && !isValidBearer) {
-      res.status(401).json(createApiErrorResponse(
-        'AUTHENTICATION_ERROR',
+      res.status(HTTP_STATUS.UNAUTHORIZED).json(createApiErrorResponse(
+        'AuthenticationError',
         ERROR_CODES.AI_AUTHENTICATION_FAILED,
         'Valid admin authentication required for detailed health status',
         'Access denied - invalid credentials'

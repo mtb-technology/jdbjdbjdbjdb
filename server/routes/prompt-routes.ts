@@ -13,6 +13,7 @@ import { storage } from "../storage";
 import { insertPromptConfigSchema } from "@shared/schema";
 import { asyncHandler, ServerError } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
+import { HTTP_STATUS } from "../config/constants";
 
 export function registerPromptRoutes(app: Express): void {
   /**
@@ -26,9 +27,12 @@ export function registerPromptRoutes(app: Express): void {
     try {
       const prompts = await storage.getAllPromptConfigs();
       res.json(createApiSuccessResponse(prompts));
-    } catch (error) {
-      console.error("Error fetching prompt configs:", error);
-      res.status(500).json({ message: "Fout bij ophalen prompt configuraties" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching prompt configs:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen prompt configuraties")
+      );
     }
   });
 
@@ -45,10 +49,13 @@ export function registerPromptRoutes(app: Express): void {
       const activeConfig = await storage.getActivePromptConfig();
       // No caching to prevent stale IDs
       res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.json(activeConfig);
-    } catch (error) {
-      console.error("Error fetching active prompt config:", error);
-      res.status(500).json({ message: "Fout bij ophalen actieve prompt configuratie" });
+      res.json(createApiSuccessResponse(activeConfig));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching active prompt config:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen actieve prompt configuratie")
+      );
     }
   });
 
@@ -76,18 +83,18 @@ export function registerPromptRoutes(app: Express): void {
       }
 
       const promptConfig = await storage.createPromptConfig(validatedData);
-      res.json(promptConfig);
-    } catch (error) {
-      console.error("Error creating prompt config:", error);
+      res.json(createApiSuccessResponse(promptConfig, "Prompt configuratie succesvol aangemaakt"));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error creating prompt config:", message);
       if (error instanceof z.ZodError) {
-        res.status(400).json({
-          message: "Validatiefout in prompt configuratie",
-          errors: error.errors
-        });
+        res.status(HTTP_STATUS.BAD_REQUEST).json(
+          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Validation failed", "Validatiefout in prompt configuratie", { errors: error.errors })
+        );
       } else {
-        res.status(500).json({
-          message: "Fout bij aanmaken prompt configuratie"
-        });
+        res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+          createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij aanmaken prompt configuratie")
+        );
       }
     }
   });
@@ -117,13 +124,18 @@ export function registerPromptRoutes(app: Express): void {
 
       const updatedConfig = await storage.updatePromptConfig(req.params.id, updates);
       if (!updatedConfig) {
-        res.status(404).json({ message: "Prompt configuratie niet gevonden" });
+        res.status(HTTP_STATUS.NOT_FOUND).json(
+          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Prompt config not found", "Prompt configuratie niet gevonden")
+        );
         return;
       }
-      res.json(updatedConfig);
-    } catch (error) {
-      console.error("Error updating prompt config:", error);
-      res.status(500).json({ message: "Fout bij bijwerken prompt configuratie" });
+      res.json(createApiSuccessResponse(updatedConfig, "Prompt configuratie succesvol bijgewerkt"));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error updating prompt config:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij bijwerken prompt configuratie")
+      );
     }
   });
 
@@ -167,9 +179,12 @@ export function registerPromptRoutes(app: Express): void {
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', 'attachment; filename="prompt-backup.json"');
       res.json(backupData);
-    } catch (error) {
-      console.error("Error creating backup:", error);
-      res.status(500).json({ message: "Backup failed" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error creating backup:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("BackupError", ERROR_CODES.INTERNAL_SERVER_ERROR, message, "Backup failed")
+      );
     }
   });
 
@@ -195,7 +210,9 @@ export function registerPromptRoutes(app: Express): void {
         // Oud format - direct array
         prompt_configs = data;
       } else {
-        res.status(400).json({ message: "Invalid backup format" });
+        res.status(HTTP_STATUS.BAD_REQUEST).json(
+          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Invalid backup format", "Ongeldig backup formaat")
+        );
         return;
       }
 
@@ -243,9 +260,12 @@ export function registerPromptRoutes(app: Express): void {
         restored,
         created
       }, "Backup restore succesvol voltooid"));
-    } catch (error: any) {
-      console.error("Error restoring backup:", error);
-      res.status(500).json({ message: "Restore failed: " + error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error restoring backup:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("RestoreError", ERROR_CODES.INTERNAL_SERVER_ERROR, message, "Restore failed: " + message)
+      );
     }
   });
 
@@ -266,7 +286,9 @@ export function registerPromptRoutes(app: Express): void {
       // Get active prompt configuration
       const promptConfig = await storage.getActivePromptConfig();
       if (!promptConfig?.config?.[stageKey as keyof typeof promptConfig.config]) {
-        res.status(404).json({ message: "Prompt template niet gevonden voor deze stap" });
+        res.status(HTTP_STATUS.NOT_FOUND).json(
+          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Prompt template not found", "Prompt template niet gevonden voor deze stap")
+        );
         return;
       }
 
@@ -287,9 +309,12 @@ export function registerPromptRoutes(app: Express): void {
 ### Datum: ${currentDate}`;
 
       res.json(createApiSuccessResponse({ prompt: templatePrompt }));
-    } catch (error) {
-      console.error("Error fetching prompt template:", error);
-      res.status(500).json({ message: "Fout bij ophalen prompt template" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching prompt template:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen prompt template")
+      );
     }
   });
 }

@@ -4,7 +4,8 @@ import type { Express, Request, Response } from "express";
 import { SSEHandler } from "../services/streaming/sse-handler";
 import { StreamingSessionManager } from "../services/streaming/streaming-session-manager";
 import { asyncHandler } from "../middleware/errorHandler";
-import { createApiSuccessResponse, createApiErrorResponse } from "@shared/errors";
+import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
+import { HTTP_STATUS } from "../config/constants";
 import { storage } from "../storage";
 import type { DossierData, BouwplanData, StageId } from "@shared/schema";
 import type { SubstepDefinition } from "@shared/streaming-types";
@@ -34,10 +35,10 @@ export function registerStreamingRoutes(
     // Check if report exists
     const report = await storage.getReport(reportId);
     if (!report) {
-      return res.status(404).json(createApiErrorResponse(
-        'REPORT_NOT_FOUND',
-        'VALIDATION_FAILED',
-        'Rapport niet gevonden',
+      return res.status(HTTP_STATUS.NOT_FOUND).json(createApiErrorResponse(
+        'NotFound',
+        ERROR_CODES.REPORT_NOT_FOUND,
+        'Report not found',
         'Rapport niet gevonden voor streaming uitvoering'
       ));
     }
@@ -259,13 +260,14 @@ export function registerStreamingRoutes(
         streamUrl: `/api/reports/${reportId}/stage/${stageId}/stream`
       }));
 
-    } catch (error: any) {
-      console.error(`❌ [${reportId}-${stageId}] Failed to start streaming execution:`, error);
-      return res.status(500).json(createApiErrorResponse(
-        'EXECUTION_FAILED',
-        'INTERNAL_SERVER_ERROR',
-        'Fout bij starten streaming uitvoering',
-        'Er is een interne fout opgetreden bij het starten van de streaming'
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`❌ [${reportId}-${stageId}] Failed to start streaming execution:`, message);
+      return res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
+        'ExecutionError',
+        ERROR_CODES.INTERNAL_SERVER_ERROR,
+        message,
+        'Fout bij starten streaming uitvoering'
       ));
     }
   }));
@@ -276,11 +278,11 @@ export function registerStreamingRoutes(
 
     const session = sessionManager.getSession(reportId, stageId);
     if (!session) {
-      return res.status(404).json(createApiErrorResponse(
-        'SESSION_NOT_FOUND',
-        'VALIDATION_FAILED',
-        'Geen actieve sessie gevonden',
-        'Er is geen actieve streaming sessie voor deze stage'
+      return res.status(HTTP_STATUS.NOT_FOUND).json(createApiErrorResponse(
+        'NotFound',
+        ERROR_CODES.REPORT_NOT_FOUND,
+        'No active session found',
+        'Geen actieve sessie gevonden'
       ));
     }
 
@@ -293,20 +295,20 @@ export function registerStreamingRoutes(
 
     const session = sessionManager.getSession(reportId, stageId);
     if (!session) {
-      return res.status(404).json(createApiErrorResponse(
-        'SESSION_NOT_FOUND',
-        'VALIDATION_FAILED',
-        'Geen actieve sessie gevonden om te annuleren',
-        'Er is geen actieve streaming sessie om te annuleren'
+      return res.status(HTTP_STATUS.NOT_FOUND).json(createApiErrorResponse(
+        'NotFound',
+        ERROR_CODES.REPORT_NOT_FOUND,
+        'No active session to cancel',
+        'Geen actieve sessie gevonden om te annuleren'
       ));
     }
 
     if (session.status !== 'active') {
-      return res.status(400).json(createApiErrorResponse(
-        'SESSION_NOT_ACTIVE',
-        'VALIDATION_FAILED',
-        'Sessie is niet actief en kan niet geannuleerd worden',
-        'De streaming sessie is niet in actieve staat'
+      return res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+        'ValidationError',
+        ERROR_CODES.VALIDATION_FAILED,
+        'Session is not active',
+        'Sessie is niet actief en kan niet geannuleerd worden'
       ));
     }
 
@@ -327,13 +329,14 @@ export function registerStreamingRoutes(
       res.json(createApiSuccessResponse({
         message: 'Stage uitvoering geannuleerd'
       }));
-    } catch (error: any) {
-      console.error(`❌ [${reportId}-${stageId}] Failed to cancel stage:`, error);
-      res.status(500).json(createApiErrorResponse(
-        'CANCEL_FAILED',
-        'INTERNAL_SERVER_ERROR',
-        'Fout bij annuleren stage uitvoering',
-        'Er is een fout opgetreden bij het annuleren van de streaming'
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`❌ [${reportId}-${stageId}] Failed to cancel stage:`, message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
+        'CancelError',
+        ERROR_CODES.INTERNAL_SERVER_ERROR,
+        message,
+        'Fout bij annuleren stage uitvoering'
       ));
     }
   }));

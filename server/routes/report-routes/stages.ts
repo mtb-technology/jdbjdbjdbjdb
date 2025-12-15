@@ -11,6 +11,7 @@ import type { DossierData, BouwplanData, StageId } from "@shared/schema";
 import { STAGE_ORDER } from "@shared/constants";
 import { asyncHandler, ServerError, getErrorMessage } from "../../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
+import { HTTP_STATUS } from "../../config/constants";
 import { deduplicateRequests } from "../../middleware/deduplicate";
 import { parseJsonWithMarkdown } from "./utils";
 import type { ReportRouteDependencies } from "./types";
@@ -50,11 +51,11 @@ export function registerStageRoutes(
       res.json(createApiSuccessResponse({ prompt }, "Prompt preview succesvol opgehaald"));
     } catch (error: unknown) {
       console.error("Error generating prompt preview:", error);
-      res.status(500).json(createApiErrorResponse(
-        'PREVIEW_GENERATION_FAILED',
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
+        'PreviewError',
         ERROR_CODES.INTERNAL_SERVER_ERROR,
-        'Fout bij het genereren van prompt preview',
-        getErrorMessage(error)
+        getErrorMessage(error),
+        'Fout bij het genereren van prompt preview'
       ));
     }
   });
@@ -131,13 +132,12 @@ export function registerStageRoutes(
         }).length;
         if (pendingOcrCount > 0) {
           console.log(`[${id}] ⛔ Stage 1a blocked: ${pendingOcrCount} attachment(s) still awaiting OCR`);
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'OCR_PENDING',
-              message: `Stage 1a kan niet starten: ${pendingOcrCount} bijlage(n) wacht(en) nog op OCR verwerking. Wacht tot de OCR klaar is.`
-            }
-          });
+          return res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+            'OCRPending',
+            ERROR_CODES.VALIDATION_FAILED,
+            `${pendingOcrCount} attachment(s) still awaiting OCR`,
+            `Stage 1a kan niet starten: ${pendingOcrCount} bijlage(n) wacht(en) nog op OCR verwerking. Wacht tot de OCR klaar is.`
+          ));
         }
       }
 
@@ -198,12 +198,12 @@ export function registerStageRoutes(
         );
       } catch (stageError: unknown) {
         console.error(`Stage execution failed but recovering gracefully:`, getErrorMessage(stageError));
-        res.status(500).json(createApiErrorResponse(
-          'ServerError',
+        res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
+          'StageExecutionError',
           ERROR_CODES.AI_PROCESSING_FAILED,
-          `Stage ${stage} kon niet volledig worden uitgevoerd`,
           getErrorMessage(stageError),
-          { stage, reportId: id, originalError: getErrorMessage(stageError) }
+          `Stage ${stage} kon niet volledig worden uitgevoerd`,
+          { stage, reportId: id }
         ));
         return;
       }
@@ -368,23 +368,24 @@ export function registerStageRoutes(
         isManual: true
       }, "Handmatige content succesvol verwerkt"));
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error processing manual stage:", error);
       if (error instanceof z.ZodError) {
-        res.status(400).json(createApiErrorResponse(
-          'VALIDATION_ERROR',
+        res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+          'ValidationError',
           ERROR_CODES.VALIDATION_FAILED,
-          'Validatiefout in invoergegevens',
-          JSON.stringify(error.errors)
+          JSON.stringify(error.errors),
+          'Validatiefout in invoergegevens'
         ));
       } else if (error instanceof ServerError) {
         throw error;
       } else {
-        res.status(500).json(createApiErrorResponse(
-          'PROCESSING_FAILED',
+        const message = error instanceof Error ? error.message : String(error);
+        res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
+          'ProcessingError',
           ERROR_CODES.INTERNAL_SERVER_ERROR,
-          'Fout bij verwerken van handmatige content',
-          error instanceof Error ? error.message : 'Unknown error'
+          message,
+          'Fout bij verwerken van handmatige content'
         ));
       }
     }

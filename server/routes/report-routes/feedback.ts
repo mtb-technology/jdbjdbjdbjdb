@@ -12,6 +12,7 @@ import { processFeedbackRequestSchema } from "@shared/types/api";
 import { PromptBuilder } from "../../services/prompt-builder";
 import { asyncHandler, getErrorMessage, isErrorWithMessage } from "../../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
+import { HTTP_STATUS } from "../../config/constants";
 import type { ReportRouteDependencies } from "./types";
 
 export function registerFeedbackRoutes(
@@ -36,21 +37,21 @@ export function registerFeedbackRoutes(
 
     const report = await storage.getReport(reportId);
     if (!report) {
-      res.status(404).json(createApiErrorResponse(
-        'REPORT_NOT_FOUND',
-        'VALIDATION_FAILED',
-        'Rapport niet gevonden',
+      res.status(HTTP_STATUS.NOT_FOUND).json(createApiErrorResponse(
+        'NotFound',
+        ERROR_CODES.REPORT_NOT_FOUND,
+        'Report not found',
         'Het rapport kon niet worden gevonden voor prompt preview'
       ));
       return;
     }
 
     if (!REVIEW_STAGES.includes(stageId as typeof REVIEW_STAGES[number])) {
-      res.status(400).json(createApiErrorResponse(
-        'INVALID_STAGE',
-        'VALIDATION_FAILED',
-        'Ongeldige stap voor prompt preview',
-        `Stage ${stageId} ondersteunt geen prompt preview`
+      res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+        'ValidationError',
+        ERROR_CODES.VALIDATION_FAILED,
+        `Stage ${stageId} does not support prompt preview`,
+        'Ongeldige stap voor prompt preview'
       ));
       return;
     }
@@ -60,11 +61,11 @@ export function registerFeedbackRoutes(
       const rawFeedback = stageResults[stageId];
 
       if (!rawFeedback) {
-        res.status(400).json(createApiErrorResponse(
-          'NO_FEEDBACK_FOUND',
-          'VALIDATION_FAILED',
-          'Geen feedback gevonden',
-          `Geen feedback beschikbaar voor stage ${stageId}`
+        res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+          'ValidationError',
+          ERROR_CODES.VALIDATION_FAILED,
+          `No feedback available for stage ${stageId}`,
+          'Geen feedback gevonden'
         ));
         return;
       }
@@ -72,22 +73,22 @@ export function registerFeedbackRoutes(
       const latestConceptText = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
 
       if (!latestConceptText) {
-        res.status(400).json(createApiErrorResponse(
-          'NO_CONCEPT_FOUND',
-          'VALIDATION_FAILED',
-          'Geen concept rapport gevonden',
-          'Er is geen concept rapport beschikbaar om feedback op te verwerken'
+        res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+          'ValidationError',
+          ERROR_CODES.VALIDATION_FAILED,
+          'No concept report available',
+          'Geen concept rapport gevonden'
         ));
         return;
       }
 
       const activeConfig = await storage.getActivePromptConfig();
       if (!activeConfig || !activeConfig.config) {
-        res.status(400).json(createApiErrorResponse(
-          'NO_EDITOR_CONFIG',
-          'INTERNAL_SERVER_ERROR',
-          'Editor configuratie ontbreekt',
-          'Er is geen actieve Editor prompt configuratie gevonden'
+        res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
+          'ConfigurationError',
+          ERROR_CODES.INTERNAL_SERVER_ERROR,
+          'Editor configuration missing',
+          'Editor configuratie ontbreekt'
         ));
         return;
       }
@@ -134,11 +135,11 @@ export function registerFeedbackRoutes(
         name: isErrorWithMessage(error) ? error.name : 'Unknown'
       });
 
-      res.status(500).json(createApiErrorResponse(
-        'PREVIEW_FAILED',
-        'INTERNAL_SERVER_ERROR',
-        'Prompt preview gefaald',
-        getErrorMessage(error) || 'Onbekende fout tijdens prompt preview'
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
+        'PreviewError',
+        ERROR_CODES.INTERNAL_SERVER_ERROR,
+        getErrorMessage(error) || 'Unknown error during prompt preview',
+        'Prompt preview gefaald'
       ));
     }
   }));
@@ -161,20 +162,20 @@ export function registerFeedbackRoutes(
 
     const report = await storage.getReport(reportId);
     if (!report) {
-      return res.status(404).json(createApiErrorResponse(
-        'REPORT_NOT_FOUND',
-        'VALIDATION_FAILED',
-        'Rapport niet gevonden',
+      return res.status(HTTP_STATUS.NOT_FOUND).json(createApiErrorResponse(
+        'NotFound',
+        ERROR_CODES.REPORT_NOT_FOUND,
+        'Report not found',
         'Het rapport kon niet worden gevonden voor feedback processing'
       ));
     }
 
     if (!REVIEW_STAGES.includes(stageId as typeof REVIEW_STAGES[number])) {
-      return res.status(400).json(createApiErrorResponse(
-        'INVALID_STAGE',
-        'VALIDATION_FAILED',
-        'Ongeldige stap voor feedback processing',
-        `Stage ${stageId} ondersteunt geen feedback processing`
+      return res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+        'ValidationError',
+        ERROR_CODES.VALIDATION_FAILED,
+        `Stage ${stageId} does not support feedback processing`,
+        'Ongeldige stap voor feedback processing'
       ));
     }
 
@@ -186,11 +187,11 @@ export function registerFeedbackRoutes(
         try {
           feedbackJSON = JSON.parse(filteredChanges);
         } catch (e) {
-          return res.status(400).json(createApiErrorResponse(
-            'INVALID_FILTERED_CHANGES',
-            'VALIDATION_FAILED',
-            'Ongeldige filtered changes JSON',
-            'De gefilterde wijzigingen konden niet worden geparseerd als JSON'
+          return res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+            'ValidationError',
+            ERROR_CODES.VALIDATION_FAILED,
+            'Invalid filtered changes JSON',
+            'Ongeldige filtered changes JSON'
           ));
         }
       } else {
@@ -199,11 +200,11 @@ export function registerFeedbackRoutes(
         const rawFeedback = stageResults[stageId];
 
         if (!rawFeedback) {
-          return res.status(400).json(createApiErrorResponse(
-            'NO_FEEDBACK_FOUND',
-            'VALIDATION_FAILED',
-            'Geen feedback gevonden',
-            `Geen feedback beschikbaar voor stage ${stageId}`
+          return res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+            'ValidationError',
+            ERROR_CODES.VALIDATION_FAILED,
+            `No feedback available for stage ${stageId}`,
+            'Geen feedback gevonden'
           ));
         }
 
@@ -217,21 +218,21 @@ export function registerFeedbackRoutes(
       const latestConceptText = getLatestConceptText(report.conceptReportVersions as Record<string, any>);
 
       if (!latestConceptText) {
-        return res.status(400).json(createApiErrorResponse(
-          'NO_CONCEPT_FOUND',
-          'VALIDATION_FAILED',
-          'Geen concept rapport gevonden',
-          'Er is geen concept rapport beschikbaar om feedback op te verwerken'
+        return res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
+          'ValidationError',
+          ERROR_CODES.VALIDATION_FAILED,
+          'No concept report available',
+          'Geen concept rapport gevonden'
         ));
       }
 
       const activeConfig = await storage.getActivePromptConfig();
       if (!activeConfig || !activeConfig.config) {
-        return res.status(400).json(createApiErrorResponse(
-          'NO_EDITOR_CONFIG',
-          'INTERNAL_SERVER_ERROR',
-          'Editor configuratie ontbreekt',
-          'Er is geen actieve Editor prompt configuratie gevonden'
+        return res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
+          'ConfigurationError',
+          ERROR_CODES.INTERNAL_SERVER_ERROR,
+          'Editor configuration missing',
+          'Editor configuratie ontbreekt'
         ));
       }
 
@@ -312,11 +313,11 @@ export function registerFeedbackRoutes(
         timestamp: new Date().toISOString()
       });
 
-      return res.status(500).json(createApiErrorResponse(
-        'PROCESSING_FAILED',
-        'INTERNAL_SERVER_ERROR',
-        'Feedback processing gefaald',
-        getErrorMessage(error) || 'Onbekende fout tijdens feedback processing'
+      return res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
+        'ProcessingError',
+        ERROR_CODES.INTERNAL_SERVER_ERROR,
+        getErrorMessage(error) || 'Unknown error during feedback processing',
+        'Feedback processing gefaald'
       ));
     }
   }));
