@@ -52,7 +52,6 @@ import {
   FullScreenReportPreview,
 } from "@/components/report/StickyReportPreview";
 import { ExportDialog } from "@/components/export/ExportDialog";
-import { DossierContextPanel } from "@/components/report/DossierContextPanel";
 import { FiscaleBriefingPanel } from "@/components/report/FiscaleBriefingPanel";
 import { AppHeader } from "@/components/app-header";
 
@@ -379,15 +378,8 @@ export default function CaseDetail() {
             </Tabs>
           </div>
 
-          {/* Dossier Context & Report Preview - Hidden below XL (1280px) */}
+          {/* Executive Summary & Report Preview - Hidden below XL (1280px) */}
           <div className="hidden xl:block space-y-4">
-            <DossierContextPanel
-              reportId={reportId!}
-              summary={report.dossierContextSummary || undefined}
-              rawText={
-                (report.dossierData as Record<string, unknown>)?.rawText as string || ""
-              }
-            />
             <FiscaleBriefingPanel
               reportId={reportId!}
               stageResults={report.stageResults as Record<string, string> | null}
@@ -471,16 +463,9 @@ export default function CaseDetail() {
             </SheetTrigger>
             <SheetContent side="right" className="w-[400px] sm:w-[450px] overflow-y-auto">
               <SheetHeader>
-                <SheetTitle>Dossier & Preview</SheetTitle>
+                <SheetTitle>Executive Summary & Preview</SheetTitle>
               </SheetHeader>
               <div className="mt-4 space-y-4">
-                <DossierContextPanel
-                  reportId={reportId!}
-                  summary={report.dossierContextSummary || undefined}
-                  rawText={
-                    (report.dossierData as Record<string, unknown>)?.rawText as string || ""
-                  }
-                />
                 <FiscaleBriefingPanel
                   reportId={reportId!}
                   stageResults={report.stageResults as Record<string, string> | null}

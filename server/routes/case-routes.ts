@@ -8,8 +8,8 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { PDFGenerator } from "../services/pdf-generator";
-import { createApiSuccessResponse } from "@shared/errors";
-import { CACHE } from "../config/constants";
+import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
+import { CACHE, HTTP_STATUS } from "../config/constants";
 
 export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): void {
   /**
@@ -39,9 +39,12 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
       // Add caching headers for case list
       res.set('Cache-Control', `public, max-age=${CACHE.REPORT_LIST_TTL / 1000}, stale-while-revalidate=60`);
       res.json(createApiSuccessResponse(cases));
-    } catch (error: any) {
-      console.error("Error fetching cases:", error);
-      res.status(500).json({ message: "Fout bij ophalen cases" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching cases:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen cases")
+      );
     }
   });
 
@@ -58,14 +61,19 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
       const report = await storage.getReport(id);
 
       if (!report) {
-        res.status(404).json({ message: "Case niet gevonden" });
+        res.status(HTTP_STATUS.NOT_FOUND).json(
+          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Case not found", "Case niet gevonden")
+        );
         return;
       }
 
       res.json(createApiSuccessResponse(report));
-    } catch (error: any) {
-      console.error("Error fetching case:", error);
-      res.status(500).json({ message: "Fout bij ophalen case" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching case:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen case")
+      );
     }
   });
 
@@ -87,7 +95,9 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
 
       if (title !== undefined) {
         if (typeof title !== 'string' || title.trim().length === 0) {
-          res.status(400).json({ message: "Titel mag niet leeg zijn" });
+          res.status(HTTP_STATUS.BAD_REQUEST).json(
+            createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Title cannot be empty", "Titel mag niet leeg zijn")
+          );
           return;
         }
         updates.title = title.trim();
@@ -95,28 +105,37 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
 
       if (clientName !== undefined) {
         if (typeof clientName !== 'string' || clientName.trim().length === 0) {
-          res.status(400).json({ message: "Clientnaam mag niet leeg zijn" });
+          res.status(HTTP_STATUS.BAD_REQUEST).json(
+            createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Client name cannot be empty", "Clientnaam mag niet leeg zijn")
+          );
           return;
         }
         updates.clientName = clientName.trim();
       }
 
       if (Object.keys(updates).length === 0) {
-        res.status(400).json({ message: "Geen velden om bij te werken" });
+        res.status(HTTP_STATUS.BAD_REQUEST).json(
+          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "No fields to update", "Geen velden om bij te werken")
+        );
         return;
       }
 
       const updatedReport = await storage.updateReport(id, updates);
 
       if (!updatedReport) {
-        res.status(404).json({ message: "Case niet gevonden" });
+        res.status(HTTP_STATUS.NOT_FOUND).json(
+          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Case not found", "Case niet gevonden")
+        );
         return;
       }
 
       res.json(createApiSuccessResponse(updatedReport, "Case succesvol bijgewerkt"));
-    } catch (error: any) {
-      console.error("Error updating case:", error);
-      res.status(500).json({ message: "Fout bij updaten case" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error updating case:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij updaten case")
+      );
     }
   });
 
@@ -134,15 +153,20 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
       const { status } = req.body;
 
       if (!["draft", "processing", "generated", "exported", "archived"].includes(status)) {
-        res.status(400).json({ message: "Ongeldige status" });
+        res.status(HTTP_STATUS.BAD_REQUEST).json(
+          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Invalid status value", "Ongeldige status")
+        );
         return;
       }
 
       await storage.updateReportStatus(id, status);
       res.json(createApiSuccessResponse({ success: true }, "Status succesvol bijgewerkt"));
-    } catch (error: any) {
-      console.error("Error updating case status:", error);
-      res.status(500).json({ message: "Fout bij updaten status" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error updating case status:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij updaten status")
+      );
     }
   });
 
@@ -158,9 +182,12 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
       const { id } = req.params;
       await storage.deleteReport(id);
       res.json(createApiSuccessResponse({ success: true }, "Case succesvol verwijderd"));
-    } catch (error: any) {
-      console.error("Error deleting case:", error);
-      res.status(500).json({ message: "Fout bij verwijderen case" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error deleting case:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij verwijderen case")
+      );
     }
   });
 
@@ -181,7 +208,9 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
       const report = await storage.getReport(id);
 
       if (!report) {
-        res.status(404).json({ message: "Case niet gevonden" });
+        res.status(HTTP_STATUS.NOT_FOUND).json(
+          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Case not found", "Case niet gevonden")
+        );
         return;
       }
 
@@ -199,11 +228,16 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
         res.setHeader('Content-Disposition', `attachment; filename="rapport-${report.clientName.replace(/[^a-zA-Z0-9]/g, '-')}-${id.slice(0, 8)}.pdf"`);
         res.send(pdfBuffer);
       } else {
-        res.status(400).json({ message: "Ongeldige export format" });
+        res.status(HTTP_STATUS.BAD_REQUEST).json(
+          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Invalid export format", "Ongeldige export format")
+        );
       }
-    } catch (error: any) {
-      console.error("Error exporting case:", error);
-      res.status(500).json({ message: "Fout bij exporteren case" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error exporting case:", message);
+      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
+        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij exporteren case")
+      );
     }
   });
 }

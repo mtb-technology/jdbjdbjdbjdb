@@ -899,6 +899,15 @@ export type StageDenkwijze = z.infer<typeof stageDenkwijzeSchema>;
  * - Triage ready: wat moet de fiscalist absoluut checken?
  */
 export const fiscaleBriefingSchema = z.object({
+  // === DEEL 0: SITUATIESCHETS (nieuwe fiscalist pakt case op) ===
+  situatie_schets: z.object({
+    client_profiel: z.string().describe("Wie is de klant? (leeftijd, beroep, gezinssituatie indien relevant)"),
+    vermogenssituatie: z.string().describe("Beknopt overzicht vermogen (bv: €100k spaargeld, €100k beleggingen, eigen woning)"),
+    aanleiding: z.string().describe("Waarom komt de klant nu? Wat triggerde deze vraag?"),
+    tijdsdruk: z.string().optional().describe("Is er een deadline? (peildatum, bezwaartermijn, etc.)"),
+    kernfeiten: z.array(z.string()).describe("3-5 bullet points met de belangrijkste feiten")
+  }).describe("Context voor een fiscalist die deze case voor het eerst ziet"),
+
   // === DEEL 1: CASE CONTEXT (30 sec leestijd) ===
   case_in_een_oogopslag: z.object({
     client_type: z.string().describe("Particulier, ondernemer, BV, etc."),
