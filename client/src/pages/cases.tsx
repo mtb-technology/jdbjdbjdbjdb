@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -34,110 +34,6 @@ interface CasesResponse {
   page: number;
   totalPages: number;
 }
-
-// Memoized Case Item Component for better performance
-const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, handleExport, handleDuplicate, handleDelete }: {
-  case_: Case;
-  getStatusColor: (status: string) => "secondary" | "default" | "outline" | "destructive" | undefined;
-  getStatusText: (status: string, report?: any) => string;
-  handleExport: (caseId: string, format: string) => void;
-  handleDuplicate: (caseId: string) => void;
-  handleDelete: (caseId: string, caseName: string) => void;
-}) {
-  return (
-    <Card className="group hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 border-l-4 border-l-transparent hover:border-l-primary/50 bg-gradient-to-r from-card to-card/50">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-3">
-              <h3 className="text-lg font-semibold group-hover:text-primary transition-colors">{case_.title}</h3>
-              <Badge 
-                variant={getStatusColor(case_.status)}
-                className="shadow-sm font-medium px-3 py-1 text-xs"
-              >
-                {getStatusText(case_.status, case_)}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-6 text-sm text-muted-foreground/80">
-              <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 rounded-full">
-                <User className="h-4 w-4 text-primary" />
-                <span className="font-medium">{case_.clientName}</span>
-              </div>
-              <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 rounded-full">
-                <Calendar className="h-4 w-4 text-primary" />
-                <span>{new Date(case_.createdAt).toLocaleDateString('nl-NL')}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link href={`/cases/${case_.id}`} asChild>
-              <Button variant="default" size="sm" className="bg-primary hover:bg-primary/90 shadow-md" data-testid={`button-view-case-${case_.id}`}>
-                <Eye className="h-4 w-4 mr-2" />
-                Bekijken
-              </Button>
-            </Link>
-            {case_.status === "generated" && (
-              <>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => handleExport(case_.id, "html")}
-                  data-testid={`button-export-html-${case_.id}`}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  HTML
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => handleExport(case_.id, "json")}
-                  data-testid={`button-export-json-${case_.id}`}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  JSON
-                </Button>
-              </>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleDuplicate(case_.id)}
-              data-testid={`button-duplicate-${case_.id}`}
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              Dupliceren
-            </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" data-testid={`button-delete-${case_.id}`}>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Verwijderen
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Case verwijderen</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Weet je zeker dat je deze case wilt verwijderen? Je hebt 5 seconden om dit ongedaan te maken.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Annuleren</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => handleDelete(case_.id, case_.title)}
-                    data-testid={`button-confirm-delete-${case_.id}`}
-                  >
-                    Verwijderen
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-});
 
 function Cases() {
   const [page, setPage] = useState(1);
@@ -393,19 +289,7 @@ function Cases() {
     });
   }, [pendingDeletions, deleteCaseMutation, toast]);
 
-  const getStatusColor = useCallback((status: string): "secondary" | "default" | "outline" | "destructive" | undefined => {
-    switch (status) {
-      case "draft": return "secondary";
-      case "processing": return "default";
-      case "generated": return "outline";
-      case "exported": return "default";
-      case "archived": return "secondary";
-      default: return "secondary";
-    }
-  }, []);
-
-  const getStatusText = useCallback((status: string, report?: any) => {
-    // Calculate completed stages if available
+  const getStatusInfo = useCallback((report?: any): { text: string; variant: "secondary" | "default" | "outline" } => {
     const totalStages = WORKFLOW_STAGES.length; // 8 UI stages
     let completedStages = 0;
 
@@ -416,17 +300,19 @@ function Cases() {
       );
     }
 
-    // Always show step progress - active job badge shows if something is running
-    if (completedStages > 0) {
-      return `Stap ${completedStages}/${totalStages}`;
+    // Color based on progress
+    let variant: "secondary" | "default" | "outline" = "secondary";
+    if (completedStages === totalStages) {
+      variant = "default"; // Completed - blue/primary
+    } else if (completedStages > 0) {
+      variant = "outline"; // In progress - outline
     }
+    // 0 stappen = secondary (grey)
 
-    // Fallback for cases without progress
-    switch (status) {
-      case "exported": return "Voltooid";
-      case "archived": return "Gearchiveerd";
-      default: return "Stap 0/8"; // Not started yet
-    }
+    return {
+      text: `Stap ${completedStages}/${totalStages}`,
+      variant
+    };
   }, []);
 
   const handleExport = useCallback((caseId: string, format: string) => {
@@ -577,8 +463,8 @@ function Cases() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <h3 className="text-lg font-semibold">{case_.title}</h3>
-                        <Badge variant={getStatusColor(case_.status)}>
-                          {getStatusText(case_.status, case_)}
+                        <Badge variant={getStatusInfo(case_).variant}>
+                          {getStatusInfo(case_).text}
                         </Badge>
                         {hasActiveJobForReport(case_.id) && (
                           <Badge variant="default" className="bg-blue-500 hover:bg-blue-600 gap-1">
