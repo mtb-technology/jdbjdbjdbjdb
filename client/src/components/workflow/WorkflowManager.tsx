@@ -290,13 +290,17 @@ function WorkflowManagerContent({
         };
       }
 
-      // Direct API call for review stages (4a-4f) - these are faster and use SSE
+      // Direct API call for review stages (4a-4f) - sync execution
+      console.log(`🚀 [${reportId}] Starting review stage ${stage}`);
+
       const response = await apiRequest("POST", `/api/reports/${reportId}/stage/${stage}`, {
         customInput,
         reportDepth,
         reportLanguage,
       });
       const data = await response.json();
+
+      console.log(`✅ [${reportId}] Stage ${stage} completed`, { hasData: !!data });
 
       // Handle new API response format (wrapped in createApiSuccessResponse)
       if (data && typeof data === 'object' && 'success' in data && data.success === true) {
@@ -552,8 +556,18 @@ function WorkflowManagerContent({
 
   // Initialize with existing report
   useEffect(() => {
-    // Only load if we don't have a current report OR if the report ID changed
-    const shouldLoad = existingReport && (!state.currentReport || state.currentReport.id !== existingReport.id);
+    // Load if: no current report, report ID changed, OR stage results updated
+    const shouldLoad = existingReport && (
+      !state.currentReport ||
+      state.currentReport.id !== existingReport.id
+    );
+
+    // Also sync if stage results have updated (e.g., after job completion)
+    const existingResultsStr = JSON.stringify(existingReport?.stageResults || {});
+    const currentResultsStr = JSON.stringify(state.currentReport?.stageResults || {});
+    const stageResultsUpdated = existingReport && state.currentReport &&
+      existingReport.id === state.currentReport.id &&
+      existingResultsStr !== currentResultsStr;
 
     if (shouldLoad) {
       // Clean stage results to ensure we only have the latest for each stage
@@ -614,6 +628,33 @@ function WorkflowManagerContent({
       dispatch({ type: "SET_STAGE_INDEX", payload: newStageIndex });
       
       sessionStorage.setItem('current-workflow-report-id', existingReport.id);
+    } else if (stageResultsUpdated) {
+      // Sync stage results without resetting stage index (for job completion updates)
+      console.log(`🔄 Syncing updated stage results:`, {
+        reportId: existingReport!.id,
+        newStageResultKeys: Object.keys(existingReport!.stageResults as Record<string, string> || {}),
+        currentStageResultKeys: Object.keys(state.currentReport!.stageResults as Record<string, string> || {})
+      });
+
+      const cleanedStageResults = cleanStageResults(existingReport!.stageResults as Record<string, string> || {});
+
+      // Update stageResults directly without resetting stage index
+      dispatch({ type: "SET_REPORT", payload: { ...existingReport!, stageResults: cleanedStageResults } });
+
+      // Also update stageResults in local state
+      Object.entries(cleanedStageResults).forEach(([stage, result]) => {
+        if (result && !state.stageResults[stage]) {
+          dispatch({ type: "SET_STAGE_RESULT", stage, result });
+        }
+      });
+
+      // Clear processing state for all stages that now have results
+      Object.keys(cleanedStageResults).forEach(stage => {
+        if (state.stageProcessing[stage]) {
+          console.log(`🔄 Clearing processing state for completed stage: ${stage}`);
+          dispatch({ type: "SET_STAGE_PROCESSING", stage, isProcessing: false });
+        }
+      });
     } else if (!existingReport && !state.currentReport && !createReportMutation.isPending) {
       // Auto-start workflow for new reports
       const sessionReportId = sessionStorage.getItem('current-workflow-report-id');
@@ -625,7 +666,7 @@ function WorkflowManagerContent({
         }, 100);
       }
     }
-  }, [existingReport, state.currentReport, createReportMutation, dispatch, executeStageM]);
+  }, [existingReport, state.currentReport, state.stageResults, state.stageProcessing, createReportMutation, dispatch, executeStageM]);
 
   // Auto-start first stage if autoStart is true (but NOT if OCR is pending)
   useEffect(() => {

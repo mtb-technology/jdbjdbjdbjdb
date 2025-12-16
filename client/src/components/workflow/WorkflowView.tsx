@@ -50,6 +50,7 @@ import {
 } from "@/utils/workflowUtils";
 import { isInformatieCheckComplete, getStage2BlockReason } from "@/lib/workflowParsers";
 import { REVIEW_STAGES } from "@shared/constants";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 
 // Types
 import type { SimplifiedWorkflowViewProps, ReportDepth } from "./types";
@@ -71,12 +72,42 @@ export const WorkflowView = memo(function WorkflowView({
   const shouldReduceMotion = useReducedMotion();
 
   // Track active job progress for real-time sidebar updates
-  const { activeJobs } = useActiveJobs(state.currentReport?.id || null);
+  const { activeJobs, refetch: refetchActiveJobs } = useActiveJobs(state.currentReport?.id || null);
   const activeJob = activeJobs[0]; // Get first active job if any
+
+  // Handle job completion - clear processing state and refresh data
+  const handleJobComplete = useCallback((job: any) => {
+    console.log(`✅ [WorkflowView] Job completed:`, job.id, job.progress?.currentStage);
+
+    // Extract stage ID from job progress
+    const stageId = job.progress?.currentStage || job.progress?.stages?.[0]?.stageId;
+    if (stageId) {
+      console.log(`🔄 [WorkflowView] Clearing processing state for stage: ${stageId}`);
+      dispatch({ type: "SET_STAGE_PROCESSING", stage: stageId, isProcessing: false });
+    }
+
+    // For express mode jobs, clear all stage processing states
+    if (job.type === "express_mode" && job.progress?.stages) {
+      job.progress.stages.forEach((stage: any) => {
+        dispatch({ type: "SET_STAGE_PROCESSING", stage: stage.stageId, isProcessing: false });
+      });
+    }
+
+    // Invalidate and refetch report data
+    if (state.currentReport?.id) {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
+    }
+
+    // Refetch active jobs to update banner
+    refetchActiveJobs();
+  }, [dispatch, state.currentReport?.id, queryClient, refetchActiveJobs]);
+
   const { progress: jobProgress } = useJobPolling({
     jobId: activeJob?.id || null,
     reportId: state.currentReport?.id || "",
     enabled: !!activeJob,
+    onComplete: handleJobComplete,
   });
 
   // Custom hooks for handlers
@@ -144,20 +175,30 @@ export const WorkflowView = memo(function WorkflowView({
     [toggleStageExpansion]
   );
 
-  // Express mode completion handler
+  // Express mode completion handler - refresh data without page reload
   const handleExpressComplete = useCallback(() => {
+    console.log(`🎉 [WorkflowView] Express mode completed, refreshing data...`);
+
+    // Clear all stage processing states (express mode runs all stages)
+    WORKFLOW_STAGES.forEach(stage => {
+      dispatch({ type: "SET_STAGE_PROCESSING", stage: stage.key, isProcessing: false });
+    });
+
     if (state.currentReport?.id) {
-      queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
-      window.location.reload();
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
     }
-  }, [state.currentReport?.id, queryClient]);
+
+    // Refetch active jobs
+    refetchActiveJobs();
+  }, [state.currentReport?.id, queryClient, dispatch, refetchActiveJobs]);
 
   // Adjustment applied handler - refresh report data
   const handleAdjustmentApplied = useCallback(() => {
+    console.log(`📝 [WorkflowView] Adjustment applied, refreshing data...`);
     if (state.currentReport?.id) {
-      queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
-      // Reload the page to refresh the editor with new content
-      window.location.reload();
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
     }
   }, [state.currentReport?.id, queryClient]);
 
