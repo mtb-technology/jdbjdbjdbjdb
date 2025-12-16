@@ -9,7 +9,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ToastAction } from "@/components/ui/toast";
 import { Search, FileText, Calendar, User, Download, Trash2, Eye, Copy, Package, Loader2, Upload, ArrowUpDown, CheckCircle2, Clock, PlayCircle, MoreHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -52,7 +51,6 @@ function Cases() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [progressFilter, setProgressFilter] = useState<ProgressFilter>("all");
   const [sortBy, setSortBy] = useState<SortOption>("date-desc");
-  const [selectedCases, setSelectedCases] = useState<Set<string>>(new Set());
   const [pendingDeletions, setPendingDeletions] = useState<Map<string, NodeJS.Timeout>>(new Map());
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -424,36 +422,6 @@ function Cases() {
     });
   }, [casesData?.reports, sortBy, progressFilter, getProgressInfo]);
 
-  // Bulk selection handlers
-  const toggleSelectCase = useCallback((caseId: string) => {
-    setSelectedCases(prev => {
-      const next = new Set(prev);
-      if (next.has(caseId)) {
-        next.delete(caseId);
-      } else {
-        next.add(caseId);
-      }
-      return next;
-    });
-  }, []);
-
-  const toggleSelectAll = useCallback(() => {
-    if (selectedCases.size === cases.length) {
-      setSelectedCases(new Set());
-    } else {
-      setSelectedCases(new Set(cases.map(c => c.id)));
-    }
-  }, [cases, selectedCases.size]);
-
-  const handleBulkDelete = useCallback(() => {
-    selectedCases.forEach(caseId => {
-      const case_ = cases.find(c => c.id === caseId);
-      if (case_) {
-        handleDelete(caseId, case_.title);
-      }
-    });
-    setSelectedCases(new Set());
-  }, [selectedCases, cases, handleDelete]);
 
   const totalPages = useMemo(() => casesData?.totalPages || 1, [casesData?.totalPages]);
 
@@ -553,36 +521,6 @@ function Cases() {
             Niet gestart ({progressCounts["not-started"]})
           </button>
 
-          {/* Bulk actions when items selected */}
-          {selectedCases.size > 0 && (
-            <div className="ml-auto flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                {selectedCases.size} geselecteerd
-              </span>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" size="sm">
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Verwijderen
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Cases verwijderen</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Weet je zeker dat je {selectedCases.size} case(s) wilt verwijderen?
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Annuleren</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleBulkDelete}>
-                      Verwijderen
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          )}
         </div>
 
         {/* Search & Sort */}
@@ -668,16 +606,6 @@ function Cases() {
                   <Link href={`/cases/${case_.id}`}>
                     <CardContent className="p-4">
                       <div className="flex items-center gap-4">
-                        {/* Checkbox for bulk selection */}
-                        <div className="flex-shrink-0" onClick={(e) => e.preventDefault()}>
-                          <Checkbox
-                            checked={selectedCases.has(case_.id)}
-                            onCheckedChange={() => toggleSelectCase(case_.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-5 w-5"
-                          />
-                        </div>
-
                         {/* Status Icon */}
                         <div className="flex-shrink-0">
                           {isActive ? (

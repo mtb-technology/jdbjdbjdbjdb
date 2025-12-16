@@ -1,12 +1,13 @@
-import { useState, useCallback, memo, useRef } from "react";
+import { useState, useCallback, memo, useRef, DragEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Zap, FolderOpen, Loader2, Upload, X, FileText } from "lucide-react";
+import { Play, FolderOpen, Loader2, Upload, X, FileText } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 import WorkflowInterface from "@/components/workflow-interface";
 import { AppHeader } from "@/components/app-header";
@@ -74,7 +75,9 @@ const Pipeline = memo(function Pipeline() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<string>(''); // Status message during upload/processing
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
   const { toast} = useToast();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -159,6 +162,100 @@ const Pipeline = memo(function Pipeline() {
   const handleRemoveFile = useCallback((fileName: string) => {
     setPendingFiles(prev => prev.filter(f => f.name !== fileName));
   }, []);
+
+  // Drag-and-drop handlers
+  const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set dragging to false if we're leaving the drop zone entirely
+    if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const droppedFiles = e.dataTransfer.files;
+    if (!droppedFiles || droppedFiles.length === 0) return;
+
+    // Validate file sizes and types
+    const validFiles: File[] = [];
+    const rejectedFiles: { name: string; size: number; reason: string }[] = [];
+
+    Array.from(droppedFiles).forEach(file => {
+      // Check file type
+      const validTypes = ['.pdf', '.txt', '.jpg', '.jpeg', '.png'];
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+      if (!validTypes.includes(ext)) {
+        rejectedFiles.push({ name: file.name, size: file.size, reason: 'type' });
+        return;
+      }
+
+      // Check file size
+      if (file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES) {
+        rejectedFiles.push({ name: file.name, size: file.size, reason: 'size' });
+        return;
+      }
+
+      validFiles.push(file);
+    });
+
+    // Show error for rejected files
+    if (rejectedFiles.length > 0) {
+      const sizeRejected = rejectedFiles.filter(f => f.reason === 'size');
+      const typeRejected = rejectedFiles.filter(f => f.reason === 'type');
+
+      if (sizeRejected.length > 0) {
+        const rejectedNames = sizeRejected
+          .map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`)
+          .join(', ');
+        toast({
+          title: "Bestand(en) te groot",
+          description: getOversizedFilesMessage(rejectedNames),
+          variant: "destructive",
+        });
+      }
+
+      if (typeRejected.length > 0) {
+        toast({
+          title: "Ongeldig bestandstype",
+          description: `Alleen PDF, TXT, JPG en PNG bestanden zijn toegestaan.`,
+          variant: "destructive",
+        });
+      }
+    }
+
+    if (validFiles.length === 0) return;
+
+    // Add valid files to pending list
+    const newPendingFiles: PendingFile[] = validFiles.map(file => ({
+      file,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    }));
+
+    setPendingFiles(prev => [...prev, ...newPendingFiles]);
+
+    toast({
+      title: "Bestanden toegevoegd",
+      description: `${newPendingFiles.length} bestand(en) klaar voor upload`,
+    });
+  }, [toast]);
 
   // Upload attachments to a report (called after case is created)
   // Returns { success: boolean, needsOcr: boolean }
@@ -396,186 +493,198 @@ const Pipeline = memo(function Pipeline() {
 
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen relative">
+      {/* Full-page gradient background */}
+      <div className="fixed inset-0 bg-gradient-to-br from-[#F5A623]/5 via-slate-50 to-[#1E4DB7]/5 dark:via-slate-950" />
+      <div className="fixed top-0 right-0 w-[600px] h-[600px] bg-[#F5A623]/10 rounded-full blur-3xl -translate-y-1/3 translate-x-1/3" />
+      <div className="fixed bottom-0 left-0 w-[600px] h-[600px] bg-[#1E4DB7]/10 rounded-full blur-3xl translate-y-1/3 -translate-x-1/3" />
 
-      <AppHeader />
+      <div className="relative">
+        <AppHeader />
 
-      {/* Hero Section - Compact */}
-      <div className="border-b bg-gradient-to-r from-primary/5 to-secondary/5 py-8">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-              Jan de <span className="text-primary">Belastingman</span>
+        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-12">
+          {/* Page Title */}
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-foreground mb-2">
+              Nieuwe Analyse
             </h1>
-            <p className="mt-2 text-muted-foreground">
-              Fiscale Pipeline — van ruwe input naar compleet duidingsrapport in minuten.
+            <p className="text-muted-foreground">
+              Van ruwe input naar compleet duidingsrapport in minuten
             </p>
           </div>
-        </div>
-      </div>
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-
-        {/* Input + Start */}
-        {!showWorkflow ? (
-          <Card className="border-2 border-primary/20 shadow-xl bg-gradient-to-br from-card to-card/80">
-            <CardHeader className="bg-gradient-to-r from-primary/5 to-secondary/5 border-b">
-              <CardTitle className="text-2xl flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                  <Zap className="h-5 w-5 text-primary" />
-                </div>
-                Start Nieuwe Fiscale Analyse
-              </CardTitle>
-              <CardDescription className="text-base">
-                Voer je fiscale vraagstuk in om direct een gestructureerde analyse te starten. 
-                Alle workflows worden automatisch opgeslagen als cases.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6 p-8">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-foreground">Fiscale Input</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".pdf,.txt,.jpg,.jpeg,.png"
-                      multiple
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isUploading}
-                      className="gap-2"
-                    >
-                      {isUploading ? (
-                        <><Loader2 className="h-4 w-4 animate-spin" /> Verwerken...</>
-                      ) : (
-                        <><Upload className="h-4 w-4" /> Upload Bestanden</>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Upload Progress */}
-                {isUploading && uploadProgress > 0 && (
-                  <div className="space-y-2">
-                    <Progress value={uploadProgress} className="h-2" />
-                    <p className="text-xs text-muted-foreground text-center">
-                      {uploadProgress}% geüpload
-                    </p>
-                  </div>
-                )}
-
-                {/* Pending files badges */}
-                {pendingFiles.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {pendingFiles.map((file) => (
-                      <Badge key={file.name} variant="secondary" className="gap-2 pr-1">
-                        <FileText className="h-3 w-3" />
-                        <span className="text-xs">{file.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          ({Math.round(file.size / 1024)}KB)
-                        </span>
-                        <button
-                          onClick={() => handleRemoveFile(file.name)}
-                          className="ml-1 hover:bg-muted rounded-sm p-0.5"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-
-                <Textarea
-                  value={rawText}
-                  onChange={(e) => setRawText(e.target.value)}
-                  placeholder={pendingFiles.length > 0
-                    ? "Optioneel: voeg hier extra context of notities toe bij de geüploade bestanden..."
-                    : `Upload bestanden hierboven (PDF, TXT, JPG, PNG), of plak hier tekst:
-
-• Klantsituatie en concrete vraag
-• Email correspondentie
-• Relevante feiten en bedragen
-
-De AI analyseert zowel geüploade bestanden als tekst input.`}
-                  className="min-h-40 resize-none border-primary/20 focus:border-primary/40 bg-white dark:bg-slate-800"
-                  data-testid="textarea-raw-input"
-                  aria-label="Fiscale input voor analyse - Voer klantsituatie, email correspondentie en relevante documenten in"
+          {/* Main Input Card */}
+          {!showWorkflow ? (
+            <Card className="border-0 shadow-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm">
+              <CardContent className="p-8 space-y-6">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.txt,.jpg,.jpeg,.png"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
                 />
-              </div>
-              
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Button
-                  onClick={startWorkflow}
-                  disabled={(!rawText.trim() && pendingFiles.length === 0) || isCreatingCase || isUploading}
-                  data-testid="button-start-workflow"
-                  className="flex-1 h-12 text-base font-semibold bg-primary hover:bg-primary/90 shadow-lg"
-                  size="lg"
-                >
-                  {isCreatingCase || isUploading ? (
-                    <><Loader2 className="mr-3 h-5 w-5 animate-spin" />
-                      {isUploading
-                        ? (uploadStatus || `Uploaden ${uploadProgress}%...`)
-                        : 'Case aanmaken...'}
-                    </>
-                  ) : (
-                    <><Play className="mr-3 h-5 w-5" /> Start Fiscale Analyse</>
+
+                {/* Primary: Text Input */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-foreground">
+                    Beschrijf het fiscale vraagstuk
+                  </label>
+                  <Textarea
+                    value={rawText}
+                    onChange={(e) => setRawText(e.target.value)}
+                    placeholder={`Voer hier de klantsituatie, vraagstelling en relevante feiten in...
+
+Bijvoorbeeld:
+• Klantnaam en situatie
+• Concrete fiscale vraag
+• Relevante bedragen en feiten
+• Email correspondentie (copy-paste)`}
+                    className="min-h-48 resize-none text-base border-slate-200 dark:border-slate-700 focus:border-[#1E4DB7] focus:ring-[#1E4DB7]/20"
+                    data-testid="textarea-raw-input"
+                    aria-label="Fiscale input voor analyse"
+                  />
+                </div>
+
+                {/* Attachments - Always visible */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-muted-foreground">
+                    Bijlages (optioneel)
+                  </label>
+
+                  {/* Drag & Drop Zone */}
+                  <div
+                    ref={dropZoneRef}
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                    onClick={() => !isUploading && fileInputRef.current?.click()}
+                    className={cn(
+                      "relative border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-all",
+                      isDragging
+                        ? "border-[#1E4DB7] bg-[#1E4DB7]/5 scale-[1.01]"
+                        : "border-slate-200 dark:border-slate-700 hover:border-[#1E4DB7]/50 hover:bg-[#1E4DB7]/5",
+                      isUploading && "pointer-events-none opacity-60"
+                    )}
+                  >
+                    {isDragging ? (
+                      <div className="space-y-1">
+                        <Upload className="h-8 w-8 mx-auto text-[#1E4DB7] animate-bounce" />
+                        <p className="text-sm font-medium text-[#1E4DB7]">Laat los om te uploaden</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <Upload className="h-6 w-6 mx-auto text-muted-foreground" />
+                        <p className="text-sm">
+                          Sleep bestanden of <span className="text-[#1E4DB7] font-medium">klik om te uploaden</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          PDF, TXT, JPG, PNG (max 50MB)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Upload Progress */}
+                  {isUploading && uploadProgress > 0 && (
+                    <div className="space-y-2">
+                      <Progress value={uploadProgress} className="h-2" />
+                      <p className="text-xs text-muted-foreground text-center">
+                        {uploadStatus || `${uploadProgress}% geüpload`}
+                      </p>
+                    </div>
                   )}
-                </Button>
-                <div className="sm:w-auto w-full">
-                  <Link href="/cases" asChild>
-                    <Button variant="outline" data-testid="button-view-cases" className="h-12 w-full border-primary/20 hover:border-primary/40">
+
+                  {/* Pending files badges */}
+                  {pendingFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {pendingFiles.map((file) => (
+                        <Badge key={file.name} variant="secondary" className="gap-2 pr-1 bg-slate-100 dark:bg-slate-800">
+                          <FileText className="h-3 w-3" />
+                          <span className="text-xs max-w-[150px] truncate">{file.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            ({Math.round(file.size / 1024)}KB)
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFile(file.name);
+                            }}
+                            className="ml-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-sm p-0.5"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <Button
+                    onClick={startWorkflow}
+                    disabled={!rawText.trim() || isCreatingCase || isUploading}
+                    data-testid="button-start-workflow"
+                    className="flex-1 h-12 text-base font-semibold bg-[#1E4DB7] hover:bg-[#1E4DB7]/90 shadow-lg shadow-[#1E4DB7]/20"
+                    size="lg"
+                  >
+                    {isCreatingCase || isUploading ? (
+                      <><Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        {isUploading
+                          ? (uploadStatus || `Uploaden ${uploadProgress}%...`)
+                          : 'Case aanmaken...'}
+                      </>
+                    ) : (
+                      <><Play className="mr-2 h-5 w-5" /> Start Analyse</>
+                    )}
+                  </Button>
+                  <Link href="/cases">
+                    <Button
+                      variant="outline"
+                      className="h-12 w-full sm:w-auto border-slate-300 dark:border-slate-600 hover:bg-white/50 dark:hover:bg-slate-800/50"
+                    >
                       <FolderOpen className="mr-2 h-4 w-4" />
-                      Bekijk Bestaande Cases
+                      Bekijk Cases
                     </Button>
                   </Link>
                 </div>
-              </div>
-              
-              {!rawText.trim() && pendingFiles.length === 0 && (
-                <div className="text-center py-4">
-                  <p className="text-sm text-muted-foreground">💡 Upload PDF bestanden of voer tekst in om te starten</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <WorkflowInterface
-            dossier={dossierData}
-            bouwplan={bouwplanData}
-            clientName="Client"
-            rawText={rawText}
-            onComplete={handleWorkflowComplete}
-            existingReport={createdReport || undefined}
-          />
-        )}
+              </CardContent>
+            </Card>
+          ) : (
+            <WorkflowInterface
+              dossier={dossierData}
+              bouwplan={bouwplanData}
+              clientName="Client"
+              rawText={rawText}
+              onComplete={handleWorkflowComplete}
+              existingReport={createdReport || undefined}
+            />
+          )}
 
-        {/* Final Report */}
-        {finalReport && (
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>Rapport Voltooid</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div
-                className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(finalReport, {
-                    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'code', 'pre', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
-                    ALLOWED_ATTR: ['href', 'class', 'id']
-                  })
-                }}
-              />
-            </CardContent>
-          </Card>
-        )}
-
+          {/* Final Report */}
+          {finalReport && (
+            <Card className="mt-6 border-0 shadow-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle>Rapport Voltooid</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(finalReport, {
+                      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'code', 'pre', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+                      ALLOWED_ATTR: ['href', 'class', 'id']
+                    })
+                  }}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );
