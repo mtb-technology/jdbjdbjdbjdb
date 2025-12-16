@@ -75,6 +75,18 @@ export const WorkflowView = memo(function WorkflowView({
   const { activeJobs, refetch: refetchActiveJobs } = useActiveJobs(state.currentReport?.id || null);
   const activeJob = activeJobs[0]; // Get first active job if any
 
+  // Keep track of the last known job ID to continue polling even after it leaves activeJobs
+  // This fixes the race condition where job completes but useActiveJobs polls first
+  const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
+
+  // Update tracked job when a new active job appears
+  useEffect(() => {
+    if (activeJob?.id && activeJob.id !== trackedJobId) {
+      console.log(`📋 [WorkflowView] Tracking new job: ${activeJob.id}`);
+      setTrackedJobId(activeJob.id);
+    }
+  }, [activeJob?.id, trackedJobId]);
+
   // Handle job completion - clear processing state and refresh data
   const handleJobComplete = useCallback((job: any) => {
     console.log(`✅ [WorkflowView] Job completed:`, job.id, job.progress?.currentStage);
@@ -99,14 +111,16 @@ export const WorkflowView = memo(function WorkflowView({
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
     }
 
-    // Refetch active jobs to update banner
+    // Clear tracked job and refetch active jobs
+    setTrackedJobId(null);
     refetchActiveJobs();
   }, [dispatch, state.currentReport?.id, queryClient, refetchActiveJobs]);
 
+  // Use tracked job ID for polling - continues even after job leaves activeJobs
   const { progress: jobProgress } = useJobPolling({
-    jobId: activeJob?.id || null,
+    jobId: trackedJobId,
     reportId: state.currentReport?.id || "",
-    enabled: !!activeJob,
+    enabled: !!trackedJobId,
     onComplete: handleJobComplete,
   });
 
