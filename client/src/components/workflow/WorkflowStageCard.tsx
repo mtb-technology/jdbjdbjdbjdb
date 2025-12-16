@@ -225,8 +225,8 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                 />
               )}
 
-              {/* 4. DEV TOOLS - Altijd onderaan */}
-              {stagePrompt && (
+              {/* 4. DEV TOOLS - Alleen tonen voor niet-voltooide stages */}
+              {stagePrompt && stageStatus !== "completed" && (
                 <DevToolsPanel
                   stagePrompt={stagePrompt}
                   isRawInputCollapsed={isRawInputCollapsed}

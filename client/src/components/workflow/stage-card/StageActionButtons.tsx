@@ -388,7 +388,65 @@ export const StageActionButtons = memo(function StageActionButtons({
   const isBlocked = !!blockReason;
   // Effective canExecute takes blockReason into account
   const effectiveCanExecute = canExecute && !isBlocked;
+  // Is stage completed? Show compact view
+  const isCompleted = stageStatus === "completed";
 
+  // COMPACT VIEW: Stage is completed - show minimal actions in one line
+  if (isCompleted && !isProcessing && !showCustomContext) {
+    return (
+      <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+        <Button
+          onClick={onExecute}
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+          Opnieuw
+        </Button>
+
+        <Button
+          onClick={onToggleCustomContext}
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Paperclip className="w-3.5 h-3.5 mr-1.5" />
+          Extra context
+        </Button>
+
+        {/* Express Mode Button - compact */}
+        {showExpressMode && reportId && onExpressComplete && (
+          <ExpressModeButton
+            reportId={reportId}
+            onComplete={onExpressComplete}
+            includeGeneration={isStage2 || (isStage3 && !hasStage3)}
+            hasStage3={hasStage3}
+            reportDepth={reportDepth}
+            reportLanguage={reportLanguage}
+          />
+        )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Reset Stage Button */}
+        {onResetStage && (
+          <Button
+            onClick={onResetStage}
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-red-600"
+            title="Wis resultaat"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  // FULL VIEW: Stage not completed, or user opened custom context
   return (
     <div className="space-y-3">
       {/* Block Reason Warning - Show when stage is blocked */}
