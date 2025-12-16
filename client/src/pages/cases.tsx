@@ -584,4 +584,6 @@ function Cases() {
       </div>
     </div>
   );
-}export default memo(Cases);
+}
+
+export default Cases;
