@@ -331,6 +331,8 @@ class JobProcessor {
     const reportId = job.reportId!;
     const { includeGeneration, autoAccept, reportLanguage } = config;
 
+    console.log(`🌐 [JobProcessor] Express Mode config:`, { includeGeneration, autoAccept, reportLanguage });
+
     // Get report
     let report = await storage.getReport(reportId);
     if (!report) {
@@ -402,6 +404,7 @@ class JobProcessor {
 
         if (isGenerationStage) {
           // Stage 3: Generate concept report
+          console.log(`🌐 [JobProcessor] Calling executeStage for 3_generatie with reportLanguage:`, reportLanguage);
           const stageExecution = await this.reportGenerator.executeStage(
             stageId,
             dossierData,
