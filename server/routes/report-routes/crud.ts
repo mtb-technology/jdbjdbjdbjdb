@@ -154,6 +154,51 @@ export function registerCrudRoutes(
     }
   });
 
+  /**
+   * Duplicate a report (reset to after stage 2)
+   * POST /api/reports/:id/duplicate
+   * Creates a copy with only stages 1-2 preserved, ready for re-generation
+   */
+  app.post("/api/reports/:id/duplicate", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { resetToStage = "2_complexiteitscheck" } = req.body;
+
+    const sourceReport = await storage.getReport(id);
+    if (!sourceReport) {
+      throw ServerError.notFound("Report");
+    }
+
+    // Determine which stages to keep based on resetToStage
+    const stageOrder = ["1a_informatiecheck", "1b_dossieranalyse", "2_complexiteitscheck", "3_generatie"];
+    const resetIndex = stageOrder.indexOf(resetToStage);
+    const stagesToKeep = resetIndex >= 0 ? stageOrder.slice(0, resetIndex + 1) : stageOrder.slice(0, 3);
+
+    // Filter stageResults to only keep stages up to resetToStage
+    const sourceStageResults = (sourceReport.stageResults as Record<string, unknown>) || {};
+    const filteredStageResults: Record<string, unknown> = {};
+    for (const stage of stagesToKeep) {
+      if (sourceStageResults[stage]) {
+        filteredStageResults[stage] = sourceStageResults[stage];
+      }
+    }
+
+    // Create duplicate with filtered data
+    const duplicate = await storage.createReport({
+      title: `${sourceReport.title} (kopie)`,
+      clientName: sourceReport.clientName,
+      dossierData: sourceReport.dossierData as DossierData,
+      bouwplanData: sourceReport.bouwplanData as BouwplanData,
+      generatedContent: null, // Reset generated content
+      stageResults: filteredStageResults,
+      conceptReportVersions: {}, // Reset concept versions
+      currentStage: resetToStage,
+      status: "draft",
+    });
+
+    console.log(`Report duplicated: ${id} -> ${duplicate.id} (reset to ${resetToStage})`);
+    res.json(createApiSuccessResponse(duplicate, "Rapport gedupliceerd en gereset"));
+  }));
+
   // ============================================================
   // SOURCES
   // ============================================================
