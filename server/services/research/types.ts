@@ -80,6 +80,7 @@ export interface ResearchConfig {
   timeout?: number; // milliseconds, default: 1800000 (30 min)
   polishPrompt?: string; // optional polish instructions for final synthesis
   reportDepth?: ReportDepth; // default: balanced
+  reportLanguage?: 'nl' | 'en'; // default: nl (Dutch)
 }
 
 /**
