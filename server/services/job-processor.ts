@@ -51,6 +51,7 @@ export interface ExpressModeJobConfig {
   includeGeneration: boolean;
   autoAccept: boolean;
   stages?: string[];
+  reportLanguage?: "nl" | "en";
 }
 
 class JobProcessor {
@@ -328,7 +329,7 @@ class JobProcessor {
    */
   private async processExpressMode(job: Job, config: ExpressModeJobConfig): Promise<void> {
     const reportId = job.reportId!;
-    const { includeGeneration, autoAccept } = config;
+    const { includeGeneration, autoAccept, reportLanguage } = config;
 
     // Get report
     let report = await storage.getReport(reportId);
@@ -407,8 +408,13 @@ class JobProcessor {
             bouwplanData,
             currentStageResults,
             currentConceptVersions,
-            undefined,
-            reportId
+            undefined, // customInput
+            reportId,
+            undefined, // onProgress
+            undefined, // visionAttachments
+            undefined, // reportDepth
+            undefined, // signal
+            reportLanguage
           );
 
           // Check if cancelled during AI execution
@@ -460,8 +466,13 @@ class JobProcessor {
             bouwplanData,
             currentStageResults,
             currentConceptVersions,
-            undefined,
-            reportId
+            undefined, // customInput
+            reportId,
+            undefined, // onProgress
+            undefined, // visionAttachments
+            undefined, // reportDepth
+            undefined, // signal
+            reportLanguage
           );
 
           // Check if cancelled during AI execution

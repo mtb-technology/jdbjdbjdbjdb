@@ -15,6 +15,7 @@ interface ExpressModeButtonProps {
   disabled?: boolean;
   includeGeneration?: boolean; // Start from stage 3 (after stage 2 completion)
   hasStage3?: boolean; // Whether stage 3 is already completed
+  reportLanguage?: "nl" | "en"; // Language for report generation (only used when includeGeneration is true)
 }
 
 interface StageProgress {
@@ -33,7 +34,8 @@ export function ExpressModeButton({
   onComplete,
   disabled,
   includeGeneration = false,
-  hasStage3 = true
+  hasStage3 = true,
+  reportLanguage
 }: ExpressModeButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -141,6 +143,7 @@ export function ExpressModeButton({
       const jobId = await createExpressModeJob(reportId, {
         includeGeneration,
         autoAccept: true,
+        reportLanguage: includeGeneration ? reportLanguage : undefined,
       });
 
       if (!jobId) {

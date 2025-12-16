@@ -481,6 +481,7 @@ export const StageActionButtons = memo(function StageActionButtons({
             onComplete={onExpressComplete}
             includeGeneration={isStage2 || (isStage3 && !hasStage3)}
             hasStage3={hasStage3}
+            reportLanguage={reportLanguage}
           />
         )}
 
