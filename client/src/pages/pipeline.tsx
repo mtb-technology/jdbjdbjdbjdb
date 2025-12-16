@@ -1,4 +1,5 @@
 import { useState, useCallback, memo, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -76,6 +77,7 @@ const Pipeline = memo(function Pipeline() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast} = useToast();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
   
   // Direct workflow data
@@ -338,6 +340,9 @@ const Pipeline = memo(function Pipeline() {
 
       console.log("🎯 Pipeline: Report created:", { reportId: report?.id });
 
+      // Invalidate cases cache so the new case appears in the list
+      queryClient.invalidateQueries({ queryKey: ["/api/cases"], refetchType: 'all' });
+
       // Upload attachments BEFORE navigating - Stage 1 needs document data in prompt
       let needsOcr = false;
       if (pendingFiles.length > 0 && report?.id) {
@@ -387,7 +392,7 @@ const Pipeline = memo(function Pipeline() {
     } finally {
       setIsCreatingCase(false);
     }
-  }, [rawText, pendingFiles, dossierData, bouwplanData, toast, uploadAttachments, setLocation]);
+  }, [rawText, pendingFiles, dossierData, bouwplanData, toast, uploadAttachments, setLocation, queryClient]);
 
 
   return (
