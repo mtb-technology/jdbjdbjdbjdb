@@ -19,6 +19,7 @@
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useCallback } from "react";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 
 // UI Components
 import { Button } from "@/components/ui/button";
@@ -92,13 +93,31 @@ export default function CaseDetail() {
     isLoading,
     error,
   } = useQuery<Report>({
-    queryKey: [`/api/reports/${reportId}`],
+    queryKey: QUERY_KEYS.reports.detail(reportId!),
+    queryFn: async () => {
+      const response = await fetch(`/api/reports/${reportId}`);
+      if (!response.ok) throw new Error('Failed to fetch report');
+      const result = await response.json();
+      // API returns wrapped response { success: true, data: ... }
+      return result.success ? result.data : result;
+    },
     enabled: !!reportId,
   });
 
   const { data: attachmentsData } = useQuery<Attachment[]>({
     queryKey: [`/api/upload/attachments/${reportId}`],
     enabled: !!reportId,
+    // Poll every 5s while OCR is in progress to auto-update status
+    refetchInterval: (query) => {
+      const attachments = query.state.data;
+      if (!attachments) return false;
+      // Check if any attachment has pending OCR
+      const hasPendingOcr = attachments.some(
+        (a) => a.needsVisionOCR === true &&
+               (!a.extractedText || a.extractedText.length <= 100)
+      );
+      return hasPendingOcr ? 5000 : false;
+    },
   });
 
   // Custom Hooks
