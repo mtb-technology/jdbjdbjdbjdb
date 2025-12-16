@@ -131,7 +131,7 @@ export function registerAutomailWebhookRoutes(app: Express): void {
    */
   app.post(
     "/api/webhooks/automail",
-    validateAutomailApiKey,
+    // TODO: Re-enable authentication: validateAutomailApiKey,
     asyncHandler(async (req: Request, res: Response) => {
       // Log incoming webhook event
       const eventType = req.headers['x-freescout-event'] as string || 'unknown';
