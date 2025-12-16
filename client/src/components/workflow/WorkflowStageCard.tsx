@@ -160,22 +160,28 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
             transition={{ duration: 0.3 }}
           >
             <CardContent className="space-y-4">
-              {/* Manual Mode Panel for supported stages */}
-              {hasManualMode && onToggleManualMode && (
-                <ManualModePanel
+              {/* 1. OUTPUT EERST - Het belangrijkste bovenaan */}
+              {stageResult && (
+                <StageOutputSection
                   stageKey={stageKey}
                   stageName={stageName}
-                  manualMode={manualMode}
-                  onToggleManualMode={onToggleManualMode}
-                  stagePrompt={stagePrompt}
-                  manualContent={manualContent}
-                  onManualContentChange={onManualContentChange || (() => {})}
-                  onManualExecute={onManualExecute || (() => {})}
-                  isProcessing={isProcessing}
+                  stageResult={stageResult}
+                  resultLabel={resultLabel}
+                  isOutputCollapsed={isOutputCollapsed}
+                  onToggleOutput={onToggleOutput}
+                  onCopy={handleCopy}
+                  copied={copied}
+                  stage1Result={stage1Result}
+                  emailOutput={emailOutput}
+                  isGeneratingEmail={isGeneratingEmail}
+                  showFeedbackProcessor={showFeedbackProcessor}
+                  reportId={reportId}
+                  onFeedbackProcessed={onFeedbackProcessed}
+                  substepResults={substepResults}
                 />
               )}
 
-              {/* Action Buttons - Only show for AI mode or non-manual stages */}
+              {/* 2. ACTIES - Action Buttons (only for AI mode or non-manual stages) */}
               {(!hasManualMode || manualMode === "ai") && (
                 <StageActionButtons
                   stageKey={stageKey}
@@ -204,7 +210,22 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                 />
               )}
 
-              {/* Developer Tools Panel */}
+              {/* 3. MANUAL MODE - Alleen als nodig */}
+              {hasManualMode && onToggleManualMode && (
+                <ManualModePanel
+                  stageKey={stageKey}
+                  stageName={stageName}
+                  manualMode={manualMode}
+                  onToggleManualMode={onToggleManualMode}
+                  stagePrompt={stagePrompt}
+                  manualContent={manualContent}
+                  onManualContentChange={onManualContentChange || (() => {})}
+                  onManualExecute={onManualExecute || (() => {})}
+                  isProcessing={isProcessing}
+                />
+              )}
+
+              {/* 4. DEV TOOLS - Altijd onderaan */}
               {stagePrompt && (
                 <DevToolsPanel
                   stagePrompt={stagePrompt}
@@ -214,27 +235,6 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   onTogglePrompt={onTogglePrompt}
                   onCopy={handleCopy}
                   copied={copied}
-                />
-              )}
-
-              {/* Output Section */}
-              {stageResult && (
-                <StageOutputSection
-                  stageKey={stageKey}
-                  stageName={stageName}
-                  stageResult={stageResult}
-                  resultLabel={resultLabel}
-                  isOutputCollapsed={isOutputCollapsed}
-                  onToggleOutput={onToggleOutput}
-                  onCopy={handleCopy}
-                  copied={copied}
-                  stage1Result={stage1Result}
-                  emailOutput={emailOutput}
-                  isGeneratingEmail={isGeneratingEmail}
-                  showFeedbackProcessor={showFeedbackProcessor}
-                  reportId={reportId}
-                  onFeedbackProcessed={onFeedbackProcessed}
-                  substepResults={substepResults}
                 />
               )}
             </CardContent>

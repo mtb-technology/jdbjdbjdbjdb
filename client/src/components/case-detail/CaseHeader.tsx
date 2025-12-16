@@ -1,15 +1,15 @@
 /**
  * CaseHeader Component
  *
- * Document header with editable title and client name.
- * Extracted from case-detail.tsx lines 429-557.
+ * Document header showing dossier number (read-only) and editable client name.
+ * Title is auto-generated as "D-{dossierNumber} - {clientName}".
  */
 
 import { memo } from "react";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Calendar, User, GitBranch, Edit2, Save, X } from "lucide-react";
+import { FileText, Calendar, GitBranch, Edit2, Save, X } from "lucide-react";
 import type { CaseHeaderProps } from "@/types/caseDetail.types";
 
 /**
@@ -17,7 +17,6 @@ import type { CaseHeaderProps } from "@/types/caseDetail.types";
  */
 interface EditableFieldProps {
   isEditing: boolean;
-  value: string;
   displayValue: string;
   editedValue: string;
   isPending: boolean;
@@ -26,7 +25,6 @@ interface EditableFieldProps {
   onCancel: () => void;
   onChange: (value: string) => void;
   inputClassName?: string;
-  iconSize?: "sm" | "md";
 }
 
 const EditableField = memo(function EditableField({
@@ -39,11 +37,7 @@ const EditableField = memo(function EditableField({
   onCancel,
   onChange,
   inputClassName = "",
-  iconSize = "md",
 }: EditableFieldProps) {
-  const iconClass = iconSize === "sm" ? "h-3 w-3" : "h-4 w-4";
-  const buttonSize = iconSize === "sm" ? "h-7 px-2" : "";
-
   if (isEditing) {
     return (
       <div className="flex items-center gap-2">
@@ -61,18 +55,16 @@ const EditableField = memo(function EditableField({
           size="sm"
           onClick={onSave}
           disabled={isPending}
-          className={buttonSize}
         >
-          <Save className={iconClass} />
+          <Save className="h-4 w-4" />
         </Button>
         <Button
           size="sm"
           variant="ghost"
           onClick={onCancel}
           disabled={isPending}
-          className={buttonSize}
         >
-          <X className={iconClass} />
+          <X className="h-4 w-4" />
         </Button>
       </div>
     );
@@ -81,84 +73,67 @@ const EditableField = memo(function EditableField({
   return (
     <span className="flex items-center gap-2 group">
       <span>{displayValue}</span>
-      <div
-        role="button"
-        tabIndex={0}
-        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded cursor-pointer"
+      <button
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded"
         onClick={onEdit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            onEdit();
-          }
-        }}
       >
-        <Edit2 className={iconClass} />
-      </div>
+        <Edit2 className="h-4 w-4" />
+      </button>
     </span>
   );
 });
 
 export const CaseHeader = memo(function CaseHeader({
   report,
-  isEditingTitle,
   isEditingClient,
-  editedTitle,
   editedClient,
   isPending,
-  onEditTitle,
   onEditClient,
-  onSaveTitle,
   onSaveClient,
   onCancelEdit,
-  onTitleChange,
   onClientChange,
   versionCheckpoints,
   currentVersion,
 }: CaseHeaderProps) {
+  // Extract dossier number from title (e.g., "D-0044 - Client" -> "D-0044")
+  const dossierNumber = report.title.match(/^D-\d{4}/)?.[0] || `D-${String(report.dossierNumber || 0).padStart(4, '0')}`;
+
   return (
     <Card className="mb-6">
-      <CardHeader>
-        <div className="flex items-center justify-between">
+      <CardHeader className="pb-4">
+        <div className="flex items-start justify-between">
           <div className="flex-1">
-            <CardTitle className="flex items-center space-x-2 text-2xl mb-2">
-              <FileText className="h-6 w-6" />
+            {/* Dossier Number - Fixed/System field */}
+            <div className="flex items-center gap-3 mb-3">
+              <FileText className="h-5 w-5 text-muted-foreground" />
+              <span className="text-sm font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                {dossierNumber}
+              </span>
+            </div>
+
+            {/* Client Name - Editable, this becomes the title */}
+            <h1 className="text-2xl font-bold tracking-tight mb-3">
               <EditableField
-                isEditing={isEditingTitle}
-                value={report.title}
-                displayValue={report.title}
-                editedValue={editedTitle}
+                isEditing={isEditingClient}
+                displayValue={report.clientName}
+                editedValue={editedClient}
                 isPending={isPending}
-                onEdit={onEditTitle}
-                onSave={onSaveTitle}
-                onCancel={() => onCancelEdit("title")}
-                onChange={onTitleChange}
-                inputClassName="text-2xl font-semibold h-10"
+                onEdit={onEditClient}
+                onSave={onSaveClient}
+                onCancel={() => onCancelEdit("client")}
+                onChange={onClientChange}
+                inputClassName="text-2xl font-bold h-10 w-64"
               />
-            </CardTitle>
+            </h1>
+
+            {/* Metadata row */}
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <User className="h-4 w-4" />
-                <EditableField
-                  isEditing={isEditingClient}
-                  value={report.clientName}
-                  displayValue={report.clientName}
-                  editedValue={editedClient}
-                  isPending={isPending}
-                  onEdit={onEditClient}
-                  onSave={onSaveClient}
-                  onCancel={() => onCancelEdit("client")}
-                  onChange={onClientChange}
-                  inputClassName="h-7 text-sm w-48"
-                  iconSize="sm"
-                />
-              </div>
               <div className="flex items-center gap-1">
                 <Calendar className="h-4 w-4" />
                 <span>
-                  Bijgewerkt:{" "}
                   {report.updatedAt
                     ? new Date(report.updatedAt).toLocaleDateString("nl-NL")
-                    : "Onbekend"}
+                    : new Date(report.createdAt).toLocaleDateString("nl-NL")}
                 </span>
               </div>
               {versionCheckpoints.length > 0 && (

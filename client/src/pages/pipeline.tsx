@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -66,6 +67,7 @@ async function compressImageFile(file: File): Promise<{ file: File; wasCompresse
 }
 
 const Pipeline = memo(function Pipeline() {
+  const [clientName, setClientName] = useState(""); // Klantnaam voor de case
   const [rawText, setRawText] = useState(""); // Voor extra context/notities
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [finalReport, setFinalReport] = useState<string>("");
@@ -420,7 +422,8 @@ const Pipeline = memo(function Pipeline() {
   }, [toast]);
 
   const startWorkflow = useCallback(async () => {
-    // Require either files OR text input
+    // Require clientName and either files OR text input
+    if (!clientName.trim()) return;
     if (!rawText.trim() && pendingFiles.length === 0) return;
 
     setIsCreatingCase(true);
@@ -429,7 +432,7 @@ const Pipeline = memo(function Pipeline() {
       const response = await apiRequest("POST", "/api/reports/create", {
         dossier: dossierData,
         bouwplan: bouwplanData,
-        clientName: "Client",
+        clientName: clientName.trim(),
         rawText: rawText.trim() || "(Zie bijlages)", // Fallback als alleen files
       });
       const data = await response.json();
@@ -489,7 +492,7 @@ const Pipeline = memo(function Pipeline() {
     } finally {
       setIsCreatingCase(false);
     }
-  }, [rawText, pendingFiles, dossierData, bouwplanData, toast, uploadAttachments, setLocation, queryClient]);
+  }, [clientName, rawText, pendingFiles, dossierData, bouwplanData, toast, uploadAttachments, setLocation, queryClient]);
 
 
   return (
@@ -527,8 +530,23 @@ const Pipeline = memo(function Pipeline() {
                   className="hidden"
                 />
 
+                {/* Client Name Input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">
+                    Klantnaam
+                  </label>
+                  <Input
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    placeholder="Bijv. Familie De Vries, ABC BV, ..."
+                    className="text-base border-slate-200 dark:border-slate-700 focus:border-[#1E4DB7] focus:ring-[#1E4DB7]/20"
+                    data-testid="input-client-name"
+                    aria-label="Klantnaam voor de case"
+                  />
+                </div>
+
                 {/* Primary: Text Input */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">
                     Beschrijf het fiscale vraagstuk
                   </label>
@@ -538,11 +556,10 @@ const Pipeline = memo(function Pipeline() {
                     placeholder={`Voer hier de klantsituatie, vraagstelling en relevante feiten in...
 
 Bijvoorbeeld:
-• Klantnaam en situatie
 • Concrete fiscale vraag
 • Relevante bedragen en feiten
 • Email correspondentie (copy-paste)`}
-                    className="min-h-48 resize-none text-base border-slate-200 dark:border-slate-700 focus:border-[#1E4DB7] focus:ring-[#1E4DB7]/20"
+                    className="min-h-40 resize-none text-base border-slate-200 dark:border-slate-700 focus:border-[#1E4DB7] focus:ring-[#1E4DB7]/20"
                     data-testid="textarea-raw-input"
                     aria-label="Fiscale input voor analyse"
                   />
@@ -627,7 +644,7 @@ Bijvoorbeeld:
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                   <Button
                     onClick={startWorkflow}
-                    disabled={!rawText.trim() || isCreatingCase || isUploading}
+                    disabled={!clientName.trim() || !rawText.trim() || isCreatingCase || isUploading}
                     data-testid="button-start-workflow"
                     className="flex-1 h-12 text-base font-semibold bg-[#1E4DB7] hover:bg-[#1E4DB7]/90 shadow-lg shadow-[#1E4DB7]/20"
                     size="lg"
@@ -658,7 +675,7 @@ Bijvoorbeeld:
             <WorkflowInterface
               dossier={dossierData}
               bouwplan={bouwplanData}
-              clientName="Client"
+              clientName={clientName}
               rawText={rawText}
               onComplete={handleWorkflowComplete}
               existingReport={createdReport || undefined}

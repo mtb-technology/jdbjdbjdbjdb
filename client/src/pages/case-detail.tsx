@@ -199,7 +199,7 @@ export default function CaseDetail() {
       <AppHeader />
 
       <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page Header */}
+        {/* Page Header - Compact with actions */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <Link href="/cases">
@@ -212,12 +212,6 @@ export default function CaseDetail() {
                 Terug
               </Button>
             </Link>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">
-                {report.title}
-              </h1>
-              <p className="text-muted-foreground">{report.clientName}</p>
-            </div>
           </div>
 
           {/* Quick Actions */}
@@ -248,20 +242,15 @@ export default function CaseDetail() {
           </div>
         </div>
 
-        {/* Document Header */}
+        {/* Document Header - Single source of truth */}
         <CaseHeader
           report={report}
-          isEditingTitle={isEditingTitle}
           isEditingClient={isEditingClient}
-          editedTitle={editedTitle}
           editedClient={editedClient}
           isPending={isPending}
-          onEditTitle={handleEditTitle}
           onEditClient={handleEditClient}
-          onSaveTitle={handleSaveTitle}
           onSaveClient={handleSaveClient}
           onCancelEdit={handleCancelEdit}
-          onTitleChange={setEditedTitle}
           onClientChange={setEditedClient}
           versionCheckpoints={versionCheckpoints}
           currentVersion={currentVersion}

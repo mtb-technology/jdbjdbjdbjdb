@@ -54,20 +54,18 @@ export interface EditState {
 
 /**
  * Props for CaseHeader component
+ *
+ * Note: Title editing removed - title is now auto-generated from dossierNumber + clientName.
+ * Only clientName is editable, and title updates automatically when clientName changes.
  */
 export interface CaseHeaderProps {
   report: Report;
-  isEditingTitle: boolean;
   isEditingClient: boolean;
-  editedTitle: string;
   editedClient: string;
   isPending: boolean;
-  onEditTitle: () => void;
   onEditClient: () => void;
-  onSaveTitle: () => void;
   onSaveClient: () => void;
   onCancelEdit: (type: "title" | "client") => void;
-  onTitleChange: (value: string) => void;
   onClientChange: (value: string) => void;
   versionCheckpoints: VersionCheckpoint[];
   currentVersion: number;

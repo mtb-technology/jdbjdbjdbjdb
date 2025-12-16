@@ -80,45 +80,49 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
   /**
    * PATCH /api/cases/:id
    *
-   * Update case metadata (title and clientName).
+   * Update case metadata. Only clientName is user-editable.
+   * Title is auto-generated from dossierNumber + clientName.
    *
-   * Request body: { title?, clientName? }
-   * Response: Updated case object
+   * Request body: { clientName }
+   * Response: Updated case object with new title
    */
   app.patch("/api/cases/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const { title, clientName } = req.body;
+      const { clientName } = req.body;
 
-      // Validate input
-      const updates: any = {};
-
-      if (title !== undefined) {
-        if (typeof title !== 'string' || title.trim().length === 0) {
-          res.status(HTTP_STATUS.BAD_REQUEST).json(
-            createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Title cannot be empty", "Titel mag niet leeg zijn")
-          );
-          return;
-        }
-        updates.title = title.trim();
-      }
-
-      if (clientName !== undefined) {
-        if (typeof clientName !== 'string' || clientName.trim().length === 0) {
-          res.status(HTTP_STATUS.BAD_REQUEST).json(
-            createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Client name cannot be empty", "Clientnaam mag niet leeg zijn")
-          );
-          return;
-        }
-        updates.clientName = clientName.trim();
-      }
-
-      if (Object.keys(updates).length === 0) {
+      // Only clientName is editable - title is auto-generated
+      if (clientName === undefined) {
         res.status(HTTP_STATUS.BAD_REQUEST).json(
           createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "No fields to update", "Geen velden om bij te werken")
         );
         return;
       }
+
+      if (typeof clientName !== 'string' || clientName.trim().length === 0) {
+        res.status(HTTP_STATUS.BAD_REQUEST).json(
+          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Client name cannot be empty", "Clientnaam mag niet leeg zijn")
+        );
+        return;
+      }
+
+      // Get current report to access dossierNumber
+      const currentReport = await storage.getReport(id);
+      if (!currentReport) {
+        res.status(HTTP_STATUS.NOT_FOUND).json(
+          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Case not found", "Case niet gevonden")
+        );
+        return;
+      }
+
+      // Auto-generate title from dossierNumber + clientName
+      const formattedNumber = String(currentReport.dossierNumber).padStart(4, '0');
+      const newTitle = `D-${formattedNumber} - ${clientName.trim()}`;
+
+      const updates = {
+        clientName: clientName.trim(),
+        title: newTitle,
+      };
 
       const updatedReport = await storage.updateReport(id, updates);
 
