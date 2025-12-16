@@ -209,23 +209,6 @@ export class ReportProcessor {
   }
 
   /**
-   * Get strategy-specific processing rules
-   */
-  private getStrategyRules(strategy: string): string {
-    switch (strategy) {
-      case 'sectional':
-        return 'Vervang alleen de relevante secties met feedback, laat andere secties intact';
-      case 'replace':
-        return 'Vervang het volledige rapport met de feedback (gebruik voorzichtig!)';
-      case 'append':
-        return 'Voeg feedback toe aan het einde van relevante secties';
-      case 'merge':
-      default:
-        return 'Integreer feedback intelligent door het hele rapport, verbeter bestaande content waar nodig';
-    }
-  }
-
-  /**
    * Fallback merge strategy when AI fails
    */
   private fallbackMerge(input: ReportProcessorInput): ReportProcessorOutput {

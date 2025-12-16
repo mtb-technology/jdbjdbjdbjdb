@@ -33,7 +33,7 @@ import {
   parseFeedbackToProposals,
   serializeProposals,
   serializeProposalsToJSON,
-} from "@/lib/parse-feedback";
+} from "@shared/lib/parse-feedback";
 
 // Types
 import type { SimpleFeedbackProcessorProps, ViewMode, BulkActionSeverity } from "@/types/feedbackProcessor.types";

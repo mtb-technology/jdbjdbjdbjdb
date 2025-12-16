@@ -179,9 +179,6 @@ const CompactBriefingView = memo(function CompactBriefingView({
   onRegenerate: () => void;
   isRegenerating: boolean;
 }) {
-  const confidenceStyle = getConfidenceStyle(briefing.totaal_confidence);
-  const ConfidenceIcon = confidenceStyle.icon;
-
   return (
     <Card className="border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/20">
       <CardHeader className="pb-2 pt-3">
@@ -191,11 +188,6 @@ const CompactBriefingView = memo(function CompactBriefingView({
             Executive Summary
           </CardTitle>
           <div className="flex items-center gap-1">
-            {getReviewDepthBadge(briefing.aanbeveling_review_diepte)}
-            <div className={cn("flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", confidenceStyle.bg, confidenceStyle.text)}>
-              <ConfidenceIcon className="h-3 w-3" />
-              {confidenceStyle.label}
-            </div>
             <Button
               variant="ghost"
               size="sm"
@@ -299,28 +291,6 @@ const CompactBriefingView = memo(function CompactBriefingView({
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="flex items-center gap-4">
-          {briefing.check_voor_verzending.length > 0 && (
-            <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
-              <ListChecks className="h-3.5 w-3.5" />
-              <span>{briefing.check_voor_verzending.length} checks</span>
-            </div>
-          )}
-          {briefing.twijfelpunten && briefing.twijfelpunten.length > 0 && (
-            <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-              <HelpCircle className="h-3.5 w-3.5" />
-              <span>{briefing.twijfelpunten.length} twijfels</span>
-            </div>
-          )}
-          {briefing.reviewer_highlights && briefing.reviewer_highlights.length > 0 && (
-            <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
-              <MessageSquare className="h-3.5 w-3.5" />
-              <span>{briefing.reviewer_highlights.length} reviews</span>
-            </div>
-          )}
-        </div>
-
         {/* Expand button */}
         <Button
           variant="outline"
@@ -331,6 +301,47 @@ const CompactBriefingView = memo(function CompactBriefingView({
           <Maximize2 className="h-3.5 w-3.5 mr-2" />
           Bekijk volledige briefing
         </Button>
+
+        {/* AI Assessment - onderaan met uitleg */}
+        <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-2">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">AI Inschatting</p>
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Zekerheid:</span>
+              <span className={cn(
+                "font-medium",
+                briefing.totaal_confidence === "hoog" && "text-green-600",
+                briefing.totaal_confidence === "medium" && "text-amber-600",
+                briefing.totaal_confidence === "laag" && "text-red-600"
+              )}>
+                {briefing.totaal_confidence === "hoog" ? "Hoog" : briefing.totaal_confidence === "medium" ? "Medium" : "Laag"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Review nodig:</span>
+              <span className={cn(
+                "font-medium",
+                briefing.aanbeveling_review_diepte === "vluchtig" && "text-green-600",
+                briefing.aanbeveling_review_diepte === "normaal" && "text-blue-600",
+                briefing.aanbeveling_review_diepte === "grondig" && "text-red-600"
+              )}>
+                {briefing.aanbeveling_review_diepte === "vluchtig" ? "Vluchtig" : briefing.aanbeveling_review_diepte === "normaal" ? "Normaal" : "Grondig"}
+              </span>
+            </div>
+            {briefing.check_voor_verzending.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Te checken:</span>
+                <span className="font-medium">{briefing.check_voor_verzending.length} punten</span>
+              </div>
+            )}
+            {briefing.twijfelpunten && briefing.twijfelpunten.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Twijfelpunten:</span>
+                <span className="font-medium text-amber-600">{briefing.twijfelpunten.length}</span>
+              </div>
+            )}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -355,26 +366,14 @@ const FullScreenBriefingView = memo(function FullScreenBriefingView({
   const [isReviewerOpen, setIsReviewerOpen] = useState(true);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
 
-  const confidenceStyle = getConfidenceStyle(briefing.totaal_confidence);
-  const ConfidenceIcon = confidenceStyle.icon;
-
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              <BookOpen className="h-6 w-6 text-purple-600" />
-              Executive Summary
-            </DialogTitle>
-            <div className="flex items-center gap-2">
-              {getReviewDepthBadge(briefing.aanbeveling_review_diepte)}
-              <div className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium", confidenceStyle.bg, confidenceStyle.text)}>
-                <ConfidenceIcon className="h-4 w-4" />
-                {confidenceStyle.label}
-              </div>
-            </div>
-          </div>
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            <BookOpen className="h-6 w-6 text-purple-600" />
+            Executive Summary
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6 mt-4">
@@ -676,9 +675,46 @@ const FullScreenBriefingView = memo(function FullScreenBriefingView({
             </Collapsible>
           )}
 
-          {/* Confidence Toelichting */}
-          <div className="text-sm text-muted-foreground italic px-2 py-3 bg-gray-50 dark:bg-gray-900 rounded-lg border-t">
-            💡 {briefing.confidence_toelichting}
+          {/* AI Assessment - onderaan met uitleg */}
+          <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
+            <h3 className="text-sm font-semibold mb-3">AI Inschatting</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Zekerheid AI</p>
+                <p className={cn(
+                  "font-medium",
+                  briefing.totaal_confidence === "hoog" && "text-green-600",
+                  briefing.totaal_confidence === "medium" && "text-amber-600",
+                  briefing.totaal_confidence === "laag" && "text-red-600"
+                )}>
+                  {briefing.totaal_confidence === "hoog" ? "Hoog" : briefing.totaal_confidence === "medium" ? "Medium" : "Laag"}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Review diepte</p>
+                <p className={cn(
+                  "font-medium",
+                  briefing.aanbeveling_review_diepte === "vluchtig" && "text-green-600",
+                  briefing.aanbeveling_review_diepte === "normaal" && "text-blue-600",
+                  briefing.aanbeveling_review_diepte === "grondig" && "text-red-600"
+                )}>
+                  {briefing.aanbeveling_review_diepte === "vluchtig" ? "Vluchtig" : briefing.aanbeveling_review_diepte === "normaal" ? "Normaal" : "Grondig"}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Te checken</p>
+                <p className="font-medium">{briefing.check_voor_verzending.length} punten</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Twijfelpunten</p>
+                <p className={cn("font-medium", (briefing.twijfelpunten?.length || 0) > 0 && "text-amber-600")}>
+                  {briefing.twijfelpunten?.length || 0}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground italic mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+              {briefing.confidence_toelichting}
+            </p>
           </div>
 
           {/* Debug / Developer Tools */}

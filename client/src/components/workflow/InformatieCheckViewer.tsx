@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Copy, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle, Mail, Loader2 } from "lucide-react";
+import { Copy, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle, Mail, Loader2, Building2, Landmark, TrendingUp, FileText, Calendar, ArrowRightLeft, Receipt, FolderOpen } from "lucide-react";
 import type { InformatieCheckOutput } from "@shared/schema";
 import { parseInformatieCheckOutput } from "@/lib/workflowParsers";
 import DOMPurify from "isomorphic-dompurify";
@@ -70,6 +70,377 @@ function MissingInfoItem({ item, index }: { item: any; index: number }) {
         </div>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+/**
+ * Format currency with proper locale
+ */
+function formatCurrency(amount: number | null | undefined, currency = "EUR"): string {
+  if (amount === null || amount === undefined) return "—";
+  return new Intl.NumberFormat("nl-NL", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+/**
+ * Renders the vermogensoverzicht per peildatum as a clear table
+ */
+function VermogensoverzichtTable({ data }: { data: Record<string, any> }) {
+  const peildata = Object.keys(data).sort();
+  const [expandedYear, setExpandedYear] = useState<string | null>(peildata[peildata.length - 1] || null);
+
+  if (peildata.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Calendar className="h-4 w-4 text-muted-foreground" />
+        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Vermogensoverzicht per Peildatum
+        </h4>
+        <Badge variant="secondary" className="text-xs">{peildata.length} jaren</Badge>
+      </div>
+
+      <div className="space-y-2">
+        {peildata.map((peildatum) => {
+          const yearData = data[peildatum];
+          const isExpanded = expandedYear === peildatum;
+          const displayDate = peildatum.replace(/-/g, "/");
+
+          // Calculate totals for summary
+          const vastgoedTotal = (yearData.vastgoed || []).reduce((sum: number, v: any) =>
+            sum + (v.marktwaarde_EUR || 0), 0);
+          const bankTotal = (yearData.bankrekeningen || []).reduce((sum: number, b: any) =>
+            sum + (b.saldo_EUR || 0), 0);
+          const totaal = vastgoedTotal + bankTotal;
+
+          return (
+            <Collapsible key={peildatum} open={isExpanded} onOpenChange={() => setExpandedYear(isExpanded ? null : peildatum)}>
+              <CollapsibleTrigger asChild>
+                <button className="w-full flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors text-left">
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="font-mono">{displayDate}</Badge>
+                    <span className="text-sm font-medium">Totaal: {formatCurrency(totaal)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
+                      {vastgoedTotal > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Building2 className="h-3 w-3" />
+                          {formatCurrency(vastgoedTotal)}
+                        </span>
+                      )}
+                      {bankTotal > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Landmark className="h-3 w-3" />
+                          {formatCurrency(bankTotal)}
+                        </span>
+                      )}
+                    </div>
+                    {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </div>
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-2 ml-2 border-l-2 border-muted pl-4 space-y-4 pb-2">
+                  {/* Vastgoed */}
+                  {yearData.vastgoed && yearData.vastgoed.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                        <Building2 className="h-4 w-4" />
+                        Vastgoed
+                      </div>
+                      <div className="grid gap-2">
+                        {yearData.vastgoed.map((item: any, idx: number) => (
+                          <div key={idx} className="p-3 rounded-lg bg-muted/30 text-sm space-y-1">
+                            <div className="font-medium">{item.omschrijving}</div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                              {item.marktwaarde_EUR !== null && item.marktwaarde_EUR !== undefined && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Marktwaarde:</span>
+                                  <span className="font-mono font-semibold text-green-600">{formatCurrency(item.marktwaarde_EUR)}</span>
+                                </div>
+                              )}
+                              {item.lokale_waarde && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">{item.lokale_waarde.type || "Lokale waarde"}:</span>
+                                  <span className="font-mono">{formatCurrency(item.lokale_waarde.bedrag, item.lokale_waarde.valuta)}</span>
+                                </div>
+                              )}
+                              {item.eigendomspercentage && item.eigendomspercentage !== 100 && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Eigendom:</span>
+                                  <span className="font-mono">{item.eigendomspercentage}%</span>
+                                </div>
+                              )}
+                              {item.bron_waardering && (
+                                <div className="flex justify-between col-span-2">
+                                  <span className="text-muted-foreground">Bron:</span>
+                                  <span className="text-right">{item.bron_waardering}</span>
+                                </div>
+                              )}
+                            </div>
+                            {item.opmerking && (
+                              <p className="text-xs text-muted-foreground italic mt-1">{item.opmerking}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bankrekeningen */}
+                  {yearData.bankrekeningen && yearData.bankrekeningen.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                        <Landmark className="h-4 w-4" />
+                        Bankrekeningen
+                      </div>
+                      <div className="grid gap-2">
+                        {yearData.bankrekeningen.map((item: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-2 rounded bg-muted/30 text-sm">
+                            <span>{item.omschrijving}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="font-mono font-semibold text-green-600">{formatCurrency(item.saldo_EUR)}</span>
+                              {item.saldo_lokaal && (
+                                <span className="text-xs text-muted-foreground font-mono">
+                                  ({formatCurrency(item.saldo_lokaal.bedrag, item.saldo_lokaal.valuta)})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Effecten */}
+                  {yearData.effecten && yearData.effecten.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                        <TrendingUp className="h-4 w-4" />
+                        Effecten
+                      </div>
+                      <div className="grid gap-2">
+                        {yearData.effecten.map((item: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-2 rounded bg-muted/30 text-sm">
+                            <span>{item.omschrijving}</span>
+                            <span className="font-mono font-semibold">{formatCurrency(item.waarde_EUR)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Schulden */}
+                  {yearData.schulden && yearData.schulden.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium text-red-600">
+                        <ArrowRightLeft className="h-4 w-4" />
+                        Schulden
+                      </div>
+                      <div className="grid gap-2">
+                        {yearData.schulden.map((item: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-2 rounded bg-red-50 dark:bg-red-950/20 text-sm">
+                            <span>{item.omschrijving}</span>
+                            <span className="font-mono font-semibold text-red-600">-{formatCurrency(item.bedrag_EUR)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders transacties list
+ */
+function TransactiesTable({ data }: { data: any[] }) {
+  if (!data || data.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Transacties
+        </h4>
+        <Badge variant="secondary" className="text-xs">{data.length}</Badge>
+      </div>
+      <div className="border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Type</th>
+              <th className="px-3 py-2 text-left font-medium">Omschrijving</th>
+              <th className="px-3 py-2 text-left font-medium">Datum</th>
+              <th className="px-3 py-2 text-right font-medium">Bedrag</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {data.map((tx, idx) => (
+              <tr key={idx} className="hover:bg-muted/30">
+                <td className="px-3 py-2">
+                  <Badge variant={tx.type?.toLowerCase().includes("verkoop") ? "default" : "outline"} className="text-xs">
+                    {tx.type}
+                  </Badge>
+                </td>
+                <td className="px-3 py-2">{tx.omschrijving}</td>
+                <td className="px-3 py-2 font-mono text-xs">{tx.datum}</td>
+                <td className="px-3 py-2 text-right font-mono font-semibold">
+                  {tx.bedrag_EUR ? formatCurrency(tx.bedrag_EUR) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders inkomsten buitenland
+ */
+function InkomstenBuitenlandTable({ data }: { data: any[] }) {
+  if (!data || data.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Receipt className="h-4 w-4 text-muted-foreground" />
+        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Inkomsten Buitenland
+        </h4>
+      </div>
+      <div className="space-y-3">
+        {data.map((item, idx) => (
+          <div key={idx} className="p-3 rounded-lg border bg-card">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-medium text-sm">{item.type}</span>
+              {item.reeds_aangegeven && (
+                <Badge variant="secondary" className="text-xs">Reeds aangegeven</Badge>
+              )}
+            </div>
+            {item.bedragen_per_jaar && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                {Object.entries(item.bedragen_per_jaar).map(([jaar, bedragen]: [string, any]) => (
+                  <div key={jaar} className="p-2 rounded bg-muted/30">
+                    <div className="font-medium">{jaar}</div>
+                    <div className="font-mono text-green-600">
+                      {formatCurrency(bedragen.bruto_EUR || bedragen.netto_EUR)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {item.toelichting && (
+              <p className="text-xs text-muted-foreground mt-2 italic">{item.toelichting}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Renders beschikbare documenten overview
+ */
+function BeschikbareDocumentenTable({ data }: { data: any }) {
+  if (!data) return null;
+
+  const { aangiftes, aanslagen, overige } = data;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <FolderOpen className="h-4 w-4 text-muted-foreground" />
+        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Beschikbare Documenten
+        </h4>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        {/* Aangiftes */}
+        {aangiftes && Object.keys(aangiftes).length > 0 && (
+          <div className="p-3 rounded-lg border bg-card">
+            <div className="flex items-center gap-2 mb-2">
+              <FileText className="h-4 w-4 text-blue-500" />
+              <span className="font-medium text-sm">Aangiftes</span>
+            </div>
+            <div className="space-y-1">
+              {Object.entries(aangiftes).map(([jaar, info]: [string, any]) => (
+                <div key={jaar} className="flex items-center justify-between text-xs">
+                  <span className="font-mono">{jaar}</span>
+                  {info.aanwezig ? (
+                    <Badge variant="outline" className="text-xs text-green-600 border-green-300">
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      {info.type || "Aanwezig"}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs text-red-600 border-red-300">
+                      <XCircle className="h-3 w-3 mr-1" />
+                      Ontbreekt
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Aanslagen */}
+        {aanslagen && Object.keys(aanslagen).length > 0 && (
+          <div className="p-3 rounded-lg border bg-card">
+            <div className="flex items-center gap-2 mb-2">
+              <FileText className="h-4 w-4 text-purple-500" />
+              <span className="font-medium text-sm">Aanslagen</span>
+            </div>
+            <div className="space-y-1">
+              {Object.entries(aanslagen).map(([jaar, info]: [string, any]) => (
+                <div key={jaar} className="flex items-center justify-between text-xs">
+                  <span className="font-mono">{jaar}</span>
+                  {info.aanwezig ? (
+                    <Badge variant="outline" className="text-xs text-green-600 border-green-300">
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      {info.type || "Aanwezig"}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-300" title={info.opmerking}>
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      {info.opmerking ? "Niet beschikbaar" : "Ontbreekt"}
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Overige documenten */}
+      {overige && overige.length > 0 && (
+        <div className="p-3 rounded-lg border bg-muted/30">
+          <div className="text-xs font-medium text-muted-foreground mb-1">Overige documenten:</div>
+          <div className="flex flex-wrap gap-1">
+            {overige.map((doc: string, idx: number) => (
+              <Badge key={idx} variant="secondary" className="text-xs">{doc}</Badge>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -345,6 +716,16 @@ export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmai
   // INTERFACE_COMPLEET: Show generated dossier
   if (parsedOutput.status === "COMPLEET" && parsedOutput.dossier) {
     const { dossier } = parsedOutput;
+    // Cast to any because the new prompt generates a more comprehensive structure
+    // than the original TypeScript schema defines
+    const data = (dossier.gestructureerde_data || {}) as Record<string, any>;
+
+    // Fields that have dedicated renderers - exclude from generic table
+    const specialFields = [
+      'partijen', 'fiscale_partner', 'fiscaal_partnerschap', 'relevante_jaren',
+      'vermogensoverzicht_per_peildatum', 'transacties', 'inkomsten_buitenland',
+      'beschikbare_documenten', 'relevante_bedragen', 'overige_info', '_validatie'
+    ];
 
     return (
       <div className="space-y-4">
@@ -399,128 +780,229 @@ export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmai
               </div>
             )}
 
-            {/* Structured Data Table */}
+            {/* Basic Info Table - Partijen, Fiscaal Partner, Jaren */}
             <div className="space-y-2">
               <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                Gestructureerde Dossiergegevens
+                Basis Gegevens
               </h4>
-              <div className="border rounded-lg overflow-hidden overflow-x-auto">
-                <table className="w-full text-sm table-auto">
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
                   <tbody className="divide-y">
                     {/* Partijen */}
-                    {dossier.gestructureerde_data.partijen && dossier.gestructureerde_data.partijen.length > 0 && (
+                    {data.partijen && data.partijen.length > 0 && (
                       <tr className="hover:bg-muted/50">
-                        <td className="px-4 py-3 font-medium bg-muted/30 w-1/3 min-w-[120px]">
-                          Partijen
-                        </td>
-                        <td className="px-4 py-3 break-words">
-                          <div className="flex flex-wrap gap-1">
-                            {dossier.gestructureerde_data.partijen.map((partij, idx) => (
-                              <Badge key={idx} variant="outline" className="break-all max-w-full">
-                                {typeof partij === 'object' ? JSON.stringify(partij) : String(partij)}
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* Fiscale Partner */}
-                    <tr className="hover:bg-muted/50">
-                      <td className="px-4 py-3 font-medium bg-muted/30 min-w-[120px]">
-                        Fiscale Partner
-                      </td>
-                      <td className="px-4 py-3 break-words">
-                        <Badge variant={dossier.gestructureerde_data.fiscale_partner ? "default" : "secondary"}>
-                          {dossier.gestructureerde_data.fiscale_partner ? "Ja" : "Nee"}
-                        </Badge>
-                      </td>
-                    </tr>
-
-                    {/* Relevante Bedragen */}
-                    {dossier.gestructureerde_data.relevante_bedragen && Object.keys(dossier.gestructureerde_data.relevante_bedragen).length > 0 && (
-                      <tr className="hover:bg-muted/50">
-                        <td className="px-4 py-3 font-medium bg-muted/30 align-top min-w-[120px]">
-                          Relevante Bedragen
-                        </td>
-                        <td className="px-4 py-3 break-words max-w-0">
-                          <div className="space-y-2 text-xs">
-                            {Object.entries(dossier.gestructureerde_data.relevante_bedragen).map(([key, value]) => {
-                              // Handle nested objects by expanding them
-                              if (typeof value === 'object' && value !== null) {
-                                return (
-                                  <div key={key} className="space-y-1">
-                                    <div className="font-semibold text-muted-foreground">{key}:</div>
-                                    <div className="pl-4 space-y-1 bg-muted/30 p-2 rounded">
-                                      {Object.entries(value as Record<string, any>).map(([subKey, subValue]) => (
-                                        <div key={subKey} className="flex justify-between gap-2 text-xs">
-                                          <span className="text-muted-foreground break-all">{subKey}:</span>
-                                          <span className="font-semibold text-right break-all">{String(subValue)}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              // Simple value
-                              return (
-                                <div key={key} className="flex justify-between gap-2">
-                                  <span className="text-muted-foreground break-all">{key}:</span>
-                                  <span className="font-semibold font-mono text-right break-all">{String(value)}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* Overige Info */}
-                    {dossier.gestructureerde_data.overige_info && dossier.gestructureerde_data.overige_info.length > 0 && (
-                      <tr className="hover:bg-muted/50">
-                        <td className="px-4 py-3 font-medium bg-muted/30 align-top min-w-[120px]">
-                          Overige Informatie
-                        </td>
-                        <td className="px-4 py-3 break-words max-w-0">
-                          <ul className="space-y-1 text-xs list-disc list-inside">
-                            {dossier.gestructureerde_data.overige_info.map((info, idx) => (
-                              <li key={idx}>{typeof info === 'object' ? JSON.stringify(info) : String(info)}</li>
-                            ))}
-                          </ul>
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* Dynamic rendering of all other fields not explicitly handled above */}
-                    {Object.entries(dossier.gestructureerde_data || {})
-                      .filter(([key]) => !['partijen', 'fiscale_partner', 'relevante_bedragen', 'overige_info'].includes(key))
-                      .map(([key, value]) => {
-                        // Format the key name
-                        const formattedKey = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-
-                        return (
-                          <tr key={key} className="hover:bg-muted/50">
-                            <td className="px-4 py-3 font-medium bg-muted/30 align-top min-w-[120px]">
-                              {formattedKey}
-                            </td>
-                            <td className="px-4 py-3 break-words max-w-0">
-                              <div className="space-y-2 text-xs">
-                                {typeof value === 'object' && value !== null ? (
-                                  <pre className="whitespace-pre-wrap break-all bg-muted/30 p-2 rounded font-mono">
-                                    {JSON.stringify(value, null, 2)}
-                                  </pre>
+                        <td className="px-4 py-3 font-medium bg-muted/30 w-1/4">Partijen</td>
+                        <td className="px-4 py-3">
+                          <div className="space-y-1">
+                            {data.partijen.map((partij: any, idx: number) => (
+                              <div key={idx} className="flex items-center gap-2">
+                                {typeof partij === 'object' ? (
+                                  <>
+                                    <Badge variant="outline">{partij.naam}</Badge>
+                                    {partij.rol && <span className="text-xs text-muted-foreground">({partij.rol})</span>}
+                                    {partij.bsn && <span className="text-xs font-mono text-muted-foreground">BSN: {partij.bsn}</span>}
+                                  </>
                                 ) : (
-                                  <span className="font-mono">{String(value)}</span>
+                                  <Badge variant="outline">{String(partij)}</Badge>
                                 )}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Fiscaal Partnerschap */}
+                    {(data.fiscaal_partnerschap !== undefined || data.fiscale_partner !== undefined) && (
+                      <tr className="hover:bg-muted/50">
+                        <td className="px-4 py-3 font-medium bg-muted/30">Fiscaal Partnerschap</td>
+                        <td className="px-4 py-3">
+                          <Badge variant={(data.fiscaal_partnerschap || data.fiscale_partner) ? "default" : "secondary"}>
+                            {(data.fiscaal_partnerschap || data.fiscale_partner) ? "Ja" : "Nee"}
+                          </Badge>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Relevante Jaren */}
+                    {data.relevante_jaren && data.relevante_jaren.length > 0 && (
+                      <tr className="hover:bg-muted/50">
+                        <td className="px-4 py-3 font-medium bg-muted/30">Belastingjaren</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {data.relevante_jaren.map((jaar: string, idx: number) => (
+                              <Badge key={idx} variant="outline" className="font-mono">{jaar}</Badge>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Relevante Data (kernfeiten, dossier_type etc) */}
+                    {data.relevante_data && Object.keys(data.relevante_data).length > 0 && (
+                      <>
+                        {data.relevante_data.dossier_type && (
+                          <tr className="hover:bg-muted/50">
+                            <td className="px-4 py-3 font-medium bg-muted/30">Dossier Type</td>
+                            <td className="px-4 py-3">
+                              <Badge>{data.relevante_data.dossier_type}</Badge>
+                            </td>
+                          </tr>
+                        )}
+                        {data.relevante_data.kernfeiten && (
+                          <tr className="hover:bg-muted/50">
+                            <td className="px-4 py-3 font-medium bg-muted/30 align-top">Kernfeiten</td>
+                            <td className="px-4 py-3">
+                              <div className="space-y-1 text-sm">
+                                {Object.entries(data.relevante_data.kernfeiten).map(([key, value]: [string, any]) => (
+                                  <div key={key} className="flex gap-2">
+                                    <span className="text-muted-foreground">{key.replace(/_/g, ' ')}:</span>
+                                    <span className="font-medium">{String(value)}</span>
+                                  </div>
+                                ))}
                               </div>
                             </td>
                           </tr>
-                        );
-                      })}
+                        )}
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
+
+            {/* Vermogensoverzicht per Peildatum - NEW dedicated component */}
+            {data.vermogensoverzicht_per_peildatum && (
+              <VermogensoverzichtTable data={data.vermogensoverzicht_per_peildatum} />
+            )}
+
+            {/* Transacties - NEW dedicated component */}
+            {data.transacties && data.transacties.length > 0 && (
+              <TransactiesTable data={data.transacties} />
+            )}
+
+            {/* Inkomsten Buitenland - NEW dedicated component */}
+            {data.inkomsten_buitenland && data.inkomsten_buitenland.length > 0 && (
+              <InkomstenBuitenlandTable data={data.inkomsten_buitenland} />
+            )}
+
+            {/* Beschikbare Documenten - NEW dedicated component */}
+            {data.beschikbare_documenten && (
+              <BeschikbareDocumentenTable data={data.beschikbare_documenten} />
+            )}
+
+            {/* Legacy: Relevante Bedragen (for backward compatibility with old format) */}
+            {data.relevante_bedragen && Object.keys(data.relevante_bedragen).length > 0 && !data.vermogensoverzicht_per_peildatum && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Relevante Bedragen
+                </h4>
+                <div className="border rounded-lg p-4 space-y-2 text-sm">
+                  {Object.entries(data.relevante_bedragen).map(([key, value]) => {
+                    if (typeof value === 'object' && value !== null) {
+                      return (
+                        <div key={key} className="space-y-1">
+                          <div className="font-semibold text-muted-foreground">{key}:</div>
+                          <div className="pl-4 space-y-1 bg-muted/30 p-2 rounded text-xs">
+                            {Object.entries(value as Record<string, any>).map(([subKey, subValue]) => (
+                              <div key={subKey} className="flex justify-between gap-2">
+                                <span className="text-muted-foreground">{subKey}:</span>
+                                <span className="font-semibold">{String(subValue)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={key} className="flex justify-between gap-2">
+                        <span className="text-muted-foreground">{key}:</span>
+                        <span className="font-semibold font-mono">{String(value)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Overige Sleutelinformatie */}
+            {data.overige_sleutelinformatie && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Overige Sleutelinformatie
+                </h4>
+                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-sm">
+                  {data.overige_sleutelinformatie}
+                </div>
+              </div>
+            )}
+
+            {/* Validation info (if present) */}
+            {data._validatie && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Validatie
+                </h4>
+                <div className="p-3 rounded-lg bg-muted/30 text-xs space-y-2">
+                  {data._validatie.aannames && data._validatie.aannames.length > 0 && (
+                    <div>
+                      <span className="font-medium">Aannames:</span>
+                      <ul className="list-disc list-inside mt-1 space-y-0.5">
+                        {data._validatie.aannames.map((a: any, idx: number) => (
+                          <li key={idx}>{a.aanname} <span className="text-muted-foreground">({a.bron})</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {data._validatie.ontbrekende_data_geaccepteerd && data._validatie.ontbrekende_data_geaccepteerd.length > 0 && (
+                    <div>
+                      <span className="font-medium">Geaccepteerd ontbrekend:</span>
+                      <ul className="list-disc list-inside mt-1 space-y-0.5">
+                        {data._validatie.ontbrekende_data_geaccepteerd.map((o: any, idx: number) => (
+                          <li key={idx}>{o.item} <span className="text-muted-foreground">({o.reden_acceptatie})</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Any remaining fields not handled above */}
+            {Object.entries(data)
+              .filter(([key]) => !specialFields.includes(key) && !['relevante_data', 'overige_sleutelinformatie'].includes(key))
+              .length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Overige Gegevens
+                </h4>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y">
+                      {Object.entries(data)
+                        .filter(([key]) => !specialFields.includes(key) && !['relevante_data', 'overige_sleutelinformatie'].includes(key))
+                        .map(([key, value]) => {
+                          const formattedKey = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+                          return (
+                            <tr key={key} className="hover:bg-muted/50">
+                              <td className="px-4 py-3 font-medium bg-muted/30 w-1/4 align-top">{formattedKey}</td>
+                              <td className="px-4 py-3">
+                                {typeof value === 'object' && value !== null ? (
+                                  <pre className="whitespace-pre-wrap text-xs bg-muted/30 p-2 rounded font-mono">
+                                    {JSON.stringify(value, null, 2)}
+                                  </pre>
+                                ) : (
+                                  <span>{String(value)}</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

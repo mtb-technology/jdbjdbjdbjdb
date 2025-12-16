@@ -49,19 +49,3 @@ export type DossierStatusType =
  * Document classification confidence
  */
 export type ConfidenceLevel = "high" | "medium" | "low";
-
-// ==========================================
-// Legacy types (deprecated, for migration)
-// ==========================================
-
-/**
- * @deprecated Use Box3DossierLight from useBox3Sessions instead
- */
-export interface SessionLight {
-  id: string;
-  clientName: string;
-  belastingjaar: string | null;
-  attachmentCount: number;
-  createdAt: string;
-  updatedAt: string;
-}

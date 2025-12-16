@@ -40,7 +40,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
-import { parseFeedbackToProposals } from '@/lib/parse-feedback';
+import { parseFeedbackToProposals } from '@shared/lib/parse-feedback';
 import { STAGE_NAMES, REVIEW_STAGES } from '@shared/constants';
 import { QUERY_KEYS } from '@/lib/queryKeys';
 import { useToast } from '@/hooks/use-toast';
