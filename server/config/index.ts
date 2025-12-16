@@ -41,6 +41,9 @@ const envSchema = z.object({
   // Slack notifications
   SLACK_WEBHOOK_URL: z.string().url().optional(),
   PORTAL_BASE_URL: z.string().url().optional(),
+
+  // Automail webhook integration
+  AUTOMAIL_WEBHOOK_SECRET: z.string().min(16, 'AUTOMAIL_WEBHOOK_SECRET must be at least 16 characters').optional(),
 });
 
 // Validate environment variables
