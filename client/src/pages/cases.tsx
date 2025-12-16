@@ -405,32 +405,27 @@ function Cases() {
   }, []);
 
   const getStatusText = useCallback((status: string, report?: any) => {
-    switch (status) {
-      case "draft": return "Concept";
-      case "processing":
-      case "generated": {
-        // Calculate progress based on completed stages for both processing and generated
-        // Use WORKFLOW_STAGES (8 steps) instead of STAGE_ORDER (9 steps with 1b)
-        if (report?.stageResults) {
-          const completedStages = countCompletedStages(
-            report.stageResults,
-            report.conceptReportVersions || {}
-          );
-          const totalStages = WORKFLOW_STAGES.length; // 8 UI stages (excludes 1b)
-          const percentage = Math.round((completedStages / totalStages) * 100);
+    // Calculate completed stages if available
+    const totalStages = WORKFLOW_STAGES.length; // 8 UI stages
+    let completedStages = 0;
 
-          if (completedStages >= 3) {
-            return `Stap ${completedStages}/${totalStages} (${percentage}%)`;
-          } else if (completedStages > 0) {
-            return `Wordt gegenereerd... ${completedStages}/${totalStages}`;
-          }
-        }
-        // Fallback for processing without stage results yet
-        return status === "processing" ? "Bezig" : "Rapport Groeit";
-      }
+    if (report?.stageResults) {
+      completedStages = countCompletedStages(
+        report.stageResults,
+        report.conceptReportVersions || {}
+      );
+    }
+
+    // Always show step progress - active job badge shows if something is running
+    if (completedStages > 0) {
+      return `Stap ${completedStages}/${totalStages}`;
+    }
+
+    // Fallback for cases without progress
+    switch (status) {
       case "exported": return "Voltooid";
       case "archived": return "Gearchiveerd";
-      default: return status;
+      default: return "Stap 0/8"; // Not started yet
     }
   }, []);
 
@@ -586,7 +581,7 @@ function Cases() {
                           {getStatusText(case_.status, case_)}
                         </Badge>
                         {hasActiveJobForReport(case_.id) && (
-                          <Badge variant="default" className="bg-blue-500 hover:bg-blue-600 animate-pulse gap-1">
+                          <Badge variant="default" className="bg-blue-500 hover:bg-blue-600 gap-1">
                             <Loader2 className="h-3 w-3 animate-spin" />
                             {byReport[case_.id]?.types.includes("express_mode") ? "Express Mode" : "Verwerking"} actief
                           </Badge>

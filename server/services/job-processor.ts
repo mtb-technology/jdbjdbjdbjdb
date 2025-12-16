@@ -51,6 +51,7 @@ export interface ExpressModeJobConfig {
   includeGeneration: boolean;
   autoAccept: boolean;
   stages?: string[];
+  reportDepth?: "concise" | "balanced" | "comprehensive";
   reportLanguage?: "nl" | "en";
 }
 
@@ -329,9 +330,9 @@ class JobProcessor {
    */
   private async processExpressMode(job: Job, config: ExpressModeJobConfig): Promise<void> {
     const reportId = job.reportId!;
-    const { includeGeneration, autoAccept, reportLanguage } = config;
+    const { includeGeneration, autoAccept, reportDepth, reportLanguage } = config;
 
-    console.log(`🌐 [JobProcessor] Express Mode config:`, { includeGeneration, autoAccept, reportLanguage });
+    console.log(`🌐 [JobProcessor] Express Mode config:`, { includeGeneration, autoAccept, reportDepth, reportLanguage });
 
     // Get report
     let report = await storage.getReport(reportId);
@@ -404,7 +405,7 @@ class JobProcessor {
 
         if (isGenerationStage) {
           // Stage 3: Generate concept report
-          console.log(`🌐 [JobProcessor] Calling executeStage for 3_generatie with reportLanguage:`, reportLanguage);
+          console.log(`🌐 [JobProcessor] Calling executeStage for 3_generatie with reportDepth: ${reportDepth}, reportLanguage: ${reportLanguage}`);
           const stageExecution = await this.reportGenerator.executeStage(
             stageId,
             dossierData,
@@ -415,7 +416,7 @@ class JobProcessor {
             reportId,
             undefined, // onProgress
             undefined, // visionAttachments
-            undefined, // reportDepth
+            reportDepth, // reportDepth
             undefined, // signal
             reportLanguage
           );
@@ -473,7 +474,7 @@ class JobProcessor {
             reportId,
             undefined, // onProgress
             undefined, // visionAttachments
-            undefined, // reportDepth
+            reportDepth, // reportDepth (mainly used by stage 3, but pass through for consistency)
             undefined, // signal
             reportLanguage
           );

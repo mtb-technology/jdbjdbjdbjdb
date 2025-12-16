@@ -333,6 +333,7 @@ export function useCreateJob() {
         includeGeneration?: boolean;
         autoAccept?: boolean;
         stages?: string[];
+        reportDepth?: "concise" | "balanced" | "comprehensive";
         reportLanguage?: "nl" | "en";
       } = {}
     ): Promise<string | null> => {
@@ -341,6 +342,7 @@ export function useCreateJob() {
           includeGeneration: options.includeGeneration ?? false,
           autoAccept: options.autoAccept ?? true,
           stages: options.stages,
+          reportDepth: options.reportDepth,
           reportLanguage: options.reportLanguage,
         });
 

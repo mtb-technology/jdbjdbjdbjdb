@@ -15,6 +15,7 @@ interface ExpressModeButtonProps {
   disabled?: boolean;
   includeGeneration?: boolean; // Start from stage 3 (after stage 2 completion)
   hasStage3?: boolean; // Whether stage 3 is already completed
+  reportDepth?: "concise" | "balanced" | "comprehensive"; // Depth for report generation (only used when includeGeneration is true)
   reportLanguage?: "nl" | "en"; // Language for report generation (only used when includeGeneration is true)
 }
 
@@ -35,6 +36,7 @@ export function ExpressModeButton({
   disabled,
   includeGeneration = false,
   hasStage3 = true,
+  reportDepth,
   reportLanguage
 }: ExpressModeButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -139,7 +141,9 @@ export function ExpressModeButton({
     try {
       console.log(`[ExpressMode] Starting background job for report ${reportId}...`, {
         includeGeneration,
+        reportDepth,
         reportLanguage,
+        willSendDepth: includeGeneration ? reportDepth : undefined,
         willSendLanguage: includeGeneration ? reportLanguage : undefined
       });
 
@@ -147,6 +151,7 @@ export function ExpressModeButton({
       const jobId = await createExpressModeJob(reportId, {
         includeGeneration,
         autoAccept: true,
+        reportDepth: includeGeneration ? reportDepth : undefined,
         reportLanguage: includeGeneration ? reportLanguage : undefined,
       });
 

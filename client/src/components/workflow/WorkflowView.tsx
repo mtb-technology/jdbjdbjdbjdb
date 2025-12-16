@@ -271,7 +271,18 @@ export const WorkflowView = memo(function WorkflowView({
 
                   const isActive = index === state.currentStageIndex;
                   const rawStageStatus = getStageStatus(index);
-                  const isProcessing = state.stageProcessing[stage.key];
+
+                  // Check if processing via local state OR via active background job
+                  // For Express Mode: block ALL stages while it's running
+                  const hasActiveExpressMode = activeJob?.type === "express_mode";
+                  const isProcessingViaJob = activeJob?.progress?.currentStage === stage.key ||
+                    (hasActiveExpressMode && activeJob?.progress?.stages?.some(
+                      (s: JobStageProgress) => s.stageId === stage.key && s.status === "running"
+                    ));
+                  const isProcessing = state.stageProcessing[stage.key] || isProcessingViaJob;
+
+                  // Block execution if Express Mode is running (can't start new stages)
+                  const isBlockedByExpressMode = hasActiveExpressMode;
 
                   // Keep stage 1a expanded when it has results (so user can see the email)
                   const shouldKeep1aExpanded = stage.key === "1a_informatiecheck" && !!stageResult;
@@ -296,8 +307,8 @@ export const WorkflowView = memo(function WorkflowView({
                     }
                   }
 
-                  // Can execute check
-                  const canExecute = canExecuteStage(
+                  // Can execute check - also blocked if Express Mode is running
+                  const canExecute = !isBlockedByExpressMode && canExecuteStage(
                     index,
                     state.stageResults,
                     state.conceptReportVersions
