@@ -433,16 +433,16 @@ ${question.expectedScope}
     originalQuery: string,
     findings: ResearchFinding[]
   ): Promise<Omit<ResearchReport, 'metadata'>> {
-    // Combine all findings into context
+    // Combine all findings into context - label as INTERNAL research questions
     const findingsContext = findings
       .map((f, idx) => {
         const sourcesText = f.sources.length > 0
           ? `\nBronnen:\n${f.sources.map(s => `- ${s.title}${s.url ? ` (${s.url})` : ''}: ${s.snippet}`).join('\n')}`
           : '';
 
-        return `### BEVINDING ${idx + 1}
-Vraag: ${f.question}
-Antwoord: ${f.answer}
+        return `### INTERNE ONDERZOEKSVRAAG ${idx + 1} (door ons gesteld, NIET door de klant):
+Onderzochte vraag: ${f.question}
+Bevinding: ${f.answer}
 Betrouwbaarheid: ${(f.confidence * 100).toFixed(0)}%${sourcesText}`;
       })
       .join('\n\n');
@@ -450,10 +450,23 @@ Betrouwbaarheid: ${(f.confidence * 100).toFixed(0)}%${sourcesText}`;
     const ds = this.depthSettings;
     const publisherPrompt = `${this.languageInstruction}Je bent een expert onderzoeksverslaggever gespecialiseerd in fiscale rapportages. Synthetiseer de volgende onderzoeksbevindingen in een professioneel onderzoeksrapport.
 
-ORIGINELE ONDERZOEKSVRAAG:
+ORIGINELE CONTEXT (bevat de klantvraag):
 ${originalQuery}
 
-ONDERZOEKSBEVINDINGEN:
+---
+## BELANGRIJK - ONDERSCHEID KLANTVRAAG VS ONDERZOEK
+
+De onderzoeksvragen hieronder zijn INTERNE vragen die WIJ hebben gesteld om een compleet advies te kunnen geven.
+Dit zijn GEEN vragen van de klant.
+
+SCHRIJFREGELS:
+- Verwijs ALLEEN naar "de vraag" of "gevraagd" als het LETTERLIJK in de klantvraag staat
+- Voor onderzoeksbevindingen gebruik: "Uit onderzoek blijkt...", "Relevant is...", "Aanvullend merken wij op..."
+- NOOIT: "De eerdere analyse ging uit van..." (er is geen eerdere analyse)
+- NOOIT: "Er werd specifiek gevraagd naar..." voor onderwerpen uit het onderzoek
+
+---
+INTERNE ONDERZOEKSBEVINDINGEN:
 ${findingsContext}
 
 **INSTRUCTIES VOOR HET ONDERZOEKSRAPPORT:**
@@ -555,13 +568,16 @@ Dit tussenrapport dient als basis voor het eindrapport.
     researchReport: Omit<ResearchReport, 'metadata'>,
     findings: ResearchFinding[]
   ): Promise<Omit<ResearchReport, 'metadata'>> {
-    // Build context from research findings
+    // Build context from research findings - EXPLICITLY label as internal research questions
+    // This prevents the report writer from confusing these with actual client questions
     const researchContext = findings
       .map((f, idx) => {
         const sourcesText = f.sources.length > 0
           ? `\nBronnen: ${f.sources.map(s => s.title).join(', ')}`
           : '';
-        return `### Onderzoeksresultaat ${idx + 1}: ${f.question}\n${f.answer}${sourcesText}`;
+        return `### INTERNE ONDERZOEKSVRAAG ${idx + 1} (door ons gesteld, NIET door de klant):
+**Onderzochte vraag:** ${f.question}
+**Bevinding:** ${f.answer}${sourcesText}`;
       })
       .join('\n\n');
 
@@ -574,9 +590,23 @@ Dit tussenrapport dient als basis voor het eindrapport.
     const finalPrompt = `${this.languageInstruction}${originalQuery}
 
 ---
-## AANVULLENDE ONDERZOEKSRESULTATEN (gebruik deze informatie bij het schrijven van het rapport)
+## BELANGRIJK - ONDERSCHEID KLANTVRAAG VS ONDERZOEK
 
-De volgende informatie is verzameld via onderzoek met actuele bronnen. Integreer deze bevindingen in het rapport waar relevant:
+Hieronder staan INTERNE onderzoeksvragen die WIJ hebben gesteld om een compleet advies te kunnen geven.
+Dit zijn GEEN vragen van de klant. De klant heeft deze vragen NIET gesteld.
+
+Bij het schrijven van het rapport:
+- De KLANTVRAAG staat in de originele instructies hierboven (klantvraag_verbatim of situatie)
+- De ONDERZOEKSVRAGEN hieronder zijn door ons gesteld om het advies completer te maken
+
+SCHRIJFREGELS:
+- Verwijs ALLEEN naar "uw vraag" of "u vroeg" als het LETTERLIJK in de klantvraag staat
+- Voor onderzoeksbevindingen gebruik: "Voor de volledigheid...", "Relevant is ook...", "Aanvullend merken wij op..."
+- NOOIT: "De eerdere analyse ging uit van..." (er is geen eerdere analyse)
+- NOOIT: "You specifically asked..." voor onderwerpen uit het onderzoek
+
+---
+## INTERNE ONDERZOEKSRESULTATEN (gebruik om het rapport te verrijken)
 
 ${researchContext}
 
