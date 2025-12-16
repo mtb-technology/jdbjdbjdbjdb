@@ -214,6 +214,7 @@ export function useStageActions({
       });
       if (state.currentReport?.id) {
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
+        queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
       }
     },
     [dispatch, toast, queryClient, state.currentReport?.id]

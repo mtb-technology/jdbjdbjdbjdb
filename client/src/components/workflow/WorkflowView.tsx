@@ -106,8 +106,10 @@ export const WorkflowView = memo(function WorkflowView({
     }
 
     // Invalidate and refetch report data
+    // Use both key formats to handle cache split (legacy API path keys vs structured keys)
     if (state.currentReport?.id) {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
     }
 
@@ -200,6 +202,7 @@ export const WorkflowView = memo(function WorkflowView({
 
     if (state.currentReport?.id) {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
     }
 
@@ -212,6 +215,7 @@ export const WorkflowView = memo(function WorkflowView({
     console.log(`📝 [WorkflowView] Adjustment applied, refreshing data...`);
     if (state.currentReport?.id) {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(state.currentReport.id) });
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${state.currentReport.id}`] });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
     }
   }, [state.currentReport?.id, queryClient]);

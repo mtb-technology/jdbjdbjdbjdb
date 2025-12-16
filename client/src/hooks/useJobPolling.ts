@@ -110,7 +110,9 @@ export function useJobPolling({
       completedRef.current = true;
 
       // Invalidate report queries to refresh data
+      // Use both key formats to handle cache split (legacy API path keys vs structured keys)
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(reportId) });
+      queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
 
       toast({
         title: job.type === "express_mode" ? "Express Mode voltooid" : "Stage voltooid",
@@ -258,6 +260,7 @@ export function useCancelJob() {
         if (reportId) {
           queryClient.invalidateQueries({ queryKey: ["activeJobs", reportId] });
           queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.detail(reportId) });
+          queryClient.invalidateQueries({ queryKey: [`/api/reports/${reportId}`] });
         }
         queryClient.invalidateQueries({ queryKey: ["allActiveJobs"] });
 
