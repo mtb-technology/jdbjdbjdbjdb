@@ -186,7 +186,7 @@ class JobProcessor {
    * Process a single stage job
    */
   private async processSingleStage(job: Job, config: SingleStageJobConfig): Promise<void> {
-    const { stageId, customInput, reportDepth, reportLanguage } = config;
+    const { stageId, customInput, reportDepth, reportLanguage: configLanguage } = config;
     const reportId = job.reportId!;
 
     // Update progress
@@ -202,6 +202,9 @@ class JobProcessor {
     if (!report) {
       throw new Error("Report not found");
     }
+
+    // Use config language OR fall back to persisted language from Stage 3
+    const reportLanguage = configLanguage || (report.reportLanguage as "nl" | "en") || "nl";
 
     // Update progress
     await this.updateProgress(job.id, {
@@ -330,15 +333,18 @@ class JobProcessor {
    */
   private async processExpressMode(job: Job, config: ExpressModeJobConfig): Promise<void> {
     const reportId = job.reportId!;
-    const { includeGeneration, autoAccept, reportDepth, reportLanguage } = config;
-
-    console.log(`🌐 [JobProcessor] Express Mode config:`, { includeGeneration, autoAccept, reportDepth, reportLanguage });
+    const { includeGeneration, autoAccept, reportDepth, reportLanguage: configLanguage } = config;
 
     // Get report
     let report = await storage.getReport(reportId);
     if (!report) {
       throw new Error("Report not found");
     }
+
+    // Use config language OR fall back to persisted language from Stage 3
+    const reportLanguage = configLanguage || (report.reportLanguage as "nl" | "en") || "nl";
+
+    console.log(`🌐 [JobProcessor] Express Mode config:`, { includeGeneration, autoAccept, reportDepth, reportLanguage });
 
     // Build stages list
     let stages: string[] = [];
@@ -457,8 +463,11 @@ class JobProcessor {
             stageResults: updatedStageResults,
             conceptReportVersions: newConceptVersions,
             generatedContent: stageExecution.stageOutput,
-            currentStage: stageId as StageId
+            currentStage: stageId as StageId,
+            // Persist language for subsequent review stages
+            reportLanguage: reportLanguage
           });
+          console.log(`🌐 [JobProcessor] Stage 3: Persisting report language: ${reportLanguage}`);
 
           report = await storage.getReport(reportId) || report;
 

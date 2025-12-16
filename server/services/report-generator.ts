@@ -420,11 +420,12 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       ? promptResult
       : `${promptResult.systemPrompt}\n\n### USER INPUT:\n${promptResult.userInput}`;
 
-    // Add language instruction for Stage 3 generation
-    if (reportLanguage && stageName === "3_generatie") {
-      const languageInstruction = reportLanguage === "en"
+    // Add language instruction for ALL stages when language is English
+    // This ensures review stages (4a-4f) output in the same language as the generated report
+    if (reportLanguage === "en") {
+      const languageInstruction = stageName === "3_generatie"
         ? "\n\n[LANGUAGE INSTRUCTION]\nIMPORTANT: Write the entire report in English. All headings, paragraphs, and content should be in professional English. Do NOT use Dutch anywhere in the output."
-        : ""; // Default is Dutch, no extra instruction needed
+        : "\n\n[LANGUAGE INSTRUCTION]\nIMPORTANT: The report you are reviewing is written in ENGLISH. You MUST write ALL your feedback, suggestions, and analysis in English. Do NOT use Dutch in your response.";
 
       if (typeof promptResult === 'string') {
         promptString = promptResult + languageInstruction;
@@ -434,9 +435,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         promptString = `${promptResult.systemPrompt}\n\n### USER INPUT:\n${promptResult.userInput}`;
       }
 
-      if (reportLanguage === "en") {
-        console.log(`🌐 [${jobId}] Generating report in ENGLISH`);
-      }
+      console.log(`🌐 [${jobId}] ${stageName}: Using ENGLISH language instruction`);
     }
 
     // Get active prompt configuration from database for AI config
