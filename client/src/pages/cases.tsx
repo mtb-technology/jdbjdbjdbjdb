@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ToastAction } from "@/components/ui/toast";
-import { Search, FileText, Calendar, User, Download, Trash2, Eye, Archive, Package, Loader2, Upload } from "lucide-react";
+import { Search, FileText, Calendar, User, Download, Trash2, Eye, Copy, Package, Loader2, Upload } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -36,12 +36,12 @@ interface CasesResponse {
 }
 
 // Memoized Case Item Component for better performance
-const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, handleExport, updateStatusMutation, handleDelete }: {
+const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, handleExport, handleDuplicate, handleDelete }: {
   case_: Case;
   getStatusColor: (status: string) => "secondary" | "default" | "outline" | "destructive" | undefined;
   getStatusText: (status: string, report?: any) => string;
   handleExport: (caseId: string, format: string) => void;
-  updateStatusMutation: any;
+  handleDuplicate: (caseId: string) => void;
   handleDelete: (caseId: string, caseName: string) => void;
 }) {
   return (
@@ -98,17 +98,15 @@ const CaseItem = memo(function CaseItem({ case_, getStatusColor, getStatusText, 
                 </Button>
               </>
             )}
-            {case_.status !== "archived" && (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => updateStatusMutation.mutate({ id: case_.id, status: "archived" })}
-                data-testid={`button-archive-${case_.id}`}
-              >
-                <Archive className="h-4 w-4 mr-2" />
-                Archiveren
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleDuplicate(case_.id)}
+              data-testid={`button-duplicate-${case_.id}`}
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              Dupliceren
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" data-testid={`button-delete-${case_.id}`}>
@@ -278,6 +276,40 @@ function Cases() {
       });
     }
   });
+
+  const duplicateCaseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("POST", `/api/reports/${id}/duplicate`, {
+        resetToStage: "2_complexiteitscheck"
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/cases"],
+        refetchType: 'all'
+      });
+      const result = data?.data || data;
+      toast({
+        title: "Case gedupliceerd",
+        description: `Kopie aangemaakt: ${result?.title || 'nieuwe case'}`,
+        duration: 5000,
+      });
+    },
+    onError: (error: any) => {
+      const message = error?.userMessage || error?.message || "Er ging iets mis bij het dupliceren";
+      toast({
+        title: "Dupliceren mislukt",
+        description: message,
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  });
+
+  const handleDuplicate = useCallback((caseId: string) => {
+    duplicateCaseMutation.mutate(caseId);
+  }, [duplicateCaseMutation]);
 
   const handleImportFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -497,7 +529,6 @@ function Cases() {
                   <SelectItem value="processing">Bezig</SelectItem>
                   <SelectItem value="generated">Voltooid</SelectItem>
                   <SelectItem value="exported">Geëxporteerd</SelectItem>
-                  <SelectItem value="archived">Gearchiveerd</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -603,17 +634,15 @@ function Cases() {
                           </Button>
                         </>
                       )}
-                      {case_.status !== "archived" && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => updateStatusMutation.mutate({ id: case_.id, status: "archived" })}
-                          data-testid={`button-archive-${case_.id}`}
-                        >
-                          <Archive className="h-4 w-4 mr-2" />
-                          Archiveren
-                        </Button>
-                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDuplicate(case_.id)}
+                        data-testid={`button-duplicate-${case_.id}`}
+                      >
+                        <Copy className="h-4 w-4 mr-2" />
+                        Dupliceren
+                      </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="outline" size="sm" data-testid={`button-delete-${case_.id}`}>
