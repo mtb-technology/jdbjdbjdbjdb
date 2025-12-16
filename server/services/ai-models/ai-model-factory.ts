@@ -99,29 +99,37 @@ export class AIModelFactory {
 
     // Initialize OpenAI handlers with additional validation
     if (openaiApiKey) {
-      // Validate OpenAI key format
+      // Validate OpenAI key format - but don't exit the entire function!
+      // This was a bug: `return` would skip ALL remaining initialization
       if (!openaiApiKey.startsWith('sk-') || openaiApiKey.length < 32) {
         console.warn('⚠️ Invalid OpenAI API key format - OpenAI handlers will not be initialized');
-        return; // Skip OpenAI initialization instead of throwing
-      }
+        // Continue with other handlers instead of returning
+      } else {
+        // Initialize all OpenAI handlers (only if key format is valid)
+        initializeHandler("openai-standard", OpenAIStandardHandler, openaiApiKey);
+        initializeHandler("openai-reasoning", OpenAIReasoningHandler, openaiApiKey);
 
-      // Initialize all OpenAI handlers
-      initializeHandler("openai-standard", OpenAIStandardHandler, openaiApiKey);
-      initializeHandler("openai-reasoning", OpenAIReasoningHandler, openaiApiKey);
-      initializeHandler("openai-standard", OpenAIStandardHandler, openaiApiKey, "gpt-4o");
-      
-      // Deep research handlers
-      // Note: Deep research models are experimental and may not be available
-      // Using o3-mini for advanced reasoning instead
-      initializeHandler(
-        "openai-reasoning",
-        OpenAIReasoningHandler,
-        openaiApiKey,
-        "o3-mini"
-      );
-      initializeHandler("openai-gpt5", OpenAIGPT5Handler, openaiApiKey);
+        // Deep research handlers
+        // Note: Deep research models are experimental and may not be available
+        // Using o3-mini for advanced reasoning instead
+        initializeHandler(
+          "openai-reasoning",
+          OpenAIReasoningHandler,
+          openaiApiKey,
+          "o3-mini"
+        );
+        initializeHandler("openai-gpt5", OpenAIGPT5Handler, openaiApiKey);
+      }
     } else {
       console.warn('⚠️ OpenAI API key not configured');
+    }
+
+    // Log initialization summary
+    const initializedHandlers = Array.from(this.handlers.keys());
+    if (initializedHandlers.length === 0) {
+      console.error('🚨 No AI handlers initialized! Check API keys in environment.');
+    } else {
+      console.log(`✅ AI Model Factory initialized with handlers: ${initializedHandlers.join(', ')}`);
     }
   }
 
