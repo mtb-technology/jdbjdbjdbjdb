@@ -279,9 +279,7 @@ function Cases() {
 
   const duplicateCaseMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await apiRequest("POST", `/api/reports/${id}/duplicate`, {
-        resetToStage: "2_complexiteitscheck"
-      });
+      const response = await apiRequest("POST", `/api/reports/${id}/duplicate`, {});
       return response.json();
     },
     onSuccess: (data) => {

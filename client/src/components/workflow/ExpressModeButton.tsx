@@ -137,7 +137,11 @@ export function ExpressModeButton({
     setShowResults(false);
 
     try {
-      console.log(`[ExpressMode] Starting background job for report ${reportId}...`, { includeGeneration });
+      console.log(`[ExpressMode] Starting background job for report ${reportId}...`, {
+        includeGeneration,
+        reportLanguage,
+        willSendLanguage: includeGeneration ? reportLanguage : undefined
+      });
 
       // Create background job instead of SSE stream
       const jobId = await createExpressModeJob(reportId, {

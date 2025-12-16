@@ -155,48 +155,33 @@ export function registerCrudRoutes(
   });
 
   /**
-   * Duplicate a report (reset to after stage 2)
+   * Duplicate a report (full copy)
    * POST /api/reports/:id/duplicate
-   * Creates a copy with only stages 1-2 preserved, ready for re-generation
+   * Creates a complete copy of the report with all data preserved
    */
   app.post("/api/reports/:id/duplicate", asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { resetToStage = "2_complexiteitscheck" } = req.body;
 
     const sourceReport = await storage.getReport(id);
     if (!sourceReport) {
       throw ServerError.notFound("Report");
     }
 
-    // Determine which stages to keep based on resetToStage
-    const stageOrder = ["1a_informatiecheck", "1b_dossieranalyse", "2_complexiteitscheck", "3_generatie"];
-    const resetIndex = stageOrder.indexOf(resetToStage);
-    const stagesToKeep = resetIndex >= 0 ? stageOrder.slice(0, resetIndex + 1) : stageOrder.slice(0, 3);
-
-    // Filter stageResults to only keep stages up to resetToStage
-    const sourceStageResults = (sourceReport.stageResults as Record<string, unknown>) || {};
-    const filteredStageResults: Record<string, unknown> = {};
-    for (const stage of stagesToKeep) {
-      if (sourceStageResults[stage]) {
-        filteredStageResults[stage] = sourceStageResults[stage];
-      }
-    }
-
-    // Create duplicate with filtered data
+    // Create full duplicate with all data
     const duplicate = await storage.createReport({
       title: `${sourceReport.title} (kopie)`,
       clientName: sourceReport.clientName,
       dossierData: sourceReport.dossierData as DossierData,
       bouwplanData: sourceReport.bouwplanData as BouwplanData,
-      generatedContent: null, // Reset generated content
-      stageResults: filteredStageResults,
-      conceptReportVersions: {}, // Reset concept versions
-      currentStage: resetToStage,
-      status: "draft",
+      generatedContent: sourceReport.generatedContent,
+      stageResults: sourceReport.stageResults as Record<string, unknown>,
+      conceptReportVersions: sourceReport.conceptReportVersions as Record<string, unknown>,
+      currentStage: sourceReport.currentStage,
+      status: sourceReport.status,
     });
 
-    console.log(`Report duplicated: ${id} -> ${duplicate.id} (reset to ${resetToStage})`);
-    res.json(createApiSuccessResponse(duplicate, "Rapport gedupliceerd en gereset"));
+    console.log(`Report duplicated: ${id} -> ${duplicate.id} (full copy)`);
+    res.json(createApiSuccessResponse(duplicate, "Rapport gedupliceerd"));
   }));
 
   // ============================================================

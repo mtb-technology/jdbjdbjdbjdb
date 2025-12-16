@@ -95,7 +95,10 @@ export function registerJobRoutes(app: Express): void {
     const { id } = req.params;
     const validatedData = createExpressModeJobSchema.parse(req.body);
 
-    console.log(`🚀 [${id}] Creating Express Mode job`, { includeGeneration: validatedData.includeGeneration });
+    console.log(`🚀 [${id}] Creating Express Mode job`, {
+      includeGeneration: validatedData.includeGeneration,
+      reportLanguage: validatedData.reportLanguage
+    });
 
     // Check if report exists
     const report = await storage.getReport(id);
