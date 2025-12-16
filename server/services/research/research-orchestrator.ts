@@ -72,7 +72,6 @@ export class ResearchOrchestrator {
   private handler: GoogleAIHandler;
   private config: ResearchConfig;
   private depthSettings: DepthSettings;
-  private isEnglish: boolean;
 
   constructor(apiKey: string, config: Partial<ResearchConfig> = {}) {
     // Pass true to skip deep research (prevent circular dependency)
@@ -89,14 +88,10 @@ export class ResearchOrchestrator {
       maxOutputTokens: 8192,
       timeout: 1800000, // 30 minutes
       reportDepth,
-      reportLanguage: 'nl', // Default to Dutch
       ...config
     };
 
-    // Cache language check for easier access
-    this.isEnglish = this.config.reportLanguage === 'en';
-
-    console.log(`[ResearchOrchestrator] Initialized with depth: ${reportDepth}, language: ${this.config.reportLanguage}`);
+    console.log(`[ResearchOrchestrator] Initialized with depth: ${reportDepth}`);
   }
 
   /**
@@ -114,7 +109,7 @@ export class ResearchOrchestrator {
       // PHASE 1: PLANNER - Generate research questions
       progressCallback?.({
         stage: 'planning',
-        message: this.isEnglish ? 'Analyzing query and generating research plan...' : 'Analyseren van de vraag en genereren van onderzoeksplan...',
+        message: 'Analyseren van de vraag en genereren van onderzoeksplan...',
         progress: 10
       });
 
@@ -123,14 +118,14 @@ export class ResearchOrchestrator {
 
       progressCallback?.({
         stage: 'planning',
-        message: this.isEnglish ? `${questions.length} research questions generated` : `${questions.length} onderzoeksvragen gegenereerd`,
+        message: `${questions.length} onderzoeksvragen gegenereerd`,
         progress: 20
       });
 
       // PHASE 2: EXECUTOR - Parallel research execution
       progressCallback?.({
         stage: 'executing',
-        message: this.isEnglish ? 'Executing research with Google Search grounding...' : 'Uitvoeren van onderzoek met Google Search grounding...',
+        message: 'Uitvoeren van onderzoek met Google Search grounding...',
         progress: 30
       });
 
@@ -138,7 +133,7 @@ export class ResearchOrchestrator {
         const execProgress = 30 + (60 * current / total);
         progressCallback?.({
           stage: 'executing',
-          message: this.isEnglish ? `Research ${current}/${total}: ${questions[current - 1]?.question}` : `Onderzoek ${current}/${total}: ${questions[current - 1]?.question}`,
+          message: `Onderzoek ${current}/${total}: ${questions[current - 1]?.question}`,
           progress: execProgress,
           currentQuestion: questions[current - 1]?.question
         });
@@ -148,14 +143,14 @@ export class ResearchOrchestrator {
 
       progressCallback?.({
         stage: 'executing',
-        message: this.isEnglish ? `${findings.length} findings collected` : `${findings.length} bevindingen verzameld`,
+        message: `${findings.length} bevindingen verzameld`,
         progress: 90
       });
 
       // PHASE 3: PUBLISHER - Synthesize research findings
       progressCallback?.({
         stage: 'publishing',
-        message: this.isEnglish ? 'Synthesizing research results...' : 'Synthetiseren van onderzoeksresultaten...',
+        message: 'Synthetiseren van onderzoeksresultaten...',
         progress: 85
       });
 
@@ -165,7 +160,7 @@ export class ResearchOrchestrator {
       // PHASE 4: FINAL SYNTHESIS - Generate final report using original prompt
       progressCallback?.({
         stage: 'finalizing',
-        message: this.isEnglish ? 'Generating final report according to prompt instructions...' : 'Genereren van eindrapport volgens promptinstructies...',
+        message: 'Genereren van eindrapport volgens promptinstructies...',
         progress: 92
       });
 
@@ -176,7 +171,7 @@ export class ResearchOrchestrator {
 
       progressCallback?.({
         stage: 'complete',
-        message: this.isEnglish ? 'Deep research completed' : 'Deep research voltooid',
+        message: 'Deep research voltooid',
         progress: 100,
         findings
       });
@@ -204,31 +199,7 @@ export class ResearchOrchestrator {
    * Uses Gemini 3 Pro with high thinking to decompose query
    */
   private async planResearch(query: string): Promise<ResearchQuestion[]> {
-    const plannerPrompt = this.isEnglish
-      ? `You are an expert research planner. Analyze the following research query and generate ${this.config.maxQuestions} specific, focused sub-questions that together can provide a complete answer.
-
-RESEARCH QUERY:
-${query}
-
-Generate ${this.config.maxQuestions} sub-questions that:
-1. Are specific and focused
-2. Cover different aspects of the main question
-3. Are answerable through web research
-4. Together provide a complete picture
-
-Provide your answer as a JSON array:
-[
-  {
-    "id": "q1",
-    "question": "Specific sub-question here",
-    "priority": "high",
-    "expectedScope": "What kind of information do you expect to find"
-  },
-  ...
-]
-
-Provide ONLY the JSON array, no other text.`
-      : `Je bent een expert onderzoeksplanner. Analyseer de volgende onderzoeksvraag en genereer ${this.config.maxQuestions} specifieke, gefocuste deelvragen die samen een volledig antwoord kunnen geven.
+    const plannerPrompt = `Je bent een expert onderzoeksplanner. Analyseer de volgende onderzoeksvraag en genereer ${this.config.maxQuestions} specifieke, gefocuste deelvragen die samen een volledig antwoord kunnen geven.
 
 ONDERZOEKSVRAAG:
 ${query}
@@ -329,37 +300,7 @@ Geef ALLEEN de JSON array, geen andere tekst.`;
     const startTime = Date.now();
     const { min: minWords, max: maxWords } = this.depthSettings.executorWords;
 
-    const researchPrompt = this.isEnglish
-      ? `You are a fiscal researcher conducting research for a professional advisory report. Answer the following research question.
-
-RESEARCH QUESTION:
-${question.question}
-
-EXPECTED SCOPE:
-${question.expectedScope}
-
-**REQUIRED DEPTH - Provide an answer of ${minWords}-${maxWords} words with:**
-
-1. **DIRECT ANSWER**
-   - Core answer to the question
-   - Relevant legal provisions (article numbers, regulations)
-   - Current rates, percentages, thresholds
-
-2. **CONTEXT**
-   - Background and purpose of the regulation
-   - Conditions and exceptions
-   - Recent legislative changes (2024-2025)
-
-3. **PRACTICAL APPLICATION**
-   - Concrete examples with figures where relevant
-   - Pitfalls and points of attention
-
-4. **SOURCES**
-   - Explicitly mention every source you use
-   - Provide URLs or references where possible
-
-**IMPORTANT:** This research will be used for a professional fiscal advisory report. Be specific and concrete.`
-      : `Je bent een fiscaal onderzoeker die onderzoek doet voor een professioneel adviesrapport. Beantwoord de volgende onderzoeksvraag.
+    const researchPrompt = `Je bent een fiscaal onderzoeker die onderzoek doet voor een professioneel adviesrapport. Beantwoord de volgende onderzoeksvraag.
 
 ONDERZOEKSVRAAG:
 ${question.question}
@@ -489,17 +430,10 @@ ${question.expectedScope}
     const findingsContext = findings
       .map((f, idx) => {
         const sourcesText = f.sources.length > 0
-          ? this.isEnglish
-            ? `\nSources:\n${f.sources.map(s => `- ${s.title}${s.url ? ` (${s.url})` : ''}: ${s.snippet}`).join('\n')}`
-            : `\nBronnen:\n${f.sources.map(s => `- ${s.title}${s.url ? ` (${s.url})` : ''}: ${s.snippet}`).join('\n')}`
+          ? `\nBronnen:\n${f.sources.map(s => `- ${s.title}${s.url ? ` (${s.url})` : ''}: ${s.snippet}`).join('\n')}`
           : '';
 
-        return this.isEnglish
-          ? `### FINDING ${idx + 1}
-Question: ${f.question}
-Answer: ${f.answer}
-Confidence: ${(f.confidence * 100).toFixed(0)}%${sourcesText}`
-          : `### BEVINDING ${idx + 1}
+        return `### BEVINDING ${idx + 1}
 Vraag: ${f.question}
 Antwoord: ${f.answer}
 Betrouwbaarheid: ${(f.confidence * 100).toFixed(0)}%${sourcesText}`;
@@ -507,51 +441,7 @@ Betrouwbaarheid: ${(f.confidence * 100).toFixed(0)}%${sourcesText}`;
       .join('\n\n');
 
     const ds = this.depthSettings;
-    const publisherPrompt = this.isEnglish
-      ? `You are an expert research reporter specialized in fiscal reports. Synthesize the following research findings into a professional research report.
-
-ORIGINAL RESEARCH QUERY:
-${originalQuery}
-
-RESEARCH FINDINGS:
-${findingsContext}
-
-**INSTRUCTIONS FOR THE RESEARCH REPORT:**
-
-This intermediate report serves as the basis for the final report.
-
-**REQUIRED STRUCTURE AND DEPTH:**
-
-1. **SUMMARY** (${ds.publisherSummaryWords.min}-${ds.publisherSummaryWords.max} words)
-   - Core answer to the main question with concrete conclusions
-   - Main findings per sub-area
-   - Concrete figures, percentages and amounts where available
-
-2. **ANALYSIS PER TOPIC** (${ds.publisherAnalysisWords.min}-${ds.publisherAnalysisWords.max} words)
-   - Treat each finding in its own subsection
-   - Legal basis (articles, regulations)
-   - Concrete examples from the case
-   - Compare alternatives where relevant
-
-3. **PRACTICAL IMPLICATIONS** (${ds.publisherImplicationsWords.min}-${ds.publisherImplicationsWords.max} words)
-   - Concrete action points
-   - Required documentation
-   - Pitfalls and points of attention
-
-4. **SOURCE REFERENCES**
-   - Inline citations with claims [Source: name]
-   - Source list at the end
-
-5. **CONCLUSION** (${ds.publisherConclusionWords.min}-${ds.publisherConclusionWords.max} words)
-   - Direct answer to the question
-   - Prioritization of recommendations
-
-**WRITING STYLE:**
-- Professional and clear English
-- Use tables for comparisons where useful
-- Avoid vague terms - be SPECIFIC
-- The report must contain AT LEAST ${ds.publisherTotalWords} words`
-      : `Je bent een expert onderzoeksverslaggever gespecialiseerd in fiscale rapportages. Synthetiseer de volgende onderzoeksbevindingen in een professioneel onderzoeksrapport.
+    const publisherPrompt = `Je bent een expert onderzoeksverslaggever gespecialiseerd in fiscale rapportages. Synthetiseer de volgende onderzoeksbevindingen in een professioneel onderzoeksrapport.
 
 ORIGINELE ONDERZOEKSVRAAG:
 ${originalQuery}
@@ -639,10 +529,8 @@ Dit tussenrapport dient als basis voor het eindrapport.
    * Extract summary section from report
    */
   private extractSummary(reportText: string): string {
-    // Try to extract SAMENVATTING or SUMMARY section depending on language
-    const summaryMatch = this.isEnglish
-      ? reportText.match(/\*\*SUMMARY\*\*\s*([\s\S]*?)(?=\n\*\*|$)/i)
-      : reportText.match(/\*\*SAMENVATTING\*\*\s*([\s\S]*?)(?=\n\*\*|$)/i);
+    // Try to extract SAMENVATTING section
+    const summaryMatch = reportText.match(/\*\*SAMENVATTING\*\*\s*([\s\S]*?)(?=\n\*\*|$)/i);
     if (summaryMatch) {
       return summaryMatch[1].trim();
     }
@@ -664,66 +552,19 @@ Dit tussenrapport dient als basis voor het eindrapport.
     const researchContext = findings
       .map((f, idx) => {
         const sourcesText = f.sources.length > 0
-          ? this.isEnglish
-            ? `\nSources: ${f.sources.map(s => s.title).join(', ')}`
-            : `\nBronnen: ${f.sources.map(s => s.title).join(', ')}`
+          ? `\nBronnen: ${f.sources.map(s => s.title).join(', ')}`
           : '';
-        return this.isEnglish
-          ? `### Research Result ${idx + 1}: ${f.question}\n${f.answer}${sourcesText}`
-          : `### Onderzoeksresultaat ${idx + 1}: ${f.question}\n${f.answer}${sourcesText}`;
+        return `### Onderzoeksresultaat ${idx + 1}: ${f.question}\n${f.answer}${sourcesText}`;
       })
       .join('\n\n');
 
     // The final synthesis prompt - uses the original query (which contains the prompt instructions)
     // and enriches it with research findings
     const { min: minWords, max: maxWords } = this.depthSettings.finalReportWords;
-    const depthLabel = this.isEnglish
-      ? (this.config.reportDepth === 'concise' ? 'concise' :
-         this.config.reportDepth === 'comprehensive' ? 'comprehensive' : 'balanced')
-      : (this.config.reportDepth === 'concise' ? 'beknopt' :
-         this.config.reportDepth === 'comprehensive' ? 'uitgebreid' : 'gebalanceerd');
+    const depthLabel = this.config.reportDepth === 'concise' ? 'beknopt' :
+                       this.config.reportDepth === 'comprehensive' ? 'uitgebreid' : 'gebalanceerd';
 
-    const finalPrompt = this.isEnglish
-      ? `${originalQuery}
-
----
-## ADDITIONAL RESEARCH RESULTS (use this information when writing the report)
-
-The following information has been collected through research with current sources. Integrate these findings into the report where relevant:
-
-${researchContext}
-
----
-## SOURCE REFERENCES
-
-${researchReport.sources.map((s, i) => `${i + 1}. ${s.title}${s.url ? ` - ${s.url}` : ''}`).join('\n')}
-
----
-
-**IMPORTANT INSTRUCTION:** Now write a ${depthLabel} report according to the instructions above. This is a professional fiscal advisory report.
-
-**REQUIRED DEPTH AND LENGTH:**
-- The report must contain ${minWords}-${maxWords} words
-- Use the research results where relevant
-- Every fiscal position must be supported with legal basis
-
-**STRUCTURE REQUIREMENTS:**
-1. Follow the structure of the original prompt
-2. Integrate the research results into the relevant sections
-3. Written professionally and coherently
-4. End with a separate chapter "Sources"
-
-${this.config.polishPrompt ? `---
-## POLISH INSTRUCTIONS (apply this to the final report)
-
-${this.config.polishPrompt}
-
----
-` : ''}Start directly with the report (no meta-commentary about the process). ALWAYS end with:
-
-### Sources
-[List of all consulted sources with URL where available]`
-      : `${originalQuery}
+    const finalPrompt = `${originalQuery}
 
 ---
 ## AANVULLENDE ONDERZOEKSRESULTATEN (gebruik deze informatie bij het schrijven van het rapport)
