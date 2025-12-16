@@ -72,6 +72,7 @@ export class ResearchOrchestrator {
   private handler: GoogleAIHandler;
   private config: ResearchConfig;
   private depthSettings: DepthSettings;
+  private languageInstruction: string;
 
   constructor(apiKey: string, config: Partial<ResearchConfig> = {}) {
     // Pass true to skip deep research (prevent circular dependency)
@@ -88,10 +89,16 @@ export class ResearchOrchestrator {
       maxOutputTokens: 8192,
       timeout: 1800000, // 30 minutes
       reportDepth,
+      reportLanguage: 'nl',
       ...config
     };
 
-    console.log(`[ResearchOrchestrator] Initialized with depth: ${reportDepth}`);
+    // Simple language instruction prefix for English reports
+    this.languageInstruction = this.config.reportLanguage === 'en'
+      ? '**IMPORTANT: Write ALL output in English.**\n\n'
+      : '';
+
+    console.log(`[ResearchOrchestrator] Initialized with depth: ${reportDepth}, language: ${this.config.reportLanguage}`);
   }
 
   /**
@@ -199,7 +206,7 @@ export class ResearchOrchestrator {
    * Uses Gemini 3 Pro with high thinking to decompose query
    */
   private async planResearch(query: string): Promise<ResearchQuestion[]> {
-    const plannerPrompt = `Je bent een expert onderzoeksplanner. Analyseer de volgende onderzoeksvraag en genereer ${this.config.maxQuestions} specifieke, gefocuste deelvragen die samen een volledig antwoord kunnen geven.
+    const plannerPrompt = `${this.languageInstruction}Je bent een expert onderzoeksplanner. Analyseer de volgende onderzoeksvraag en genereer ${this.config.maxQuestions} specifieke, gefocuste deelvragen die samen een volledig antwoord kunnen geven.
 
 ONDERZOEKSVRAAG:
 ${query}
@@ -300,7 +307,7 @@ Geef ALLEEN de JSON array, geen andere tekst.`;
     const startTime = Date.now();
     const { min: minWords, max: maxWords } = this.depthSettings.executorWords;
 
-    const researchPrompt = `Je bent een fiscaal onderzoeker die onderzoek doet voor een professioneel adviesrapport. Beantwoord de volgende onderzoeksvraag.
+    const researchPrompt = `${this.languageInstruction}Je bent een fiscaal onderzoeker die onderzoek doet voor een professioneel adviesrapport. Beantwoord de volgende onderzoeksvraag.
 
 ONDERZOEKSVRAAG:
 ${question.question}
@@ -441,7 +448,7 @@ Betrouwbaarheid: ${(f.confidence * 100).toFixed(0)}%${sourcesText}`;
       .join('\n\n');
 
     const ds = this.depthSettings;
-    const publisherPrompt = `Je bent een expert onderzoeksverslaggever gespecialiseerd in fiscale rapportages. Synthetiseer de volgende onderzoeksbevindingen in een professioneel onderzoeksrapport.
+    const publisherPrompt = `${this.languageInstruction}Je bent een expert onderzoeksverslaggever gespecialiseerd in fiscale rapportages. Synthetiseer de volgende onderzoeksbevindingen in een professioneel onderzoeksrapport.
 
 ORIGINELE ONDERZOEKSVRAAG:
 ${originalQuery}
@@ -564,7 +571,7 @@ Dit tussenrapport dient als basis voor het eindrapport.
     const depthLabel = this.config.reportDepth === 'concise' ? 'beknopt' :
                        this.config.reportDepth === 'comprehensive' ? 'uitgebreid' : 'gebalanceerd';
 
-    const finalPrompt = `${originalQuery}
+    const finalPrompt = `${this.languageInstruction}${originalQuery}
 
 ---
 ## AANVULLENDE ONDERZOEKSRESULTATEN (gebruik deze informatie bij het schrijven van het rapport)
