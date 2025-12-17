@@ -28,6 +28,7 @@ import {
   Languages,
   Zap,
 } from "lucide-react";
+import { ExpressModeButton } from "../ExpressModeButton";
 import type { StageActionButtonsProps, ReportDepth, ReportLanguage, PendingFile } from "@/types/workflowStageCard.types";
 
 /**
@@ -594,6 +595,18 @@ export const StageActionButtons = memo(function StageActionButtons({
             </>
           )}
         </Button>
+
+        {/* Express Mode Button - Show for Stage 3 (not completed) */}
+        {isStage3 && stageStatus !== "completed" && showExpressMode && reportId && onExpressComplete && (
+          <ExpressModeButton
+            reportId={reportId}
+            onComplete={onExpressComplete}
+            includeGeneration={true}
+            hasStage3={false}
+            reportDepth={reportDepth}
+            reportLanguage={reportLanguage}
+          />
+        )}
 
         {/* Reset Stage Button - Only show if stage is completed and onResetStage is provided */}
         {stageStatus === "completed" && onResetStage && (
