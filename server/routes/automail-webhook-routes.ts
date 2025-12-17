@@ -80,7 +80,7 @@ const automailThreadSchema = z.object({
   status: z.string().optional(),
   state: z.string().optional(),
   action: automailActionSchema.optional(),
-  body: z.string(),
+  body: z.string().nullable().transform(val => val ?? ''),
   source: automailSourceSchema.optional(),
   customer: automailCustomerSchema.optional().nullable(),
   createdBy: z.union([automailUserSchema, automailCustomerSchema]).optional().nullable(),
