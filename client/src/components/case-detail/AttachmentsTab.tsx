@@ -19,6 +19,7 @@ import {
   FileText,
   FileImage,
   Download,
+  ExternalLink,
   CheckCircle,
   AlertCircle,
   ChevronDown,
@@ -197,18 +198,32 @@ const AttachmentItem = memo(function AttachmentItem({
               onClick={(e) => e.stopPropagation()}
             >
               {getStatusBadge(attachment)}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() =>
-                  window.open(
-                    `/api/upload/attachment/${attachment.id}/download`,
-                    "_blank"
-                  )
-                }
-              >
-                <Download className="h-4 w-4" />
-              </Button>
+              {attachment.externalUrl ? (
+                // External file from Automail - open in new tab
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => window.open(attachment.externalUrl, "_blank")}
+                  title="Openen in Automail"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+              ) : (
+                // Local file - download from our server
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    window.open(
+                      `/api/upload/attachment/${attachment.id}/download`,
+                      "_blank"
+                    )
+                  }
+                  title="Downloaden"
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
         </CollapsibleTrigger>

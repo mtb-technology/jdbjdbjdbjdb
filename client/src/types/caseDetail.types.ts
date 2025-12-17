@@ -28,6 +28,8 @@ export interface Attachment {
   fileSize: string;
   pageCount?: number;
   extractedText?: string;
+  /** External URL for files from Automail (not stored locally) */
+  externalUrl?: string;
   needsVisionOCR?: boolean;
   /** OCR processing status: 'none' | 'pending' | 'processing' | 'completed' | 'failed' */
   ocrStatus?: 'none' | 'pending' | 'processing' | 'completed' | 'failed';

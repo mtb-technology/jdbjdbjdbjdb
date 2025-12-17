@@ -1026,6 +1026,7 @@ export const attachments = pgTable("attachments", {
   // File content
   fileData: text("file_data").notNull(), // Base64 encoded file content
   extractedText: text("extracted_text"), // Pre-extracted text for searching/indexing
+  externalUrl: text("external_url"), // External URL for files from Automail (not stored locally)
 
   // Vision/OCR tracking
   needsVisionOCR: boolean("needs_vision_ocr").default(false), // True if PDF is scanned (little extractable text)
