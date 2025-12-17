@@ -32,11 +32,23 @@ const automailCustomFieldSchema = z.object({
   text: z.string().optional().nullable(),
 });
 
+const automailAttachmentSchema = z.object({
+  id: z.number(),
+  fileName: z.string(),
+  mimeType: z.string().optional(),
+  size: z.number().optional(),
+  url: z.string().optional(),
+  extractedText: z.string().optional().nullable(),
+});
+
 const automailThreadSchema = z.object({
   id: z.number(),
   type: z.enum(["note", "message", "customer", "lineitem"]),
   body: z.string(),
   createdAt: z.string(),
+  _embedded: z.object({
+    attachments: z.array(automailAttachmentSchema).optional().default([]),
+  }).optional(),
 });
 
 const automailWebhookPayloadSchema = z.object({
@@ -156,8 +168,36 @@ export function registerAutomailWebhookRoutes(app: Express): void {
       const leadIdField = payload.customFields?.find(f => f.name === 'Lead id');
       const leadId = leadIdField?.value || null;
 
-      // Use formattedThreads as the raw text (pre-formatted plain text)
-      const rawText = payload.formattedThreads || '';
+      // Use formattedThreads as the base raw text (pre-formatted plain text)
+      let rawText = payload.formattedThreads || '';
+
+      // Extract attachment text from all threads
+      const attachmentTexts: { filename: string; text: string }[] = [];
+      const threads = payload._embedded?.threads || [];
+
+      for (const thread of threads) {
+        const threadAttachments = thread._embedded?.attachments || [];
+        for (const attachment of threadAttachments) {
+          if (attachment.extractedText && attachment.extractedText.trim().length > 0) {
+            attachmentTexts.push({
+              filename: attachment.fileName,
+              text: attachment.extractedText.trim(),
+            });
+          }
+        }
+      }
+
+      // Append attachment text to rawText with clear document markers
+      if (attachmentTexts.length > 0) {
+        rawText += '\n\n' + '='.repeat(60) + '\n';
+        rawText += 'BIJLAGEN / DOCUMENTEN\n';
+        rawText += '='.repeat(60) + '\n\n';
+
+        for (const att of attachmentTexts) {
+          rawText += `--- DOCUMENT: ${att.filename} ---\n`;
+          rawText += att.text + '\n\n';
+        }
+      }
 
       if (!rawText || rawText.trim().length < 10) {
         throw ServerError.validation(
@@ -172,6 +212,7 @@ export function registerAutomailWebhookRoutes(app: Express): void {
         conversationNumber: payload.number,
         leadId,
         rawTextLength: rawText.length,
+        attachmentCount: attachmentTexts.length,
       });
 
       // Create the report using existing storage pattern
