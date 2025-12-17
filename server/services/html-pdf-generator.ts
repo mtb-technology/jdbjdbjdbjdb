@@ -104,20 +104,20 @@ export class HtmlPdfGenerator {
     html = html.replace(/<h4>/g, '<h3 style="font-size: 11pt; font-weight: 600; color: #ff0000; margin-top: 15px; margin-bottom: 8px; line-height: 1.5;">');
     html = html.replace(/<\/h4>/g, '</h3>');
 
-    // Paragraphs with line-height 1.5
-    html = html.replace(/<p>/g, '<p style="margin-bottom: 12px; line-height: 1.5;">');
+    // Paragraphs with line-height 1.5 and dark blue text color
+    html = html.replace(/<p>/g, '<p style="margin-bottom: 12px; line-height: 1.5; color: #1f2937;">');
 
-    // Bold text with explicit font-weight
-    html = html.replace(/<strong>/g, '<strong style="font-weight: 700;">');
+    // Bold text with explicit font-weight and dark color
+    html = html.replace(/<strong>/g, '<strong style="font-weight: 700; color: #1f2937;">');
 
-    // List items with line-height
-    html = html.replace(/<li>/g, '<li style="margin-bottom: 6px; line-height: 1.5;">');
+    // List items with line-height and dark text
+    html = html.replace(/<li>/g, '<li style="margin-bottom: 6px; line-height: 1.5; color: #1f2937;">');
 
     // Unordered lists with line-height
-    html = html.replace(/<ul>/g, '<ul style="margin-bottom: 15px; padding-left: 25px; line-height: 1.5;">');
+    html = html.replace(/<ul>/g, '<ul style="margin-bottom: 15px; padding-left: 25px; line-height: 1.5; color: #1f2937;">');
 
     // Ordered lists with line-height
-    html = html.replace(/<ol>/g, '<ol style="margin-bottom: 15px; padding-left: 25px; line-height: 1.5;">');
+    html = html.replace(/<ol>/g, '<ol style="margin-bottom: 15px; padding-left: 25px; line-height: 1.5; color: #1f2937;">');
 
     // Table headers with blue background (#204bc6)
     html = html.replace(/<th>/g, '<th style="background-color: #204bc6; color: white; font-weight: 600; text-align: left; padding: 10px 12px;">');
