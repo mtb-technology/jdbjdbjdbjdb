@@ -114,14 +114,16 @@
     }
 
     /* ========== CONTENT TYPOGRAPHY ========== */
+    /* Line-height 1.5 for Google Docs compatibility */
     .report-content {
-      line-height: 1.7;
+      line-height: 1.5;
     }
 
+    /* Headers use #ff0000 red color for Google Docs copy-paste */
     .report-content h1 {
       font-size: 16pt;
       font-weight: 700;
-      color: var(--primary);
+      color: #ff0000;
       margin-top: 35px;
       margin-bottom: 15px;
       padding-bottom: 8px;
@@ -136,7 +138,7 @@
     .report-content h2 {
       font-size: 13pt;
       font-weight: 600;
-      color: var(--primary);
+      color: #ff0000;
       margin-top: 25px;
       margin-bottom: 12px;
       page-break-after: avoid;
@@ -145,7 +147,7 @@
     .report-content h3 {
       font-size: 11pt;
       font-weight: 600;
-      color: var(--text);
+      color: #ff0000;
       margin-top: 20px;
       margin-bottom: 10px;
       page-break-after: avoid;
@@ -155,6 +157,7 @@
       margin-bottom: 12px;
       text-align: justify;
       hyphens: auto;
+      line-height: 1.5;
     }
 
     .report-content ul,

@@ -243,28 +243,38 @@ export default function CaseDetail() {
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="workflow" className="flex items-center gap-2">
+              <TabsList className="inline-flex h-10 items-center justify-start gap-1 rounded-full bg-muted p-1">
+                <TabsTrigger
+                  value="workflow"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                >
                   <Activity className="h-4 w-4" />
                   Workflow
                 </TabsTrigger>
                 <TabsTrigger
                   value="attachments"
-                  className="flex items-center gap-2"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm"
                 >
                   <Paperclip className="h-4 w-4" />
-                  Bijlages{" "}
-                  {attachmentsData &&
-                    attachmentsData.length > 0 &&
-                    `(${attachmentsData.length})`}
+                  Bijlages
+                  {attachmentsData && attachmentsData.length > 0 && (
+                    <span className="ml-1 text-xs text-muted-foreground">({attachmentsData.length})</span>
+                  )}
                 </TabsTrigger>
-                <TabsTrigger value="timeline" className="flex items-center gap-2">
+                <TabsTrigger
+                  value="timeline"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                >
                   <GitBranch className="h-4 w-4" />
-                  Timeline{" "}
-                  {versionCheckpoints.length > 0 &&
-                    `(${versionCheckpoints.length})`}
+                  Timeline
+                  {versionCheckpoints.length > 0 && (
+                    <span className="ml-1 text-xs text-muted-foreground">({versionCheckpoints.length})</span>
+                  )}
                 </TabsTrigger>
-                <TabsTrigger value="diff" className="flex items-center gap-2">
+                <TabsTrigger
+                  value="diff"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                >
                   <Eye className="h-4 w-4" />
                   Vergelijk
                 </TabsTrigger>

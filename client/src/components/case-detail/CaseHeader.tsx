@@ -18,7 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FileText, Calendar, Edit2, Save, X, MoreHorizontal, Pencil, Eye, RefreshCw, Maximize2 } from "lucide-react";
+import { FileText, Edit2, Save, X, MoreHorizontal, Pencil, Eye, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CaseHeaderProps } from "@/types/caseDetail.types";
 import { ExpressModeButton } from "@/components/workflow/ExpressModeButton";
@@ -182,18 +182,12 @@ export const CaseHeader = memo(function CaseHeader({
                 inputClassName="text-xl font-semibold h-9 w-56"
               />
             </h1>
-
-            {/* Date - compact */}
-            <span className="text-sm text-muted-foreground hidden sm:block">
-              <Calendar className="h-3.5 w-3.5 inline mr-1" />
-              {new Date(report.updatedAt ?? report.createdAt ?? new Date()).toLocaleDateString("nl-NL")}
-            </span>
           </div>
 
           {/* Right side: Workflow controls */}
           <div className="flex items-center gap-3">
-            {/* Progress Bar - like overview */}
-            <div className="w-28">
+            {/* Progress Bar - wider */}
+            <div className="w-32">
               <div className="flex items-center justify-end text-xs mb-1">
                 <span className={cn(
                   "font-medium",
@@ -213,28 +207,6 @@ export const CaseHeader = memo(function CaseHeader({
                 )}
               />
             </div>
-
-            {/* Preview Button - show when Stage 3 has content */}
-            {hasStage3 && onShowPreview && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9"
-                onClick={onShowPreview}
-              >
-                <Maximize2 className="h-4 w-4 mr-1.5" />
-                Preview
-              </Button>
-            )}
-
-            {/* Export Button */}
-            {(reportId || report.id) && (
-              <ExportDialog
-                reportId={reportId || report.id}
-                reportTitle={report.title}
-                clientName={report.clientName}
-              />
-            )}
 
             {/* Actions Menu - show after Stage 2 */}
             {report.id && hasStage2 && (
@@ -284,6 +256,28 @@ export const CaseHeader = memo(function CaseHeader({
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
+            )}
+
+            {/* Preview Button - show when Stage 3 has content */}
+            {hasStage3 && onShowPreview && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={onShowPreview}
+              >
+                <Eye className="h-4 w-4 mr-1.5" />
+                Preview
+              </Button>
+            )}
+
+            {/* Export Button */}
+            {(reportId || report.id) && (
+              <ExportDialog
+                reportId={reportId || report.id}
+                reportTitle={report.title}
+                clientName={report.clientName}
+              />
             )}
           </div>
         </div>
