@@ -57,6 +57,7 @@ export interface EditState {
  *
  * Note: Title editing removed - title is now auto-generated from dossierNumber + clientName.
  * Only clientName is editable, and title updates automatically when clientName changes.
+ * Also includes workflow progress and actions.
  */
 export interface CaseHeaderProps {
   report: Report;
@@ -69,6 +70,14 @@ export interface CaseHeaderProps {
   onClientChange: (value: string) => void;
   versionCheckpoints: VersionCheckpoint[];
   currentVersion: number;
+  // Workflow props
+  stageResults?: Record<string, string>;
+  conceptReportVersions?: Record<string, unknown>;
+  onExpressComplete?: () => void;
+  onAdjustmentApplied?: () => void;
+  isReloadingPrompts?: boolean;
+  onReloadPrompts?: () => void;
+  rolledBackChanges?: Record<string, { rolledBackAt: string }>;
 }
 
 /**

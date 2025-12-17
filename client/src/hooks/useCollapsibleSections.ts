@@ -23,6 +23,8 @@ export interface CollapsibleSectionsActions {
   expandAllInputs: (stageKey: string) => void;
   collapseAllSections: (stageKey: string) => void;
   expandAllSections: (stageKey: string) => void;
+  /** Expand a specific section (does nothing if already expanded) */
+  expandSection: (stageKey: string, sectionKey: string) => void;
 }
 
 export type UseCollapsibleSectionsReturn = CollapsibleSectionsState & CollapsibleSectionsActions;
@@ -154,6 +156,27 @@ export function useCollapsibleSections(): UseCollapsibleSectionsReturn {
     collapseAllSections(stageKey);
   }, [collapseAllSections]);
 
+  /**
+   * Expands a specific section (does nothing if already expanded).
+   * Remember: items IN the set are expanded, items NOT in the set are collapsed.
+   */
+  const expandSection = useCallback((stageKey: string, sectionKey: string) => {
+    setCollapsedSections(prev => {
+      const stageCollapsed = prev[stageKey] || new Set<string>();
+      // If already expanded (in set), do nothing
+      if (stageCollapsed.has(sectionKey)) {
+        return prev;
+      }
+      // Add to set to expand
+      const newStageCollapsed = new Set(stageCollapsed);
+      newStageCollapsed.add(sectionKey);
+      return {
+        ...prev,
+        [stageKey]: newStageCollapsed
+      };
+    });
+  }, []);
+
   return {
     collapsedInputs,
     collapsedSections,
@@ -164,6 +187,7 @@ export function useCollapsibleSections(): UseCollapsibleSectionsReturn {
     collapseAllInputs,
     expandAllInputs,
     collapseAllSections,
-    expandAllSections
+    expandAllSections,
+    expandSection
   };
 }

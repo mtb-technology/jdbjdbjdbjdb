@@ -175,7 +175,7 @@ export function registerCrudRoutes(
       bouwplanData: sourceReport.bouwplanData as BouwplanData,
       generatedContent: sourceReport.generatedContent,
       stageResults: sourceReport.stageResults as Record<string, unknown>,
-      conceptReportVersions: sourceReport.conceptReportVersions as Record<string, unknown>,
+      conceptReportVersions: sourceReport.conceptReportVersions as Record<string, string>,
       currentStage: sourceReport.currentStage,
       status: sourceReport.status,
     });

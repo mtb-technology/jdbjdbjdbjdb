@@ -18,17 +18,13 @@
  * - Delegates stage rendering to WorkflowStageCard
  */
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion, useReducedMotion } from "framer-motion";
-import { Eye } from "lucide-react";
 import { useState, useEffect, useCallback, memo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 // Components
 import { WORKFLOW_STAGES } from "./constants";
 import { WorkflowStageCard } from "./WorkflowStageCard";
-import { StageGroupNavigator } from "./StageGroupNavigator";
-import { WorkflowProgressHeader } from "./WorkflowProgressHeader";
 import { ActiveJobsBanner } from "./ActiveJobsBanner";
 
 // Hooks
@@ -67,7 +63,7 @@ export const WorkflowView = memo(function WorkflowView({
   hasOcrPending = false,
 }: SimplifiedWorkflowViewProps) {
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set());
-  const { toggleSection: toggleSectionCollapse, isSectionCollapsed } = useCollapsibleSections();
+  const { toggleSection: toggleSectionCollapse, isSectionCollapsed, expandSection } = useCollapsibleSections();
   const queryClient = useQueryClient();
   const shouldReduceMotion = useReducedMotion();
 
@@ -168,18 +164,25 @@ export const WorkflowView = memo(function WorkflowView({
     }
   }, [currentStage.key, state.stageResults, expandedStages]);
 
-  // Toggle stage expansion
+  // Toggle stage expansion - auto-expand output for completed stages
   const toggleStageExpansion = useCallback(
     (stageKey: string) => {
       const newExpanded = new Set(expandedStages);
-      if (newExpanded.has(stageKey)) {
-        newExpanded.delete(stageKey);
-      } else {
+      const isOpening = !newExpanded.has(stageKey);
+
+      if (isOpening) {
         newExpanded.add(stageKey);
+        // Auto-expand output section when opening a completed stage
+        const hasResult = !!state.stageResults[stageKey];
+        if (hasResult) {
+          expandSection(stageKey, "output");
+        }
+      } else {
+        newExpanded.delete(stageKey);
       }
       setExpandedStages(newExpanded);
     },
-    [expandedStages]
+    [expandedStages, state.stageResults, expandSection]
   );
 
   // Navigate to stage (expand + scroll)
@@ -221,25 +224,7 @@ export const WorkflowView = memo(function WorkflowView({
   }, [state.currentReport?.id, queryClient]);
 
   return (
-    <div className="space-y-6 max-w-full overflow-hidden">
-        {/* Progress Header */}
-        <WorkflowProgressHeader
-          stageResults={state.stageResults}
-          conceptReportVersions={state.conceptReportVersions}
-          currentStageLabel={currentStage.label}
-          progressPercentage={progressPercentage}
-          totalProcessingTime={totalProcessingTime}
-          isReloadingPrompts={isReloadingPrompts}
-          onReloadPrompts={handleReloadPrompts}
-          reportId={state.currentReport?.id}
-          hasStage2={hasStage2}
-          hasStage3={hasStage3}
-          onExpressComplete={handleExpressComplete}
-          onAdjustmentApplied={handleAdjustmentApplied}
-          rolledBackChanges={(state.currentReport?.rolledBackChanges as Record<string, { rolledBackAt: string }>) || undefined}
-          allReviewStagesCompleted={allReviewStagesCompleted}
-        />
-
+    <div className="space-y-4 max-w-full overflow-hidden">
         {/* Active Jobs Banner - shows when background jobs are running */}
         {state.currentReport?.id && (
           <ActiveJobsBanner
@@ -248,40 +233,8 @@ export const WorkflowView = memo(function WorkflowView({
           />
         )}
 
-        {/* Workflow Layout with Sidebar */}
-        <div className="flex gap-4">
-          {/* Sidebar Navigator */}
-          <StageGroupNavigator
-            stageResults={state.stageResults}
-            conceptReportVersions={state.conceptReportVersions}
-            currentStageIndex={state.currentStageIndex}
-            onNavigate={handleNavigateToStage}
-            jobStageProgress={jobProgress?.stages}
-          />
-
-          {/* Main Workflow Content */}
-          <motion.div
-            className="flex-1 min-w-0"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
-            animate={shouldReduceMotion ? false : { opacity: 1, y: 0 }}
-            transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.5, delay: 0.1 }}
-          >
-            <Card className="bg-white dark:bg-jdb-panel overflow-hidden">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-jdb-blue-primary shadow-sm">
-                    <Eye className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <span className="text-xl font-semibold text-jdb-text-heading">AI Workflow</span>
-                    <p className="text-sm text-jdb-text-subtle font-normal mt-1">
-                      Volledige transparantie - bekijk wat naar de AI gaat en terugkomt
-                    </p>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-
-              <CardContent className="p-4 md:p-6 space-y-4 overflow-hidden">
+        {/* Workflow Stages - Clean list without wrapper */}
+        <div className="space-y-3">
                 {WORKFLOW_STAGES.map((stage, index) => {
                   const stageResult = state.stageResults[stage.key] || "";
                   const stagePrompt = state.stagePrompts[stage.key] || "";
@@ -295,15 +248,12 @@ export const WorkflowView = memo(function WorkflowView({
                   const hasActiveExpressMode = activeJob?.type === "express_mode";
                   const isProcessingViaJob = activeJob?.progress?.currentStage === stage.key ||
                     (hasActiveExpressMode && activeJob?.progress?.stages?.some(
-                      (s: JobStageProgress) => s.stageId === stage.key && s.status === "running"
+                      (s: JobStageProgress) => s.stageId === stage.key && s.status === "processing"
                     ));
                   const isProcessing = state.stageProcessing[stage.key] || isProcessingViaJob;
 
                   // Block execution if Express Mode is running (can't start new stages)
                   const isBlockedByExpressMode = hasActiveExpressMode;
-
-                  // Keep stage 1a expanded when it has results (so user can see the email)
-                  const shouldKeep1aExpanded = stage.key === "1a_informatiecheck" && !!stageResult;
 
                   // Check feedback ready status for reviewer stages
                   const isReviewer = isReviewerStage(stage.key);
@@ -312,7 +262,7 @@ export const WorkflowView = memo(function WorkflowView({
                   const isFeedbackReady = checkFeedbackReady(stage.key, hasFeedback, hasConceptVersion);
 
                   // Map status to WorkflowStageCard expected type
-                  const stageStatus = mapToCardStatus(rawStageStatus, isFeedbackReady, isProcessing);
+                  const stageStatus = mapToCardStatus(rawStageStatus, isFeedbackReady ?? false, isProcessing ?? false);
 
                   // Block reason for Stage 1a (OCR pending) and Stage 2
                   let blockReason: string | undefined | null;
@@ -337,28 +287,103 @@ export const WorkflowView = memo(function WorkflowView({
                   const hasRawFeedback = !!substepResults.review || !!stageResult;
                   const showFeedbackProcessor = isReviewer && hasRawFeedback;
 
-                  // Show Express Mode button on stage 2 (when completed), stage 3, and review stages
-                  const showExpressModeOnStage =
-                    (stage.key === "2_complexiteitscheck" && stageStatus === "completed") ||
-                    stage.key === "3_generatie" ||
-                    isReviewer;
+                  // Show Express Mode button only on stage 3 (where user picks language/depth)
+                  const showExpressModeOnStage = stage.key === "3_generatie";
+
+                  // Section headers for grouping
+                  const showIntakeHeader = index === 0;
+                  const showGeneratieHeader = stage.key === "3_generatie";
+                  const showReviewHeader = stage.key === "4a_BronnenSpecialist";
+
+                  // Is this the last stage?
+                  const isLastStage = index === WORKFLOW_STAGES.length - 1;
+
+                  // Get previous stage completion status for connector line color
+                  const prevStageCompleted = index > 0 && getStageStatus(index - 1) === "completed";
 
                   return (
                     <div key={stage.key} id={`stage-${stage.key}`}>
-                      <WorkflowStageCard
+                      {/* Section Headers with integrated workflow line */}
+                      {showIntakeHeader && (
+                        <div className="flex gap-3 mb-2">
+                          <div className="w-5 flex-shrink-0" /> {/* Spacer for alignment */}
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Intake
+                          </div>
+                        </div>
+                      )}
+                      {showGeneratieHeader && (
+                        <div className="flex gap-3 mt-4 mb-2">
+                          <div className="w-5 flex-shrink-0 flex justify-center">
+                            <div className={`w-0.5 h-full ${prevStageCompleted ? "bg-green-300" : "bg-gray-200 dark:bg-gray-700"}`} />
+                          </div>
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider py-1">
+                            Generatie
+                          </div>
+                        </div>
+                      )}
+                      {showReviewHeader && (
+                        <div className="flex gap-3 mt-4 mb-2">
+                          <div className="w-5 flex-shrink-0 flex justify-center">
+                            <div className={`w-0.5 h-full ${prevStageCompleted ? "bg-green-300" : "bg-gray-200 dark:bg-gray-700"}`} />
+                          </div>
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider py-1">
+                            Review
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Workflow step with connector line */}
+                      <div className="flex gap-3">
+                        {/* Step indicator column */}
+                        <div className="flex flex-col items-center w-5 flex-shrink-0">
+                          {/* Step dot/checkmark */}
+                          <div className={`
+                            w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 z-10
+                            ${rawStageStatus === "completed"
+                              ? "bg-green-500 text-white"
+                              : isProcessing
+                                ? "bg-blue-500 text-white animate-pulse"
+                                : isActive
+                                  ? "bg-blue-500 text-white"
+                                  : "bg-gray-200 dark:bg-gray-700 text-gray-400"
+                            }
+                          `}>
+                            {rawStageStatus === "completed" ? (
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : isProcessing ? (
+                              <div className="w-2 h-2 bg-white rounded-full" />
+                            ) : (
+                              <div className="w-2 h-2 bg-current rounded-full opacity-50" />
+                            )}
+                          </div>
+                          {/* Connector line (not for last item) */}
+                          {!isLastStage && (
+                            <div className={`
+                              w-0.5 flex-1 min-h-[12px]
+                              ${rawStageStatus === "completed" ? "bg-green-300" : "bg-gray-200 dark:bg-gray-700"}
+                            `} />
+                          )}
+                        </div>
+
+                        {/* Stage card */}
+                        <div className="flex-1 min-w-0">
+                          <WorkflowStageCard
                         stageKey={stage.key}
                         stageName={stage.label}
                         stageIcon={createStageIcon(stage.key)}
                         stageStatus={stageStatus}
-                        isExpanded={expandedStages.has(stage.key) || isActive || shouldKeep1aExpanded}
+                        isExpanded={expandedStages.has(stage.key) || (isActive && stageStatus !== "completed")}
                         onToggleExpand={() => toggleStageExpansion(stage.key)}
                         stageResult={stageResult}
                         stagePrompt={stagePrompt}
                         conceptVersion={conceptVersion}
                         reportId={state.currentReport?.id}
                         stage1Result={state.stageResults["1a_informatiecheck"]}
-                        canExecute={canExecute}
-                        isProcessing={isProcessing}
+                        canExecute={canExecute ?? false}
+                        isProcessing={isProcessing ?? false}
                         onExecute={(customContext, reportDepth, pendingAttachments, reportLanguage) => handleExecuteStage(stage.key, customContext, reportDepth, pendingAttachments, reportLanguage)}
                         onResetStage={() => handleResetStage(stage.key)}
                         onCancel={() => handleCancelStage(stage.key)}
@@ -400,12 +425,11 @@ export const WorkflowView = memo(function WorkflowView({
                             }
                           : {})}
                       />
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
-              </CardContent>
-            </Card>
-          </motion.div>
         </div>
     </div>
   );
