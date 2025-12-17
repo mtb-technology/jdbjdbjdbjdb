@@ -295,7 +295,7 @@ const AttachmentsSummary = memo(function AttachmentsSummary({
             </span>
           </div>
           <p className="text-sm text-blue-600 mt-1">
-            Wacht tot OCR klaar is voordat je de analyse start. Ververs de pagina om de status te updaten.
+            Wacht tot OCR klaar is voordat je de analyse start. Status wordt automatisch bijgewerkt.
           </p>
         </div>
       )}

@@ -140,110 +140,107 @@ export function StickyReportPreview({
           )}
         </CardHeader>
 
-        <CardContent className="flex-1 flex flex-col p-0 min-h-0 bg-white dark:bg-gray-900">
+        <CardContent className="flex-1 flex flex-col p-0 min-h-0">
           {/* Content preview */}
-          <ScrollArea className="flex-1 px-4 bg-white dark:bg-gray-900">
+          <ScrollArea className="flex-1 px-3">
             {content ? (
-              <div className="prose prose-xs max-w-none pb-4 pt-2 dark:prose-invert bg-white dark:bg-gray-900">
+              <div className="prose prose-xs max-w-none pb-4 pt-2 dark:prose-invert overflow-hidden">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   children={transformChaptersToHeaders(content)}
                   components={{
                     h1: ({ children }) => (
-                      <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 mt-4 mb-2 border-b border-blue-500 pb-1">
+                      <h1 className="text-sm font-bold text-foreground mt-3 mb-1.5 border-b border-primary/30 pb-1 break-words">
                         {children}
                       </h1>
                     ),
                     h2: ({ children }) => (
-                      <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 mt-3 mb-2">
+                      <h2 className="text-xs font-semibold text-foreground mt-2.5 mb-1.5 break-words">
                         {children}
                       </h2>
                     ),
                     h3: ({ children }) => (
-                      <h3 className="text-xs font-bold text-gray-900 dark:text-gray-100 mt-2 mb-1">
+                      <h3 className="text-xs font-medium text-foreground mt-2 mb-1 break-words">
                         {children}
                       </h3>
                     ),
                     p: ({ children }) => (
-                      <p className="text-xs mb-2 text-gray-700 dark:text-gray-300 leading-relaxed">
+                      <p className="text-[11px] mb-1.5 text-muted-foreground leading-relaxed break-words">
                         {children}
                       </p>
                     ),
                     ul: ({ children }) => (
-                      <ul className="text-xs mb-2 list-disc list-outside ml-4 space-y-0.5">
+                      <ul className="text-[11px] mb-1.5 list-disc list-outside ml-3 space-y-0.5">
                         {children}
                       </ul>
                     ),
                     ol: ({ children }) => (
-                      <ol className="text-xs mb-2 list-decimal list-outside ml-4 space-y-0.5">
+                      <ol className="text-[11px] mb-1.5 list-decimal list-outside ml-3 space-y-0.5">
                         {children}
                       </ol>
                     ),
                     li: ({ children }) => (
-                      <li className="text-xs text-gray-700 dark:text-gray-300">
+                      <li className="text-[11px] text-muted-foreground break-words">
                         {children}
                       </li>
                     ),
                     strong: ({ children }) => (
-                      <strong className="font-bold">{children}</strong>
+                      <strong className="font-semibold text-foreground">{children}</strong>
                     ),
                     blockquote: ({ children }) => (
-                      <blockquote className="border-l-2 border-blue-400 pl-2 italic text-xs text-gray-600 dark:text-gray-400">
+                      <blockquote className="border-l-2 border-primary/30 pl-2 italic text-[11px] text-muted-foreground">
                         {children}
                       </blockquote>
                     ),
                     table: ({ children }) => (
-                      <div className="overflow-x-auto my-2">
-                        <table className="min-w-full text-xs border-collapse border border-gray-300 dark:border-gray-600">
+                      <div className="overflow-x-auto my-1.5">
+                        <table className="min-w-full text-[10px] border-collapse border border-border">
                           {children}
                         </table>
                       </div>
                     ),
                     thead: ({ children }) => (
-                      <thead className="bg-gray-100 dark:bg-gray-800">
+                      <thead className="bg-muted/50">
                         {children}
                       </thead>
                     ),
                     tbody: ({ children }) => (
-                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                      <tbody className="divide-y divide-border">
                         {children}
                       </tbody>
                     ),
                     tr: ({ children }) => (
-                      <tr className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                      <tr className="hover:bg-muted/30">
                         {children}
                       </tr>
                     ),
                     th: ({ children }) => (
-                      <th className="px-2 py-1 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600">
+                      <th className="px-1.5 py-0.5 text-left text-[10px] font-semibold text-foreground border border-border">
                         {children}
                       </th>
                     ),
                     td: ({ children }) => (
-                      <td className="px-2 py-1 text-xs text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600">
+                      <td className="px-1.5 py-0.5 text-[10px] text-muted-foreground border border-border">
                         {children}
                       </td>
                     ),
-                    // Override code blocks to use light styling instead of dark
                     pre: ({ children }) => (
-                      <pre className="bg-gray-50 dark:bg-gray-800 p-2 rounded text-xs overflow-x-auto my-2">
+                      <pre className="bg-muted/50 p-1.5 rounded text-[10px] overflow-x-auto my-1.5">
                         {children}
                       </pre>
                     ),
                     code: ({ children, className }) => {
-                      // Inline code vs code block
                       const isInline = !className;
                       return isInline ? (
-                        <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">
+                        <code className="bg-muted px-1 py-0.5 rounded text-[10px]">
                           {children}
                         </code>
                       ) : (
-                        <code className="text-xs">{children}</code>
+                        <code className="text-[10px]">{children}</code>
                       );
                     },
-                    // Horizontal rule
                     hr: () => (
-                      <hr className="my-3 border-gray-200 dark:border-gray-700" />
+                      <hr className="my-2 border-border" />
                     ),
                   }}
                 />

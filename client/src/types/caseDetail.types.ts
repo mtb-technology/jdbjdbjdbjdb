@@ -54,23 +54,33 @@ export interface EditState {
 
 /**
  * Props for CaseHeader component
+ *
+ * Note: Title editing removed - title is now auto-generated from dossierNumber + clientName.
+ * Only clientName is editable, and title updates automatically when clientName changes.
+ * Also includes workflow progress and actions.
  */
 export interface CaseHeaderProps {
   report: Report;
-  isEditingTitle: boolean;
   isEditingClient: boolean;
-  editedTitle: string;
   editedClient: string;
   isPending: boolean;
-  onEditTitle: () => void;
   onEditClient: () => void;
-  onSaveTitle: () => void;
   onSaveClient: () => void;
   onCancelEdit: (type: "title" | "client") => void;
-  onTitleChange: (value: string) => void;
   onClientChange: (value: string) => void;
-  versionCheckpoints: VersionCheckpoint[];
-  currentVersion: number;
+  versionCheckpoints?: VersionCheckpoint[];
+  currentVersion?: number;
+  // Workflow props
+  stageResults?: Record<string, string>;
+  conceptReportVersions?: Record<string, unknown>;
+  onExpressComplete?: () => void;
+  onAdjustmentApplied?: () => void;
+  isReloadingPrompts?: boolean;
+  onReloadPrompts?: () => void;
+  rolledBackChanges?: Record<string, { rolledBackAt: string }>;
+  // Header action props
+  onShowPreview?: () => void;
+  reportId?: string;
 }
 
 /**

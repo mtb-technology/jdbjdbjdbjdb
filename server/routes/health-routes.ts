@@ -12,16 +12,33 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { HTTP_STATUS } from "../config/constants";
 
+// Singleton instance for graceful shutdown support
+let healthServiceInstance: AIHealthService | null = null;
+
+export function getHealthService(): AIHealthService {
+  if (!healthServiceInstance) {
+    healthServiceInstance = new AIHealthService();
+  }
+  return healthServiceInstance;
+}
+
+// Call on server shutdown to clean up resources
+export function shutdownHealthService(): void {
+  if (healthServiceInstance) {
+    healthServiceInstance.stopPeriodicHealthChecks();
+    healthServiceInstance = null;
+  }
+}
+
 export function registerHealthRoutes(app: Express): void {
-  const healthService = new AIHealthService();
+  const healthService = getHealthService();
 
-  // Start periodic health checks and run immediate warm-up (non-blocking)
-  healthService.startPeriodicHealthChecks();
+  // NOTE: Periodic health checks disabled - they make unnecessary API calls that cost money
+  // and count against rate limits. The cached health status is updated by actual workflow calls.
+  // If you need fresh health status, call /api/health/detailed (admin only).
 
-  // Warm up health cache immediately (don't wait for it)
-  healthService.getSystemHealth().catch(error => {
-    console.warn('Initial health check failed:', error);
-  });
+  // healthService.startPeriodicHealthChecks();  // DISABLED
+  // healthService.getSystemHealth();  // DISABLED
 
   /**
    * GET /api/health
@@ -121,26 +138,28 @@ export function registerHealthRoutes(app: Express): void {
    * GET /api/health/ai
    *
    * AI services health check.
-   * Returns cached health data to avoid costs and rate limits.
+   * Returns basic status without making API calls (periodic checks are disabled).
+   * Actual health is determined by workflow success/failure.
    *
-   * Response: 200 if AI services are available, 503 if not
+   * Response: Always 200 with "available" status (actual errors show during workflow execution)
    */
   app.get("/api/health/ai", asyncHandler(async (req: Request, res: Response) => {
-    // Use cached health data to avoid cost and rate limits
-    const health = healthService.getCachedHealth();
-    const statusCode = health.overall === 'healthy' ? 200 : 503;
+    // Return optimistic status - actual errors will surface during workflow execution
+    // This avoids unnecessary API calls just for health checking
+    const configuredServices: string[] = [];
+    if (process.env.GOOGLE_AI_API_KEY) configuredServices.push('Google AI');
+    if (process.env.OPENAI_API_KEY) configuredServices.push('OpenAI');
 
-    // Return only AI service status without sensitive details
     const aiHealth = {
-      overall: health.overall,
-      services: health.services.map(s => ({
-        service: s.service,
-        status: s.status,
-        lastChecked: s.lastChecked
+      overall: configuredServices.length > 0 ? 'available' : 'not_configured',
+      services: configuredServices.map(service => ({
+        service,
+        status: 'available',
+        note: 'Health determined by workflow execution'
       })),
-      timestamp: health.timestamp
+      timestamp: Date.now()
     };
 
-    res.status(statusCode).json(createApiSuccessResponse(aiHealth, "AI services health status retrieved"));
+    res.status(200).json(createApiSuccessResponse(aiHealth, "AI services status retrieved"));
   }));
 }

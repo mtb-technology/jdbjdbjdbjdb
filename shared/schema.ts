@@ -108,6 +108,9 @@ export const reports = pgTable("reports", {
   // Rollback tracking - which changes have been rolled back
   rolledBackChanges: jsonb("rolled_back_changes"), // { "stageId-changeIndex": { rolledBackAt: string } }
 
+  // Report language - persisted when Stage 3 runs for use by review stages
+  reportLanguage: text("report_language").default("nl"), // "nl" | "en"
+
   currentStage: text("current_stage").default("1a_informatiecheck"),
   status: text("status").notNull().default("draft"), // draft, processing, generated, exported
   createdAt: timestamp("created_at").defaultNow(),

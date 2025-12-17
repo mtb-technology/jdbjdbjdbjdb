@@ -107,12 +107,16 @@ export function registerStageRoutes(
     }),
     asyncHandler(async (req: Request, res: Response) => {
       const { id, stage } = req.params;
-      const { customInput, reportDepth, reportLanguage } = req.body;
+      const { customInput, reportDepth, reportLanguage: requestLanguage } = req.body;
 
       const report = await storage.getReport(id);
       if (!report) {
         throw new Error("Rapport niet gevonden");
       }
+
+      // Determine effective language: use request language, or fall back to persisted language
+      // This ensures review stages (4a-4f) use the same language as the generated report
+      const reportLanguage = requestLanguage || (report.reportLanguage as "nl" | "en") || "nl";
 
       // SERVER-SIDE BLOCKING: Block Stage 1a if OCR is still pending
       // This prevents race conditions where client-side blocking is bypassed
@@ -234,10 +238,13 @@ export function registerStageRoutes(
         currentStage: stage,
       };
 
-      // Stage 3: make first report version visible
+      // Stage 3: make first report version visible and persist language choice
       if (stage === '3_generatie' && stageExecution.conceptReport) {
         updateData.generatedContent = stageExecution.conceptReport;
         updateData.status = 'generated';
+        // Persist language for subsequent review stages (4a-4f)
+        updateData.reportLanguage = reportLanguage;
+        console.log(`[${id}] Stage 3: Persisting report language: ${reportLanguage}`);
       }
 
       // Stage 1a: Update dossierData with extracted info

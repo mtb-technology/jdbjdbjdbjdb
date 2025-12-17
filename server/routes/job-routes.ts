@@ -29,6 +29,7 @@ const createExpressModeJobSchema = z.object({
   includeGeneration: z.boolean().default(false),
   autoAccept: z.boolean().default(true),
   stages: z.array(z.string()).optional(),
+  reportDepth: z.enum(["concise", "balanced", "comprehensive"]).optional(),
   reportLanguage: z.enum(["nl", "en"]).optional()
 });
 
@@ -95,7 +96,10 @@ export function registerJobRoutes(app: Express): void {
     const { id } = req.params;
     const validatedData = createExpressModeJobSchema.parse(req.body);
 
-    console.log(`🚀 [${id}] Creating Express Mode job`, { includeGeneration: validatedData.includeGeneration });
+    console.log(`🚀 [${id}] Creating Express Mode job`, {
+      includeGeneration: validatedData.includeGeneration,
+      reportLanguage: validatedData.reportLanguage
+    });
 
     // Check if report exists
     const report = await storage.getReport(id);
@@ -153,6 +157,7 @@ export function registerJobRoutes(app: Express): void {
         includeGeneration: validatedData.includeGeneration,
         autoAccept: validatedData.autoAccept,
         stages: validatedData.stages,
+        reportDepth: validatedData.reportDepth,
         reportLanguage: validatedData.reportLanguage
       } as ExpressModeJobConfig
     });

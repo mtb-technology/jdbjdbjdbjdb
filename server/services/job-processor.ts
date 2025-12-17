@@ -51,6 +51,7 @@ export interface ExpressModeJobConfig {
   includeGeneration: boolean;
   autoAccept: boolean;
   stages?: string[];
+  reportDepth?: "concise" | "balanced" | "comprehensive";
   reportLanguage?: "nl" | "en";
 }
 
@@ -185,7 +186,7 @@ class JobProcessor {
    * Process a single stage job
    */
   private async processSingleStage(job: Job, config: SingleStageJobConfig): Promise<void> {
-    const { stageId, customInput, reportDepth, reportLanguage } = config;
+    const { stageId, customInput, reportDepth, reportLanguage: configLanguage } = config;
     const reportId = job.reportId!;
 
     // Update progress
@@ -201,6 +202,9 @@ class JobProcessor {
     if (!report) {
       throw new Error("Report not found");
     }
+
+    // Use config language OR fall back to persisted language from Stage 3
+    const reportLanguage = configLanguage || (report.reportLanguage as "nl" | "en") || "nl";
 
     // Update progress
     await this.updateProgress(job.id, {
@@ -329,13 +333,18 @@ class JobProcessor {
    */
   private async processExpressMode(job: Job, config: ExpressModeJobConfig): Promise<void> {
     const reportId = job.reportId!;
-    const { includeGeneration, autoAccept, reportLanguage } = config;
+    const { includeGeneration, autoAccept, reportDepth, reportLanguage: configLanguage } = config;
 
     // Get report
     let report = await storage.getReport(reportId);
     if (!report) {
       throw new Error("Report not found");
     }
+
+    // Use config language OR fall back to persisted language from Stage 3
+    const reportLanguage = configLanguage || (report.reportLanguage as "nl" | "en") || "nl";
+
+    console.log(`🌐 [JobProcessor] Express Mode config:`, { includeGeneration, autoAccept, reportDepth, reportLanguage });
 
     // Build stages list
     let stages: string[] = [];
@@ -402,6 +411,7 @@ class JobProcessor {
 
         if (isGenerationStage) {
           // Stage 3: Generate concept report
+          console.log(`🌐 [JobProcessor] Calling executeStage for 3_generatie with reportDepth: ${reportDepth}, reportLanguage: ${reportLanguage}`);
           const stageExecution = await this.reportGenerator.executeStage(
             stageId,
             dossierData,
@@ -412,7 +422,7 @@ class JobProcessor {
             reportId,
             undefined, // onProgress
             undefined, // visionAttachments
-            undefined, // reportDepth
+            reportDepth, // reportDepth
             undefined, // signal
             reportLanguage
           );
@@ -453,8 +463,11 @@ class JobProcessor {
             stageResults: updatedStageResults,
             conceptReportVersions: newConceptVersions,
             generatedContent: stageExecution.stageOutput,
-            currentStage: stageId as StageId
+            currentStage: stageId as StageId,
+            // Persist language for subsequent review stages
+            reportLanguage: reportLanguage
           });
+          console.log(`🌐 [JobProcessor] Stage 3: Persisting report language: ${reportLanguage}`);
 
           report = await storage.getReport(reportId) || report;
 
@@ -470,7 +483,7 @@ class JobProcessor {
             reportId,
             undefined, // onProgress
             undefined, // visionAttachments
-            undefined, // reportDepth
+            reportDepth, // reportDepth (mainly used by stage 3, but pass through for consistency)
             undefined, // signal
             reportLanguage
           );

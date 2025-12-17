@@ -148,6 +148,7 @@ export abstract class BaseAIHandler {
   }
 
   // Call with unified timeout handling
+  // FIXED: Proper cleanup of timeout to prevent memory leaks on long-running operations
   private async callWithTimeout(prompt: string, config: AiConfig, options?: AIModelParameters): Promise<AIModelResponse> {
     const timeout = options?.timeout || this.defaultTimeout;
     const controller = new AbortController();
@@ -158,22 +159,32 @@ export abstract class BaseAIHandler {
       throw AIError.cancelled(this.modelName);
     }
 
-    // Link extern signal aan interne controller
-    const abortHandler = () => controller.abort();
-    externalSignal?.addEventListener('abort', abortHandler);
-
-    // Set up timeout
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, timeout);
+    // Track timeout for guaranteed cleanup
+    let timeoutId: NodeJS.Timeout | undefined;
+    let abortHandler: (() => void) | undefined;
 
     try {
+      // Link extern signal aan interne controller
+      if (externalSignal) {
+        abortHandler = () => {
+          // Clear timeout immediately when externally aborted to prevent memory leak
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = undefined;
+          }
+          controller.abort();
+        };
+        externalSignal.addEventListener('abort', abortHandler);
+      }
+
+      // Set up timeout
+      timeoutId = setTimeout(() => {
+        controller.abort();
+      }, timeout);
+
       const response = await this.callInternal(prompt, config, { ...options, signal: controller.signal });
-      clearTimeout(timeoutId);
       return response;
     } catch (error: any) {
-      clearTimeout(timeoutId);
-
       // Check of geabort door extern signal (user cancellation)
       if (externalSignal?.aborted) {
         throw AIError.cancelled(this.modelName);
@@ -186,7 +197,14 @@ export abstract class BaseAIHandler {
 
       throw error;
     } finally {
-      externalSignal?.removeEventListener('abort', abortHandler);
+      // CRITICAL: Always cleanup timeout and event listener to prevent memory leaks
+      // This runs whether the call succeeds, fails, or is cancelled
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (externalSignal && abortHandler) {
+        externalSignal.removeEventListener('abort', abortHandler);
+      }
     }
   }
 

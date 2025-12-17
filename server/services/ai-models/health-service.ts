@@ -32,8 +32,9 @@ export interface SystemHealthStatus {
 
 export class AIHealthService {
   private lastHealthCheck: Map<string, HealthCheckResult> = new Map();
-  private healthCheckInterval: number = 60000; // 1 minute
+  private healthCheckInterval: number = 300000; // 5 minutes (was 1 minute - reduced API costs)
   private healthCheckTimeout: number = 10000; // 10 seconds
+  private healthCheckIntervalId?: NodeJS.Timeout; // Track interval for cleanup
 
   constructor() {
     // No dependencies needed
@@ -263,7 +264,13 @@ export class AIHealthService {
 
   // Start periodic health checks
   startPeriodicHealthChecks(): void {
-    setInterval(async () => {
+    // Prevent duplicate intervals - only start if not already running
+    if (this.healthCheckIntervalId) {
+      console.log('⚠️ Periodic health checks already running, skipping duplicate start');
+      return;
+    }
+
+    this.healthCheckIntervalId = setInterval(async () => {
       try {
         await this.getSystemHealth();
         console.log(`🔍 Periodic health check completed at ${new Date().toISOString()}`);
@@ -271,6 +278,22 @@ export class AIHealthService {
         console.error(`❌ Periodic health check failed:`, error);
       }
     }, this.healthCheckInterval);
+
+    console.log(`✅ Started periodic health checks (interval: ${this.healthCheckInterval}ms)`);
+  }
+
+  // Stop periodic health checks - call on server shutdown
+  stopPeriodicHealthChecks(): void {
+    if (this.healthCheckIntervalId) {
+      clearInterval(this.healthCheckIntervalId);
+      this.healthCheckIntervalId = undefined;
+      console.log('🛑 Stopped periodic health checks');
+    }
+  }
+
+  // Check if periodic health checks are running
+  isPeriodicHealthChecksRunning(): boolean {
+    return this.healthCheckIntervalId !== undefined;
   }
 
   // Enhanced API key validation that integrates with existing validation

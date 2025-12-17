@@ -15,7 +15,9 @@ interface ExpressModeButtonProps {
   disabled?: boolean;
   includeGeneration?: boolean; // Start from stage 3 (after stage 2 completion)
   hasStage3?: boolean; // Whether stage 3 is already completed
+  reportDepth?: "concise" | "balanced" | "comprehensive"; // Depth for report generation (only used when includeGeneration is true)
   reportLanguage?: "nl" | "en"; // Language for report generation (only used when includeGeneration is true)
+  variant?: "button" | "menuItem"; // How to render: as button or dropdown menu item
 }
 
 interface StageProgress {
@@ -35,7 +37,9 @@ export function ExpressModeButton({
   disabled,
   includeGeneration = false,
   hasStage3 = true,
-  reportLanguage
+  reportDepth,
+  reportLanguage,
+  variant = "button"
 }: ExpressModeButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -137,12 +141,19 @@ export function ExpressModeButton({
     setShowResults(false);
 
     try {
-      console.log(`[ExpressMode] Starting background job for report ${reportId}...`, { includeGeneration });
+      console.log(`[ExpressMode] Starting background job for report ${reportId}...`, {
+        includeGeneration,
+        reportDepth,
+        reportLanguage,
+        willSendDepth: includeGeneration ? reportDepth : undefined,
+        willSendLanguage: includeGeneration ? reportLanguage : undefined
+      });
 
       // Create background job instead of SSE stream
       const jobId = await createExpressModeJob(reportId, {
         includeGeneration,
         autoAccept: true,
+        reportDepth: includeGeneration ? reportDepth : undefined,
         reportLanguage: includeGeneration ? reportLanguage : undefined,
       });
 
@@ -234,27 +245,52 @@ export function ExpressModeButton({
     ? 'Generatie (stap 3) en alle review stages (4a-4f) worden automatisch uitgevoerd'
     : 'Alle review stages (4a-4f) worden automatisch uitgevoerd met auto-accept van alle feedback';
 
+  // Menu item variant - renders as a clickable div for use in DropdownMenu
+  const menuItemContent = (
+    <div
+      onClick={disabled || isRunning ? undefined : startExpressMode}
+      className={`flex items-center gap-2 w-full cursor-pointer ${disabled || isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+    >
+      {isRunning ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Express Mode Actief...</span>
+        </>
+      ) : (
+        <>
+          <Zap className="h-4 w-4" />
+          <span>{buttonLabel}</span>
+        </>
+      )}
+    </div>
+  );
+
+  // Button variant - renders as a standard button
+  const buttonContent = (
+    <Button
+      onClick={startExpressMode}
+      disabled={disabled || isRunning}
+      variant="default"
+      size="sm"
+      className="gap-2"
+    >
+      {isRunning ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Express Mode Actief...
+        </>
+      ) : (
+        <>
+          <Zap className="h-4 w-4" />
+          {buttonLabel}
+        </>
+      )}
+    </Button>
+  );
+
   return (
     <>
-      <Button
-        onClick={startExpressMode}
-        disabled={disabled || isRunning}
-        variant="default"
-        size="sm"
-        className="gap-2"
-      >
-        {isRunning ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Express Mode Actief...
-          </>
-        ) : (
-          <>
-            <Zap className="h-4 w-4" />
-            {buttonLabel}
-          </>
-        )}
-      </Button>
+      {variant === "menuItem" ? menuItemContent : buttonContent}
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="max-w-2xl">

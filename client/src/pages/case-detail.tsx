@@ -19,11 +19,11 @@
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useCallback } from "react";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 
 // UI Components
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Sheet,
@@ -40,7 +40,6 @@ import {
   Activity,
   Paperclip,
   PanelRight,
-  BookOpen,
 } from "lucide-react";
 
 // Feature Components
@@ -63,7 +62,7 @@ import { useCaseMetadata } from "@/hooks/useCaseMetadata";
 import { useVersionManagement } from "@/hooks/useVersionManagement";
 
 // Utils
-import { getStatusColor, getStatusLabel, isWorkflowEditable } from "@/utils/caseDetailUtils";
+import { isWorkflowEditable } from "@/utils/caseDetailUtils";
 
 // Types & Constants
 import type { Report, DossierData, BouwplanData } from "@shared/schema";
@@ -76,7 +75,6 @@ export default function CaseDetail() {
 
   // UI State
   const [showFullScreen, setShowFullScreen] = useState(false);
-  const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("workflow");
   const [expandedAttachments, setExpandedAttachments] = useState<Set<string>>(
     new Set()
@@ -92,13 +90,31 @@ export default function CaseDetail() {
     isLoading,
     error,
   } = useQuery<Report>({
-    queryKey: [`/api/reports/${reportId}`],
+    queryKey: QUERY_KEYS.reports.detail(reportId!),
+    queryFn: async () => {
+      const response = await fetch(`/api/reports/${reportId}`);
+      if (!response.ok) throw new Error('Failed to fetch report');
+      const result = await response.json();
+      // API returns wrapped response { success: true, data: ... }
+      return result.success ? result.data : result;
+    },
     enabled: !!reportId,
   });
 
   const { data: attachmentsData } = useQuery<Attachment[]>({
     queryKey: [`/api/upload/attachments/${reportId}`],
     enabled: !!reportId,
+    // Poll every 5s while OCR is in progress to auto-update status
+    refetchInterval: (query) => {
+      const attachments = query.state.data;
+      if (!attachments) return false;
+      // Check if any attachment has pending OCR
+      const hasPendingOcr = attachments.some(
+        (a) => a.needsVisionOCR === true &&
+               (!a.extractedText || a.extractedText.length <= 100)
+      );
+      return hasPendingOcr ? 5000 : false;
+    },
   });
 
   // Custom Hooks
@@ -180,72 +196,42 @@ export default function CaseDetail() {
       <AppHeader />
 
       <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <Link href="/cases">
-              <Button
-                variant="outline"
-                size="sm"
-                data-testid="button-back-to-cases"
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Terug
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">
-                {report.title}
-              </h1>
-              <p className="text-muted-foreground">{report.clientName}</p>
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2">
-            <Badge
-              className={getStatusColor(report.status)}
-              data-testid="badge-case-status"
-            >
-              {getStatusLabel(
-                report.status,
-                report.stageResults as Record<string, unknown>
-              )}
-            </Badge>
+        {/* Page Header - Minimal back button */}
+        <div className="mb-4">
+          <Link href="/cases">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              onClick={() => setShowPdfPreview(true)}
-              title="Bekijk rapport in PDF formaat"
+              className="text-muted-foreground hover:text-foreground -ml-2"
+              data-testid="button-back-to-cases"
             >
-              <BookOpen className="mr-2 h-4 w-4" />
-              Bekijk
+              <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+              Terug
             </Button>
-            <ExportDialog
-              reportId={reportId || ""}
-              reportTitle={report.title}
-              clientName={report.clientName}
-            />
-          </div>
+          </Link>
         </div>
 
-        {/* Document Header */}
+        {/* Document Header with Workflow Controls */}
         <CaseHeader
           report={report}
-          isEditingTitle={isEditingTitle}
           isEditingClient={isEditingClient}
-          editedTitle={editedTitle}
           editedClient={editedClient}
           isPending={isPending}
-          onEditTitle={handleEditTitle}
           onEditClient={handleEditClient}
-          onSaveTitle={handleSaveTitle}
           onSaveClient={handleSaveClient}
           onCancelEdit={handleCancelEdit}
-          onTitleChange={setEditedTitle}
           onClientChange={setEditedClient}
           versionCheckpoints={versionCheckpoints}
           currentVersion={currentVersion}
+          // Workflow props
+          stageResults={report.stageResults as Record<string, string>}
+          conceptReportVersions={report.conceptReportVersions as Record<string, unknown>}
+          onExpressComplete={() => window.location.reload()}
+          onAdjustmentApplied={() => window.location.reload()}
+          rolledBackChanges={report.rolledBackChanges as Record<string, { rolledBackAt: string }> | undefined}
+          // Header action props
+          reportId={reportId}
+          onShowPreview={() => setShowFullScreen(true)}
         />
 
         {/* 2-Column Layout: Content + Sticky Preview */}
@@ -257,28 +243,38 @@ export default function CaseDetail() {
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="workflow" className="flex items-center gap-2">
+              <TabsList className="inline-flex h-10 items-center justify-start gap-1 rounded-full bg-muted p-1">
+                <TabsTrigger
+                  value="workflow"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                >
                   <Activity className="h-4 w-4" />
                   Workflow
                 </TabsTrigger>
                 <TabsTrigger
                   value="attachments"
-                  className="flex items-center gap-2"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm"
                 >
                   <Paperclip className="h-4 w-4" />
-                  Bijlages{" "}
-                  {attachmentsData &&
-                    attachmentsData.length > 0 &&
-                    `(${attachmentsData.length})`}
+                  Bijlages
+                  {attachmentsData && attachmentsData.length > 0 && (
+                    <span className="ml-1 text-xs text-muted-foreground">({attachmentsData.length})</span>
+                  )}
                 </TabsTrigger>
-                <TabsTrigger value="timeline" className="flex items-center gap-2">
+                <TabsTrigger
+                  value="timeline"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                >
                   <GitBranch className="h-4 w-4" />
-                  Timeline{" "}
-                  {versionCheckpoints.length > 0 &&
-                    `(${versionCheckpoints.length})`}
+                  Timeline
+                  {versionCheckpoints.length > 0 && (
+                    <span className="ml-1 text-xs text-muted-foreground">({versionCheckpoints.length})</span>
+                  )}
                 </TabsTrigger>
-                <TabsTrigger value="diff" className="flex items-center gap-2">
+                <TabsTrigger
+                  value="diff"
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                >
                   <Eye className="h-4 w-4" />
                   Vergelijk
                 </TabsTrigger>
@@ -409,45 +405,6 @@ export default function CaseDetail() {
             }
             onClose={() => setShowFullScreen(false)}
           />
-        )}
-
-        {/* PDF Preview Overlay */}
-        {showPdfPreview && (
-          <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b bg-background">
-              <div className="flex items-center gap-3">
-                <BookOpen className="h-5 w-5" />
-                <span className="font-semibold">Rapport Preview</span>
-                <span className="text-sm text-muted-foreground">
-                  {report.title} - {report.clientName}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open(`/api/reports/${reportId}/preview-pdf`, '_blank')}
-                >
-                  <Eye className="mr-2 h-4 w-4" />
-                  Open in Nieuw Tabblad
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowPdfPreview(false)}
-                >
-                  Sluiten
-                </Button>
-              </div>
-            </div>
-            <div className="flex-1 p-4">
-              <iframe
-                src={`/api/reports/${reportId}/preview-pdf`}
-                className="w-full h-full rounded-lg border shadow-sm"
-                title="Rapport Preview"
-              />
-            </div>
-          </div>
         )}
 
         {/* Floating Action Button for Preview (visible below XL) */}

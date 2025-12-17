@@ -1,13 +1,14 @@
 /**
  * useCaseMetadata Hook
  *
- * Handles case metadata editing (title, client name) with optimistic updates.
- * Extracted from case-detail.tsx lines 52-150.
+ * Handles case metadata editing (client name) with optimistic updates.
+ * Title is auto-generated from dossierNumber + clientName on the backend.
  */
 
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 import type { CaseMetadataUpdate, EditState } from "@/types/caseDetail.types";
 import type { Report } from "@shared/schema";
 
@@ -57,34 +58,27 @@ export function useCaseMetadata({
       return data.data || data;
     },
     onMutate: async (updates) => {
-      await queryClient.cancelQueries({
-        queryKey: [`/api/reports/${reportId}`],
+      const queryKey = QUERY_KEYS.reports.detail(reportId!);
+
+      await queryClient.cancelQueries({ queryKey });
+
+      const previousReport = queryClient.getQueryData(queryKey);
+
+      // Optimistic update
+      queryClient.setQueryData(queryKey, (old: Report | undefined) => {
+        if (!old) return old;
+        return {
+          ...old,
+          ...updates,
+          updatedAt: new Date().toISOString(),
+        };
       });
 
-      const previousReport = queryClient.getQueryData([
-        `/api/reports/${reportId}`,
-      ]);
-
-      queryClient.setQueryData(
-        [`/api/reports/${reportId}`],
-        (old: Report | undefined) => {
-          if (!old) return old;
-          return {
-            ...old,
-            ...updates,
-            updatedAt: new Date().toISOString(),
-          };
-        }
-      );
-
-      return { previousReport };
+      return { previousReport, queryKey };
     },
     onError: (error: Error, _variables, context) => {
-      if (context?.previousReport) {
-        queryClient.setQueryData(
-          [`/api/reports/${reportId}`],
-          context.previousReport
-        );
+      if (context?.previousReport && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previousReport);
       }
       toast({
         title: "Fout bij opslaan",
@@ -92,22 +86,21 @@ export function useCaseMetadata({
         variant: "destructive",
       });
     },
-    onSuccess: (updatedReport) => {
+    onSuccess: (updatedReport, _variables, context) => {
       setIsEditingTitle(false);
       setIsEditingClient(false);
 
-      if (updatedReport) {
-        queryClient.setQueryData(
-          [`/api/reports/${reportId}`],
-          (old: Report | undefined) => ({
-            ...old,
-            ...updatedReport,
-          })
-        );
+      // Update cache with server response (includes auto-generated title)
+      if (updatedReport && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, (old: Report | undefined) => ({
+          ...old,
+          ...updatedReport,
+        }));
       }
 
+      // Also invalidate cases list
       queryClient.invalidateQueries({
-        queryKey: ["/api/cases"],
+        queryKey: QUERY_KEYS.cases.all(),
         exact: false,
       });
 

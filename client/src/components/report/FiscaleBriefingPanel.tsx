@@ -180,7 +180,7 @@ const CompactBriefingView = memo(function CompactBriefingView({
   isRegenerating: boolean;
 }) {
   return (
-    <Card className="border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/20">
+    <Card className="border-border">
       <CardHeader className="pb-2 pt-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -211,81 +211,44 @@ const CompactBriefingView = memo(function CompactBriefingView({
         </div>
       </CardHeader>
       <CardContent className="space-y-3 text-xs pt-0">
-        {/* Situatieschets - Direct visible */}
-        {briefing.situatie_schets && (
-          <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <User className="h-3.5 w-3.5 text-slate-500" />
-                <span className="text-muted-foreground">{briefing.situatie_schets.client_profiel}</span>
-              </div>
-              <div className="text-muted-foreground">
-                <span className="font-medium text-foreground">Vermogen: </span>
-                {briefing.situatie_schets.vermogenssituatie}
-              </div>
-              <div className="text-muted-foreground">
-                <span className="font-medium text-foreground">Aanleiding: </span>
-                {briefing.situatie_schets.aanleiding}
-              </div>
-              {briefing.situatie_schets.tijdsdruk && (
-                <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                  <Clock className="h-3.5 w-3.5" />
-                  <span className="font-medium">{briefing.situatie_schets.tijdsdruk}</span>
-                </div>
-              )}
-              {/* Kernfeiten */}
-              {briefing.situatie_schets.kernfeiten && briefing.situatie_schets.kernfeiten.length > 0 && (
-                <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
-                  <p className="font-medium text-foreground mb-1">Kernfeiten:</p>
-                  <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
-                    {briefing.situatie_schets.kernfeiten.map((feit, idx) => (
-                      <li key={idx}>{feit}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Case badges */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="outline" className="text-xs">
+        {/* Case badges - compact row */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
             {briefing.case_in_een_oogopslag.client_type}
           </Badge>
           {getComplexityBadge(briefing.case_in_een_oogopslag.complexiteit)}
           {briefing.case_in_een_oogopslag.belastingjaren.length > 0 && (
-            <div className="flex items-center gap-1 text-muted-foreground">
+            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
               <Calendar className="h-3 w-3" />
               {briefing.case_in_een_oogopslag.belastingjaren.join(", ")}
-            </div>
-          )}
-          {briefing.case_in_een_oogopslag.geschatte_financiele_impact && (
-            <span className="text-green-600 dark:text-green-400 font-medium">
-              {briefing.case_in_een_oogopslag.geschatte_financiele_impact}
             </span>
           )}
         </div>
 
-        {/* Kernvraag */}
-        <p className="text-muted-foreground font-medium">
+        {/* Financial impact + Kernvraag */}
+        {briefing.case_in_een_oogopslag.geschatte_financiele_impact && (
+          <p className="text-green-600 dark:text-green-400 font-semibold text-sm">
+            {briefing.case_in_een_oogopslag.geschatte_financiele_impact}
+          </p>
+        )}
+        <p className="text-muted-foreground text-[11px] leading-relaxed">
           {briefing.case_in_een_oogopslag.kernvraag}
         </p>
 
-        {/* Mijn Advies - Compact */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded p-2.5 border border-blue-200 dark:border-blue-800">
+        {/* Mijn Advies - More compact */}
+        <div className="bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-2.5 border border-blue-100 dark:border-blue-900">
           <div className="flex items-start gap-2">
             <Sparkles className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium text-xs">{briefing.mijn_advies.conclusie}</p>
-              <div className="flex items-center gap-3 mt-1.5 text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <Brain className="h-3 w-3 text-indigo-500" />
-                  <span>{briefing.mijn_advies.redenering.length} stappen</span>
-                </div>
-                <div className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded text-xs", getConfidenceStyle(briefing.mijn_advies.confidence).bg, getConfidenceStyle(briefing.mijn_advies.confidence).text)}>
+            <div className="min-w-0">
+              <p className="font-medium text-[11px] leading-relaxed">{briefing.mijn_advies.conclusie}</p>
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Brain className="h-3 w-3" />
+                  {briefing.mijn_advies.redenering.length} stappen
+                </span>
+                <span className={cn("text-[10px] px-1.5 py-0.5 rounded", getConfidenceStyle(briefing.mijn_advies.confidence).bg, getConfidenceStyle(briefing.mijn_advies.confidence).text)}>
                   {getConfidenceStyle(briefing.mijn_advies.confidence).label}
-                </div>
+                </span>
               </div>
             </div>
           </div>
@@ -295,17 +258,17 @@ const CompactBriefingView = memo(function CompactBriefingView({
         <Button
           variant="outline"
           size="sm"
-          className="w-full"
+          className="w-full h-8 text-xs"
           onClick={onExpand}
         >
-          <Maximize2 className="h-3.5 w-3.5 mr-2" />
+          <Maximize2 className="h-3 w-3 mr-1.5" />
           Bekijk volledige briefing
         </Button>
 
-        {/* AI Assessment - onderaan met uitleg */}
-        <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-2">
+        {/* AI Assessment - compact grid */}
+        <div className="pt-2 border-t space-y-1.5">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">AI Inschatting</p>
-          <div className="grid grid-cols-2 gap-2 text-[11px]">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Zekerheid:</span>
               <span className={cn(
@@ -328,12 +291,10 @@ const CompactBriefingView = memo(function CompactBriefingView({
                 {briefing.aanbeveling_review_diepte === "vluchtig" ? "Vluchtig" : briefing.aanbeveling_review_diepte === "normaal" ? "Normaal" : "Grondig"}
               </span>
             </div>
-            {briefing.check_voor_verzending.length > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Te checken:</span>
-                <span className="font-medium">{briefing.check_voor_verzending.length} punten</span>
-              </div>
-            )}
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Te checken:</span>
+              <span className="font-medium">{briefing.check_voor_verzending.length} punten</span>
+            </div>
             {briefing.twijfelpunten && briefing.twijfelpunten.length > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Twijfelpunten:</span>

@@ -1,23 +1,40 @@
 /**
  * CaseHeader Component
  *
- * Document header with editable title and client name.
- * Extracted from case-detail.tsx lines 429-557.
+ * Document header showing dossier number (read-only), editable client name,
+ * and workflow progress/actions.
  */
 
-import { memo } from "react";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { memo, useState, useMemo } from "react";
+import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Calendar, User, GitBranch, Edit2, Save, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { FileText, Edit2, Save, X, MoreHorizontal, Pencil, Eye, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { CaseHeaderProps } from "@/types/caseDetail.types";
+import { ExpressModeButton } from "@/components/workflow/ExpressModeButton";
+import { ExpressModeResults } from "@/components/workflow/ExpressModeResults";
+import { ReportAdjustmentDialog } from "@/components/workflow/ReportAdjustmentDialog";
+import { ExportDialog } from "@/components/export/ExportDialog";
+import { WORKFLOW_STAGES } from "@/components/workflow/constants";
+import { countCompletedStages } from "@/utils/workflowUtils";
+import { getLatestConceptText } from "@shared/constants";
+import { REVIEW_STAGES } from "@shared/constants";
 
 /**
  * Editable field component for inline editing
  */
 interface EditableFieldProps {
   isEditing: boolean;
-  value: string;
   displayValue: string;
   editedValue: string;
   isPending: boolean;
@@ -26,7 +43,6 @@ interface EditableFieldProps {
   onCancel: () => void;
   onChange: (value: string) => void;
   inputClassName?: string;
-  iconSize?: "sm" | "md";
 }
 
 const EditableField = memo(function EditableField({
@@ -39,11 +55,7 @@ const EditableField = memo(function EditableField({
   onCancel,
   onChange,
   inputClassName = "",
-  iconSize = "md",
 }: EditableFieldProps) {
-  const iconClass = iconSize === "sm" ? "h-3 w-3" : "h-4 w-4";
-  const buttonSize = iconSize === "sm" ? "h-7 px-2" : "";
-
   if (isEditing) {
     return (
       <div className="flex items-center gap-2">
@@ -61,18 +73,16 @@ const EditableField = memo(function EditableField({
           size="sm"
           onClick={onSave}
           disabled={isPending}
-          className={buttonSize}
         >
-          <Save className={iconClass} />
+          <Save className="h-4 w-4" />
         </Button>
         <Button
           size="sm"
           variant="ghost"
           onClick={onCancel}
           disabled={isPending}
-          className={buttonSize}
         >
-          <X className={iconClass} />
+          <X className="h-4 w-4" />
         </Button>
       </div>
     );
@@ -81,98 +91,220 @@ const EditableField = memo(function EditableField({
   return (
     <span className="flex items-center gap-2 group">
       <span>{displayValue}</span>
-      <div
-        role="button"
-        tabIndex={0}
-        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded cursor-pointer"
+      <button
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded"
         onClick={onEdit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            onEdit();
-          }
-        }}
       >
-        <Edit2 className={iconClass} />
-      </div>
+        <Edit2 className="h-4 w-4" />
+      </button>
     </span>
   );
 });
 
 export const CaseHeader = memo(function CaseHeader({
   report,
-  isEditingTitle,
   isEditingClient,
-  editedTitle,
   editedClient,
   isPending,
-  onEditTitle,
   onEditClient,
-  onSaveTitle,
   onSaveClient,
   onCancelEdit,
-  onTitleChange,
   onClientChange,
-  versionCheckpoints,
-  currentVersion,
+  // Workflow props
+  stageResults = {},
+  conceptReportVersions = {},
+  onExpressComplete,
+  onAdjustmentApplied,
+  isReloadingPrompts = false,
+  onReloadPrompts,
+  rolledBackChanges,
+  // Header action props
+  onShowPreview,
+  reportId,
 }: CaseHeaderProps) {
+  const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState(false);
+  const [showExpressResults, setShowExpressResults] = useState(false);
+
+  // Extract dossier number from title (e.g., "D-0044 - Client" -> "D-0044")
+  const dossierNumber = report.title.match(/^D-\d{4}/)?.[0] || `D-${String(report.dossierNumber || 0).padStart(4, '0')}`;
+
+  // Workflow calculations
+  const completedCount = countCompletedStages(stageResults, conceptReportVersions);
+  const totalStages = WORKFLOW_STAGES.length;
+  const hasStage2 = !!stageResults["2_complexiteitscheck"];
+  const hasStage3 = !!conceptReportVersions["3_generatie"] || !!(conceptReportVersions as any)?.latest;
+  const allReviewStagesCompleted = REVIEW_STAGES.every(key => !!stageResults[key]);
+  const latestConceptContent = getLatestConceptText(conceptReportVersions as any);
+  const latestVersion = (conceptReportVersions as any)?.latest?.v || 1;
+
+  // Progress info for progress bar
+  const progressInfo = useMemo(() => {
+    const percentage = Math.round((completedCount / totalStages) * 100);
+    let status: "not-started" | "in-progress" | "complete" = "not-started";
+    let statusLabel = "Niet gestart";
+
+    if (completedCount === totalStages) {
+      status = "complete";
+      statusLabel = "Voltooid";
+    } else if (completedCount > 0) {
+      status = "in-progress";
+      statusLabel = `${completedCount} van ${totalStages}`;
+    }
+
+    return { percentage, status, statusLabel };
+  }, [completedCount, totalStages]);
+
   return (
     <Card className="mb-6">
-      <CardHeader>
+      <CardHeader className="py-4">
         <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <CardTitle className="flex items-center space-x-2 text-2xl mb-2">
-              <FileText className="h-6 w-6" />
+          {/* Left side: Dossier info */}
+          <div className="flex items-center gap-4">
+            {/* Dossier Number Badge */}
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-muted-foreground" />
+              <span className="text-sm font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                {dossierNumber}
+              </span>
+            </div>
+
+            {/* Client Name - Editable */}
+            <h1 className="text-xl font-semibold">
               <EditableField
-                isEditing={isEditingTitle}
-                value={report.title}
-                displayValue={report.title}
-                editedValue={editedTitle}
+                isEditing={isEditingClient}
+                displayValue={report.clientName}
+                editedValue={editedClient}
                 isPending={isPending}
-                onEdit={onEditTitle}
-                onSave={onSaveTitle}
-                onCancel={() => onCancelEdit("title")}
-                onChange={onTitleChange}
-                inputClassName="text-2xl font-semibold h-10"
+                onEdit={onEditClient}
+                onSave={onSaveClient}
+                onCancel={() => onCancelEdit("client")}
+                onChange={onClientChange}
+                inputClassName="text-xl font-semibold h-9 w-56"
               />
-            </CardTitle>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <User className="h-4 w-4" />
-                <EditableField
-                  isEditing={isEditingClient}
-                  value={report.clientName}
-                  displayValue={report.clientName}
-                  editedValue={editedClient}
-                  isPending={isPending}
-                  onEdit={onEditClient}
-                  onSave={onSaveClient}
-                  onCancel={() => onCancelEdit("client")}
-                  onChange={onClientChange}
-                  inputClassName="h-7 text-sm w-48"
-                  iconSize="sm"
-                />
-              </div>
-              <div className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                <span>
-                  Bijgewerkt:{" "}
-                  {report.updatedAt
-                    ? new Date(report.updatedAt).toLocaleDateString("nl-NL")
-                    : "Onbekend"}
+            </h1>
+          </div>
+
+          {/* Right side: Workflow controls */}
+          <div className="flex items-center gap-3">
+            {/* Progress Bar - wider */}
+            <div className="w-32">
+              <div className="flex items-center justify-end text-xs mb-1">
+                <span className={cn(
+                  "font-medium",
+                  progressInfo.status === "complete" ? "text-emerald-600" :
+                  progressInfo.status === "in-progress" ? "text-amber-600" :
+                  "text-muted-foreground"
+                )}>
+                  {progressInfo.statusLabel}
                 </span>
               </div>
-              {versionCheckpoints.length > 0 && (
-                <div className="flex items-center gap-1">
-                  <GitBranch className="h-4 w-4" />
-                  <span>
-                    Versie {currentVersion} van {versionCheckpoints.length}
-                  </span>
-                </div>
-              )}
+              <Progress
+                value={progressInfo.percentage}
+                className={cn(
+                  "h-1.5",
+                  progressInfo.status === "complete" && "[&>div]:bg-emerald-500",
+                  progressInfo.status === "in-progress" && "[&>div]:bg-amber-500"
+                )}
+              />
             </div>
+
+            {/* Actions Menu - show after Stage 2 */}
+            {report.id && hasStage2 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-9">
+                    <MoreHorizontal className="h-4 w-4 mr-1" />
+                    Acties
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  {/* Express Mode - only show when not all reviews completed */}
+                  {!allReviewStagesCompleted && onExpressComplete && (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <ExpressModeButton
+                          reportId={report.id}
+                          onComplete={onExpressComplete}
+                          includeGeneration={!hasStage3}
+                          hasStage3={hasStage3}
+                          variant="menuItem"
+                        />
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  {hasStage3 && (
+                    <DropdownMenuItem onClick={() => setIsAdjustmentDialogOpen(true)}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Rapport Aanpassen
+                    </DropdownMenuItem>
+                  )}
+                  {allReviewStagesCompleted && (
+                    <DropdownMenuItem onClick={() => setShowExpressResults(true)}>
+                      <Eye className="h-4 w-4 mr-2" />
+                      Bekijk Wijzigingen
+                    </DropdownMenuItem>
+                  )}
+                  {onReloadPrompts && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={onReloadPrompts} disabled={isReloadingPrompts}>
+                        <RefreshCw className={`h-4 w-4 mr-2 ${isReloadingPrompts ? "animate-spin" : ""}`} />
+                        Herlaad Prompts
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* Preview Button - show when Stage 3 has content */}
+            {hasStage3 && onShowPreview && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={onShowPreview}
+              >
+                <Eye className="h-4 w-4 mr-1.5" />
+                Preview
+              </Button>
+            )}
+
+            {/* Export Button */}
+            {(reportId || report.id) && (
+              <ExportDialog
+                reportId={reportId || report.id}
+                reportTitle={report.title}
+                clientName={report.clientName}
+              />
+            )}
           </div>
         </div>
       </CardHeader>
+
+      {/* Dialogs */}
+      {report.id && (
+        <ReportAdjustmentDialog
+          reportId={report.id}
+          isOpen={isAdjustmentDialogOpen}
+          onOpenChange={setIsAdjustmentDialogOpen}
+          onAdjustmentApplied={onAdjustmentApplied}
+        />
+      )}
+
+      {showExpressResults && report.id && (
+        <ExpressModeResults
+          reportId={report.id}
+          stageResults={stageResults}
+          finalContent={latestConceptContent}
+          finalVersion={latestVersion}
+          initialRolledBackChanges={rolledBackChanges}
+          fiscaleBriefing={stageResults['7_fiscale_briefing']}
+          onClose={() => setShowExpressResults(false)}
+          onSaveComplete={onAdjustmentApplied}
+        />
+      )}
     </Card>
   );
 });

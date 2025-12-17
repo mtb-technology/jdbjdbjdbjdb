@@ -138,6 +138,9 @@ function WorkflowManagerContent({
     onSuccess: (report: Report) => {
       console.log("🎯 Report created successfully:", { reportId: report.id, hasId: !!report.id, report });
 
+      // Invalidate cases cache so the new case appears in the list
+      queryClient.invalidateQueries({ queryKey: ["/api/cases"], refetchType: 'all' });
+
       // Save report ID in session FIRST to prevent race conditions
       if (report.id) {
         sessionStorage.setItem('current-workflow-report-id', report.id);

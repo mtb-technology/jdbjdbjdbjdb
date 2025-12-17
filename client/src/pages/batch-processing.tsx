@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ interface BatchItem {
 
 export default function BatchProcessing() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentlyProcessing, setCurrentlyProcessing] = useState(0);
@@ -152,6 +154,9 @@ export default function BatchProcessing() {
       // Handle API response format - extract report from success response or use data directly
       const report = (data && typeof data === 'object' && 'success' in data && data.success === true) ? data.data : data;
       const reportId = report.id;
+
+      // Invalidate cases cache so the new case appears in the list
+      queryClient.invalidateQueries({ queryKey: ["/api/cases"], refetchType: 'all' });
 
       // Update with report ID
       setBatchItems(prev =>

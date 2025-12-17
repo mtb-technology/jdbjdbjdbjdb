@@ -19,11 +19,6 @@ export type StageStatus =
   | "feedback_ready";
 
 /**
- * Manual mode types
- */
-export type ManualMode = "ai" | "manual";
-
-/**
  * Progress information for processing stages
  */
 export interface StageProgress {
@@ -87,13 +82,6 @@ export interface WorkflowStageCardProps {
   blockReason?: string;
   substepResults?: Record<string, any>;
 
-  // Manual mode
-  manualMode?: ManualMode;
-  onToggleManualMode?: (mode: ManualMode) => void;
-  manualContent?: string;
-  onManualContentChange?: (content: string) => void;
-  onManualExecute?: () => void;
-
   // Express Mode inline - for stages 2+
   showExpressMode?: boolean;
   hasStage3?: boolean;
@@ -112,21 +100,6 @@ export interface StageCardHeaderProps {
   isProcessing: boolean;
   progress?: StageProgress;
   blockReason?: string;
-}
-
-/**
- * Props for ManualModePanel component
- */
-export interface ManualModePanelProps {
-  stageKey: string;
-  stageName: string;
-  manualMode: ManualMode;
-  onToggleManualMode: (mode: ManualMode) => void;
-  stagePrompt?: string;
-  manualContent: string;
-  onManualContentChange: (content: string) => void;
-  onManualExecute: () => void;
-  isProcessing: boolean;
 }
 
 /**

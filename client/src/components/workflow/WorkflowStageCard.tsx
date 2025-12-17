@@ -24,7 +24,6 @@ import { useState, useCallback, useMemo, memo } from "react";
 // Extracted Components
 import {
   StageCardHeader,
-  ManualModePanel,
   StageActionButtons,
   DevToolsPanel,
   StageOutputSection,
@@ -33,7 +32,6 @@ import {
 // Utils
 import {
   getResultLabel,
-  supportsManualMode,
   getStatusCardClasses,
   copyToClipboard,
 } from "@/utils/stageCardUtils";
@@ -74,11 +72,6 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   showFeedbackProcessor,
   onFeedbackProcessed,
   blockReason,
-  manualMode = "ai",
-  onToggleManualMode,
-  manualContent = "",
-  onManualContentChange,
-  onManualExecute,
   emailOutput,
   isGeneratingEmail,
   showExpressMode,
@@ -105,7 +98,6 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
   // Calculated values
   const resultLabel = useMemo(() => getResultLabel(stageKey), [stageKey]);
-  const hasManualMode = useMemo(() => supportsManualMode(stageKey), [stageKey]);
   const cardClasses = useMemo(
     () => getStatusCardClasses(stageStatus),
     [stageStatus]
@@ -160,64 +152,7 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
             transition={{ duration: 0.3 }}
           >
             <CardContent className="space-y-4">
-              {/* Manual Mode Panel for supported stages */}
-              {hasManualMode && onToggleManualMode && (
-                <ManualModePanel
-                  stageKey={stageKey}
-                  stageName={stageName}
-                  manualMode={manualMode}
-                  onToggleManualMode={onToggleManualMode}
-                  stagePrompt={stagePrompt}
-                  manualContent={manualContent}
-                  onManualContentChange={onManualContentChange || (() => {})}
-                  onManualExecute={onManualExecute || (() => {})}
-                  isProcessing={isProcessing}
-                />
-              )}
-
-              {/* Action Buttons - Only show for AI mode or non-manual stages */}
-              {(!hasManualMode || manualMode === "ai") && (
-                <StageActionButtons
-                  stageKey={stageKey}
-                  stageStatus={stageStatus}
-                  canExecute={canExecute}
-                  isProcessing={isProcessing}
-                  customContext={customContext}
-                  showCustomContext={showCustomContext}
-                  onToggleCustomContext={handleToggleCustomContext}
-                  onCustomContextChange={setCustomContext}
-                  onExecute={handleExecuteClick}
-                  onResetStage={onResetStage}
-                  onCancel={onCancel}
-                  reportDepth={reportDepth}
-                  onReportDepthChange={handleReportDepthChange}
-                  reportLanguage={reportLanguage}
-                  onReportLanguageChange={handleReportLanguageChange}
-                  reportId={reportId}
-                  showExpressMode={showExpressMode}
-                  hasStage3={hasStage3}
-                  onExpressComplete={onExpressComplete}
-                  pendingAttachments={pendingAttachments}
-                  onAttachmentsChange={setPendingAttachments}
-                  isUploadingAttachments={isProcessing}
-                  blockReason={blockReason}
-                />
-              )}
-
-              {/* Developer Tools Panel */}
-              {stagePrompt && (
-                <DevToolsPanel
-                  stagePrompt={stagePrompt}
-                  isRawInputCollapsed={isRawInputCollapsed}
-                  isPromptCollapsed={isPromptCollapsed}
-                  onToggleRawInput={handleToggleRawInput}
-                  onTogglePrompt={onTogglePrompt}
-                  onCopy={handleCopy}
-                  copied={copied}
-                />
-              )}
-
-              {/* Output Section */}
+              {/* 1. OUTPUT EERST - Het belangrijkste bovenaan */}
               {stageResult && (
                 <StageOutputSection
                   stageKey={stageKey}
@@ -235,6 +170,46 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                   reportId={reportId}
                   onFeedbackProcessed={onFeedbackProcessed}
                   substepResults={substepResults}
+                />
+              )}
+
+              {/* 2. ACTIES - Action Buttons */}
+              <StageActionButtons
+                stageKey={stageKey}
+                stageStatus={stageStatus}
+                canExecute={canExecute}
+                isProcessing={isProcessing}
+                customContext={customContext}
+                showCustomContext={showCustomContext}
+                onToggleCustomContext={handleToggleCustomContext}
+                onCustomContextChange={setCustomContext}
+                onExecute={handleExecuteClick}
+                onResetStage={onResetStage}
+                onCancel={onCancel}
+                reportDepth={reportDepth}
+                onReportDepthChange={handleReportDepthChange}
+                reportLanguage={reportLanguage}
+                onReportLanguageChange={handleReportLanguageChange}
+                reportId={reportId}
+                showExpressMode={showExpressMode}
+                hasStage3={hasStage3}
+                onExpressComplete={onExpressComplete}
+                pendingAttachments={pendingAttachments}
+                onAttachmentsChange={setPendingAttachments}
+                isUploadingAttachments={isProcessing}
+                blockReason={blockReason}
+              />
+
+              {/* 3. DEV TOOLS - Alleen tonen voor niet-voltooide stages */}
+              {stagePrompt && stageStatus !== "completed" && (
+                <DevToolsPanel
+                  stagePrompt={stagePrompt}
+                  isRawInputCollapsed={isRawInputCollapsed}
+                  isPromptCollapsed={isPromptCollapsed}
+                  onToggleRawInput={handleToggleRawInput}
+                  onTogglePrompt={onTogglePrompt}
+                  onCopy={handleCopy}
+                  copied={copied}
                 />
               )}
             </CardContent>
