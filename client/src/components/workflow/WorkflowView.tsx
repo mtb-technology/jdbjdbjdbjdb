@@ -29,7 +29,6 @@ import { ActiveJobsBanner } from "./ActiveJobsBanner";
 
 // Hooks
 import { useCollapsibleSections } from "@/hooks/useCollapsibleSections";
-import { useManualModeHandlers } from "@/hooks/useManualModeHandlers";
 import { useStageActions } from "@/hooks/useStageActions";
 import { useActiveJobs, useJobPolling, type JobStageProgress } from "@/hooks/useJobPolling";
 
@@ -123,15 +122,6 @@ export const WorkflowView = memo(function WorkflowView({
   });
 
   // Custom hooks for handlers
-  const {
-    handleToggleManualMode,
-    handleToggleStageManualMode,
-    handleManualContentChange,
-    handleStageManualContentChange,
-    handleManualExecute,
-    handleStageManualExecute,
-  } = useManualModeHandlers({ state, dispatch });
-
   const {
     handleExecuteStage,
     handleResetStage,
@@ -416,26 +406,6 @@ export const WorkflowView = memo(function WorkflowView({
                         showExpressMode={showExpressModeOnStage}
                         hasStage3={hasStage3}
                         onExpressComplete={handleExpressComplete}
-                        // Manual mode props for stage 3
-                        {...(stage.key === "3_generatie"
-                          ? {
-                              manualMode: state.manualMode,
-                              onToggleManualMode: handleToggleManualMode,
-                              manualContent: state.manualContent,
-                              onManualContentChange: handleManualContentChange,
-                              onManualExecute: handleManualExecute,
-                            }
-                          : {})}
-                        // Manual mode props for reviewer stages (4A, 4B, etc.)
-                        {...(isReviewer
-                          ? {
-                              manualMode: state.manualModes[stage.key] || "ai",
-                              onToggleManualMode: handleToggleStageManualMode(stage.key),
-                              manualContent: state.manualContents[stage.key] || "",
-                              onManualContentChange: handleStageManualContentChange(stage.key),
-                              onManualExecute: handleStageManualExecute(stage.key),
-                            }
-                          : {})}
                       />
                         </div>
                       </div>

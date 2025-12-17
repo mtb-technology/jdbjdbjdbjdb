@@ -24,7 +24,6 @@ import { useState, useCallback, useMemo, memo } from "react";
 // Extracted Components
 import {
   StageCardHeader,
-  ManualModePanel,
   StageActionButtons,
   DevToolsPanel,
   StageOutputSection,
@@ -33,7 +32,6 @@ import {
 // Utils
 import {
   getResultLabel,
-  supportsManualMode,
   getStatusCardClasses,
   copyToClipboard,
 } from "@/utils/stageCardUtils";
@@ -74,11 +72,6 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
   showFeedbackProcessor,
   onFeedbackProcessed,
   blockReason,
-  manualMode = "ai",
-  onToggleManualMode,
-  manualContent = "",
-  onManualContentChange,
-  onManualExecute,
   emailOutput,
   isGeneratingEmail,
   showExpressMode,
@@ -105,7 +98,6 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
 
   // Calculated values
   const resultLabel = useMemo(() => getResultLabel(stageKey), [stageKey]);
-  const hasManualMode = useMemo(() => supportsManualMode(stageKey), [stageKey]);
   const cardClasses = useMemo(
     () => getStatusCardClasses(stageStatus),
     [stageStatus]
@@ -181,51 +173,34 @@ export const WorkflowStageCard = memo(function WorkflowStageCard({
                 />
               )}
 
-              {/* 2. ACTIES - Action Buttons (only for AI mode or non-manual stages) */}
-              {(!hasManualMode || manualMode === "ai") && (
-                <StageActionButtons
-                  stageKey={stageKey}
-                  stageStatus={stageStatus}
-                  canExecute={canExecute}
-                  isProcessing={isProcessing}
-                  customContext={customContext}
-                  showCustomContext={showCustomContext}
-                  onToggleCustomContext={handleToggleCustomContext}
-                  onCustomContextChange={setCustomContext}
-                  onExecute={handleExecuteClick}
-                  onResetStage={onResetStage}
-                  onCancel={onCancel}
-                  reportDepth={reportDepth}
-                  onReportDepthChange={handleReportDepthChange}
-                  reportLanguage={reportLanguage}
-                  onReportLanguageChange={handleReportLanguageChange}
-                  reportId={reportId}
-                  showExpressMode={showExpressMode}
-                  hasStage3={hasStage3}
-                  onExpressComplete={onExpressComplete}
-                  pendingAttachments={pendingAttachments}
-                  onAttachmentsChange={setPendingAttachments}
-                  isUploadingAttachments={isProcessing}
-                  blockReason={blockReason}
-                />
-              )}
+              {/* 2. ACTIES - Action Buttons */}
+              <StageActionButtons
+                stageKey={stageKey}
+                stageStatus={stageStatus}
+                canExecute={canExecute}
+                isProcessing={isProcessing}
+                customContext={customContext}
+                showCustomContext={showCustomContext}
+                onToggleCustomContext={handleToggleCustomContext}
+                onCustomContextChange={setCustomContext}
+                onExecute={handleExecuteClick}
+                onResetStage={onResetStage}
+                onCancel={onCancel}
+                reportDepth={reportDepth}
+                onReportDepthChange={handleReportDepthChange}
+                reportLanguage={reportLanguage}
+                onReportLanguageChange={handleReportLanguageChange}
+                reportId={reportId}
+                showExpressMode={showExpressMode}
+                hasStage3={hasStage3}
+                onExpressComplete={onExpressComplete}
+                pendingAttachments={pendingAttachments}
+                onAttachmentsChange={setPendingAttachments}
+                isUploadingAttachments={isProcessing}
+                blockReason={blockReason}
+              />
 
-              {/* 3. MANUAL MODE - Alleen als nodig */}
-              {hasManualMode && onToggleManualMode && (
-                <ManualModePanel
-                  stageKey={stageKey}
-                  stageName={stageName}
-                  manualMode={manualMode}
-                  onToggleManualMode={onToggleManualMode}
-                  stagePrompt={stagePrompt}
-                  manualContent={manualContent}
-                  onManualContentChange={onManualContentChange || (() => {})}
-                  onManualExecute={onManualExecute || (() => {})}
-                  isProcessing={isProcessing}
-                />
-              )}
-
-              {/* 4. DEV TOOLS - Alleen tonen voor niet-voltooide stages */}
+              {/* 3. DEV TOOLS - Alleen tonen voor niet-voltooide stages */}
               {stagePrompt && stageStatus !== "completed" && (
                 <DevToolsPanel
                   stagePrompt={stagePrompt}

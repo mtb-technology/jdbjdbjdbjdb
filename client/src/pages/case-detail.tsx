@@ -196,27 +196,19 @@ export default function CaseDetail() {
       <AppHeader />
 
       <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page Header - Compact with actions */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <Link href="/cases">
-              <Button
-                variant="outline"
-                size="sm"
-                data-testid="button-back-to-cases"
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Terug
-              </Button>
-            </Link>
-          </div>
-
-          {/* Export - status is shown in workflow header */}
-          <ExportDialog
-            reportId={reportId || ""}
-            reportTitle={report.title}
-            clientName={report.clientName}
-          />
+        {/* Page Header - Minimal back button */}
+        <div className="mb-4">
+          <Link href="/cases">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground -ml-2"
+              data-testid="button-back-to-cases"
+            >
+              <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+              Terug
+            </Button>
+          </Link>
         </div>
 
         {/* Document Header with Workflow Controls */}
@@ -237,6 +229,9 @@ export default function CaseDetail() {
           onExpressComplete={() => window.location.reload()}
           onAdjustmentApplied={() => window.location.reload()}
           rolledBackChanges={report.rolledBackChanges as Record<string, { rolledBackAt: string }> | undefined}
+          // Header action props
+          reportId={reportId}
+          onShowPreview={() => setShowFullScreen(true)}
         />
 
         {/* 2-Column Layout: Content + Sticky Preview */}

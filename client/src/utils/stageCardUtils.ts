@@ -61,22 +61,6 @@ export function getResultLabel(stageKey: string): string {
 }
 
 /**
- * Stages that support manual mode (Deep Research)
- * Only stage 3 uses Deep Research pipeline - reviewer stages (4a, 4b, etc.)
- * use direct Gemini calls with grounding, not deep research.
- */
-const MANUAL_MODE_STAGES = [
-  "3_generatie",
-];
-
-/**
- * Check if a stage supports manual mode
- */
-export function supportsManualMode(stageKey: string): boolean {
-  return MANUAL_MODE_STAGES.includes(stageKey);
-}
-
-/**
  * Get card border/background classes based on status
  */
 export function getStatusCardClasses(status: string): string {

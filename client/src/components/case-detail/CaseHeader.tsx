@@ -5,11 +5,12 @@
  * and workflow progress/actions.
  */
 
-import { memo, useState } from "react";
+import { memo, useState, useMemo } from "react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,11 +18,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FileText, Calendar, Edit2, Save, X, CheckCircle, MoreHorizontal, Pencil, Eye, RefreshCw } from "lucide-react";
+import { FileText, Calendar, Edit2, Save, X, MoreHorizontal, Pencil, Eye, RefreshCw, Maximize2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { CaseHeaderProps } from "@/types/caseDetail.types";
 import { ExpressModeButton } from "@/components/workflow/ExpressModeButton";
 import { ExpressModeResults } from "@/components/workflow/ExpressModeResults";
 import { ReportAdjustmentDialog } from "@/components/workflow/ReportAdjustmentDialog";
+import { ExportDialog } from "@/components/export/ExportDialog";
 import { WORKFLOW_STAGES } from "@/components/workflow/constants";
 import { countCompletedStages } from "@/utils/workflowUtils";
 import { getLatestConceptText } from "@shared/constants";
@@ -115,6 +118,9 @@ export const CaseHeader = memo(function CaseHeader({
   isReloadingPrompts = false,
   onReloadPrompts,
   rolledBackChanges,
+  // Header action props
+  onShowPreview,
+  reportId,
 }: CaseHeaderProps) {
   const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState(false);
   const [showExpressResults, setShowExpressResults] = useState(false);
@@ -124,11 +130,29 @@ export const CaseHeader = memo(function CaseHeader({
 
   // Workflow calculations
   const completedCount = countCompletedStages(stageResults, conceptReportVersions);
+  const totalStages = WORKFLOW_STAGES.length;
   const hasStage2 = !!stageResults["2_complexiteitscheck"];
   const hasStage3 = !!conceptReportVersions["3_generatie"] || !!(conceptReportVersions as any)?.latest;
   const allReviewStagesCompleted = REVIEW_STAGES.every(key => !!stageResults[key]);
   const latestConceptContent = getLatestConceptText(conceptReportVersions as any);
   const latestVersion = (conceptReportVersions as any)?.latest?.v || 1;
+
+  // Progress info for progress bar
+  const progressInfo = useMemo(() => {
+    const percentage = Math.round((completedCount / totalStages) * 100);
+    let status: "not-started" | "in-progress" | "complete" = "not-started";
+    let statusLabel = "Niet gestart";
+
+    if (completedCount === totalStages) {
+      status = "complete";
+      statusLabel = "Voltooid";
+    } else if (completedCount > 0) {
+      status = "in-progress";
+      statusLabel = `${completedCount} van ${totalStages}`;
+    }
+
+    return { percentage, status, statusLabel };
+  }, [completedCount, totalStages]);
 
   return (
     <Card className="mb-6">
@@ -168,29 +192,52 @@ export const CaseHeader = memo(function CaseHeader({
 
           {/* Right side: Workflow controls */}
           <div className="flex items-center gap-3">
-            {/* Progress Badge */}
-            <Badge variant="outline" className="text-sm font-medium px-3 py-1.5">
-              <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
-              {completedCount}/{WORKFLOW_STAGES.length}
-            </Badge>
-
-            {/* Express Mode OR Completed Badge */}
-            {report.id && allReviewStagesCompleted ? (
-              <Badge className="bg-green-600 text-white px-3 py-1.5">
-                <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
-                Voltooid
-              </Badge>
-            ) : report.id && (hasStage2 || hasStage3) && onExpressComplete ? (
-              <ExpressModeButton
-                reportId={report.id}
-                onComplete={onExpressComplete}
-                includeGeneration={!hasStage3}
-                hasStage3={hasStage3}
+            {/* Progress Bar - like overview */}
+            <div className="w-28">
+              <div className="flex items-center justify-end text-xs mb-1">
+                <span className={cn(
+                  "font-medium",
+                  progressInfo.status === "complete" ? "text-emerald-600" :
+                  progressInfo.status === "in-progress" ? "text-amber-600" :
+                  "text-muted-foreground"
+                )}>
+                  {progressInfo.statusLabel}
+                </span>
+              </div>
+              <Progress
+                value={progressInfo.percentage}
+                className={cn(
+                  "h-1.5",
+                  progressInfo.status === "complete" && "[&>div]:bg-emerald-500",
+                  progressInfo.status === "in-progress" && "[&>div]:bg-amber-500"
+                )}
               />
-            ) : null}
+            </div>
 
-            {/* Actions Menu */}
-            {report.id && hasStage3 && (
+            {/* Preview Button - show when Stage 3 has content */}
+            {hasStage3 && onShowPreview && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={onShowPreview}
+              >
+                <Maximize2 className="h-4 w-4 mr-1.5" />
+                Preview
+              </Button>
+            )}
+
+            {/* Export Button */}
+            {(reportId || report.id) && (
+              <ExportDialog
+                reportId={reportId || report.id}
+                reportTitle={report.title}
+                clientName={report.clientName}
+              />
+            )}
+
+            {/* Actions Menu - show after Stage 2 */}
+            {report.id && hasStage2 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="h-9">
@@ -199,10 +246,27 @@ export const CaseHeader = memo(function CaseHeader({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuItem onClick={() => setIsAdjustmentDialogOpen(true)}>
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Rapport Aanpassen
-                  </DropdownMenuItem>
+                  {/* Express Mode - only show when not all reviews completed */}
+                  {!allReviewStagesCompleted && onExpressComplete && (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <ExpressModeButton
+                          reportId={report.id}
+                          onComplete={onExpressComplete}
+                          includeGeneration={!hasStage3}
+                          hasStage3={hasStage3}
+                          variant="menuItem"
+                        />
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  {hasStage3 && (
+                    <DropdownMenuItem onClick={() => setIsAdjustmentDialogOpen(true)}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Rapport Aanpassen
+                    </DropdownMenuItem>
+                  )}
                   {allReviewStagesCompleted && (
                     <DropdownMenuItem onClick={() => setShowExpressResults(true)}>
                       <Eye className="h-4 w-4 mr-2" />

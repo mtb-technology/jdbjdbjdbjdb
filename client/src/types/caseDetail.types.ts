@@ -68,8 +68,8 @@ export interface CaseHeaderProps {
   onSaveClient: () => void;
   onCancelEdit: (type: "title" | "client") => void;
   onClientChange: (value: string) => void;
-  versionCheckpoints: VersionCheckpoint[];
-  currentVersion: number;
+  versionCheckpoints?: VersionCheckpoint[];
+  currentVersion?: number;
   // Workflow props
   stageResults?: Record<string, string>;
   conceptReportVersions?: Record<string, unknown>;
@@ -78,6 +78,9 @@ export interface CaseHeaderProps {
   isReloadingPrompts?: boolean;
   onReloadPrompts?: () => void;
   rolledBackChanges?: Record<string, { rolledBackAt: string }>;
+  // Header action props
+  onShowPreview?: () => void;
+  reportId?: string;
 }
 
 /**

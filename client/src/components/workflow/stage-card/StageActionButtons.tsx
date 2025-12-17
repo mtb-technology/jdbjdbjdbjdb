@@ -17,7 +17,6 @@ import {
   ChevronRight,
   ChevronDown,
   AlertTriangle,
-  Zap,
   Scale,
   BookOpen,
   Upload,
@@ -27,8 +26,8 @@ import {
   Paperclip,
   Info,
   Languages,
+  Zap,
 } from "lucide-react";
-import { ExpressModeButton } from "../ExpressModeButton";
 import type { StageActionButtonsProps, ReportDepth, ReportLanguage, PendingFile } from "@/types/workflowStageCard.types";
 
 /**
@@ -414,18 +413,6 @@ export const StageActionButtons = memo(function StageActionButtons({
             + Context
           </Button>
 
-          {/* Express Mode Button - compact */}
-          {showExpressMode && reportId && onExpressComplete && (
-            <ExpressModeButton
-              reportId={reportId}
-              onComplete={onExpressComplete}
-              includeGeneration={isStage2 || (isStage3 && !hasStage3)}
-              hasStage3={hasStage3}
-              reportDepth={reportDepth}
-              reportLanguage={reportLanguage}
-            />
-          )}
-
           {/* Spacer */}
           <div className="flex-1" />
 
@@ -607,18 +594,6 @@ export const StageActionButtons = memo(function StageActionButtons({
             </>
           )}
         </Button>
-
-        {/* Express Mode Button - Show for Stage 2 (completed) or Stage 3+ */}
-        {showExpressMode && reportId && onExpressComplete && (
-          <ExpressModeButton
-            reportId={reportId}
-            onComplete={onExpressComplete}
-            includeGeneration={isStage2 || (isStage3 && !hasStage3)}
-            hasStage3={hasStage3}
-            reportDepth={reportDepth}
-            reportLanguage={reportLanguage}
-          />
-        )}
 
         {/* Reset Stage Button - Only show if stage is completed and onResetStage is provided */}
         {stageStatus === "completed" && onResetStage && (
