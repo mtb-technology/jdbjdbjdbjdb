@@ -19,7 +19,7 @@
  */
 
 import { motion, useReducedMotion } from "framer-motion";
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, useCallback, memo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 // Components
@@ -152,17 +152,29 @@ export const WorkflowView = memo(function WorkflowView({
   // Detect if all review stages are completed (either via Express Mode or manually)
   const allReviewStagesCompleted = REVIEW_STAGES.every(key => !!state.stageResults[key]);
 
-  // Auto-collapse stage 3 when completed and moved to next stage
+  // Track if stage 3 was already auto-collapsed to prevent re-collapsing on user expand
+  const stage3CollapsedRef = useRef(false);
+
+  // Auto-collapse stage 3 ONCE when completed and moved to next stage
   useEffect(() => {
     const stage3Result = state.stageResults["3_generatie"];
-    if (stage3Result && expandedStages.has("3_generatie") && currentStage.key !== "3_generatie") {
+    // Only auto-collapse once when first transitioning away from stage 3
+    if (stage3Result && currentStage.key !== "3_generatie" && !stage3CollapsedRef.current) {
+      stage3CollapsedRef.current = true;
       setExpandedStages((prev) => {
-        const newExpanded = new Set(prev);
-        newExpanded.delete("3_generatie");
-        return newExpanded;
+        if (prev.has("3_generatie")) {
+          const newExpanded = new Set(prev);
+          newExpanded.delete("3_generatie");
+          return newExpanded;
+        }
+        return prev;
       });
     }
-  }, [currentStage.key, state.stageResults, expandedStages]);
+    // Reset the ref when we're back at stage 3 (allows re-collapsing if user runs it again)
+    if (currentStage.key === "3_generatie") {
+      stage3CollapsedRef.current = false;
+    }
+  }, [currentStage.key, state.stageResults]);
 
   // Toggle stage expansion - auto-expand output for completed stages
   const toggleStageExpansion = useCallback(

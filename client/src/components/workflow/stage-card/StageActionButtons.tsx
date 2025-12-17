@@ -373,55 +373,75 @@ export const StageActionButtons = memo(function StageActionButtons({
       }
     };
 
+    // Get labels for Stage 3 settings
+    const depthLabel = DEPTH_OPTIONS.find(o => o.value === reportDepth)?.label || "Gebalanceerd";
+    const languageOption = LANGUAGE_OPTIONS.find(o => o.value === reportLanguage);
+
     return (
-      <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-        <Button
-          onClick={handleRerunClick}
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-          Opnieuw
-        </Button>
-
-        <Button
-          onClick={onToggleCustomContext}
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Paperclip className="w-3.5 h-3.5 mr-1.5" />
-          + Context
-        </Button>
-
-        {/* Express Mode Button - compact */}
-        {showExpressMode && reportId && onExpressComplete && (
-          <ExpressModeButton
-            reportId={reportId}
-            onComplete={onExpressComplete}
-            includeGeneration={isStage2 || (isStage3 && !hasStage3)}
-            hasStage3={hasStage3}
-            reportDepth={reportDepth}
-            reportLanguage={reportLanguage}
-          />
+      <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+        {/* Stage 3: Show selected depth and language */}
+        {isStage3 && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+              <BookOpen className="w-3 h-3 mr-1" />
+              {depthLabel}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+              <span className="mr-1">{languageOption?.flag || "🇳🇱"}</span>
+              {languageOption?.label || "Nederlands"}
+            </Badge>
+          </div>
         )}
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Reset Stage Button */}
-        {onResetStage && (
+        <div className="flex items-center gap-2">
           <Button
-            onClick={onResetStage}
+            onClick={handleRerunClick}
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-red-600"
-            title="Wis resultaat"
+            className="text-muted-foreground hover:text-foreground"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            Opnieuw
           </Button>
-        )}
+
+          <Button
+            onClick={onToggleCustomContext}
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Paperclip className="w-3.5 h-3.5 mr-1.5" />
+            + Context
+          </Button>
+
+          {/* Express Mode Button - compact */}
+          {showExpressMode && reportId && onExpressComplete && (
+            <ExpressModeButton
+              reportId={reportId}
+              onComplete={onExpressComplete}
+              includeGeneration={isStage2 || (isStage3 && !hasStage3)}
+              hasStage3={hasStage3}
+              reportDepth={reportDepth}
+              reportLanguage={reportLanguage}
+            />
+          )}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Reset Stage Button */}
+          {onResetStage && (
+            <Button
+              onClick={onResetStage}
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-red-600"
+              title="Wis resultaat"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
