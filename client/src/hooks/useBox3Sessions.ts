@@ -6,6 +6,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import type { Box3Blueprint, Box3Dossier } from "@shared/schema";
@@ -71,7 +72,7 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
   });
 
   // Load a specific dossier with blueprint
-  const loadSession = async (sessionId: string): Promise<Box3DossierFull | null> => {
+  const loadSession = useCallback(async (sessionId: string): Promise<Box3DossierFull | null> => {
     try {
       const res = await fetch(`/api/box3-validator/dossiers/${sessionId}`);
       if (!res.ok) throw new Error("Failed to load dossier");
@@ -87,7 +88,7 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
       });
       return null;
     }
-  };
+  }, [toast]);
 
   // Delete a dossier
   const deleteSession = async (sessionId: string): Promise<boolean> => {

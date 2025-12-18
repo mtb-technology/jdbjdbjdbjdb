@@ -14,10 +14,13 @@ import { UPLOAD_LIMITS, getOversizedFilesMessage } from "@/constants/upload.cons
 
 // Debug info from API response
 interface DebugInfo {
-  fullPrompt: string;
-  rawAiResponse: string;
-  modelUsed: string;
-  timestamp: string;
+  fullPrompt?: string;
+  rawAiResponse?: string;
+  model?: string;
+  modelUsed?: string; // Legacy alias for model
+  timestamp?: string;
+  pipelineSteps?: any;
+  pipelineErrors?: string[];
 }
 
 interface ValidationState {

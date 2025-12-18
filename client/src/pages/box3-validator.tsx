@@ -44,6 +44,7 @@ const Box3Validator = memo(function Box3Validator() {
 
   // View state
   const [selectedDossier, setSelectedDossier] = useState<Box3DossierFull | null>(null);
+  const [isLoadingDossier, setIsLoadingDossier] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isAddingDocs, setIsAddingDocs] = useState(false);
 
@@ -104,6 +105,7 @@ const Box3Validator = memo(function Box3Validator() {
   // Load dossier when URL changes to detail view
   useEffect(() => {
     if (urlDossierId && urlDossierId !== selectedDossier?.dossier.id) {
+      setIsLoadingDossier(true);
       loadSession(urlDossierId).then((dossierFull) => {
         if (dossierFull) {
           setSelectedDossier(dossierFull);
@@ -112,6 +114,8 @@ const Box3Validator = memo(function Box3Validator() {
           // Dossier not found, go back to list
           setLocation("/box3-validator");
         }
+      }).finally(() => {
+        setIsLoadingDossier(false);
       });
     }
   }, [urlDossierId, selectedDossier?.dossier.id, loadSession, loadFromDossier, setLocation]);
@@ -218,7 +222,14 @@ const Box3Validator = memo(function Box3Validator() {
           />
         )}
 
-        {viewMode === "detail" && selectedDossier && (
+        {viewMode === "detail" && isLoadingDossier && (
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4" />
+            <p className="text-muted-foreground">Dossier laden...</p>
+          </div>
+        )}
+
+        {viewMode === "detail" && !isLoadingDossier && selectedDossier && (
           <Box3CaseDetail
             dossierFull={selectedDossier}
             systemPrompt={systemPrompt}
@@ -230,6 +241,18 @@ const Box3Validator = memo(function Box3Validator() {
             onOpenSettings={() => setSettingsOpen(true)}
             onAddDocuments={handleAddDocuments}
           />
+        )}
+
+        {viewMode === "detail" && !isLoadingDossier && !selectedDossier && (
+          <div className="flex flex-col items-center justify-center py-16">
+            <p className="text-muted-foreground mb-4">Dossier niet gevonden</p>
+            <button
+              onClick={handleBackToList}
+              className="text-primary hover:underline"
+            >
+              Terug naar overzicht
+            </button>
+          </div>
         )}
 
         {viewMode === "new" && (

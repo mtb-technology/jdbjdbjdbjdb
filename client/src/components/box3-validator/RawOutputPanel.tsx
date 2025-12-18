@@ -13,11 +13,14 @@ import { Button } from "@/components/ui/button";
 
 // Debug info from API response (V2)
 interface DebugInfo {
-  fullPrompt: string;
-  rawAiResponse: string;
-  modelUsed: string;
-  timestamp: string;
+  fullPrompt?: string;
+  rawAiResponse?: string;
+  model?: string;
+  modelUsed?: string; // Legacy alias for model
+  timestamp?: string;
   jaar?: string;
+  pipelineSteps?: any;
+  pipelineErrors?: string[];
 }
 
 // V2 interface - simplified
@@ -84,9 +87,9 @@ export const RawOutputPanel = memo(function RawOutputPanel(props: RawOutputPanel
         <div className="flex items-center gap-2 text-sm text-orange-700">
           <Bug className="h-4 w-4" />
           <span className="font-medium">Developer: Prompt & Raw AI Output</span>
-          {effectiveDebug && (
+          {effectiveDebug && (effectiveDebug.model || effectiveDebug.modelUsed) && (
             <Badge variant="outline" className="ml-2 text-xs bg-orange-100 text-orange-800 border-orange-300">
-              {effectiveDebug.modelUsed}
+              {effectiveDebug.model || effectiveDebug.modelUsed}
             </Badge>
           )}
         </div>
@@ -135,7 +138,7 @@ export const RawOutputPanel = memo(function RawOutputPanel(props: RawOutputPanel
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => copyToClipboard(effectiveDebug.rawAiResponse, 'raw')}
+                  onClick={() => copyToClipboard(effectiveDebug.rawAiResponse || '', 'raw')}
                   className="h-7 text-xs"
                 >
                   {copiedSection === 'raw' ? (
@@ -180,9 +183,12 @@ export const RawOutputPanel = memo(function RawOutputPanel(props: RawOutputPanel
           {/* Metadata */}
           {effectiveDebug && (
             <div className="text-xs text-muted-foreground border-t pt-3 mt-3">
-              <p><strong>Model:</strong> {effectiveDebug.modelUsed}</p>
-              <p><strong>Timestamp:</strong> {effectiveDebug.timestamp}</p>
+              <p><strong>Model:</strong> {effectiveDebug.model || effectiveDebug.modelUsed || 'unknown'}</p>
+              {effectiveDebug.timestamp && <p><strong>Timestamp:</strong> {effectiveDebug.timestamp}</p>}
               {effectiveDebug.jaar && <p><strong>Jaar:</strong> {effectiveDebug.jaar}</p>}
+              {effectiveDebug.pipelineErrors && effectiveDebug.pipelineErrors.length > 0 && (
+                <p className="text-orange-600"><strong>Pipeline errors:</strong> {effectiveDebug.pipelineErrors.join(', ')}</p>
+              )}
             </div>
           )}
 

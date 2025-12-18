@@ -1181,7 +1181,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           {/* Aandachtspunten - After hero, with blocks and human-readable labels */}
           {validationFlags.length > 0 && (() => {
             // Map technical flag types to human-readable labels
-            const getFlagLabel = (type: string): string => {
+            const getFlagLabel = (type: string | undefined): string => {
+              if (!type) return 'Onbekend';
               const labels: Record<string, string> = {
                 'low_confidence': 'Onzeker',
                 'requires_validation': 'Controleren',
