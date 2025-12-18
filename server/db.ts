@@ -5,6 +5,7 @@ import * as schema from "@shared/schema";
 import { config } from './config';
 import { ServerError } from './middleware/errorHandler';
 import { ERROR_CODES } from '@shared/errors';
+import { logger } from './services/logger';
 
 neonConfig.webSocketConstructor = ws;
 
@@ -34,7 +35,7 @@ export async function checkDatabaseConnection(): Promise<boolean> {
     await db.execute(`SELECT 1`);
     return true;
   } catch (error) {
-    console.error('Database connection check failed:', error);
+    logger.error('db', 'Database connection check failed', {}, error instanceof Error ? error : undefined);
     return false;
   }
 }

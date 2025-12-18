@@ -7,6 +7,7 @@ import { config, validateConfig } from "./config";
 import { checkDatabaseConnection } from "./db";
 import { initializeDossierSequence } from "./storage";
 import { startJobProcessor, stopJobProcessor } from "./services/job-processor";
+import { logger } from "./services/logger";
 
 const app = express();
 
@@ -118,7 +119,7 @@ app.use((req, res, next) => {
 (async () => {
   // Validate configuration on startup
   if (!validateConfig()) {
-    console.error('❌ Configuration validation failed. Exiting...');
+    logger.error('startup', 'Configuration validation failed. Exiting...');
     process.exit(1);
   }
 
@@ -126,21 +127,21 @@ app.use((req, res, next) => {
   try {
     const dbConnected = await checkDatabaseConnection();
     if (!dbConnected) {
-      console.warn('⚠️ Database connection failed. App will start but may have limited functionality.');
+      logger.warn('startup', 'Database connection failed. App will start but may have limited functionality.');
       if (!config.IS_PRODUCTION) {
-        console.error('❌ Exiting in development mode...');
+        logger.error('startup', 'Exiting in development mode...');
         process.exit(1);
       }
     } else {
-      console.log('✅ Database connection verified');
+      logger.info('startup', 'Database connection verified');
     }
   } catch (error) {
-    console.error('❌ Database connection error:', error);
+    logger.error('startup', 'Database connection error', {}, error instanceof Error ? error : undefined);
     if (!config.IS_PRODUCTION) {
-      console.error('❌ Exiting in development mode...');
+      logger.error('startup', 'Exiting in development mode...');
       process.exit(1);
     } else {
-      console.warn('⚠️ Continuing in production mode...');
+      logger.warn('startup', 'Continuing in production mode...');
     }
   }
 
@@ -166,12 +167,11 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = config.PORT;
-  console.log(`🔧 Attempting to bind to port ${port} on host 0.0.0.0`);
-  console.log(`🔧 Environment PORT: ${process.env.PORT}`);
-  console.log(`🔧 Config PORT: ${config.PORT}`);
+  logger.info('startup', `Attempting to bind to port ${port} on host 0.0.0.0`);
+  logger.debug('startup', 'Port configuration', { envPORT: process.env.PORT, configPORT: config.PORT });
 
   server.listen(port, "0.0.0.0", () => {
-    console.log(`🚀 ✅ SERVER SUCCESSFULLY LISTENING ON PORT ${port}`);
+    logger.info('startup', `SERVER SUCCESSFULLY LISTENING ON PORT ${port}`);
     log(`serving on port ${port}`);
 
     // Start the background job processor
@@ -179,26 +179,25 @@ app.use((req, res, next) => {
   });
 
   server.on('error', (error: any) => {
-    console.error(`❌ SERVER ERROR:`, error);
-    console.error(`❌ Failed to bind to port ${port}`);
+    logger.error('startup', `SERVER ERROR - Failed to bind to port ${port}`, {}, error instanceof Error ? error : undefined);
     process.exit(1);
   });
 
   // Graceful shutdown
   process.on('SIGTERM', () => {
-    console.log('📴 SIGTERM received, shutting down gracefully...');
+    logger.info('shutdown', 'SIGTERM received, shutting down gracefully...');
     stopJobProcessor();
     server.close(() => {
-      console.log('✅ Server closed');
+      logger.info('shutdown', 'Server closed');
       process.exit(0);
     });
   });
 
   process.on('SIGINT', () => {
-    console.log('📴 SIGINT received, shutting down gracefully...');
+    logger.info('shutdown', 'SIGINT received, shutting down gracefully...');
     stopJobProcessor();
     server.close(() => {
-      console.log('✅ Server closed');
+      logger.info('shutdown', 'Server closed');
       process.exit(0);
     });
   });

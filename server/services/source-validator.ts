@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { ServerError } from '../middleware/errorHandler';
 import { ERROR_CODES } from '@shared/errors';
+import { logger } from './logger';
 
 export class SourceValidator {
   private allowedDomains: string[];
@@ -27,7 +28,7 @@ export class SourceValidator {
         domain === allowedDomain || domain.endsWith(`.${allowedDomain}`)
       );
     } catch (error) {
-      console.error('Invalid URL provided:', error);
+      logger.error('source-validator', 'Invalid URL provided', {}, error instanceof Error ? error : undefined);
       return false;
     }
   }
@@ -70,7 +71,7 @@ export class SourceValidator {
         lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        console.warn(`Source verification attempt ${attempt + 1}/${this.maxRetries} failed for ${url}:`, error);
+        logger.warn('source-validator', `Verification attempt ${attempt + 1}/${this.maxRetries} failed for ${url}`, {}, error instanceof Error ? error : undefined);
         
         // Wait before retry (exponential backoff)
         if (attempt < this.maxRetries - 1) {

@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
+import { logger } from '../services/logger';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -426,11 +427,10 @@ export function validateConfig() {
   }
   
   if (errors.length > 0) {
-    console.error('❌ Configuration validation failed:');
-    errors.forEach(error => console.error(`  - ${error}`));
+    logger.error('config', 'Configuration validation failed', { errors });
     return false;
   }
-  
-  console.log('✅ Configuration validation passed');
+
+  logger.info('config', 'Configuration validation passed');
   return true;
 }

@@ -7,6 +7,7 @@
 
 import type { Response } from "express";
 import { createApiErrorResponse, ERROR_CODES, AIError } from "@shared/errors";
+import { logger } from "../services/logger";
 
 /**
  * Extracts a user-friendly message from any error type.
@@ -67,11 +68,7 @@ export function handleRouteError(
   const statusCode = getStatusCode(error);
 
   // Log with context if provided
-  if (context) {
-    console.error(`[${context}]`, message, error);
-  } else {
-    console.error(message, error);
-  }
+  logger.error(context || 'routeHandler', message, {}, error instanceof Error ? error : undefined);
 
   res.status(statusCode).json(
     createApiErrorResponse(

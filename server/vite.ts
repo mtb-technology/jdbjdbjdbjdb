@@ -5,6 +5,7 @@ import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
 import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
+import { logger } from "./services/logger";
 
 const viteLogger = createLogger();
 
@@ -72,11 +73,11 @@ export function serveStatic(app: Express) {
   // Use process.cwd() to get the project root, then resolve to dist/public
   const distPath = path.resolve(process.cwd(), "dist", "public");
 
-  console.log(`📁 Serving static files from: ${distPath}`);
-  console.log(`📁 Directory exists: ${fs.existsSync(distPath)}`);
+  logger.info('vite', `Serving static files from: ${distPath}`);
+  logger.debug('vite', `Directory exists: ${fs.existsSync(distPath)}`);
 
   if (fs.existsSync(distPath)) {
-    console.log(`✅ Found build directory, serving static files`);
+    logger.info('vite', 'Found build directory, serving static files');
     app.use(express.static(distPath));
 
     // fall through to index.html if the file doesn't exist
@@ -84,8 +85,8 @@ export function serveStatic(app: Express) {
       res.sendFile(path.resolve(distPath, "index.html"));
     });
   } else {
-    console.warn(`⚠️ Build directory not found at ${distPath}`);
-    console.warn(`⚠️ Static file serving disabled - API-only mode`);
+    logger.warn('vite', `Build directory not found at ${distPath}`);
+    logger.warn('vite', 'Static file serving disabled - API-only mode');
 
     // Serve a simple message for non-API routes
     app.use("*", (_req, res) => {

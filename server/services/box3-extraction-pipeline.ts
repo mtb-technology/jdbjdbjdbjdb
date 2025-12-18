@@ -6,6 +6,7 @@
  */
 
 import { AIModelFactory } from "./ai-models/ai-model-factory";
+import { logger } from "./logger";
 import type {
   Box3Blueprint,
   Box3SourceDocumentEntry,
@@ -225,7 +226,7 @@ export class Box3ExtractionPipeline {
     if (this.onProgress) {
       this.onProgress(progress);
     }
-    console.log(`📋 [Pipeline] Step ${progress.stepNumber}/${progress.totalSteps}: ${progress.message}`);
+    logger.info('box3-pipeline', `Step ${progress.stepNumber}/${progress.totalSteps}: ${progress.message}`);
   }
 
   /**
@@ -295,7 +296,7 @@ Analyseer nu alle bijgevoegde documenten en geef de complete JSON output.`;
       blueprint = this.normalizeBlueprint(json, documents);
 
     } catch (err: any) {
-      console.error('Pipeline extraction failed:', err.message);
+      logger.error('box3-pipeline', 'Pipeline extraction failed', { message: err.message });
       errors.push(`Extractie mislukt: ${err.message}`);
 
       // Return empty blueprint on failure
@@ -541,7 +542,7 @@ Analyseer nu alle bijgevoegde documenten en geef de complete JSON output.`;
         return JSON.parse(jsonText);
       }
     } catch (err) {
-      console.error('JSON parse error:', err);
+      logger.error('box3-pipeline', 'JSON parse error', {}, err instanceof Error ? err : undefined);
     }
     return null;
   }

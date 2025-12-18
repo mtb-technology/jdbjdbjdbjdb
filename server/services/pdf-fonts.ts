@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import * as fs from 'fs';
 import * as path from 'path';
+import { logger } from './logger';
 
 interface FontConfig {
   name: string;
@@ -32,8 +33,7 @@ export class PDFFontLoader {
       // Check if fonts directory exists
       if (!fs.existsSync(fontsDir)) {
         if (!this.warningShown) {
-          console.warn('📝 PDF Fonts: Directory not found, using Helvetica fallback');
-          console.warn(`   Expected location: ${fontsDir}`);
+          logger.warn('pdf-fonts', 'Directory not found, using Helvetica fallback', { expectedLocation: fontsDir });
           this.warningShown = true;
         }
         this.fontsLoaded = true;
@@ -72,21 +72,21 @@ export class PDFFontLoader {
           pdf.addFont('ProximaNova-BoldItalic.ttf', 'ProximaNova', 'bolditalic');
         }
 
-        console.log('✅ PDF Fonts: Proxima Nova loaded successfully');
+        logger.info('pdf-fonts', 'Proxima Nova loaded successfully');
         this.customFontAvailable = true;
       } else {
         if (!this.warningShown) {
-          console.warn('📝 PDF Fonts: Proxima Nova not found, using Helvetica fallback');
-          console.warn(`   Place .ttf files in: ${fontsDir}`);
-          console.warn(`   See ${path.join(fontsDir, 'README.md')} for instructions`);
+          logger.warn('pdf-fonts', 'Proxima Nova not found, using Helvetica fallback', {
+            expectedLocation: fontsDir,
+            instructions: path.join(fontsDir, 'README.md')
+          });
           this.warningShown = true;
         }
         this.customFontAvailable = false;
       }
     } catch (error) {
       if (!this.warningShown) {
-        console.error('❌ PDF Fonts: Error loading custom fonts:', error instanceof Error ? error.message : error);
-        console.warn('   Falling back to Helvetica');
+        logger.error('pdf-fonts', 'Error loading custom fonts - falling back to Helvetica', {}, error instanceof Error ? error : undefined);
         this.warningShown = true;
       }
       this.customFontAvailable = false;

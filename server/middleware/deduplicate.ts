@@ -7,6 +7,7 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import { createApiSuccessResponse } from '@shared/errors';
+import { logger } from '../services/logger';
 
 // Track active requests - using Map for better performance
 const activeRequests = new Map<string, Promise<any>>();
@@ -69,7 +70,7 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
 
     // Check if this request is already being processed
     if (activeRequests.has(requestKey)) {
-      console.log(`🔄 [Deduplicate] Request already in progress: ${requestKey}`);
+      logger.info('deduplicate', `Request already in progress: ${requestKey}`);
 
       if (!returnCachedResult) {
         // Just block the duplicate request
@@ -100,7 +101,7 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
         return;
       } catch (error) {
         // If the original request failed or timed out, allow this one through
-        console.warn(`⚠️ [Deduplicate] Original request failed, allowing duplicate through: ${requestKey}`);
+        logger.warn('deduplicate', `Original request failed, allowing duplicate through: ${requestKey}`);
         activeRequests.delete(requestKey);
         // Continue to next middleware
       }
@@ -128,7 +129,7 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
       if (!isCompleted) {
         isCompleted = true;
         activeRequests.delete(requestKey);
-        console.log(`✅ [Deduplicate] Request completed: ${requestKey}`);
+        logger.debug('deduplicate', `Request completed: ${requestKey}`);
       }
     };
 
@@ -159,7 +160,7 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
 
     // Handle errors - resolve instead of reject to avoid unhandled rejection crashes
     const errorHandler = (error: any) => {
-      console.log(`❌ [Deduplicate] Error during request: ${requestKey}`, error?.message);
+      logger.error('deduplicate', `Error during request: ${requestKey}`, { errorMessage: error?.message });
       cleanup();
       // Resolve instead of reject to avoid unhandled rejection crash
       resolveRequest!();
@@ -169,7 +170,7 @@ export function deduplicateRequests(options: DeduplicateOptions = {}) {
     res.on('error', errorHandler);
     res.on('close', () => {
       if (!isCompleted) {
-        console.log(`🔌 [Deduplicate] Client disconnected: ${requestKey}`);
+        logger.debug('deduplicate', `Client disconnected: ${requestKey}`);
         cleanup();
         // Resolve the promise silently - client disconnected, but don't crash the server
         // Using resolve instead of reject to avoid unhandled rejection

@@ -10,6 +10,7 @@
  */
 
 import { config } from "../config";
+import { logger } from "./logger";
 
 interface ReportInfo {
   id: string;
@@ -68,10 +69,10 @@ async function sendSlackMessage(payload: object): Promise<void> {
     });
 
     if (!response.ok) {
-      console.error(`[SlackNotifier] Failed to send message: ${response.status} ${response.statusText}`);
+      logger.error('slack', `Failed to send message: ${response.status} ${response.statusText}`);
     }
   } catch (error) {
-    console.error("[SlackNotifier] Error sending message:", error);
+    logger.error('slack', 'Error sending message', {}, error instanceof Error ? error : undefined);
   }
 }
 

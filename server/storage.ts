@@ -5,6 +5,7 @@ import { db } from "./db";
 import { eq, desc, and, or, ilike, count, sql, inArray } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
+import { logger } from "./services/logger";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -216,9 +217,9 @@ export class DatabaseStorage implements IStorage {
 
         END $$;
       `);
-      console.log('✅ [Storage] Dossier number schema verified');
+      logger.info('storage', 'Dossier number schema verified');
     } catch (migrationError) {
-      console.log('ℹ️ [Storage] Dossier number migration skipped (already exists or error):', migrationError);
+      logger.info('storage', 'Dossier number migration skipped (already exists or error)', { error: String(migrationError) });
     }
 
     dossierNumberMigrationChecked = true;
@@ -302,7 +303,7 @@ export class DatabaseStorage implements IStorage {
       };
       return result;
     } catch (error) {
-      console.error(`❌ Error in getAllReports:`, error);
+      logger.error('storage', 'Error in getAllReports', {}, error instanceof Error ? error : undefined);
       throw error;
     }
   }
@@ -323,10 +324,10 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`
         SELECT setval('dossier_number_seq', ${currentMax})
       `);
-      console.log(`✅ [Storage] Dossier sequence synced: set to ${currentMax} (next will be ${currentMax + 1})`);
+      logger.info('storage', `Dossier sequence synced: set to ${currentMax} (next will be ${currentMax + 1})`);
       sequenceSyncChecked = true;
     } catch (error) {
-      console.error('⚠️ [Storage] Failed to sync dossier sequence:', error);
+      logger.error('storage', 'Failed to sync dossier sequence', {}, error instanceof Error ? error : undefined);
       // Don't set flag to true so it can retry on next create
     }
   }
@@ -350,7 +351,7 @@ export class DatabaseStorage implements IStorage {
 
         // Safety check - if we still get NaN, throw a clear error
         if (isNaN(dossierNumber)) {
-          console.error('❌ [Storage] Failed to get next dossier number:', { result, nextval });
+          logger.error('storage', 'Failed to get next dossier number', { result: String(result), nextval: String(nextval) });
           throw new Error('Kon geen dossiernummer genereren. Neem contact op met support.');
         }
 
@@ -368,14 +369,14 @@ export class DatabaseStorage implements IStorage {
       } catch (error: any) {
         // Check for unique constraint violation on dossier_number
         if (error?.code === '23505' && error?.constraint?.includes('dossier_number')) {
-          console.warn(`⚠️ [Storage] Dossier number collision (attempt ${attempt}/${maxRetries}), re-syncing sequence...`);
+          logger.warn('storage', `Dossier number collision (attempt ${attempt}/${maxRetries}), re-syncing sequence...`);
 
           // Reset sync flag and re-sync sequence
           sequenceSyncChecked = false;
           await this.syncDossierSequence();
 
           if (attempt === maxRetries) {
-            console.error('❌ [Storage] Max retries reached for dossier number generation');
+            logger.error('storage', 'Max retries reached for dossier number generation');
             throw error;
           }
           continue; // Retry with new sequence value
@@ -425,16 +426,16 @@ export class DatabaseStorage implements IStorage {
     } catch (error: any) {
       // Handle unique constraint violation (race condition scenario)
       if (error?.code === '23505' || error?.constraint?.includes('url')) {
-        console.log('ℹ️ [Storage] Source URL already exists (race condition), fetching existing:', insertSource.url);
+        logger.info('storage', 'Source URL already exists (race condition), fetching existing', { url: insertSource.url });
         // Another process likely inserted the same URL, try to fetch it
         const [existing] = await db.select().from(sources).where(eq(sources.url, insertSource.url));
         if (existing) {
           return existing;
         }
-        // ✅ FIX: If still not found, this is an error that should be logged
-        console.error('❌ [Storage] Race condition: constraint violation but source not found!', {
+        // If still not found, this is an error that should be logged
+        logger.error('storage', 'Race condition: constraint violation but source not found!', {
           url: insertSource.url,
-          error: error.message
+          errorMessage: error.message
         });
       }
       throw error;
@@ -524,13 +525,13 @@ export class DatabaseStorage implements IStorage {
     // Check if any configs exist - if so, use what's in database (managed via Settings UI)
     const existing = await this.getAllPromptConfigs();
     if (existing.length > 0) {
-      console.log(`Using existing prompt configs from database (${existing.length} configs found)`);
+      logger.info('storage', `Using existing prompt configs from database (${existing.length} configs found)`);
       return;
     }
 
     // Only create default config if database is completely empty (first run)
-    console.log('No prompt configs found - creating empty default configuration...');
-    console.log('Configure your prompts via Settings UI');
+    logger.info('storage', 'No prompt configs found - creating empty default configuration');
+    logger.info('storage', 'Configure your prompts via Settings UI');
 
     const defaultConfig = {
       name: "Default Fiscal Analysis",
@@ -711,7 +712,7 @@ export class DatabaseStorage implements IStorage {
 
   async createJob(insertJob: InsertJob): Promise<Job> {
     const [job] = await db.insert(jobs).values(insertJob).returning();
-    console.log(`📋 [Jobs] Created job ${job.id} of type "${job.type}" for report ${job.reportId}`);
+    logger.info('jobs', `Created job ${job.id} of type "${job.type}" for report ${job.reportId}`);
     return job;
   }
 
@@ -761,7 +762,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(jobs.id, id))
       .returning();
     if (updated) {
-      console.log(`▶️ [Jobs] Started job ${id}`);
+      logger.info('jobs', `Started job ${id}`);
     }
     return updated || undefined;
   }
@@ -777,7 +778,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(jobs.id, id))
       .returning();
     if (updated) {
-      console.log(`✅ [Jobs] Completed job ${id}`);
+      logger.info('jobs', `Completed job ${id}`);
     }
     return updated || undefined;
   }
@@ -793,7 +794,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(jobs.id, id))
       .returning();
     if (updated) {
-      console.error(`❌ [Jobs] Failed job ${id}: ${error}`);
+      logger.error('jobs', `Failed job ${id}: ${error}`);
     }
     return updated || undefined;
   }
@@ -809,7 +810,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(jobs.id, id))
       .returning();
     if (updated) {
-      console.log(`🛑 [Jobs] Cancelled job ${id}`);
+      logger.info('jobs', `Cancelled job ${id}`);
     }
     return updated || undefined;
   }
@@ -819,7 +820,7 @@ export class DatabaseStorage implements IStorage {
    * This fixes the mass-update mistake where all cases got "Mike Nauheimer" as client_name
    */
   async restoreClientNamesFromContext(): Promise<{ updated: number; failed: number; details: Array<{ id: string; oldName: string; newName: string | null; success: boolean }> }> {
-    console.log('🔧 Starting client name restoration from dossier_context_summary...');
+    logger.info('storage', 'Starting client name restoration from dossier_context_summary...');
 
     const allReports = await db.select().from(reports).orderBy(desc(reports.createdAt));
     const details: Array<{ id: string; oldName: string; newName: string | null; success: boolean }> = [];
@@ -846,28 +847,28 @@ export class DatabaseStorage implements IStorage {
             })
             .where(eq(reports.id, report.id));
 
-          console.log(`✅ [${report.id}] Updated: "${currentClientName}" -> "${extractedName}"`);
+          logger.info('storage', `[${report.id}] Updated: "${currentClientName}" -> "${extractedName}"`);
           details.push({ id: report.id, oldName: currentClientName, newName: extractedName, success: true });
           updated++;
         } catch (error) {
-          console.error(`❌ [${report.id}] Failed to update:`, error);
+          logger.error('storage', `[${report.id}] Failed to update`, {}, error instanceof Error ? error : undefined);
           details.push({ id: report.id, oldName: currentClientName, newName: extractedName, success: false });
           failed++;
         }
       } else {
         // No change needed or couldn't extract
         if (!extractedName) {
-          console.log(`⚠️ [${report.id}] Could not extract client name from context`);
+          logger.warn('storage', `[${report.id}] Could not extract client name from context`);
           details.push({ id: report.id, oldName: currentClientName, newName: null, success: false });
           failed++;
         } else {
-          console.log(`ℹ️ [${report.id}] Already correct: "${currentClientName}"`);
+          logger.info('storage', `[${report.id}] Already correct: "${currentClientName}"`);
           details.push({ id: report.id, oldName: currentClientName, newName: extractedName, success: true });
         }
       }
     }
 
-    console.log(`🔧 Client name restoration complete: ${updated} updated, ${failed} failed/skipped`);
+    logger.info('storage', `Client name restoration complete: ${updated} updated, ${failed} failed/skipped`);
     return { updated, failed, details };
   }
 
@@ -996,10 +997,10 @@ export async function initializeDossierSequence() {
     await db.execute(sql`
       SELECT setval('dossier_number_seq', ${currentMax})
     `);
-    console.log(`✅ [Storage] Dossier sequence initialized: set to ${currentMax} (next will be ${currentMax + 1})`);
+    logger.info('storage', `Dossier sequence initialized: set to ${currentMax} (next will be ${currentMax + 1})`);
     sequenceSyncChecked = true;
   } catch (error) {
-    console.error('⚠️ [Storage] Failed to initialize dossier sequence:', error);
+    logger.error('storage', 'Failed to initialize dossier sequence', {}, error instanceof Error ? error : undefined);
   }
 }
 

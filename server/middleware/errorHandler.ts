@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { createApiErrorResponse, ERROR_CODES, type ErrorCode } from '@shared/errors';
 import { ZodError } from 'zod';
+import { logger } from '../services/logger';
 
 /**
  * Helper to safely extract error message from unknown error
@@ -64,12 +65,11 @@ export function errorHandler(
   next: NextFunction
 ) {
   // Log de error voor debugging
-  const timestamp = new Date().toISOString();
-  console.error(`[${timestamp}] Error in ${req.method} ${req.path}:`, {
-    error: getErrorMessage(err),
-    stack: isErrorWithMessage(err) ? err.stack : undefined,
-    requestId: req.headers['x-request-id'] || 'unknown'
-  });
+  const requestId = (req.headers['x-request-id'] as string) || 'unknown';
+  logger.error('errorHandler', `Error in ${req.method} ${req.path}`, {
+    errorMessage: getErrorMessage(err),
+    requestId
+  }, isErrorWithMessage(err) ? err : undefined);
 
   // Handle verschillende error types
   if (err instanceof ServerError) {
@@ -225,26 +225,6 @@ export function asyncHandler(fn: Function) {
  * Helper functie om errors te loggen met context
  */
 export function logError(error: unknown, context: Record<string, unknown> = {}) {
-  const timestamp = new Date().toISOString();
   const errorMessage = getErrorMessage(error);
-  const errorStack = isErrorWithMessage(error) ? error.stack : undefined;
-
-  if (process.env.NODE_ENV === 'development') {
-    console.group(`🚨 Server Error: ${timestamp}`);
-    console.error('Error:', errorMessage);
-    console.error('Context:', context);
-    if (errorStack) {
-      console.error('Stack:', errorStack);
-    }
-    console.groupEnd();
-  } else {
-    // Structured logging for production
-    console.error(JSON.stringify({
-      timestamp,
-      level: 'error',
-      message: errorMessage,
-      stack: errorStack,
-      context
-    }));
-  }
+  logger.error('logError', errorMessage, context, isErrorWithMessage(error) ? error : undefined);
 }

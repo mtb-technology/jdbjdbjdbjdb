@@ -33,6 +33,7 @@ import { z } from "zod";
 import { ServerError, asyncHandler, getErrorMessage, isErrorWithMessage } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { deduplicateRequests } from "./middleware/deduplicate";
+import { logger } from "./services/logger";
 
 const generateReportSchema = z.object({
   dossier: dossierSchema,
@@ -45,7 +46,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   try {
     await (storage as any).initializeDefaultPrompts?.();
   } catch (error) {
-    console.warn("Could not initialize default prompts:", error);
+    logger.warn('routes', 'Could not initialize default prompts', {}, error instanceof Error ? error : undefined);
   }
   const reportGenerator = new ReportGenerator();
   const sourceValidator = new SourceValidator();
@@ -104,7 +105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Warm up health cache immediately
   healthService.getSystemHealth().catch(error => {
-    console.error('❌ Initial health check FAILED:', error);
+    logger.error('routes', 'Initial health check FAILED', {}, error instanceof Error ? error : undefined);
   });
 
   // Test route voor AI - simpele test om te verifieren dat API werkt
@@ -135,7 +136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
       res.json(createApiSuccessResponse(cases));
     } catch (error: unknown) {
-      console.error("Error fetching cases:", error);
+      logger.error('routes', 'Error fetching cases', {}, error instanceof Error ? error : undefined);
       res.status(500).json({ message: "Fout bij ophalen cases" });
     }
   });
@@ -145,15 +146,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const report = await storage.getReport(id);
-      
+
       if (!report) {
         res.status(404).json({ message: "Case niet gevonden" });
         return;
       }
-      
+
       res.json(createApiSuccessResponse(report));
     } catch (error: unknown) {
-      console.error("Error fetching case:", error);
+      logger.error('routes', 'Error fetching case', { id: req.params.id }, error instanceof Error ? error : undefined);
       res.status(500).json({ message: "Fout bij ophalen case" });
     }
   });
@@ -197,7 +198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(createApiSuccessResponse(updatedReport, "Case succesvol bijgewerkt"));
     } catch (error: unknown) {
-      console.error("Error updating case:", error);
+      logger.error('routes', 'Error updating case', { id: req.params.id }, error instanceof Error ? error : undefined);
       res.status(500).json({ message: "Fout bij updaten case" });
     }
   });
@@ -216,7 +217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateReportStatus(id, status);
       res.json(createApiSuccessResponse({ success: true }, "Status succesvol bijgewerkt"));
     } catch (error: unknown) {
-      console.error("Error updating case status:", error);
+      logger.error('routes', 'Error updating case status', { id: req.params.id }, error instanceof Error ? error : undefined);
       res.status(500).json({ message: "Fout bij updaten status" });
     }
   });
@@ -228,7 +229,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteReport(id);
       res.json(createApiSuccessResponse({ success: true }, "Case succesvol verwijderd"));
     } catch (error: unknown) {
-      console.error("Error deleting case:", error);
+      logger.error('routes', 'Error deleting case', { id: req.params.id }, error instanceof Error ? error : undefined);
       res.status(500).json({ message: "Fout bij verwijderen case" });
     }
   });
@@ -261,7 +262,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(400).json({ message: "Ongeldige export format" });
       }
     } catch (error: unknown) {
-      console.error("Error exporting case:", error);
+      logger.error('routes', 'Error exporting case', { id: req.params.id, format: req.params.format }, error instanceof Error ? error : undefined);
       res.status(500).json({ message: "Fout bij exporteren case" });
     }
   });
@@ -313,14 +314,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (!jsonText) {
-        console.error("AI response does not contain JSON. Raw response:", aiResult);
+        logger.error('routes', 'AI response does not contain JSON', { rawResponse: aiResult.substring(0, 500) });
         throw new Error("AI response does not contain valid JSON");
       }
 
       parsedResult = JSON.parse(jsonText);
     } catch (parseError: unknown) {
-      console.error("Failed to parse AI response:", parseError);
-      console.error("Raw AI response:", aiResult.substring(0, 500));
+      logger.error('routes', 'Failed to parse AI response', { rawResponse: aiResult.substring(0, 500) }, parseError instanceof Error ? parseError : undefined);
       throw new ServerError(
         ERROR_CODES.AI_PROCESSING_FAILED,
         `AI antwoord kon niet worden geparseerd als JSON: ${getErrorMessage(parseError)}`,
@@ -385,7 +385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const attachmentTexts: string[] = [];
       const visionAttachments: { mimeType: string; data: string; filename: string }[] = [];
 
-      console.log(`📧 [SimpleEmail] Processing ${files.length} attachments`);
+      logger.info('simple-email', `Processing ${files.length} attachments`);
 
       // Process uploaded files
       for (const file of files) {
@@ -410,7 +410,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             data: file.buffer.toString('base64'),
             filename: file.originalname
           });
-          console.log(`📧 [SimpleEmail] Image added to vision: ${file.originalname}`);
+          logger.debug('simple-email', `Image added to vision: ${file.originalname}`);
         } else if (isPDF) {
           try {
             const PDFParseClass = await getPdfParse();
@@ -424,10 +424,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const charsPerPage = extractedText.length / Math.max(pages, 1);
             if (charsPerPage < 100 && pages > 0) {
               needsVision = true;
-              console.log(`📧 [SimpleEmail] Scanned PDF detected: ${file.originalname}`);
+              logger.info('simple-email', `Scanned PDF detected: ${file.originalname}`);
             }
           } catch (err: any) {
-            console.warn(`📧 [SimpleEmail] PDF parse failed: ${file.originalname}`, err.message);
+            logger.warn('simple-email', `PDF parse failed: ${file.originalname}`, { error: err.message });
             needsVision = true;
           }
 
@@ -438,7 +438,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               data: file.buffer.toString('base64'),
               filename: file.originalname
             });
-            console.log(`📧 [SimpleEmail] Added to vision: ${file.originalname}`);
+            logger.debug('simple-email', `Added to vision: ${file.originalname}`);
           }
         } else if (isTXT) {
           extractedText = file.buffer.toString('utf-8');
@@ -461,7 +461,7 @@ Analyseer de email thread${attachmentNames.length > 0 ? ' en bijlages' : ''} en 
       // Build full prompt for debug
       const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
-      console.log(`📧 [SimpleEmail] Calling AI model: ${model} with ${visionAttachments.length} vision attachments`);
+      logger.info('simple-email', `Calling AI model: ${model} with ${visionAttachments.length} vision attachments`);
 
       // Call AI model
       const factory = AIModelFactory.getInstance();
@@ -482,7 +482,7 @@ Analyseer de email thread${attachmentNames.length > 0 ? ' en bijlages' : ''} en 
         }
       );
 
-      console.log(`📧 [SimpleEmail] AI response received: ${result.content.length} chars`);
+      logger.info('simple-email', `AI response received: ${result.content.length} chars`);
 
       // Parse JSON from response
       let parsedResult;
@@ -501,8 +501,7 @@ Analyseer de email thread${attachmentNames.length > 0 ? ' en bijlages' : ''} en 
 
         parsedResult = JSON.parse(jsonText);
       } catch (parseError: any) {
-        console.error(`📧 [SimpleEmail] JSON parse error:`, parseError.message);
-        console.error(`📧 [SimpleEmail] Raw response:`, result.content.substring(0, 500));
+        logger.error('simple-email', 'JSON parse error', { rawResponse: result.content.substring(0, 500) }, parseError instanceof Error ? parseError : undefined);
         throw new ServerError(
           ERROR_CODES.AI_PROCESSING_FAILED,
           'Kon AI response niet parsen. Probeer opnieuw.',
@@ -526,7 +525,7 @@ Analyseer de email thread${attachmentNames.length > 0 ? ' en bijlages' : ''} en 
         visionAttachmentCount: visionAttachments.length
       };
 
-      console.log(`📧 [SimpleEmail] Sending response with _debug: ${!!parsedResult._debug}, promptLength: ${fullPrompt.length}`);
+      logger.debug('simple-email', `Sending response with _debug: ${!!parsedResult._debug}, promptLength: ${fullPrompt.length}`);
 
       res.json(createApiSuccessResponse(parsedResult, "Concept antwoord succesvol gegenereerd"));
     })
