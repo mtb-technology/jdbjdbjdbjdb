@@ -71,7 +71,7 @@ export class SourceValidator {
         lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        logger.warn('source-validator', `Verification attempt ${attempt + 1}/${this.maxRetries} failed for ${url}`, {}, error instanceof Error ? error : undefined);
+        logger.warn('source-validator', `Verification attempt ${attempt + 1}/${this.maxRetries} failed for ${url}`, { error: error instanceof Error ? error.message : String(error) });
         
         // Wait before retry (exponential backoff)
         if (attempt < this.maxRetries - 1) {
