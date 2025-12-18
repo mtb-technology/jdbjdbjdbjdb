@@ -9,6 +9,7 @@ import { config, getAIModelConfig, type AIModelName } from "../../config";
 import { ServerError } from "../../middleware/errorHandler";
 import { ERROR_CODES } from "@shared/errors";
 import { TIMEOUTS } from "../../config/constants";
+import { logger } from "../logger";
 
 export type { AIModelParameters } from "./base-handler";
 
@@ -80,16 +81,16 @@ export class AIModelFactory {
       ...args: any[]
     ) => {
       if (!apiKey) {
-        console.warn(`⚠️ ${type} API key not configured`);
+        logger.warn('ai-factory', `${type} API key not configured`);
         return;
       }
 
       try {
         const handler = new Handler(apiKey, ...args);
         this.handlers.set(type, handler);
-        console.log(`✅ ${type} handler initialized`);
+        logger.info('ai-factory', `${type} handler initialized`);
       } catch (error) {
-        console.error(`❌ Failed to initialize ${type} handler:`, error);
+        logger.error('ai-factory', `Failed to initialize ${type} handler`, {}, error instanceof Error ? error : undefined);
         this.initializationFailures.add(type);
       }
     };
@@ -102,7 +103,7 @@ export class AIModelFactory {
       // Validate OpenAI key format - but don't exit the entire function!
       // This was a bug: `return` would skip ALL remaining initialization
       if (!openaiApiKey.startsWith('sk-') || openaiApiKey.length < 32) {
-        console.warn('⚠️ Invalid OpenAI API key format - OpenAI handlers will not be initialized');
+        logger.warn('ai-factory', 'Invalid OpenAI API key format - OpenAI handlers will not be initialized');
         // Continue with other handlers instead of returning
       } else {
         // Initialize all OpenAI handlers (only if key format is valid)
@@ -121,15 +122,15 @@ export class AIModelFactory {
         initializeHandler("openai-gpt5", OpenAIGPT5Handler, openaiApiKey);
       }
     } else {
-      console.warn('⚠️ OpenAI API key not configured');
+      logger.warn('ai-factory', 'OpenAI API key not configured');
     }
 
     // Log initialization summary
     const initializedHandlers = Array.from(this.handlers.keys());
     if (initializedHandlers.length === 0) {
-      console.error('🚨 No AI handlers initialized! Check API keys in environment.');
+      logger.error('ai-factory', 'No AI handlers initialized! Check API keys in environment');
     } else {
-      console.log(`✅ AI Model Factory initialized with handlers: ${initializedHandlers.join(', ')}`);
+      logger.info('ai-factory', `AI Model Factory initialized with handlers: ${initializedHandlers.join(', ')}`);
     }
   }
 
@@ -157,13 +158,13 @@ export class AIModelFactory {
     const supportedParams = modelInfo.supportedParameters;
     
     if (config.temperature !== undefined && !supportedParams.includes('temperature')) {
-      console.warn(`⚠️ Temperature wordt niet ondersteund door ${config.model}`);
+      logger.warn('ai-factory', `Temperature wordt niet ondersteund door ${config.model}`);
     }
     if (config.topP !== undefined && !supportedParams.includes('topP')) {
-      console.warn(`⚠️ TopP wordt niet ondersteund door ${config.model}`);
+      logger.warn('ai-factory', `TopP wordt niet ondersteund door ${config.model}`);
     }
     if (config.topK !== undefined && !supportedParams.includes('topK')) {
-      console.warn(`⚠️ TopK wordt niet ondersteund door ${config.model}`);
+      logger.warn('ai-factory', `TopK wordt niet ondersteund door ${config.model}`);
     }
   }
 
@@ -191,7 +192,7 @@ export class AIModelFactory {
     const filteredConfig = this.filterConfigForModel(config, modelInfo);
 
     // Log model selection
-    console.log(`🎯 Model Factory: Selected ${config.model} with handler ${modelInfo.handlerType}`, {
+    logger.info('ai-factory', `Selected ${config.model} with handler ${modelInfo.handlerType}`, {
       supportedParams: modelInfo.supportedParameters,
       requiresResponsesAPI: modelInfo.requiresResponsesAPI,
       timeout: modelInfo.timeout
@@ -202,11 +203,11 @@ export class AIModelFactory {
     if (typeof prompt === 'string') {
       // Legacy format: single prompt string
       finalPrompt = prompt;
-      console.log(`📝 [${options?.jobId}] Using legacy prompt format (single string)`);
+      logger.debug(options?.jobId || 'ai-factory', 'Using legacy prompt format (single string)');
     } else {
       // New format: separate system prompt and user input
       finalPrompt = `${prompt.systemPrompt}\n\n### USER INPUT:\n${prompt.userInput}`;
-      console.log(`📝 [${options?.jobId}] Using new prompt format (system + user input)`, {
+      logger.debug(options?.jobId || 'ai-factory', 'Using new prompt format (system + user input)', {
         systemPromptLength: prompt.systemPrompt.length,
         userInputLength: prompt.userInput.length
       });
@@ -217,7 +218,7 @@ export class AIModelFactory {
     let timeoutMs = modelInfo.timeout || 120000;
     if (options?.useGrounding) {
       timeoutMs = TIMEOUTS.AI_GROUNDING;
-      console.log(`⏱️ Using extended timeout for grounding request: ${timeoutMs}ms`);
+      logger.info(options?.jobId || 'ai-factory', `Using extended timeout for grounding request: ${timeoutMs}ms`);
     }
     const optionsWithTimeout = {
       ...options,

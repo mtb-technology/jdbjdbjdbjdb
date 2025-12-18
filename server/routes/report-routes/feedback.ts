@@ -52,6 +52,7 @@ import { PromptBuilder } from "../../services/prompt-builder";
 import { asyncHandler, getErrorMessage, isErrorWithMessage } from "../../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { HTTP_STATUS } from "../../config/constants";
+import { logger } from "../../services/logger";
 import type { ReportRouteDependencies } from "./types";
 
 export function registerFeedbackRoutes(
@@ -72,7 +73,7 @@ export function registerFeedbackRoutes(
     const { id: reportId, stageId } = req.params;
     const { userInstructions = "Pas alle feedback toe om het concept rapport te verbeteren. Neem alle suggesties over die de kwaliteit, accuratesse en leesbaarheid van het rapport verbeteren." } = req.body;
 
-    console.log(`[${reportId}-${stageId}] Prompt preview requested`);
+    logger.info(`${reportId}-${stageId}`, 'Prompt preview requested');
 
     const report = await storage.getReport(reportId);
     if (!report) {
@@ -167,12 +168,11 @@ export function registerFeedbackRoutes(
       }, 'Prompt preview gegenereerd'));
 
     } catch (error: unknown) {
-      console.error(`[${reportId}-${stageId}] Prompt preview failed:`, error);
-      console.error(`Error details:`, {
+      logger.error(`${reportId}-${stageId}`, 'Prompt preview failed', {
         message: getErrorMessage(error),
         stack: isErrorWithMessage(error) ? error.stack : undefined,
         name: isErrorWithMessage(error) ? error.name : 'Unknown'
-      });
+      }, error instanceof Error ? error : undefined);
 
       res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
         'PreviewError',
@@ -194,7 +194,7 @@ export function registerFeedbackRoutes(
   app.post("/api/reports/:id/stage/:stageId/process-feedback", asyncHandler(async (req: Request, res: Response) => {
     const { id: reportId, stageId } = req.params;
 
-    console.log(`[${reportId}-${stageId}] Manual feedback processing requested`);
+    logger.info(`${reportId}-${stageId}`, 'Manual feedback processing requested');
 
     const validatedData = processFeedbackRequestSchema.parse(req.body);
     const { userInstructions, processingStrategy, filteredChanges } = validatedData;
@@ -222,7 +222,7 @@ export function registerFeedbackRoutes(
       let feedbackJSON;
 
       if (filteredChanges) {
-        console.log(`[${reportId}-${stageId}] Using filtered changes from client`);
+        logger.info(`${reportId}-${stageId}`, 'Using filtered changes from client');
         try {
           feedbackJSON = JSON.parse(filteredChanges);
         } catch (e) {
@@ -234,7 +234,7 @@ export function registerFeedbackRoutes(
           ));
         }
       } else {
-        console.log(`[${reportId}-${stageId}] Using raw feedback from stageResults (legacy mode)`);
+        logger.info(`${reportId}-${stageId}`, 'Using raw feedback from stageResults (legacy mode)');
         const stageResults = (report.stageResults as Record<string, string>) || {};
         const rawFeedback = stageResults[stageId];
 
@@ -298,7 +298,7 @@ export function registerFeedbackRoutes(
         feedbackJSON
       );
 
-      console.log(`[${reportId}-${stageId}] Feedback processing completed using Editor prompt - v${processingResult.snapshot.v}`);
+      logger.info(`${reportId}-${stageId}`, 'Feedback processing completed using Editor prompt', { version: processingResult.snapshot.v });
 
       // Persist proposal decisions to substepResults
       if (filteredChanges) {
@@ -313,7 +313,7 @@ export function registerFeedbackRoutes(
             }
           }
         });
-        console.log(`[${reportId}-${stageId}] Saved proposal decisions to substepResults`);
+        logger.info(`${reportId}-${stageId}`, 'Saved proposal decisions to substepResults');
       }
 
       // Emit SSE event
@@ -340,7 +340,7 @@ export function registerFeedbackRoutes(
       }, 'Feedback processing succesvol voltooid'));
 
     } catch (error: unknown) {
-      console.error(`[${reportId}-${stageId}] Simple feedback processing failed:`, error);
+      logger.error(`${reportId}-${stageId}`, 'Feedback processing failed', {}, error instanceof Error ? error : undefined);
 
       sseHandler.broadcast(reportId, stageId, {
         type: 'step_error',

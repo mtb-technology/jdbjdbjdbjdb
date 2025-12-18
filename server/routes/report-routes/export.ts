@@ -8,6 +8,7 @@ import type { Request, Response, Express } from "express";
 import { storage } from "../../storage";
 import { asyncHandler, ServerError } from "../../middleware/errorHandler";
 import { createApiSuccessResponse } from "@shared/errors";
+import { logger } from "../../services/logger";
 import type { ReportRouteDependencies } from "./types";
 
 export function registerExportRoutes(
@@ -45,10 +46,10 @@ export function registerExportRoutes(
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(html);
 
-      console.log(`PDF preview generated for report ${reportId}`);
+      logger.info(reportId, 'PDF preview generated');
 
     } catch (error: any) {
-      console.error(`PDF preview failed for report ${reportId}:`, error);
+      logger.error(reportId, 'PDF preview failed', {}, error);
       throw ServerError.internal(
         'PDF preview failed',
         error.message || 'Er is een fout opgetreden bij het genereren van de preview'
@@ -92,14 +93,10 @@ export function registerExportRoutes(
 
       res.send(pdfBuffer);
 
-      console.log(`PDF exported for report ${reportId}:`, {
-        filename,
-        size: pdfBuffer.length,
-        clientName: report.clientName
-      });
+      logger.info(reportId, 'PDF exported', { filename, size: pdfBuffer.length });
 
     } catch (error: any) {
-      console.error(`PDF generation failed for report ${reportId}:`, error);
+      logger.error(reportId, 'PDF generation failed', {}, error);
       throw ServerError.internal(
         'PDF generation failed',
         error.message || 'Er is een fout opgetreden bij het genereren van de PDF'
@@ -141,14 +138,10 @@ export function registerExportRoutes(
 
       res.send(docxBuffer);
 
-      console.log(`DOCX exported for report ${reportId}:`, {
-        filename,
-        size: docxBuffer.length,
-        clientName: report.clientName
-      });
+      logger.info(reportId, 'DOCX exported', { filename, size: docxBuffer.length });
 
     } catch (error: any) {
-      console.error(`DOCX generation failed for report ${reportId}:`, error);
+      logger.error(reportId, 'DOCX generation failed', {}, error);
       throw ServerError.internal(
         'DOCX generation failed',
         error.message || 'Er is een fout opgetreden bij het genereren van het Word document'
@@ -205,7 +198,7 @@ export function registerExportRoutes(
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    console.log(`Dossier exported: ${filename} (${includeAttachments ? 'with' : 'without'} attachments)`);
+    logger.info(reportId, 'Dossier JSON exported', { filename, includeAttachments });
 
     res.json(exportData);
   }));
@@ -226,7 +219,10 @@ export function registerExportRoutes(
 
     const { _exportMeta, report: reportData, attachments = [] } = importData;
 
-    console.log(`Importing dossier from ${_exportMeta.source || 'unknown'} (original: D-${String(_exportMeta.originalDossierNumber || 0).padStart(4, '0')})`);
+    logger.info('import', 'Importing dossier', {
+      source: _exportMeta.source || 'unknown',
+      originalDossierNumber: _exportMeta.originalDossierNumber
+    });
 
     const newReport = await storage.createReport({
       title: reportData.title?.replace(/^D-\d{4}\s*-\s*/, '') || reportData.clientName,
@@ -246,7 +242,7 @@ export function registerExportRoutes(
       status: reportData.status
     });
 
-    console.log(`Report imported: ${newReport.id} (D-${String(newReport.dossierNumber).padStart(4, '0')})`);
+    logger.info(newReport.id, 'Report imported', { dossierNumber: newReport.dossierNumber });
 
     let importedAttachments = 0;
     for (const att of attachments) {
@@ -264,12 +260,12 @@ export function registerExportRoutes(
         });
         importedAttachments++;
       } catch (attError) {
-        console.warn(`Failed to import attachment ${att.filename}:`, attError);
+        logger.warn(newReport.id, 'Failed to import attachment', { filename: att.filename });
       }
     }
 
     if (importedAttachments > 0) {
-      console.log(`Imported ${importedAttachments} attachment(s)`);
+      logger.info(newReport.id, 'Attachments imported', { count: importedAttachments });
     }
 
     res.json(createApiSuccessResponse({

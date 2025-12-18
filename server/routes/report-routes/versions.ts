@@ -11,6 +11,7 @@ import type { StageId } from "@shared/schema";
 import { overrideConceptRequestSchema, promoteSnapshotRequestSchema } from "@shared/types/api";
 import { asyncHandler, ServerError } from "../../middleware/errorHandler";
 import { createApiSuccessResponse, ERROR_CODES } from "@shared/errors";
+import { logger } from "../../services/logger";
 import type { ReportRouteDependencies } from "./types";
 
 export function registerVersionRoutes(
@@ -62,7 +63,7 @@ export function registerVersionRoutes(
       throw ServerError.notFound("Updated report not found");
     }
 
-    console.log(`Restored report ${id} to version ${stageKey}`);
+    logger.info(id, 'Restored report to version', { stageKey });
 
     res.json(createApiSuccessResponse({
       report: updatedReport,
@@ -82,7 +83,7 @@ export function registerVersionRoutes(
     const { id, stageId } = req.params;
     const payload = overrideConceptRequestSchema.parse(req.body);
 
-    console.log(`[${id}] Overriding concept for stage ${stageId}:`, {
+    logger.info(id, `Overriding concept for stage ${stageId}`, {
       contentLength: payload.content.length,
       fromStage: payload.fromStage,
       reason: payload.reason
@@ -112,7 +113,7 @@ export function registerVersionRoutes(
       updatedAt: new Date()
     });
 
-    console.log(`[${id}] Concept overridden for ${stageId} - new version ${snapshot.v}`);
+    logger.info(id, `Concept overridden for ${stageId}`, { newVersion: snapshot.v });
 
     res.json(createApiSuccessResponse({
       success: true,
@@ -134,7 +135,7 @@ export function registerVersionRoutes(
     const { id } = req.params;
     const { stageId, reason } = promoteSnapshotRequestSchema.parse(req.body);
 
-    console.log(`[${id}] Promoting stage ${stageId} to latest:`, { reason });
+    logger.info(id, `Promoting stage ${stageId} to latest`, { reason });
 
     const report = await storage.getReport(id);
     if (!report) {
@@ -173,7 +174,7 @@ export function registerVersionRoutes(
       updatedAt: new Date()
     });
 
-    console.log(`[${id}] Stage ${stageId} promoted to latest - version ${targetStageSnapshot.v}`);
+    logger.info(id, `Stage ${stageId} promoted to latest`, { version: targetStageSnapshot.v });
 
     res.json(createApiSuccessResponse({
       success: true,
@@ -268,7 +269,7 @@ export function registerVersionRoutes(
       documentState: documentState
     });
 
-    console.log(`Document state saved for report ${reportId}`);
+    logger.info(reportId, 'Document state saved');
 
     res.json(createApiSuccessResponse({ success: true }));
   }));
@@ -323,7 +324,7 @@ export function registerVersionRoutes(
       generatedContent: content
     });
 
-    console.log(`Manual concept edit saved for report ${reportId} (v${nextVersion})`);
+    logger.info(reportId, 'Manual concept edit saved', { version: nextVersion });
 
     res.json(createApiSuccessResponse({
       success: true,
@@ -368,7 +369,7 @@ export function registerVersionRoutes(
       throw ServerError.business(ERROR_CODES.VALIDATION_FAILED, result.error || 'Rollback mislukt');
     }
 
-    console.log(`Change rolled back: ${stageId} #${changeIndex} -> v${result.newVersion}`);
+    logger.info(reportId, 'Change rolled back', { stageId, changeIndex, newVersion: result.newVersion });
 
     res.json(createApiSuccessResponse({
       success: true,

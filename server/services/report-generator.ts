@@ -10,6 +10,7 @@ import { ServerError } from "../middleware/errorHandler";
 import { ERROR_CODES, getErrorCategory, isAIError } from "@shared/errors";
 import { getStageName } from "@shared/constants";
 import { REPORT_CONFIG, getStageConfig } from "../config/index";
+import { logger } from "./logger";
 
 export class ReportGenerator {
   /**
@@ -62,7 +63,7 @@ export class ReportGenerator {
       ...customConfig
     };
 
-    console.log(`🚀 [testAI] Using AI config from database:`, {
+    logger.info('test-ai', 'Using AI config from database', {
       provider: finalConfig.provider,
       model: finalConfig.model,
       maxOutputTokens: finalConfig.maxOutputTokens,
@@ -76,7 +77,7 @@ export class ReportGenerator {
 
       return response.content;
     } catch (error: any) {
-      console.error('Test AI error:', error);
+      logger.error('test-ai', 'Test AI error', {}, error instanceof Error ? error : undefined);
       throw ServerError.ai(
         'AI service test mislukt. Controleer de AI configuratie in Settings.',
         { prompt: prompt.substring(0, 100), error: error.message }
@@ -117,7 +118,7 @@ export class ReportGenerator {
       ...customConfig
     };
 
-    console.log(`🤖 [${operationId}] Using AI config from database:`, {
+    logger.info(operationId, 'Using AI config from database', {
       provider: aiConfig.provider,
       model: aiConfig.model,
       maxOutputTokens: aiConfig.maxOutputTokens,
@@ -131,15 +132,15 @@ export class ReportGenerator {
         jobId: operationId
       });
 
-      console.log(`✅ [${operationId}] Model call succeeded, response length:`, response.content.length);
+      logger.info(operationId, 'Model call succeeded', { responseLength: response.content.length });
 
       return response.content;
     } catch (error: any) {
-      console.error(`❌ [${operationId}] Model call failed:`, {
+      logger.error(operationId, 'Model call failed', {
         errorType: error.constructor.name,
         message: error.message,
         code: error.code
-      });
+      }, error instanceof Error ? error : undefined);
       throw ServerError.ai(
         'AI kon geen antwoord genereren. Controleer de configuratie in Settings.',
         {
@@ -216,7 +217,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         'extract-dossier'
       );
 
-      console.log('🔍 [extractDossierData] Using AI config:', {
+      logger.info('extract-dossier', 'Using AI config', {
         provider: aiConfig.provider,
         model: aiConfig.model,
         maxOutputTokens: aiConfig.maxOutputTokens
@@ -237,7 +238,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       try {
         return JSON.parse(extractedJson);
       } catch (parseError) {
-        console.error('JSON parse error:', parseError, 'Raw content:', extractedJson);
+        logger.error('extract-dossier', 'JSON parse error', { rawContent: extractedJson.substring(0, 500) }, parseError instanceof Error ? parseError : undefined);
         throw ServerError.business(
           ERROR_CODES.AI_INVALID_RESPONSE,
           'AI heeft geen geldig JSON formaat teruggegeven'
@@ -247,8 +248,8 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       if (error instanceof ServerError) {
         throw error;
       }
-      
-      console.error('Extract dossier error:', error);
+
+      logger.error('extract-dossier', 'Extract dossier error', {}, error instanceof Error ? error : undefined);
       throw ServerError.ai(
         'Kon geen dossiergegevens extraheren uit de tekst. Probeer het opnieuw of pas de tekst aan.',
         { textLength: rawText.length, error: error.message }
@@ -284,7 +285,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         const snapshot = conceptReportVersions[latest.pointer];
         const content = extractSnapshotContent(snapshot);
         if (content) {
-          console.log(`📖 [${stageName}] Using concept from ${latest.pointer} v${latest.v} (${content.length} chars)`);
+          logger.debug(stageName, `Using concept from ${latest.pointer} v${latest.v}`, { chars: content.length });
           return content;
         }
       }
@@ -293,11 +294,11 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       const stage3Snapshot = conceptReportVersions?.["3_generatie"];
       const stage3Content = extractSnapshotContent(stage3Snapshot);
       if (stage3Content) {
-        console.log(`📖 [${stageName}] Fallback to stage 3_generatie (${stage3Content.length} chars)`);
+        logger.debug(stageName, 'Fallback to stage 3_generatie', { chars: stage3Content.length });
         return stage3Content;
       }
 
-      console.warn(`⚠️ [${stageName}] No concept content found - using empty string`);
+      logger.warn(stageName, 'No concept content found - using empty string');
       return "";
     };
 
@@ -435,7 +436,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
         promptString = `${promptResult.systemPrompt}\n\n### USER INPUT:\n${promptResult.userInput}`;
       }
 
-      console.log(`🌐 [${jobId}] ${stageName}: Using ENGLISH language instruction`);
+      logger.info(jobId || stageName, `${stageName}: Using ENGLISH language instruction`);
     }
 
     // Get active prompt configuration from database for AI config
@@ -455,7 +456,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     const useGrounding = stageConfigForAI?.useGrounding ?? false;
     const useWebSearch = stageConfigForAI?.useWebSearch ?? false;
 
-    console.log(`🎯 [${jobId}] Starting stage ${stageName}:`, {
+    logger.info(jobId || stageName, `Starting stage ${stageName}`, {
       provider: aiConfig.provider,
       model: aiConfig.model,
       grounding: useGrounding,
@@ -471,7 +472,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     // This protects against database configs with too-low maxOutputTokens values
     if (stageMaxTokens && stageMaxTokens > aiConfig.maxOutputTokens) {
       aiConfig.maxOutputTokens = stageMaxTokens;
-      console.log(`📏 [${jobId}] Applied stage maxTokens floor: ${stageMaxTokens} for ${stageName}`);
+      logger.info(jobId || stageName, `Applied stage maxTokens floor: ${stageMaxTokens} for ${stageName}`);
     }
     
     // Call the AI model using the factory with stage-specific timeout
@@ -488,7 +489,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
     };
 
     if (visionAttachments && visionAttachments.length > 0) {
-      console.log(`📄 [${jobId}] Sending ${visionAttachments.length} vision attachment(s) to AI for OCR/analysis`);
+      logger.info(jobId || stageName, `Sending ${visionAttachments.length} vision attachment(s) to AI for OCR/analysis`);
     }
 
     try {
@@ -521,7 +522,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
       return { stageOutput, conceptReport, prompt: promptString };
 
     } catch (error: any) {
-      console.error(`🚨 [${jobId}] Model failed (${aiConfig.model}):`, error.message);
+      logger.error(jobId || stageName, `Model failed (${aiConfig.model})`, { message: error.message }, error instanceof Error ? error : undefined);
 
       // Use typed error category detection instead of fragile string matching
       const errorCategory = getErrorCategory(error);
@@ -529,7 +530,7 @@ ALLEEN JSON TERUGGEVEN, GEEN ANDERE TEKST.`;
 
       if (isRateLimitError) {
         // Rate limits ALWAYS fail - no placeholders, no fallbacks
-        console.error(`💥 [${jobId}] RATE LIMIT - Failing stage ${stageName} immediately`);
+        logger.error(jobId || stageName, `RATE LIMIT - Failing stage ${stageName} immediately`);
         throw error; // Re-throw to make the stage actually fail
       }
 
@@ -587,7 +588,7 @@ ${errorGuidance}
 
 **Let op:** Dit systeem gebruikt GEEN automatische fallbacks om kwaliteit te garanderen. Los het probleem op of configureer een ander model in Instellingen.`;
 
-      console.log(`⚠️ [${jobId}] Returning error response for failed stage ${stageName} (no fallbacks)`);
+      logger.warn(jobId || stageName, `Returning error response for failed stage ${stageName} (no fallbacks)`);
 
       // For reviewer stages, don't return a concept report even on error
       let errorConceptReport = "";
@@ -767,18 +768,19 @@ ${errorGuidance}
       responseFormat: 'json' // Force JSON output
     };
 
-    console.log(`🎯 [${jobId}] Generating Fiscale Briefing:`, {
+    logger.info(jobId || 'fiscale-briefing', 'Generating Fiscale Briefing', {
       provider: aiConfig.provider,
       model: aiConfig.model
     });
 
     // DEBUG: Log the full prompt for troubleshooting
     const parsedInput = JSON.parse(promptResult.userInput);
-    console.log(`📝 [${jobId}] === FISCALE BRIEFING DEBUG ===`);
-    console.log(`📝 hasOrigineleIntakeTekst: ${!!parsedInput.dossier_context?.originele_intake_tekst}`);
-    console.log(`📝 origineleIntakeTekstLength: ${parsedInput.dossier_context?.originele_intake_tekst?.length || 0}`);
-    console.log(`📝 workflowFase: ${parsedInput.workflow_uitleg?.fase}`);
-    console.log(`📝 hasBouwplan: ${parsedInput.workflow_uitleg?.beschikbare_data?.bouwplan}`);
+    logger.debug(jobId || 'fiscale-briefing', 'Fiscale Briefing debug', {
+      hasOrigineleIntakeTekst: !!parsedInput.dossier_context?.originele_intake_tekst,
+      origineleIntakeTekstLength: parsedInput.dossier_context?.originele_intake_tekst?.length || 0,
+      workflowFase: parsedInput.workflow_uitleg?.fase,
+      hasBouwplan: parsedInput.workflow_uitleg?.beschikbare_data?.bouwplan
+    });
 
     try {
       const response = await this.modelFactory.callModel(aiConfig, promptResult, options);
@@ -788,7 +790,7 @@ ${errorGuidance}
         prompt: promptString
       };
     } catch (error: any) {
-      console.error(`🚨 [${jobId}] Fiscale Briefing generation failed:`, error.message);
+      logger.error(jobId || 'fiscale-briefing', 'Fiscale Briefing generation failed', { message: error.message }, error instanceof Error ? error : undefined);
 
       // Return error as structured JSON so frontend can handle it gracefully
       const errorBriefing = JSON.stringify({

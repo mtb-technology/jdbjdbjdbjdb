@@ -20,6 +20,7 @@ import multer from "multer";
 import { asyncHandler, ServerError } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { storage } from "../storage";
+import { logger } from "../services/logger";
 import { Box3ExtractionPipeline, type PipelineDocument } from "../services/box3-extraction-pipeline";
 import type { Box3Blueprint, Box3DocumentClassification } from "@shared/schema";
 
@@ -144,7 +145,7 @@ box3V2Router.post(
       throw ServerError.validation("No files", "Upload minimaal één document");
     }
 
-    console.log(`📋 [Box3V2] Pipeline intake for ${clientName}: ${files.length} files`);
+    logger.info('box3-v2', `Pipeline intake for ${clientName}`, { fileCount: files.length });
 
     // Create dossier first
     const dossier = await storage.createBox3Dossier({
@@ -154,7 +155,7 @@ box3V2Router.post(
       status: 'intake',
     });
 
-    console.log(`📋 [Box3V2] Dossier created: ${dossier.id}`);
+    logger.info('box3-v2', 'Dossier created', { dossierId: dossier.id });
 
     // Store documents and prepare for pipeline
     const pipelineDocs: PipelineDocument[] = [];
@@ -199,28 +200,28 @@ box3V2Router.post(
       });
     }
 
-    console.log(`📋 [Box3V2] ${pipelineDocs.length} documents prepared for pipeline`);
+    logger.info('box3-v2', 'Documents prepared for pipeline', { count: pipelineDocs.length });
 
     // Run extraction pipeline
     const pipeline = new Box3ExtractionPipeline((progress) => {
-      console.log(`📋 [Pipeline] Step ${progress.stepNumber}/${progress.totalSteps}: ${progress.message}`);
+      logger.debug('box3-v2', `Pipeline step ${progress.stepNumber}/${progress.totalSteps}`, { message: progress.message });
     });
 
     let pipelineResult;
     try {
       pipelineResult = await pipeline.run(pipelineDocs, inputText || null);
     } catch (pipelineError: any) {
-      console.error(`📋 [Box3V2] Pipeline failed, cleaning up dossier ${dossier.id}:`, pipelineError.message);
+      logger.error('box3-v2', 'Pipeline failed, cleaning up dossier', { dossierId: dossier.id, error: pipelineError.message });
       await storage.deleteBox3Dossier(dossier.id).catch(() => {});
       throw ServerError.ai(`Pipeline extractie mislukt: ${pipelineError.message}`, { originalError: pipelineError.message });
     }
 
     const blueprint = pipelineResult.blueprint;
-    console.log(`📋 [Box3V2] Pipeline completed successfully`);
+    logger.info('box3-v2', 'Pipeline completed successfully');
 
     // Log any pipeline errors
     if (pipelineResult.errors.length > 0) {
-      console.warn(`📋 [Box3V2] Pipeline had ${pipelineResult.errors.length} non-fatal errors:`, pipelineResult.errors);
+      logger.warn('box3-v2', 'Pipeline had non-fatal errors', { errorCount: pipelineResult.errors.length, errors: pipelineResult.errors });
     }
 
     // Extract tax years from blueprint
@@ -242,7 +243,7 @@ box3V2Router.post(
       createdBy: 'pipeline',
     });
 
-    console.log(`📋 [Box3V2] Blueprint v1 created for dossier ${dossier.id}`);
+    logger.info('box3-v2', 'Blueprint v1 created', { dossierId: dossier.id });
 
     // Update document classifications from source_documents_registry
     if (blueprint.source_documents_registry) {
@@ -469,7 +470,7 @@ box3V2Router.post(
       newDocs.push({ id: doc.id, filename: doc.filename });
     }
 
-    console.log(`📋 [Box3V2] Added ${newDocs.length} documents to dossier ${id}`);
+    logger.info('box3-v2', 'Added documents to dossier', { dossierId: id, count: newDocs.length });
 
     // Update dossier status
     await storage.updateBox3Dossier(id, { status: 'in_behandeling' });
@@ -502,7 +503,7 @@ box3V2Router.post(
       throw ServerError.validation("No documents", "Geen documenten om te valideren");
     }
 
-    console.log(`📋 [Box3V2] Revalidating dossier ${id} with ${documents.length} documents using pipeline`);
+    logger.info('box3-v2', 'Revalidating dossier', { dossierId: id, documentCount: documents.length });
 
     // Prepare documents for pipeline
     const pipelineDocs: PipelineDocument[] = [];
@@ -540,17 +541,17 @@ box3V2Router.post(
 
     // Run extraction pipeline
     const pipeline = new Box3ExtractionPipeline((progress) => {
-      console.log(`📋 [Pipeline] Step ${progress.stepNumber}/${progress.totalSteps}: ${progress.message}`);
+      logger.debug('box3-v2', `Pipeline step ${progress.stepNumber}/${progress.totalSteps}`, { message: progress.message });
     });
 
     const pipelineResult = await pipeline.run(pipelineDocs, dossier.intakeText || null);
     const blueprint = pipelineResult.blueprint;
 
-    console.log(`📋 [Box3V2] Pipeline revalidation completed`);
+    logger.info('box3-v2', 'Pipeline revalidation completed');
 
     // Log any pipeline errors
     if (pipelineResult.errors.length > 0) {
-      console.warn(`📋 [Box3V2] Pipeline had ${pipelineResult.errors.length} non-fatal errors:`, pipelineResult.errors);
+      logger.warn('box3-v2', 'Pipeline had non-fatal errors', { errorCount: pipelineResult.errors.length, errors: pipelineResult.errors });
     }
 
     // Get current version and increment
@@ -597,7 +598,7 @@ box3V2Router.post(
       }
     }
 
-    console.log(`📋 [Box3V2] Blueprint v${newVersion} created for dossier ${id}`);
+    logger.info('box3-v2', `Blueprint v${newVersion} created`, { dossierId: id });
 
     res.json(createApiSuccessResponse({
       blueprint,

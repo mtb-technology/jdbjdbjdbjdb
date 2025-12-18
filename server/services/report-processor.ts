@@ -10,6 +10,7 @@ import {
 import { storage } from '../storage';
 import { getActivePromptConfig } from '../storage';
 import { AIConfigResolver } from './ai-config-resolver';
+import { logger } from './logger';
 
 // Temporary AI handler interface - will integrate with existing AI system
 interface AIHandler {
@@ -108,17 +109,17 @@ export class ReportProcessor {
    * Process feedback from a review stage into a new concept report version
    */
   async process(input: ReportProcessorInput): Promise<ReportProcessorOutput> {
-    console.log(`🔄 [ReportProcessor] Processing feedback for stage ${input.stageId}`);
-    
+    logger.info('report-processor', `Processing feedback for stage ${input.stageId}`);
+
     try {
       const newConcept = await this.mergeWithAI(input);
-      
+
       return {
         newConcept,
         summary: `Feedback from ${input.stageId} successfully processed and integrated`
       };
     } catch (error: any) {
-      console.error(`❌ [ReportProcessor] Failed to process feedback for ${input.stageId}:`, error);
+      logger.error('report-processor', `Failed to process feedback for ${input.stageId}`, {}, error instanceof Error ? error : undefined);
       
       // Fallback to simple append strategy if AI fails
       return this.fallbackMerge(input);
@@ -135,7 +136,7 @@ export class ReportProcessor {
    * All new code should use PromptBuilder + processStageWithPrompt().
    */
   private async mergeWithAI(input: ReportProcessorInput): Promise<string> {
-    console.warn('⚠️ DEPRECATED: ReportProcessor.mergeWithAI() called - this should use PromptBuilder instead!');
+    logger.warn('report-processor', 'DEPRECATED: ReportProcessor.mergeWithAI() called - this should use PromptBuilder instead!');
 
     // Get active prompt config for editor prompt and AI settings
     const promptConfig = await getActivePromptConfig();
@@ -261,7 +262,7 @@ ${feedback}
       processedFeedback
     };
 
-    console.log(`📸 [ReportProcessor] Created snapshot v${nextVersion} for ${stageId} (from: ${fromStage || 'none'}, latestWasV${latestVersion})`);
+    logger.info('report-processor', `Created snapshot v${nextVersion} for ${stageId}`, { from: fromStage || 'none', latestWasV: latestVersion });
     return snapshot;
   }
 
@@ -295,7 +296,7 @@ ${feedback}
         v: snapshot.v,
         timestamp: new Date().toISOString()
       };
-      console.log(`🔄 [ReportProcessor] Updated existing history entry for ${stageId} v${snapshot.v}`);
+      logger.debug('report-processor', `Updated existing history entry for ${stageId} v${snapshot.v}`);
     } else {
       // Add new entry
       updatedHistory = [
@@ -306,7 +307,7 @@ ${feedback}
           timestamp: new Date().toISOString()
         }
       ];
-      console.log(`➕ [ReportProcessor] Added new history entry for ${stageId} v${snapshot.v}`);
+      logger.debug('report-processor', `Added new history entry for ${stageId} v${snapshot.v}`);
     }
 
     // Create updated versions with the snapshot properly assigned per stage
@@ -327,7 +328,7 @@ ${feedback}
       conceptReportVersions: updatedVersions as any
     });
 
-    console.log(`✅ [ReportProcessor] Updated concept versions - latest: ${stageId} v${snapshot.v}`);
+    logger.info('report-processor', `Updated concept versions - latest: ${stageId} v${snapshot.v}`);
     return updatedVersions;
   }
 
@@ -425,7 +426,7 @@ ${feedback}
     snapshot: ConceptReportSnapshot;
     updatedVersions: ConceptReportVersions;
   }> {
-    console.log(`🏭 [ReportProcessor] Processing ${stageId} with pre-built prompt (${preBuiltPrompt.length} chars)`);
+    logger.info('report-processor', `Processing ${stageId} with pre-built prompt`, { promptLength: preBuiltPrompt.length });
 
     // Get AI config via AIConfigResolver - GEEN hardcoded defaults
     const promptConfig = await getActivePromptConfig();
@@ -467,7 +468,7 @@ ${feedback}
     // Update versions
     const updatedVersions = await this.updateConceptVersions(reportId, stageId, snapshot);
 
-    console.log(`🎉 [ReportProcessor] Stage ${stageId} processing complete`);
+    logger.info('report-processor', `Stage ${stageId} processing complete`);
 
     return {
       newConcept: response.content,
@@ -486,7 +487,7 @@ ${feedback}
     snapshot: ConceptReportSnapshot;
     updatedVersions: ConceptReportVersions;
   }> {
-    console.log(`🏭 [ReportProcessor] Complete processing for ${stageId} on report ${reportId}`);
+    logger.info('report-processor', `Complete processing for ${stageId} on report ${reportId}`);
 
     // 1. Get base concept from predecessor stage
     const report = await storage.getReport(reportId);
@@ -508,7 +509,7 @@ ${feedback}
       baseConcept = currentStageVersion.content;
       // Even when re-processing, we still need to know the predecessor for snapshot metadata
       predecessorStage = this.getPredecessorStage(stageId);
-      console.log(`📌 [ReportProcessor] Re-processing ${stageId} - using existing v${currentStageVersion.v} as base`);
+      logger.debug('report-processor', `Re-processing ${stageId} - using existing v${currentStageVersion.v} as base`);
     } else {
       // First time processing this stage - use predecessor
       predecessorStage = this.getPredecessorStage(stageId);
@@ -517,7 +518,7 @@ ${feedback}
         const predecessorVersion = this.getStageVersion(currentVersions, predecessorStage);
         if (predecessorVersion) {
           baseConcept = predecessorVersion.content;
-          console.log(`📌 [ReportProcessor] First-time processing ${stageId} - using predecessor ${predecessorStage} v${predecessorVersion.v} as base`);
+          logger.debug('report-processor', `First-time processing ${stageId} - using predecessor ${predecessorStage} v${predecessorVersion.v} as base`);
         } else {
           throw new Error(`Predecessor stage ${predecessorStage} not found or has no content`);
         }
@@ -548,7 +549,7 @@ ${feedback}
     // 4. Update versions
     const updatedVersions = await this.updateConceptVersions(reportId, stageId, snapshot);
 
-    console.log(`🎉 [ReportProcessor] Stage ${stageId} processing complete`);
+    logger.info('report-processor', `Stage ${stageId} processing complete`);
 
     return {
       newConcept: processingResult.newConcept,
@@ -603,9 +604,9 @@ ${feedback}
       default:
         // Dynamic stages (like adjustment_1, adjustment_2, etc.) - store directly
         (versions as Record<string, any>)[stageId] = snapshot;
-        console.log(`📦 [ReportProcessor] Stored dynamic stage snapshot for: ${stageId}`);
+        logger.debug('report-processor', `Stored dynamic stage snapshot for: ${stageId}`);
     }
 
-    console.log(`💾 [ReportProcessor] Persisted snapshot v${snapshot.v} for stage ${stageId}`);
+    logger.debug('report-processor', `Persisted snapshot v${snapshot.v} for stage ${stageId}`);
   }
 }

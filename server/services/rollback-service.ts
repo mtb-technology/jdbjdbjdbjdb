@@ -8,6 +8,7 @@
 import { storage } from '../storage';
 import { parseFeedbackToProposals, type ChangeProposal } from '@shared/lib/parse-feedback';
 import { getStageName, getLatestConceptText, REVIEW_STAGES } from '@shared/constants';
+import { logger } from './logger';
 
 interface RollbackResult {
   success: boolean;
@@ -194,7 +195,7 @@ export async function rollbackChange(params: RollbackChangeParams): Promise<Roll
       }
     });
 
-    console.log(`🔄 Rollback successful for ${stageId} change #${changeIndex}, new version: v${newVersion}`);
+    logger.info('rollback', `Rollback successful for ${stageId} change #${changeIndex}, new version: v${newVersion}`);
 
     return {
       success: true,
@@ -204,7 +205,7 @@ export async function rollbackChange(params: RollbackChangeParams): Promise<Roll
     };
 
   } catch (error) {
-    console.error('Rollback error:', error);
+    logger.error('rollback', 'Rollback error', {}, error instanceof Error ? error : undefined);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Onbekende fout bij rollback',

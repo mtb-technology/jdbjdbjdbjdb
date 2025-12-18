@@ -1,4 +1,5 @@
 import type { AiConfig } from "@shared/schema";
+import { logger } from "./logger";
 
 /**
  * AI Config Resolver - Simpele functies voor config resolution
@@ -48,7 +49,7 @@ export function resolveForStage(
   );
 
   if (jobId) {
-    console.log(`📊 [${jobId}] Config resolved:`, {
+    logger.debug(jobId, 'Config resolved', {
       stage: stageName,
       model: finalConfig.model,
       provider: finalConfig.provider,
@@ -88,7 +89,7 @@ export function resolveForOperation(
   const configWithLimits = applyProviderLimits(config, provider);
 
   if (jobId) {
-    console.log(`📊 [${jobId}] Config resolved for ${operationKey}:`, {
+    logger.debug(jobId, `Config resolved for ${operationKey}`, {
       model: configWithLimits.model,
       provider: configWithLimits.provider,
       temperature: configWithLimits.temperature,
@@ -149,10 +150,7 @@ function applyProviderLimits(config: AiConfig, provider: 'google' | 'openai'): A
   const limit = PROVIDER_MAX_LIMITS[provider];
 
   if (config.maxOutputTokens > limit) {
-    console.warn(
-      `⚠️ maxOutputTokens (${config.maxOutputTokens}) overschrijdt ${provider} limiet (${limit}). ` +
-      `Wordt beperkt tot ${limit}.`
-    );
+    logger.warn('ai-config', `maxOutputTokens (${config.maxOutputTokens}) overschrijdt ${provider} limiet (${limit}). Wordt beperkt tot ${limit}.`);
     return { ...config, maxOutputTokens: limit };
   }
 

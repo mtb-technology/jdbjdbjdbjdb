@@ -2,6 +2,7 @@ import type { AiConfig } from "@shared/schema";
 import { AIModelFactory, type AIModelParameters } from "../ai-models/ai-model-factory";
 import { StreamingSessionManager } from "./streaming-session-manager";
 import type { StreamingEvent } from "@shared/streaming-types";
+import { logger } from "../logger";
 
 export class StreamingAIService {
   private modelFactory: AIModelFactory;
@@ -21,7 +22,7 @@ export class StreamingAIService {
     config: AiConfig,
     options?: AIModelParameters
   ): Promise<string> {
-    console.log(`🌊 [${reportId}-${stageId}] Starting streaming AI call for ${substepId}`);
+    logger.info(`${reportId}-${stageId}`, `Starting streaming AI call for ${substepId}`);
     
     // Start substep
     this.sessionManager.startSubstep(reportId, stageId, substepId);
@@ -144,7 +145,7 @@ export class StreamingAIService {
     operation: () => Promise<string>,
     estimatedDuration: number = 30
   ): Promise<string> {
-    console.log(`⚙️ [${reportId}-${stageId}] Starting non-AI operation: ${substepId}`);
+    logger.info(`${reportId}-${stageId}`, `Starting non-AI operation: ${substepId}`);
     
     this.sessionManager.startSubstep(reportId, stageId, substepId);
 
@@ -206,7 +207,7 @@ export class StreamingAIService {
 
   // Cancel ongoing operation
   async cancelOperation(reportId: string, stageId: string): Promise<void> {
-    console.log(`🛑 [${reportId}-${stageId}] Cancelling streaming operation`);
+    logger.info(`${reportId}-${stageId}`, 'Cancelling streaming operation');
     this.sessionManager.cancelSession(reportId, stageId);
   }
 
@@ -217,7 +218,7 @@ export class StreamingAIService {
     substepId: string,
     operation: () => Promise<string>
   ): Promise<string> {
-    console.log(`🔄 [${reportId}-${stageId}] Retrying substep: ${substepId}`);
+    logger.info(`${reportId}-${stageId}`, `Retrying substep: ${substepId}`);
     
     // Reset substep status
     const session = this.sessionManager.getSession(reportId, stageId);

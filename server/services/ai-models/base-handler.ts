@@ -1,6 +1,7 @@
 import type { AiConfig } from "@shared/schema";
 import { AIError } from "@shared/errors";
 import { TIMEOUTS, RETRY, CIRCUIT_BREAKER } from "../../config/constants";
+import { logger } from "../logger";
 
 export interface AIModelResponse {
   content: string;
@@ -210,15 +211,14 @@ export abstract class BaseAIHandler {
 
   // Common utility methods
   protected logStart(jobId: string | undefined, additionalInfo?: Record<string, any>) {
-    console.log(`🚀 [${jobId || 'unknown'}] Starting ${this.modelName} call:`, {
+    logger.info(jobId || 'unknown', `Starting ${this.modelName} call`, {
       model: this.modelName,
-      timestamp: new Date().toISOString(),
       ...additionalInfo
     });
   }
 
   protected logSuccess(jobId: string | undefined, response: AIModelResponse) {
-    console.log(`✅ [${jobId || 'unknown'}] ${this.modelName} response received:`, {
+    logger.info(jobId || 'unknown', `${this.modelName} response received`, {
       model: this.modelName,
       contentLength: response.content.length,
       duration: `${response.duration}ms`,
@@ -231,8 +231,7 @@ export abstract class BaseAIHandler {
     const errorDetails: any = {
       model: this.modelName,
       errorName: error.name,
-      errorMessage: error.message,
-      timestamp: new Date().toISOString()
+      errorMessage: error.message
     };
 
     if (error instanceof AIError) {
@@ -241,12 +240,7 @@ export abstract class BaseAIHandler {
       errorDetails.details = error.details;
     }
 
-    // Only include stack trace for unexpected errors (non-AIError)
-    if (!(error instanceof AIError)) {
-      errorDetails.errorStack = error.stack?.split('\n').slice(0, 3);
-    }
-
-    console.error(`🚨 [${jobId || 'unknown'}] ${this.modelName} error:`, errorDetails);
+    logger.error(jobId || 'unknown', `${this.modelName} error`, errorDetails, error instanceof Error ? error : undefined);
   }
 
   protected logRetry(jobId: string | undefined, attempt: number, maxRetries: number, delay: number, errorMessage: string) {
@@ -258,24 +252,22 @@ export abstract class BaseAIHandler {
                        errorMessage.toLowerCase().includes('quota');
 
     if (isRateLimit) {
-      console.warn(`⏳ [${jobId || 'unknown'}] ${this.modelName} RATE LIMIT - Retry ${attempt}/${maxRetries} in ${humanDelay}:`, {
+      logger.warn(jobId || 'unknown', `${this.modelName} RATE LIMIT - Retry ${attempt}/${maxRetries} in ${humanDelay}`, {
         model: this.modelName,
         attempt,
         maxRetries,
         delayMs: delay,
         humanReadableDelay: humanDelay,
         errorMessage,
-        timestamp: new Date().toISOString(),
         suggestion: 'Rate limits may require 5-10 minutes to reset. Consider using a different model or waiting longer.'
       });
     } else {
-      console.warn(`🔄 [${jobId || 'unknown'}] ${this.modelName} retry ${attempt}/${maxRetries} in ${humanDelay}:`, {
+      logger.warn(jobId || 'unknown', `${this.modelName} retry ${attempt}/${maxRetries} in ${humanDelay}`, {
         model: this.modelName,
         attempt,
         maxRetries,
         delayMs: delay,
-        errorMessage,
-        timestamp: new Date().toISOString()
+        errorMessage
       });
     }
   }
@@ -350,9 +342,9 @@ export abstract class BaseAIHandler {
     // Log normalization result
     if (jobId) {
       if (content) {
-        console.log(`✅ [${jobId}] Normalized ${modelType} response: ${content.length} chars`);
+        logger.debug(jobId, `Normalized ${modelType} response`, { chars: content.length });
       } else {
-        console.warn(`⚠️ [${jobId}] Failed to normalize ${modelType} response`);
+        logger.warn(jobId, `Failed to normalize ${modelType} response`);
       }
     }
     
@@ -481,7 +473,7 @@ export abstract class BaseAIHandler {
     for (const { pattern, description } of securityPatterns) {
       if (pattern.test(normalizedPrompt)) {
         const promptHash = this.hashString(prompt);
-        console.warn(`🚨 Rejected prompt with ${description}. Hash: ${promptHash}, Length: ${prompt.length}`);
+        logger.warn('ai-handler', `Rejected prompt with ${description}`, { hash: promptHash, length: prompt.length });
         throw AIError.invalidInput(`Prompt contains potentially malicious content (${description})`);
       }
     }
@@ -491,7 +483,7 @@ export abstract class BaseAIHandler {
     const maxLineLength = 10000;
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].length > maxLineLength) {
-        console.warn(`⚠️ Prompt line ${i + 1} is very long (${lines[i].length} chars). This may cause processing issues.`);
+        logger.warn('ai-handler', `Prompt line ${i + 1} is very long (${lines[i].length} chars). This may cause processing issues.`);
         break;
       }
     }
@@ -529,7 +521,7 @@ export abstract class BaseAIHandler {
         // Transition to half-open state
         this.circuitBreaker.state = 'half-open';
         this.circuitBreaker.successCount = 0;
-        console.log(`🔄 Circuit breaker for ${this.modelName} transitioning to half-open state`);
+        logger.info('circuit-breaker', `${this.modelName} transitioning to half-open state`);
       } else {
         throw AIError.circuitBreakerOpen(`Circuit breaker is open for ${this.modelName}`);
       }
@@ -550,7 +542,7 @@ export abstract class BaseAIHandler {
         this.circuitBreaker.state = 'closed';
         this.circuitBreaker.failures = 0;
         this.circuitBreaker.lastFailureTime = undefined;
-        console.log(`✅ Circuit breaker for ${this.modelName} closed - service recovered`);
+        logger.info('circuit-breaker', `${this.modelName} closed - service recovered`);
       }
     } else if (this.circuitBreaker.state === 'closed') {
       // Reset failure count on success
@@ -566,12 +558,12 @@ export abstract class BaseAIHandler {
     if (this.circuitBreaker.state === 'half-open') {
       this.circuitBreaker.state = 'open';
       this.circuitBreaker.successCount = 0;
-      console.error(`🚨 Circuit breaker for ${this.modelName} failed during half-open - reopening`);
+      logger.error('circuit-breaker', `${this.modelName} failed during half-open - reopening`);
     }
     // Handle closed state failure - open after threshold
     else if (this.circuitBreaker.failures >= this.failureThreshold && this.circuitBreaker.state === 'closed') {
       this.circuitBreaker.state = 'open';
-      console.error(`🚨 Circuit breaker for ${this.modelName} opened after ${this.circuitBreaker.failures} failures`);
+      logger.error('circuit-breaker', `${this.modelName} opened after ${this.circuitBreaker.failures} failures`);
     }
   }
 
@@ -660,7 +652,7 @@ export abstract class BaseAIHandler {
     }
 
     if (typeof response.duration !== 'number' || response.duration < 0) {
-      console.warn(`⚠️ Invalid duration in response: ${response.duration}`);
+      logger.warn('ai-handler', `Invalid duration in response: ${response.duration}`);
       response.duration = 0; // Fix invalid duration
     }
   }

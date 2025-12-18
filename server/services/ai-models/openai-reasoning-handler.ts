@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { BaseAIHandler, AIModelResponse, AIModelParameters } from "./base-handler";
 import { AIError } from "@shared/errors";
 import type { AiConfig } from "@shared/schema";
+import { logger } from "../logger";
 
 export class OpenAIReasoningHandler extends BaseAIHandler {
   private client: OpenAI;
@@ -93,10 +94,10 @@ export class OpenAIReasoningHandler extends BaseAIHandler {
   validateParameters(config: AiConfig): void {
     // Reasoning models (o3/o3-mini) don't support temperature or topP
     if (config.temperature !== undefined && config.temperature !== 1) {
-      console.warn(`⚠️ Temperature is ignored for reasoning model ${config.model}`);
+      logger.warn('openai-reasoning', `Temperature is ignored for reasoning model ${config.model}`);
     }
     if (config.topP !== undefined && config.topP !== 1) {
-      console.warn(`⚠️ TopP is ignored for reasoning model ${config.model}`);
+      logger.warn('openai-reasoning', `TopP is ignored for reasoning model ${config.model}`);
     }
     if (config.maxOutputTokens !== undefined && config.maxOutputTokens < 1) {
       throw AIError.validationFailed(`MaxOutputTokens must be greater than 0 for reasoning models, got ${config.maxOutputTokens}`);

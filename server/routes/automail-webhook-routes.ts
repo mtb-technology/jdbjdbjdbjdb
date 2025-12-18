@@ -10,6 +10,7 @@ import { storage } from "../storage";
 import { asyncHandler, ServerError } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { HTTP_STATUS } from "../config/constants";
+import { logger } from "../services/logger";
 import { z } from "zod";
 
 // ============================================================
@@ -185,7 +186,7 @@ function validateAutomailApiKey(
 
   // Reject if no secret configured (fail secure)
   if (!expectedKey) {
-    console.error('[Automail Webhook] AUTOMAIL_WEBHOOK_SECRET not configured');
+    logger.error('automail-webhook', 'AUTOMAIL_WEBHOOK_SECRET not configured');
     res.status(HTTP_STATUS.INTERNAL_ERROR).json(
       createApiErrorResponse(
         'ConfigurationError',
@@ -199,7 +200,7 @@ function validateAutomailApiKey(
 
   // Validate API key using timing-safe comparison
   if (!apiKey || !timingSafeEqual(apiKey, expectedKey)) {
-    console.warn('[Automail Webhook] Invalid API key attempt from:', req.ip);
+    logger.warn('automail-webhook', 'Invalid API key attempt', { ip: req.ip });
     res.status(HTTP_STATUS.UNAUTHORIZED).json(
       createApiErrorResponse(
         'AuthenticationError',
@@ -237,12 +238,12 @@ export function registerAutomailWebhookRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       // Log incoming webhook event
       const eventType = req.headers['x-freescout-event'] as string || 'unknown';
-      console.log(`[Automail Webhook] Received event: ${eventType}`);
+      logger.info('automail-webhook', 'Received event', { eventType });
 
       // Validate payload structure
       const validationResult = automailWebhookPayloadSchema.safeParse(req.body);
       if (!validationResult.success) {
-        console.error('[Automail Webhook] Validation failed:', validationResult.error.errors);
+        logger.error('automail-webhook', 'Validation failed', { errors: validationResult.error.errors });
         throw ServerError.validation(
           'Invalid webhook payload',
           'Ongeldig webhook formaat'
@@ -318,7 +319,7 @@ export function registerAutomailWebhookRoutes(app: Express): void {
         );
       }
 
-      console.log('[Automail Webhook] Creating report:', {
+      logger.info('automail-webhook', 'Creating report', {
         clientName,
         conversationId: payload.id,
         conversationNumber: payload.number,
@@ -360,7 +361,7 @@ export function registerAutomailWebhookRoutes(app: Express): void {
         status: "processing",
       });
 
-      console.log('[Automail Webhook] Report created:', {
+      logger.info('automail-webhook', 'Report created', {
         reportId: report.id,
         dossierNumber: report.dossierNumber,
       });
@@ -382,14 +383,14 @@ export function registerAutomailWebhookRoutes(app: Express): void {
             usedInStages: [],
           });
           createdAttachments.push(attachment.id);
-          console.log(`[Automail Webhook] Created attachment: ${att.fileName} (${attachment.id})`);
+          logger.info('automail-webhook', 'Created attachment', { filename: att.fileName, attachmentId: attachment.id });
         } catch (attError: any) {
-          console.error(`[Automail Webhook] Failed to create attachment ${att.fileName}:`, attError.message);
+          logger.error('automail-webhook', 'Failed to create attachment', { filename: att.fileName, error: attError.message });
           // Continue with other attachments - don't fail the whole request
         }
       }
 
-      console.log('[Automail Webhook] Attachments created:', {
+      logger.info('automail-webhook', 'Attachments created', {
         total: allAttachments.length,
         successful: createdAttachments.length,
       });

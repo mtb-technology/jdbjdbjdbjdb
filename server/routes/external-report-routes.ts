@@ -13,6 +13,7 @@ import { Router, Request, Response } from "express";
 import { storage } from "../storage";
 import { AIModelFactory } from "../services/ai-models/ai-model-factory";
 import { AIConfigResolver } from "../services/ai-config-resolver";
+import { logger } from "../services/logger";
 import {
   createExternalReportSessionSchema,
   externalReportAdjustRequestSchema,
@@ -72,7 +73,7 @@ externalReportRouter.post("/", asyncHandler(async (req: Request, res: Response) 
     adjustmentCount: 0
   });
 
-  console.log(`📄 Created external report session: ${session.id}`);
+  logger.info('external-report', 'Created session', { sessionId: session.id });
 
   res.json(createApiSuccessResponse(session, "Externe rapport sessie aangemaakt"));
 }));
@@ -117,7 +118,7 @@ externalReportRouter.post("/:id/adjust", asyncHandler(async (req: Request, res: 
     `external-adjust-${id}`
   );
 
-  console.log(`📝 [${id}] Generating adjustment v${newVersion} with ${aiConfig.provider}/${aiConfig.model}`);
+  logger.info(id, `Generating adjustment v${newVersion}`, { provider: aiConfig.provider, model: aiConfig.model });
 
   // Call AI
   const aiFactory = AIModelFactory.getInstance();
@@ -132,7 +133,7 @@ externalReportRouter.post("/:id/adjust", asyncHandler(async (req: Request, res: 
 
   const proposedContent = response.content;
 
-  console.log(`✅ [${id}] Adjustment proposal generated (${proposedContent.length} chars)`);
+  logger.info(id, 'Adjustment proposal generated', { chars: proposedContent.length });
 
   res.json(createApiSuccessResponse({
     success: true,
@@ -174,7 +175,7 @@ externalReportRouter.post("/:id/accept", asyncHandler(async (req: Request, res: 
     lastInstruction: validatedData.instruction
   });
 
-  console.log(`✅ [${id}] Adjustment v${newVersion} accepted`);
+  logger.info(id, 'Adjustment accepted', { version: newVersion });
 
   res.json(createApiSuccessResponse({
     success: true,
@@ -223,7 +224,7 @@ externalReportRouter.post("/:id/analyze", asyncHandler(async (req: Request, res:
     `external-analyze-${id}`
   );
 
-  console.log(`🔍 [${id}] Analyzing report v${newVersion} with ${aiConfig.provider}/${aiConfig.model}`);
+  logger.info(id, `Analyzing report v${newVersion}`, { provider: aiConfig.provider, model: aiConfig.model });
 
   // Call AI - use responseFormat: 'json' to force valid JSON output
   const aiFactory = AIModelFactory.getInstance();
@@ -256,8 +257,7 @@ externalReportRouter.post("/:id/analyze", asyncHandler(async (req: Request, res:
       ...adj
     }));
   } catch (parseError) {
-    console.error(`❌ [${id}] Failed to parse AI response as JSON:`, parseError);
-    console.error(`❌ [${id}] Raw AI response:`, response.content.substring(0, 500));
+    logger.error(id, 'Failed to parse AI response as JSON', { rawResponse: response.content.substring(0, 500) }, parseError instanceof Error ? parseError : undefined);
     // Return empty adjustments with debug info so user can see what went wrong
     res.json(createApiSuccessResponse({
       success: true,
@@ -276,7 +276,7 @@ externalReportRouter.post("/:id/analyze", asyncHandler(async (req: Request, res:
     return;
   }
 
-  console.log(`✅ [${id}] Analysis complete: ${adjustments.length} adjustments proposed`);
+  logger.info(id, 'Analysis complete', { adjustmentCount: adjustments.length });
 
   res.json(createApiSuccessResponse({
     success: true,
@@ -348,7 +348,7 @@ externalReportRouter.post("/:id/apply", asyncHandler(async (req: Request, res: R
     `external-apply-${id}`
   );
 
-  console.log(`✏️ [${id}] Applying ${validatedData.adjustments.length} adjustments v${newVersion} with ${aiConfig.provider}/${aiConfig.model}`);
+  logger.info(id, `Applying ${validatedData.adjustments.length} adjustments v${newVersion}`, { provider: aiConfig.provider, model: aiConfig.model });
 
   // Call AI
   const aiFactory = AIModelFactory.getInstance();
@@ -379,7 +379,7 @@ externalReportRouter.post("/:id/apply", asyncHandler(async (req: Request, res: R
     lastInstruction: validatedData.instruction
   });
 
-  console.log(`✅ [${id}] Applied ${validatedData.adjustments.length} adjustments, saved as v${newVersion}`);
+  logger.info(id, 'Adjustments applied', { count: validatedData.adjustments.length, version: newVersion });
 
   res.json(createApiSuccessResponse({
     success: true,
@@ -410,7 +410,7 @@ externalReportRouter.delete("/:id", asyncHandler(async (req: Request, res: Respo
 
   await storage.deleteExternalReportSession(id);
 
-  console.log(`🗑️ Deleted external report session: ${id}`);
+  logger.info('external-report', 'Deleted session', { sessionId: id });
 
   res.json(createApiSuccessResponse({ success: true }, "Sessie verwijderd"));
 }));

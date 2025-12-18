@@ -14,6 +14,7 @@ import { PromptBuilder } from "./prompt-builder";
 import { getLatestConceptText } from "@shared/constants";
 import { summarizeFeedback } from "../utils/feedback-summarizer";
 import { notifyStageComplete, notifyExpressModeComplete, notifyJobFailed, isSlackEnabled } from "./slack-notifier";
+import { logger } from "./logger";
 import type { Job, DossierData, BouwplanData, StageId, PromptConfig } from "@shared/schema";
 import type {
   ConceptReportVersions,
@@ -84,12 +85,12 @@ class JobProcessor {
    */
   start(): void {
     if (this.isRunning) {
-      console.log("⚠️ [JobProcessor] Already running");
+      logger.warn('job-processor', 'Already running');
       return;
     }
 
     this.isRunning = true;
-    console.log("🚀 [JobProcessor] Started - polling for jobs every", this.pollInterval, "ms");
+    logger.info('job-processor', `Started - polling for jobs every ${this.pollInterval}ms`);
 
     this.pollTimer = setInterval(() => this.pollForJobs(), this.pollInterval);
 
@@ -108,7 +109,7 @@ class JobProcessor {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
-    console.log("🛑 [JobProcessor] Stopped");
+    logger.info('job-processor', 'Stopped');
   }
 
   /**
@@ -122,7 +123,7 @@ class JobProcessor {
       const queuedJobs = await storage.getJobsByStatus("queued");
 
       if (queuedJobs.length > 0) {
-        console.log(`📋 [JobProcessor] Found ${queuedJobs.length} queued job(s)`);
+        logger.info('job-processor', `Found ${queuedJobs.length} queued job(s)`);
       }
 
       // Process jobs one at a time (sequential for now)
@@ -130,7 +131,7 @@ class JobProcessor {
         await this.processJob(job);
       }
     } catch (error) {
-      console.error("❌ [JobProcessor] Error polling for jobs:", error);
+      logger.error('job-processor', 'Error polling for jobs', {}, error instanceof Error ? error : undefined);
     }
   }
 
@@ -147,12 +148,12 @@ class JobProcessor {
    */
   private async processJob(job: Job): Promise<void> {
     const startTime = Date.now();
-    console.log(`▶️ [JobProcessor] Processing job ${job.id} (type: ${job.type})`);
+    logger.info(job.id, `Processing job (type: ${job.type})`);
 
     try {
       // Check if already cancelled before starting
       if (await this.isJobCancelled(job.id)) {
-        console.log(`🛑 [JobProcessor] Job ${job.id} was cancelled before processing`);
+        logger.info(job.id, 'Job was cancelled before processing');
         return;
       }
 
@@ -174,10 +175,10 @@ class JobProcessor {
       }
 
       const duration = Date.now() - startTime;
-      console.log(`✅ [JobProcessor] Job ${job.id} completed in ${duration}ms`);
+      logger.info(job.id, `Job completed in ${duration}ms`);
 
     } catch (error: any) {
-      console.error(`❌ [JobProcessor] Job ${job.id} failed:`, error);
+      logger.error(job.id, 'Job failed', {}, error instanceof Error ? error : undefined);
       await storage.failJob(job.id, error.message || "Unknown error");
     }
   }
@@ -344,7 +345,7 @@ class JobProcessor {
     // Use config language OR fall back to persisted language from Stage 3
     const reportLanguage = configLanguage || (report.reportLanguage as "nl" | "en") || "nl";
 
-    console.log(`🌐 [JobProcessor] Express Mode config:`, { includeGeneration, autoAccept, reportDepth, reportLanguage });
+    logger.info(job.id, 'Express Mode config', { includeGeneration, autoAccept, reportDepth, reportLanguage });
 
     // Build stages list
     let stages: string[] = [];
@@ -383,7 +384,7 @@ class JobProcessor {
     for (let i = 0; i < stages.length; i++) {
       // Check if job was cancelled
       if (await this.isJobCancelled(job.id)) {
-        console.log(`🛑 [JobProcessor] Job ${job.id} cancelled at stage ${i + 1}/${stages.length}`);
+        logger.info(job.id, `Job cancelled at stage ${i + 1}/${stages.length}`);
         return;
       }
 
@@ -411,7 +412,7 @@ class JobProcessor {
 
         if (isGenerationStage) {
           // Stage 3: Generate concept report
-          console.log(`🌐 [JobProcessor] Calling executeStage for 3_generatie with reportDepth: ${reportDepth}, reportLanguage: ${reportLanguage}`);
+          logger.info(job.id, 'Calling executeStage for 3_generatie', { reportDepth, reportLanguage });
           const stageExecution = await this.reportGenerator.executeStage(
             stageId,
             dossierData,
@@ -429,7 +430,7 @@ class JobProcessor {
 
           // Check if cancelled during AI execution
           if (await this.isJobCancelled(job.id)) {
-            console.log(`🛑 [JobProcessor] Job ${job.id} cancelled during generation`);
+            logger.info(job.id, 'Job cancelled during generation');
             return;
           }
 
@@ -467,7 +468,7 @@ class JobProcessor {
             // Persist language for subsequent review stages
             reportLanguage: reportLanguage
           });
-          console.log(`🌐 [JobProcessor] Stage 3: Persisting report language: ${reportLanguage}`);
+          logger.info(job.id, `Stage 3: Persisting report language: ${reportLanguage}`);
 
           report = await storage.getReport(reportId) || report;
 
@@ -490,7 +491,7 @@ class JobProcessor {
 
           // Check if cancelled during AI execution
           if (await this.isJobCancelled(job.id)) {
-            console.log(`🛑 [JobProcessor] Job ${job.id} cancelled during feedback generation`);
+            logger.info(job.id, 'Job cancelled during feedback generation');
             return;
           }
 
@@ -572,7 +573,7 @@ class JobProcessor {
 
             // Check if cancelled during editor processing
             if (await this.isJobCancelled(job.id)) {
-              console.log(`🛑 [JobProcessor] Job ${job.id} cancelled during editor processing`);
+              logger.info(job.id, 'Job cancelled during editor processing');
               return;
             }
 
@@ -622,7 +623,7 @@ class JobProcessor {
         }
 
       } catch (stageError: any) {
-        console.error(`❌ [JobProcessor] Express Mode failed at ${stageId}:`, stageError);
+        logger.error(job.id, `Express Mode failed at ${stageId}`, {}, stageError instanceof Error ? stageError : undefined);
 
         // Update progress with error
         await this.updateProgress(job.id, {
@@ -702,9 +703,9 @@ class JobProcessor {
       };
       await storage.updateReport(reportId, { stageResults: updatedStageResults });
 
-      console.log(`✅ [JobProcessor] Fiscale Briefing generated for job ${job.id}`);
+      logger.info(job.id, 'Fiscale Briefing generated');
     } catch (briefingError: any) {
-      console.error(`⚠️ [JobProcessor] Failed to generate Fiscale Briefing:`, briefingError.message);
+      logger.warn(job.id, 'Failed to generate Fiscale Briefing', { message: briefingError.message });
       // Non-fatal - continue without briefing
     }
 

@@ -5,6 +5,7 @@ import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@
 import { HTTP_STATUS } from "../config/constants";
 import { storage } from "../storage";
 import { AIModelFactory } from "../services/ai-models/ai-model-factory";
+import { logger } from "../services/logger";
 
 export const fileUploadRouter = Router();
 
@@ -22,7 +23,7 @@ async function processOcrWithRetry(
 ): Promise<boolean> {
   const attachment = await storage.getAttachment(attachmentId);
   if (!attachment || !attachment.fileData || !attachment.needsVisionOCR) {
-    console.log(`📎 [${reportId}] Skipping OCR for ${attachmentId}: not needed or no data`);
+    logger.debug(reportId, 'Skipping OCR: not needed or no data', { attachmentId });
     return true; // Not an error, just nothing to do
   }
 
@@ -30,7 +31,7 @@ async function processOcrWithRetry(
   // Use gemini-3-pro-preview for best OCR quality (same as other stages)
   const handler = factory.getHandler('gemini-3-pro-preview');
   if (!handler) {
-    console.error(`📎 [${reportId}] No Gemini handler available for OCR`);
+    logger.error(reportId, 'No Gemini handler available for OCR');
     return false;
   }
 
@@ -46,7 +47,7 @@ async function processOcrWithRetry(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`📎 [${reportId}] OCR attempt ${attempt}/${maxRetries} for: ${attachment.filename}`);
+      logger.info(reportId, `OCR attempt ${attempt}/${maxRetries}`, { filename: attachment.filename });
 
       const ocrResult = await handler.call(
         prompt,
@@ -74,10 +75,10 @@ async function processOcrWithRetry(
           extractedText: ocrResult.content,
           needsVisionOCR: false,
         });
-        console.log(`📎 [${reportId}] ✅ OCR complete for ${attachment.filename}: ${ocrResult.content.length} chars`);
+        logger.info(reportId, 'OCR complete', { filename: attachment.filename, chars: ocrResult.content.length });
         return true;
       } else {
-        console.warn(`📎 [${reportId}] ⚠️ OCR returned minimal text for ${attachment.filename}`);
+        logger.warn(reportId, 'OCR returned minimal text', { filename: attachment.filename });
         await storage.updateAttachment(attachmentId, {
           extractedText: `[OCR kon geen tekst extraheren uit: ${attachment.filename}]`,
           needsVisionOCR: false,
@@ -86,26 +87,26 @@ async function processOcrWithRetry(
       }
     } catch (error: any) {
       lastError = error;
-      console.error(`📎 [${reportId}] ❌ OCR attempt ${attempt}/${maxRetries} failed for ${attachment.filename}:`, error.message);
+      logger.error(reportId, `OCR attempt ${attempt}/${maxRetries} failed`, { filename: attachment.filename, error: error.message });
 
       if (attempt < maxRetries) {
         // Exponential backoff: 2s, 4s, 8s
         const delay = Math.pow(2, attempt) * 1000;
-        console.log(`📎 [${reportId}] Retrying in ${delay/1000}s...`);
+        logger.info(reportId, `Retrying in ${delay/1000}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
 
   // All retries failed - mark as failed but allow Stage 1 to proceed
-  console.error(`📎 [${reportId}] ❌ All ${maxRetries} OCR attempts failed for ${attachment.filename}`);
+  logger.error(reportId, `All ${maxRetries} OCR attempts failed`, { filename: attachment.filename });
   try {
     await storage.updateAttachment(attachmentId, {
       extractedText: `[OCR mislukt na ${maxRetries} pogingen: ${lastError?.message || 'onbekende fout'}]`,
       needsVisionOCR: false, // Critical: set to false so Stage 1 is not blocked forever
     });
   } catch (e) {
-    console.error(`📎 [${reportId}] Failed to update attachment after OCR failure:`, e);
+    logger.error(reportId, 'Failed to update attachment after OCR failure', {}, e instanceof Error ? e : undefined);
   }
   return false;
 }
@@ -116,7 +117,7 @@ async function processOcrWithRetry(
  * Includes retry logic for robustness.
  */
 async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promise<void> {
-  console.log(`📎 [${reportId}] Async OCR starting for ${attachmentIds.length} attachments`);
+  logger.info(reportId, 'Async OCR starting', { count: attachmentIds.length });
 
   let successCount = 0;
   let failCount = 0;
@@ -130,7 +131,7 @@ async function processAsyncOcr(reportId: string, attachmentIds: string[]): Promi
     }
   }
 
-  console.log(`📎 [${reportId}] Async OCR finished: ${successCount} succeeded, ${failCount} failed`);
+  logger.info(reportId, 'Async OCR finished', { succeeded: successCount, failed: failCount });
 }
 
 // ✅ FIX: Import pdf-parse which exports PDFParse as a named export
@@ -143,7 +144,7 @@ async function getPdfParse() {
     const module = await import('pdf-parse');
     // Try multiple possible export names
     pdfParseFunc = (module as any).PDFParse || (module as any).default || module;
-    console.log('📦 PDF parser loaded:', typeof pdfParseFunc);
+    logger.debug('file-upload', 'PDF parser loaded', { type: typeof pdfParseFunc });
   }
   return pdfParseFunc;
 }
@@ -180,10 +181,10 @@ const upload = multer({
     const extensionAllowed = ext && allowedExtensions.includes(ext);
 
     if (mimeTypeAllowed || extensionAllowed) {
-      console.log(`✅ File upload accepted: ${file.originalname} (${file.mimetype}, ext: ${ext})`);
+      logger.debug('file-upload', 'File upload accepted', { filename: file.originalname, mimeType: file.mimetype, ext });
       cb(null, true);
     } else {
-      console.error(`❌ File upload rejected: ${file.originalname} (${file.mimetype}, ext: ${ext})`);
+      logger.warn('file-upload', 'File upload rejected', { filename: file.originalname, mimeType: file.mimetype, ext });
       cb(new Error(`Bestandstype niet ondersteund: ${file.mimetype} (${file.originalname})`));
     }
   }
@@ -197,7 +198,7 @@ fileUploadRouter.post(
   "/extract-text",
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
-    console.log(`📥 Single file upload request received:`, {
+    logger.info('file-upload', 'Single file upload request received', {
       hasFile: !!req.file,
       fieldName: req.file?.fieldname,
       originalName: req.file?.originalname,
@@ -206,7 +207,7 @@ fileUploadRouter.post(
     });
 
     if (!req.file) {
-      console.error('❌ No file in request');
+      logger.error('file-upload', 'No file in request');
       throw ServerError.validation(
         "No file uploaded",
         "Geen bestand ontvangen"
@@ -227,7 +228,7 @@ fileUploadRouter.post(
       // Handle different file types
       if (isPDF) {
         // Parse PDF using pdf-parse v2
-        console.log(`📄 Parsing PDF: ${file.originalname} (${file.size} bytes)`);
+        logger.info('file-upload', 'Parsing PDF', { filename: file.originalname, size: file.size });
         try {
           const PDFParseClass = await getPdfParse();
           // Create PDFParse instance with buffer
@@ -235,7 +236,7 @@ fileUploadRouter.post(
           // Use getText() method to extract text
           const result = await parser.getText();
           const pageCount = Array.isArray(result.pages) ? result.pages.length : (typeof result.pages === 'object' ? Object.keys(result.pages).length : 1);
-          console.log(`✅ PDF parsed successfully: ${pageCount} pages, ${result.text?.length || 0} characters`);
+          logger.info('file-upload', 'PDF parsed successfully', { pageCount, chars: result.text?.length || 0 });
           extractedText = result.text;
 
           // Add metadata comment
@@ -244,7 +245,7 @@ fileUploadRouter.post(
                          `Geëxtraheerd: ${new Date().toLocaleString('nl-NL')}\n\n` +
                          extractedText;
         } catch (pdfError: any) {
-          console.error(`❌ PDF parsing failed for ${file.originalname}:`, pdfError.message);
+          logger.error('file-upload', 'PDF parsing failed', { filename: file.originalname, error: pdfError.message });
           throw new Error(`PDF parsing mislukt: ${pdfError.message}. Controleer of het een geldig PDF bestand is.`);
         }
       } else if (isTXT) {
@@ -256,7 +257,7 @@ fileUploadRouter.post(
                        extractedText;
       } else if (file.mimetype.startsWith('image/') || ['jpg', 'jpeg', 'png'].includes(ext || '')) {
         // Image files - use Gemini Vision to extract text/analyze content
-        console.log(`🖼️ Processing image: ${file.originalname} (${file.size} bytes)`);
+        logger.info('file-upload', 'Processing image', { filename: file.originalname, size: file.size });
         try {
           const factory = AIModelFactory.getInstance();
           const handler = factory.getHandler('gemini-3-pro-preview');
@@ -293,12 +294,12 @@ fileUploadRouter.post(
                            `Type: Afbeelding (${mimeType})\n` +
                            `Geëxtraheerd: ${new Date().toLocaleString('nl-NL')}\n\n` +
                            ocrResult.content;
-            console.log(`✅ Image OCR successful: ${extractedText.length} chars extracted`);
+            logger.info('file-upload', 'Image OCR successful', { chars: extractedText.length });
           } else {
             throw new Error('Geen tekst gevonden in afbeelding');
           }
         } catch (ocrError: any) {
-          console.error(`❌ Image OCR failed for ${file.originalname}:`, ocrError.message);
+          logger.error('file-upload', 'Image OCR failed', { filename: file.originalname, error: ocrError.message });
           throw ServerError.validation(
             `Image OCR failed: ${ocrError.message}`,
             `Kon geen tekst uit afbeelding halen: ${ocrError.message}`
@@ -335,7 +336,7 @@ fileUploadRouter.post(
       }, "Tekst succesvol geëxtraheerd"));
 
     } catch (error: any) {
-      console.error("File extraction error:", error);
+      logger.error('file-upload', 'File extraction error', {}, error instanceof Error ? error : undefined);
 
       if (error instanceof ServerError) {
         throw error;
@@ -357,7 +358,7 @@ fileUploadRouter.post(
   "/extract-text-batch",
   upload.array('files', 20), // Max 20 files
   asyncHandler(async (req: Request, res: Response) => {
-    console.log(`📥 Batch file upload request received:`, {
+    logger.info('file-upload', 'Batch file upload request received', {
       hasFiles: !!req.files,
       isArray: Array.isArray(req.files),
       count: Array.isArray(req.files) ? req.files.length : 0,
@@ -370,7 +371,7 @@ fileUploadRouter.post(
     });
 
     if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-      console.error('❌ No files in batch request');
+      logger.error('file-upload', 'No files in batch request');
       throw ServerError.validation(
         "No files uploaded",
         "Geen bestanden ontvangen"
@@ -392,20 +393,20 @@ fileUploadRouter.post(
                       (file.mimetype === 'application/octet-stream' && ext === 'txt');
 
         if (isPDF) {
-          console.log(`📄 [Batch] Parsing PDF: ${file.originalname} (${file.size} bytes)`);
+          logger.info('file-upload', 'Batch: Parsing PDF', { filename: file.originalname, size: file.size });
           try {
             const PDFParseClass = await getPdfParse();
             const parser = new PDFParseClass({ data: file.buffer });
             const result = await parser.getText();
             const pageCount = Array.isArray(result.pages) ? result.pages.length : (typeof result.pages === 'object' ? Object.keys(result.pages).length : 1);
-            console.log(`✅ [Batch] PDF parsed: ${pageCount} pages, ${result.text?.length || 0} chars`);
+            logger.info('file-upload', 'Batch: PDF parsed', { pageCount, chars: result.text?.length || 0 });
 
             extractedText = `=== DOCUMENT: ${file.originalname} ===\n` +
                            `Type: PDF (${pageCount} pagina's)\n` +
                            `Geëxtraheerd: ${new Date().toLocaleString('nl-NL')}\n\n` +
                            result.text;
           } catch (pdfError: any) {
-            console.error(`❌ [Batch] PDF parsing failed for ${file.originalname}:`, pdfError.message);
+            logger.error('file-upload', 'Batch: PDF parsing failed', { filename: file.originalname, error: pdfError.message });
             throw new Error(`PDF parsing mislukt: ${pdfError.message}`);
           }
         } else if (isTXT) {
@@ -425,7 +426,7 @@ fileUploadRouter.post(
         });
 
       } catch (error: any) {
-        console.error(`Error processing file ${file.originalname}:`, error);
+        logger.error('file-upload', 'Error processing file', { filename: file.originalname }, error instanceof Error ? error : undefined);
         errors.push({
           filename: file.originalname,
           success: false,
@@ -463,11 +464,11 @@ fileUploadRouter.post(
 fileUploadRouter.post(
   "/attachments/:reportId",
   (req: Request, res: Response, next: NextFunction) => {
-    console.log(`📎 [${req.params.reportId}] Single file upload request, Content-Length: ${req.headers['content-length']} bytes`);
+    logger.info(req.params.reportId, 'Single file upload request', { contentLength: req.headers['content-length'] });
 
     upload.single('file')(req, res, (err: any) => {
       if (err) {
-        console.error('📎 Multer single upload error:', err.code, err.message);
+        logger.error('file-upload', 'Multer single upload error', { code: err.code, message: err.message });
 
         let userMessage = err.message || 'Bestand upload mislukt';
         if (err.code === 'LIMIT_FILE_SIZE') {
@@ -517,7 +518,7 @@ fileUploadRouter.post(
                           (typeof result.pages === 'object' ? Object.keys(result.pages).length : 1));
         extractedText = result.text || "";
       } catch (pdfError: any) {
-        console.warn(`PDF text extraction failed for ${file.originalname}:`, pdfError.message);
+        logger.warn('file-upload', 'PDF text extraction failed', { filename: file.originalname, error: pdfError.message });
         // Continue without extracted text - file is still usable
       }
     } else if (isTXT) {
@@ -557,13 +558,12 @@ fileUploadRouter.post(
 fileUploadRouter.post(
   "/attachments/:reportId/batch",
   (req: Request, res: Response, next: NextFunction) => {
-    console.log(`📎 [${req.params.reportId}] Batch upload request received`);
-    console.log(`📎 Content-Length: ${req.headers['content-length']} bytes`);
+    logger.info(req.params.reportId, 'Batch upload request received', { contentLength: req.headers['content-length'] });
 
     // Wrap multer to catch file filter and size limit errors
     upload.array('files', 20)(req, res, (err: any) => {
       if (err) {
-        console.error('📎 Multer error:', err.code, err.message, err.stack);
+        logger.error('file-upload', 'Multer error', { code: err.code, message: err.message });
 
         // Provide clear error messages for common issues
         let userMessage = err.message || 'Bestand upload mislukt';
@@ -591,14 +591,14 @@ fileUploadRouter.post(
           userMessage
         ));
       }
-      console.log(`📎 [${req.params.reportId}] Multer processing complete, files:`, req.files?.length || 0);
+      logger.info(req.params.reportId, 'Multer processing complete', { fileCount: req.files?.length || 0 });
       next();
     });
   },
   asyncHandler(async (req: Request, res: Response) => {
     const { reportId } = req.params;
 
-    console.log(`📎 [${reportId}] Processing batch attachment upload:`, {
+    logger.info(reportId, 'Processing batch attachment upload', {
       hasFiles: !!req.files,
       fileCount: Array.isArray(req.files) ? req.files.length : 0,
       files: Array.isArray(req.files) ? req.files.map(f => ({
@@ -622,7 +622,7 @@ fileUploadRouter.post(
     const errors = [];
 
     for (const file of req.files) {
-      console.log(`📎 [${reportId}] Processing file: ${file.originalname} (${file.size} bytes)`);
+      logger.debug(reportId, 'Processing file', { filename: file.originalname, size: file.size });
       try {
         let extractedText = "";
         let pageCount: string | null = null;
@@ -636,7 +636,7 @@ fileUploadRouter.post(
 
         if (isPDF) {
           try {
-            console.log(`📎 [${reportId}] Parsing PDF: ${file.originalname}`);
+            logger.debug(reportId, 'Parsing PDF', { filename: file.originalname });
             const PDFParseClass = await getPdfParse();
             const parser = new PDFParseClass({ data: file.buffer });
             const result = await parser.getText();
@@ -651,33 +651,32 @@ fileUploadRouter.post(
 
             if (charsPerPage < MIN_CHARS_PER_PAGE && pages > 0) {
               needsVisionOCR = true;
-              console.log(`📎 [${reportId}] 🔍 PDF detected as SCANNED: ${file.originalname} (${Math.round(charsPerPage)} chars/page) - OCR will run async after save`);
+              logger.info(reportId, 'PDF detected as SCANNED - OCR will run async', { filename: file.originalname, charsPerPage: Math.round(charsPerPage) });
               // OCR will be triggered async after saving - don't block upload
               extractedText = `[Gescand document: ${file.originalname} - OCR wordt verwerkt...]`;
             } else {
-              console.log(`📎 [${reportId}] PDF parsed: ${pageCount} pages, ${extractedText.length} chars (${Math.round(charsPerPage)} chars/page)`);
+              logger.info(reportId, 'PDF parsed', { pageCount, chars: extractedText.length, charsPerPage: Math.round(charsPerPage) });
             }
           } catch (pdfError: any) {
-            console.warn(`📎 [${reportId}] PDF text extraction failed for ${file.originalname}:`, pdfError.message);
+            logger.warn(reportId, 'PDF text extraction failed', { filename: file.originalname, error: pdfError.message });
             // If we can't extract text at all, mark for async OCR
             needsVisionOCR = true;
             extractedText = `[PDF kon niet worden gelezen: ${file.originalname} - OCR wordt verwerkt...]`;
           }
         } else if (isTXT) {
           extractedText = file.buffer.toString('utf-8');
-          console.log(`📎 [${reportId}] TXT file read: ${extractedText.length} chars`);
+          logger.debug(reportId, 'TXT file read', { chars: extractedText.length });
         } else if (file.mimetype.startsWith('image/') || ['jpg', 'jpeg', 'png'].includes(ext || '')) {
           // Image files - mark for async OCR
-          console.log(`📎 [${reportId}] 🖼️ Image detected: ${file.originalname} - OCR will run async`);
+          logger.info(reportId, 'Image detected - OCR will run async', { filename: file.originalname });
           needsVisionOCR = true;
           extractedText = `[Afbeelding: ${file.originalname} - OCR wordt verwerkt...]`;
         }
 
-        console.log(`📎 [${reportId}] Converting to base64...`);
+        logger.debug(reportId, 'Converting to base64...');
         const fileData = file.buffer.toString('base64');
-        console.log(`📎 [${reportId}] Base64 size: ${fileData.length} chars`);
-
-        console.log(`📎 [${reportId}] Saving to database...`);
+        logger.debug(reportId, 'Base64 conversion complete', { size: fileData.length });
+        logger.debug(reportId, 'Saving to database...');
         const attachment = await storage.createAttachment({
           reportId,
           filename: file.originalname,
@@ -690,7 +689,7 @@ fileUploadRouter.post(
           // ocrStatus removed - column may not exist in prod yet
           usedInStages: [],
         });
-        console.log(`📎 [${reportId}] Saved attachment: ${attachment.id}${needsVisionOCR ? ' (needs Vision OCR)' : ''}`);
+        logger.info(reportId, 'Saved attachment', { attachmentId: attachment.id, needsVisionOCR });
 
         const { fileData: _, ...attachmentWithoutData } = attachment;
         results.push({
@@ -699,7 +698,7 @@ fileUploadRouter.post(
           characterCount: extractedText.length,
         });
       } catch (error: any) {
-        console.error(`📎 [${reportId}] Error processing ${file.originalname}:`, error.message, error.stack);
+        logger.error(reportId, 'Error processing file', { filename: file.originalname }, error);
         errors.push({
           filename: file.originalname,
           error: error.message,
@@ -721,7 +720,7 @@ fileUploadRouter.post(
       ocrPendingCount: attachmentsNeedingOcr.length,
     };
 
-    console.log(`📎 [${reportId}] Sending batch response:`, {
+    logger.info(reportId, 'Sending batch response', {
       totalFiles: responseData.totalFiles,
       successful: responseData.successful,
       failed: responseData.failed,
@@ -735,9 +734,9 @@ fileUploadRouter.post(
 
     // Start async OCR for attachments that need it (fire-and-forget)
     if (needsOcr) {
-      console.log(`📎 [${reportId}] Starting async OCR for ${attachmentsNeedingOcr.length} attachments...`);
+      logger.info(reportId, 'Starting async OCR', { count: attachmentsNeedingOcr.length });
       processAsyncOcr(reportId, attachmentsNeedingOcr.map(a => a.id)).catch(err => {
-        console.error(`📎 [${reportId}] Async OCR failed:`, err.message);
+        logger.error(reportId, 'Async OCR failed', {}, err);
       });
     }
   })
@@ -884,7 +883,7 @@ fileUploadRouter.post(
       // Update if different from current value
       if (needsVisionOCR !== att.needsVisionOCR) {
         await storage.updateAttachment(att.id, { needsVisionOCR });
-        console.log(`📎 [${reportId}] Updated ${att.filename}: needsVisionOCR = ${needsVisionOCR} (${Math.round(charsPerPage)} chars/page)`);
+        logger.debug(reportId, 'Updated attachment OCR status', { filename: att.filename, needsVisionOCR, charsPerPage: Math.round(charsPerPage) });
       }
 
       results.push({
@@ -923,7 +922,7 @@ fileUploadRouter.post(
       return;
     }
 
-    console.log(`📎 [${reportId}] Running Gemini Vision OCR on ${scannedPdfs.length} scanned PDF(s)...`);
+    logger.info(reportId, 'Running Gemini Vision OCR on scanned PDFs', { count: scannedPdfs.length });
 
     const results: { filename: string; success: boolean; extractedChars?: number; error?: string }[] = [];
 
@@ -935,7 +934,7 @@ fileUploadRouter.post(
           throw new Error('Gemini handler not available');
         }
 
-        console.log(`📎 [${reportId}] OCR'ing ${att.filename}...`);
+        logger.info(reportId, 'OCRing file', { filename: att.filename });
 
         const ocrResult = await handler.call(
           `Extract ALL text from this scanned PDF document. Return ONLY the extracted text, no commentary or formatting instructions. Preserve the original structure and formatting as much as possible.`,
@@ -965,14 +964,14 @@ fileUploadRouter.post(
             needsVisionOCR: false // Mark as processed
           });
 
-          console.log(`📎 [${reportId}] ✅ OCR successful for ${att.filename}: ${ocrResult.content.length} chars`);
+          logger.info(reportId, 'OCR successful', { filename: att.filename, chars: ocrResult.content.length });
           results.push({
             filename: att.filename,
             success: true,
             extractedChars: ocrResult.content.length
           });
         } else {
-          console.warn(`📎 [${reportId}] ⚠️ OCR returned minimal text for ${att.filename}`);
+          logger.warn(reportId, 'OCR returned minimal text', { filename: att.filename });
           results.push({
             filename: att.filename,
             success: false,
@@ -980,7 +979,7 @@ fileUploadRouter.post(
           });
         }
       } catch (ocrError: any) {
-        console.error(`📎 [${reportId}] ❌ OCR failed for ${att.filename}:`, ocrError.message);
+        logger.error(reportId, 'OCR failed', { filename: att.filename, error: ocrError.message });
         results.push({
           filename: att.filename,
           success: false,

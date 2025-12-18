@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { StreamingEvent } from "@shared/streaming-types";
 import { StreamingSessionManager } from "./streaming-session-manager";
+import { logger } from "../logger";
 
 export class SSEHandler {
   private clients: Map<string, Response> = new Map();
@@ -36,7 +37,7 @@ export class SSEHandler {
     // Store client
     this.clients.set(clientId, res);
 
-    console.log(`📡 [${clientId}] SSE client connected for ${reportId}-${stageId}`);
+    logger.info(clientId, `SSE client connected for ${reportId}-${stageId}`);
 
     // Subscribe to events for this session
     const unsubscribe = this.sessionManager.subscribe(reportId, stageId, (event: StreamingEvent) => {
@@ -47,7 +48,7 @@ export class SSEHandler {
     req.on('close', () => {
       this.clients.delete(clientId);
       unsubscribe();
-      console.log(`📡 [${clientId}] SSE client disconnected`);
+      logger.debug(clientId, 'SSE client disconnected');
     });
 
     // Send existing session data if available
@@ -122,13 +123,13 @@ export class SSEHandler {
         try {
           res.end();
         } catch (error) {
-          console.error('Error closing SSE connection:', error);
+          logger.error('sse-handler', 'Error closing SSE connection', {}, error instanceof Error ? error : undefined);
         }
         this.clients.delete(clientId);
       }
     }
-    
-    console.log(`📡 Closed all SSE connections for ${sessionKey}`);
+
+    logger.info('sse-handler', `Closed all SSE connections for ${sessionKey}`);
   }
 
   // Cleanup disconnected clients

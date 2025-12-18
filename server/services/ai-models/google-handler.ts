@@ -3,6 +3,7 @@ import { BaseAIHandler, AIModelResponse, AIModelParameters } from "./base-handle
 import { AIError, ERROR_CODES } from "@shared/errors";
 import type { AiConfig } from "@shared/schema";
 import { ResearchOrchestrator } from "../research/research-orchestrator";
+import { logger } from "../logger";
 
 export class GoogleAIHandler extends BaseAIHandler {
   private client: GoogleGenAI;
@@ -36,7 +37,7 @@ export class GoogleAIHandler extends BaseAIHandler {
     const jobId = options?.jobId;
 
     // DEBUG: Log incoming config to verify deep research flag
-    console.log(`🔍 [${jobId}] GoogleAIHandler received config:`, {
+    logger.debug(jobId || 'google-handler', 'GoogleAIHandler received config', {
       model: config.model,
       useDeepResearch: (config as any).useDeepResearch,
       skipDeepResearch: this.skipDeepResearch,
@@ -80,7 +81,7 @@ export class GoogleAIHandler extends BaseAIHandler {
       // Add JSON response format if requested - forces model to output valid JSON
       if (options?.responseFormat === 'json') {
         generationConfig.responseMimeType = 'application/json';
-        console.log(`[${jobId}] 📋 JSON response mode enabled (responseMimeType: application/json)`);
+        logger.debug(jobId || 'google-handler', 'JSON response mode enabled (responseMimeType: application/json)');
       }
 
       // Add thinking_config for Gemini 3 models (as per API docs)
@@ -96,7 +97,7 @@ export class GoogleAIHandler extends BaseAIHandler {
         tools = [{
           googleSearch: {} // Modern approach for all current models including Gemini 3
         }];
-        console.log(`[${jobId}] 🔍 Google Search grounding enabled`);
+        logger.debug(jobId || 'google-handler', 'Google Search grounding enabled');
       }
 
       // Google AI SDK requires "models/" prefix for model names
@@ -109,7 +110,7 @@ export class GoogleAIHandler extends BaseAIHandler {
 
       if (options?.visionAttachments && options.visionAttachments.length > 0) {
         // Multimodal request: include PDFs/images as inline data
-        console.log(`[${jobId}] 📄 Adding ${options.visionAttachments.length} vision attachment(s) to request`);
+        logger.info(jobId || 'google-handler', `Adding ${options.visionAttachments.length} vision attachment(s) to request`);
 
         contentParts = [
           // Text prompt first
@@ -125,7 +126,7 @@ export class GoogleAIHandler extends BaseAIHandler {
 
         // Log what we're sending
         options.visionAttachments.forEach(att => {
-          console.log(`[${jobId}]   📎 ${att.filename} (${att.mimeType}, ${Math.round(att.data.length / 1024)}KB base64)`);
+          logger.debug(jobId || 'google-handler', `Attachment: ${att.filename}`, { mimeType: att.mimeType, sizeKB: Math.round(att.data.length / 1024) });
         });
       } else {
         // Text-only request
@@ -154,14 +155,14 @@ export class GoogleAIHandler extends BaseAIHandler {
 
       // Handle MAX_TOKENS - partial content may still be useful
       if (finishReason === 'MAX_TOKENS' && content && content.trim().length > 10) {
-        console.warn(`[${jobId}] Google AI hit token limit, but returning partial content`);
+        logger.warn(jobId || 'google-handler', 'Google AI hit token limit, but returning partial content');
       } else if (!content || content.trim() === '') {
         throw AIError.invalidResponse(`Google AI returned empty response (${finishReason || 'unknown reason'})`, { finishReason, model: config.model });
       }
 
       // Log grounding sources if available
       if (groundingMetadata?.groundingChunks && groundingMetadata.groundingChunks.length > 0) {
-        console.log(`[${jobId}] 📚 Grounding found ${groundingMetadata.groundingChunks.length} sources`);
+        logger.info(jobId || 'google-handler', `Grounding found ${groundingMetadata.groundingChunks.length} sources`);
       }
 
       const result: AIModelResponse = {
@@ -184,15 +185,13 @@ export class GoogleAIHandler extends BaseAIHandler {
       }
 
       // ✅ LOG FULL ERROR DETAILS for debugging
-      console.error(`❌ [${jobId}] Google AI call failed:`, {
+      logger.error(jobId || 'google-handler', 'Google AI call failed', {
         errorType: error.constructor?.name,
         message: error.message,
         status: error.status,
         code: error.code,
-        details: error.details,
-        errorString: error.toString(),
-        stack: error.stack?.split('\n').slice(0, 5).join('\n')
-      });
+        details: error.details
+      }, error instanceof Error ? error : undefined);
 
       // Enhanced rate limit detection for Google API
       const errorMessage = error.message || error.toString() || '';
@@ -202,7 +201,7 @@ export class GoogleAIHandler extends BaseAIHandler {
                                  errorMessage.toLowerCase().includes('resource_exhausted');
 
       if (is429Error || isRateLimitMessage) {
-        console.error(`🚨 [${jobId}] Google API Rate Limit Detected:`, {
+        logger.error(jobId || 'google-handler', 'Google API Rate Limit Detected', {
           status: error.status,
           message: errorMessage.substring(0, 200),
           model: config.model,
@@ -258,7 +257,7 @@ export class GoogleAIHandler extends BaseAIHandler {
       }
       // ✅ AUTO-CAP: Gemini 2.5 Pro has hard limit of 65,535. If user requests more, cap with warning
       if (config.maxOutputTokens > 65535) {
-        console.warn(`⚠️ [GoogleAI] maxOutputTokens ${config.maxOutputTokens} exceeds Gemini 2.5 Pro limit. Auto-capping to 65,535`);
+        logger.warn('google-handler', `maxOutputTokens ${config.maxOutputTokens} exceeds Gemini 2.5 Pro limit. Auto-capping to 65,535`);
         config.maxOutputTokens = 65535;
       }
     }
@@ -280,7 +279,7 @@ export class GoogleAIHandler extends BaseAIHandler {
     const startTime = Date.now();
     const jobId = options?.jobId;
 
-    console.log(`[${jobId}] 🔬 Deep Research Mode activated`);
+    logger.info(jobId || 'deep-research', 'Deep Research Mode activated');
 
     // Extract research configuration
     const researchConfig = {
@@ -296,18 +295,18 @@ export class GoogleAIHandler extends BaseAIHandler {
       reportLanguage: options?.reportLanguage || 'nl' // Pass through language selection
     };
 
-    console.log(`[${jobId}] Using reportDepth: ${researchConfig.reportDepth}, reportLanguage: ${researchConfig.reportLanguage}`);
+    logger.info(jobId || 'deep-research', `Using reportDepth: ${researchConfig.reportDepth}, reportLanguage: ${researchConfig.reportLanguage}`);
 
     // Re-create orchestrator with custom config
     this.orchestrator = new ResearchOrchestrator(this.handlerApiKey, researchConfig);
 
-    // Progress tracking - use provided callback or fallback to console.log
+    // Progress tracking - use provided callback or fallback to logger
     const progressCallback = (progress: any) => {
       if (options?.onProgress) {
         options.onProgress(progress);
       }
       if (jobId) {
-        console.log(`[${jobId}] Research progress: ${progress.stage} - ${progress.progress}%`);
+        logger.debug(jobId, `Research progress: ${progress.stage} - ${progress.progress}%`);
       }
     };
 
@@ -329,7 +328,7 @@ export class GoogleAIHandler extends BaseAIHandler {
       };
 
     } catch (error) {
-      console.error(`[${jobId}] Deep research failed:`, error);
+      logger.error(jobId || 'deep-research', 'Deep research failed', {}, error instanceof Error ? error : undefined);
       throw error;
     }
   }

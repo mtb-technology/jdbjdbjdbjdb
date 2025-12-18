@@ -1,6 +1,7 @@
 import { BaseAIHandler, AIModelResponse, AIModelParameters } from "./base-handler";
 import { AIError } from "@shared/errors";
 import type { AiConfig } from "@shared/schema";
+import { logger } from "../logger";
 
 export class OpenAIGPT5Handler extends BaseAIHandler {
   constructor(apiKey: string) {
@@ -133,21 +134,21 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
 
       if (!content) {
         // Log full structure for debugging
-        console.error(`[${jobId}] GPT-5 response structure:`, JSON.stringify(result).substring(0, 1000));
-        
+        logger.error(jobId || 'gpt5', 'GPT-5 response structure', { responsePreview: JSON.stringify(result).substring(0, 1000) });
+
         // Try to extract ANY text from the response as last resort
         const responseStr = JSON.stringify(result);
         const textMatch = responseStr.match(/"text":\s*"([^"]+)"/i);
         if (textMatch && textMatch[1]) {
           content = textMatch[1];
-          console.warn(`[${jobId}] Extracted content from GPT-5 response using fallback regex`);
+          logger.warn(jobId || 'gpt5', 'Extracted content from GPT-5 response using fallback regex');
         } else if (result?.status === 'incomplete') {
           const reason = result?.incomplete_details?.reason || 'unknown';
           throw AIError.invalidResponse(`GPT-5: Incomplete response: ${reason}. Try increasing max_output_tokens.`);
         } else {
           // Return a minimal valid response instead of throwing
           content = `GPT-5 response processing error. Status: ${result?.status || 'unknown'}. Please retry.`;
-          console.error(`[${jobId}] GPT-5 empty response - using fallback message`);
+          logger.error(jobId || 'gpt5', 'GPT-5 empty response - using fallback message');
         }
       }
 
@@ -183,13 +184,13 @@ export class OpenAIGPT5Handler extends BaseAIHandler {
   validateParameters(config: AiConfig): void {
     // GPT-5 doesn't support temperature or topP
     if (config.temperature !== undefined && config.temperature !== 1) {
-      console.warn(`⚠️ Temperature is ignored for GPT-5`);
+      logger.warn('gpt5', 'Temperature is ignored for GPT-5');
     }
     if (config.topP !== undefined && config.topP !== 1) {
-      console.warn(`⚠️ TopP is ignored for GPT-5`);
+      logger.warn('gpt5', 'TopP is ignored for GPT-5');
     }
     if (config.topK !== undefined) {
-      console.warn(`⚠️ TopK is ignored for GPT-5 (only supported by Google AI)`);
+      logger.warn('gpt5', 'TopK is ignored for GPT-5 (only supported by Google AI)');
     }
     if (config.maxOutputTokens !== undefined && config.maxOutputTokens < 100) {
       throw AIError.validationFailed(`MaxOutputTokens must be at least 100 for GPT-5, got ${config.maxOutputTokens}`);

@@ -461,7 +461,14 @@ interface InformatieCheckViewerProps {
  */
 export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmail }: InformatieCheckViewerProps) {
   const [copiedEmail, setCopiedEmail] = useState(false);
+  const [copiedJson, setCopiedJson] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
+
+  const handleCopyJson = (jsonData: any) => {
+    navigator.clipboard.writeText(JSON.stringify(jsonData, null, 2));
+    setCopiedJson(true);
+    setTimeout(() => setCopiedJson(false), 2000);
+  };
 
   const parsedOutput = parseInformatieCheckOutput(rawOutput);
 
@@ -702,6 +709,26 @@ export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmai
 
             {showRawJson && (
               <div className="mt-3">
+                <div className="flex justify-end mb-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleCopyJson(parsedOutput)}
+                    className="h-7 text-xs"
+                  >
+                    {copiedJson ? (
+                      <>
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Gekopieerd
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3 mr-1" />
+                        Kopieer JSON
+                      </>
+                    )}
+                  </Button>
+                </div>
                 <pre className="p-4 bg-muted rounded-lg text-xs overflow-x-auto max-h-[400px] overflow-y-auto break-all whitespace-pre-wrap">
                   <code className="break-all">{JSON.stringify(parsedOutput, null, 2)}</code>
                 </pre>
@@ -1032,6 +1059,26 @@ export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmai
 
             {showRawJson && (
               <div className="mt-3">
+                <div className="flex justify-end mb-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleCopyJson(parsedOutput)}
+                    className="h-7 text-xs"
+                  >
+                    {copiedJson ? (
+                      <>
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Gekopieerd
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3 mr-1" />
+                        Kopieer JSON
+                      </>
+                    )}
+                  </Button>
+                </div>
                 <pre className="p-4 bg-muted rounded-lg text-xs overflow-x-auto max-h-[400px] overflow-y-auto break-all whitespace-pre-wrap">
                   <code className="break-all">{JSON.stringify(parsedOutput, null, 2)}</code>
                 </pre>

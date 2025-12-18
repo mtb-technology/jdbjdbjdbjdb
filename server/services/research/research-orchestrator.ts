@@ -17,6 +17,7 @@ import type {
   Source,
   ReportDepth
 } from './types';
+import { logger } from '../logger';
 
 /**
  * Depth-specific configuration for research output
@@ -98,7 +99,7 @@ export class ResearchOrchestrator {
       ? '**IMPORTANT: Write ALL output in English.**\n\n'
       : '';
 
-    console.log(`[ResearchOrchestrator] Initialized with depth: ${reportDepth}, language: ${this.config.reportLanguage}`);
+    logger.info('research-orchestrator', `Initialized with depth: ${reportDepth}, language: ${this.config.reportLanguage}`);
   }
 
   /**
@@ -196,7 +197,7 @@ export class ResearchOrchestrator {
       };
 
     } catch (error) {
-      console.error('[ResearchOrchestrator] Deep research failed:', error);
+      logger.error('research-orchestrator', 'Deep research failed', {}, error instanceof Error ? error : undefined);
       throw error;
     }
   }
@@ -257,12 +258,11 @@ Geef ALLEEN de JSON array, geen andere tekst.`;
 
       const questions: ResearchQuestion[] = JSON.parse(jsonText);
 
-      console.log(`[ResearchOrchestrator] Planner generated ${questions.length} questions`);
+      logger.info('research-orchestrator', `Planner generated ${questions.length} questions`);
       return questions.slice(0, this.config.maxQuestions);
 
     } catch (parseError) {
-      console.error('[ResearchOrchestrator] Failed to parse planner output:', parseError);
-      console.error('Raw response:', response.content.substring(0, 500));
+      logger.error('research-orchestrator', 'Failed to parse planner output', { rawResponse: response.content.substring(0, 500) }, parseError instanceof Error ? parseError : undefined);
 
       // Fallback: Create a single question from the original query
       return [{
@@ -376,7 +376,7 @@ ${question.expectedScope}
       };
 
     } catch (error) {
-      console.error(`[ResearchOrchestrator] Failed to research question ${question.id}:`, error);
+      logger.error('research-orchestrator', `Failed to research question ${question.id}`, {}, error instanceof Error ? error : undefined);
 
       // Return partial finding on error
       return {
@@ -641,7 +641,7 @@ ${this.config.polishPrompt}
 ### Bronnen
 [Lijst van alle geraadpleegde bronnen met URL waar beschikbaar]`;
 
-    console.log(`[ResearchOrchestrator] Generating final report with enriched context...`);
+    logger.info('research-orchestrator', 'Generating final report with enriched context...');
 
     const response = await this.handler.callInternal(
       finalPrompt,
@@ -661,7 +661,7 @@ ${this.config.polishPrompt}
       }
     );
 
-    console.log(`[ResearchOrchestrator] Final report generated: ${response.content.length} chars`);
+    logger.info('research-orchestrator', `Final report generated`, { chars: response.content.length });
 
     return {
       query: originalQuery,

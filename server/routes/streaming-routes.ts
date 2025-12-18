@@ -7,6 +7,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { HTTP_STATUS } from "../config/constants";
 import { storage } from "../storage";
+import { logger } from "../services/logger";
 import type { DossierData, BouwplanData, StageId } from "@shared/schema";
 import type { SubstepDefinition } from "@shared/streaming-types";
 
@@ -21,7 +22,7 @@ export function registerStreamingRoutes(
 
   // Server-Sent Events endpoint for real-time progress updates
   app.get("/api/reports/:reportId/stage/:stageId/stream", (req: Request, res: Response) => {
-    console.log(`📡 [${req.params.reportId}-${req.params.stageId}] SSE connection requested`);
+    logger.info(`${req.params.reportId}-${req.params.stageId}`, 'SSE connection requested');
     sseHandler.handleConnection(req, res);
   });
 
@@ -30,7 +31,7 @@ export function registerStreamingRoutes(
     const { reportId, stageId } = req.params;
     const { customInput } = req.body;
 
-    console.log(`🌊 [${reportId}-${stageId}] Starting simple streaming stage execution`);
+    logger.info(`${reportId}-${stageId}`, 'Starting simple streaming stage execution');
 
     // Check if report exists
     const report = await storage.getReport(reportId);
@@ -78,7 +79,7 @@ export function registerStreamingRoutes(
         try {
           // Check of al geabort voordat we beginnen
           if (abortController.signal.aborted) {
-            console.log(`🛑 [${reportId}-${stageId}] Stage was aborted before execution`);
+            logger.info(`${reportId}-${stageId}`, 'Stage was aborted before execution');
             return;
           }
 
@@ -131,7 +132,7 @@ export function registerStreamingRoutes(
                   ...dossierWithAttachments,
                   rawText: existingRawText + attachmentTexts
                 };
-                console.log(`📎 [${reportId}] Stage 1a: Added ${textAttachments.length} text attachment(s) to dossier`);
+                logger.info(reportId, 'Stage 1a: Added text attachments to dossier', { count: textAttachments.length });
               }
 
               // Prepare scanned PDFs for Gemini Vision OCR
@@ -141,7 +142,7 @@ export function registerStreamingRoutes(
                   data: att.fileData, // base64 encoded
                   filename: att.filename
                 }));
-                console.log(`📄 [${reportId}] Stage 1a: Sending ${visionNeededAttachments.length} scanned PDF(s) to Gemini Vision for OCR`);
+                logger.info(reportId, 'Stage 1a: Sending scanned PDFs to Gemini Vision for OCR', { count: visionNeededAttachments.length });
               }
 
               // Mark all attachments as used in this stage
@@ -168,7 +169,7 @@ export function registerStreamingRoutes(
 
           // Check of geabort tijdens uitvoering
           if (abortController.signal.aborted) {
-            console.log(`🛑 [${reportId}-${stageId}] Stage was aborted during execution`);
+            logger.info(`${reportId}-${stageId}`, 'Stage was aborted during execution');
             return;
           }
 
@@ -238,15 +239,15 @@ export function registerStreamingRoutes(
             });
           }
 
-          console.log(`✅ [${reportId}-${stageId}] Simple streaming stage completed`);
+          logger.info(`${reportId}-${stageId}`, 'Simple streaming stage completed');
 
         } catch (error: any) {
           // Check of dit een abort error is
           if (abortController.signal.aborted) {
-            console.log(`🛑 [${reportId}-${stageId}] Stage was aborted`);
+            logger.info(`${reportId}-${stageId}`, 'Stage was aborted');
             return;
           }
-          console.error(`❌ [${reportId}-${stageId}] Streaming stage failed:`, error);
+          logger.error(`${reportId}-${stageId}`, 'Streaming stage failed', {}, error);
           sessionManager.errorStage(reportId, stageId, error.message, true);
         } finally {
           // Cleanup de AbortController
@@ -262,7 +263,7 @@ export function registerStreamingRoutes(
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`❌ [${reportId}-${stageId}] Failed to start streaming execution:`, message);
+      logger.error(`${reportId}-${stageId}`, 'Failed to start streaming execution', { message });
       return res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
         'ExecutionError',
         ERROR_CODES.INTERNAL_SERVER_ERROR,
@@ -319,19 +320,19 @@ export function registerStreamingRoutes(
       if (controller) {
         controller.abort();
         activeAbortControllers.delete(sessionKey);
-        console.log(`🛑 [${reportId}-${stageId}] AbortController triggered`);
+        logger.info(`${reportId}-${stageId}`, 'AbortController triggered');
       }
 
       // Mark session as cancelled
       sessionManager.errorStage(reportId, stageId, 'Cancelled by user', true);
-      console.log(`🛑 [${reportId}-${stageId}] Stage execution cancelled`);
+      logger.info(`${reportId}-${stageId}`, 'Stage execution cancelled');
 
       res.json(createApiSuccessResponse({
         message: 'Stage uitvoering geannuleerd'
       }));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`❌ [${reportId}-${stageId}] Failed to cancel stage:`, message);
+      logger.error(`${reportId}-${stageId}`, 'Failed to cancel stage', { message });
       res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
         'CancelError',
         ERROR_CODES.INTERNAL_SERVER_ERROR,
@@ -365,11 +366,11 @@ export function registerStreamingRoutes(
     sessionManager.cleanup();
     sseHandler.cleanup();
 
-    console.log('🧹 Streaming sessions cleanup performed');
+    logger.info('streaming', 'Streaming sessions cleanup performed');
     res.json(createApiSuccessResponse({
       message: 'Cleanup voltooid'
     }));
   }));
 
-  console.log('📡 Streaming routes registered successfully');
+  logger.info('streaming', 'Streaming routes registered successfully');
 }

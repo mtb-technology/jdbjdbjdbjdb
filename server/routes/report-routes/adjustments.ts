@@ -13,6 +13,7 @@ import { AIModelFactory } from "../../services/ai-models/ai-model-factory";
 import { AIConfigResolver } from "../../services/ai-config-resolver";
 import { asyncHandler, ServerError } from "../../middleware/errorHandler";
 import { createApiSuccessResponse, ERROR_CODES } from "@shared/errors";
+import { logger } from "../../services/logger";
 import type { ReportRouteDependencies } from "./types";
 
 export function registerAdjustmentRoutes(
@@ -32,7 +33,7 @@ export function registerAdjustmentRoutes(
   app.post("/api/reports/:id/adjust", asyncHandler(async (req: Request, res: Response) => {
     const { id: reportId } = req.params;
 
-    console.log(`[${reportId}] Adjustment requested`);
+    logger.info(reportId, 'Adjustment requested');
 
     const validatedData = adjustReportRequestSchema.parse(req.body);
     const { instruction } = validatedData;
@@ -58,13 +59,17 @@ export function registerAdjustmentRoutes(
 
     const activeConfig = await storage.getActivePromptConfig();
 
-    console.log(`[${reportId}] Active config ID: ${activeConfig?.id}`);
-    console.log(`[${reportId}] Config keys:`, activeConfig?.config ? Object.keys(activeConfig.config as object) : 'no config');
+    logger.debug(reportId, 'Active config loaded', {
+      configId: activeConfig?.id,
+      configKeys: activeConfig?.config ? Object.keys(activeConfig.config as object) : []
+    });
 
     const adjustmentConfig = (activeConfig?.config as PromptConfig)?.adjustment;
 
-    console.log(`[${reportId}] Adjustment config exists: ${!!adjustmentConfig}`);
-    console.log(`[${reportId}] Adjustment prompt length: ${adjustmentConfig?.prompt?.length || 0}`);
+    logger.debug(reportId, 'Adjustment config status', {
+      exists: !!adjustmentConfig,
+      promptLength: adjustmentConfig?.prompt?.length || 0
+    });
 
     if (!adjustmentConfig?.prompt || adjustmentConfig.prompt.trim().length === 0) {
       throw ServerError.business(
@@ -77,7 +82,7 @@ export function registerAdjustmentRoutes(
       .replace(/{HUIDIGE_RAPPORT}/g, previousContent)
       .replace(/{INSTRUCTIE}/g, instruction);
 
-    console.log(`[${reportId}] Adjustment prompt loaded from config (${adjustmentConfig.prompt.length} chars)`);
+    logger.info(reportId, 'Adjustment prompt loaded', { promptLength: adjustmentConfig.prompt.length });
 
     const configResolver = new AIConfigResolver();
     const aiConfig = configResolver.resolveForStage(
@@ -87,7 +92,7 @@ export function registerAdjustmentRoutes(
       `adjust-${reportId}`
     );
 
-    console.log(`[${reportId}] Using AI config from database:`, aiConfig.provider, aiConfig.model);
+    logger.info(reportId, 'Using AI config', { provider: aiConfig.provider, model: aiConfig.model });
 
     const aiFactory = AIModelFactory.getInstance();
     const response = await aiFactory.callModel(
@@ -116,8 +121,9 @@ export function registerAdjustmentRoutes(
         ...adj
       }));
     } catch (parseError) {
-      console.error(`[${reportId}] Failed to parse AI response as JSON:`, parseError);
-      console.error(`[${reportId}] Raw AI response:`, response.content.substring(0, 500));
+      logger.error(reportId, 'Failed to parse AI response as JSON', {
+        rawResponse: response.content.substring(0, 500)
+      }, parseError instanceof Error ? parseError : undefined);
       res.json(createApiSuccessResponse({
         success: true,
         adjustmentId,
@@ -140,7 +146,7 @@ export function registerAdjustmentRoutes(
       return;
     }
 
-    console.log(`[${reportId}] Adjustment analysis complete: ${adjustments.length} adjustments proposed`);
+    logger.info(reportId, 'Adjustment analysis complete', { adjustmentCount: adjustments.length });
 
     res.json(createApiSuccessResponse({
       success: true,
@@ -174,7 +180,7 @@ export function registerAdjustmentRoutes(
 
     const { adjustments, instruction, adjustmentId, mode = "direct" } = req.body;
 
-    console.log(`[${reportId}] Applying adjustments (mode: ${mode})`);
+    logger.info(reportId, 'Applying adjustments', { mode, count: adjustments?.length });
 
     if (!adjustments || !Array.isArray(adjustments) || adjustments.length === 0) {
       throw ServerError.business(
@@ -202,7 +208,7 @@ export function registerAdjustmentRoutes(
 
     if (mode === "direct") {
       // DIRECT MODE: Supports replace, insert, and delete
-      console.log(`[${reportId}] Using direct mode for ${adjustments.length} adjustments`);
+      logger.debug(reportId, 'Using direct mode', { adjustmentCount: adjustments.length });
 
       newContent = currentContent;
       const notFound: string[] = [];
@@ -225,10 +231,10 @@ export function registerAdjustmentRoutes(
             newContent = newContent.replace(oldText, newText);
             appliedCount++;
             applied.push({ type: "replace", context: adj.context });
-            console.log(`  Replaced: "${oldText.substring(0, 50)}..."`);
+            logger.debug(reportId, 'Replaced text', { preview: oldText.substring(0, 50) });
           } else {
             notFound.push(adj.context || (oldText ? oldText.substring(0, 50) : "unknown"));
-            console.log(`  Replace failed - not found: "${adj.context}"`);
+            logger.debug(reportId, 'Replace failed - text not found', { context: adj.context });
           }
         }
         else if (adjType === "insert") {
@@ -241,10 +247,10 @@ export function registerAdjustmentRoutes(
             newContent = newContent.slice(0, insertPos) + "\n\n" + newText + newContent.slice(insertPos);
             appliedCount++;
             applied.push({ type: "insert", context: adj.context });
-            console.log(`  Inserted after: "${ankerText.substring(0, 50)}..."`);
+            logger.debug(reportId, 'Inserted text', { anchor: ankerText.substring(0, 50) });
           } else {
             notFound.push(adj.context || "insert failed");
-            console.log(`  Insert failed - anchor not found: "${adj.context}"`);
+            logger.debug(reportId, 'Insert failed - anchor not found', { context: adj.context });
           }
         }
         else if (adjType === "delete") {
@@ -254,10 +260,10 @@ export function registerAdjustmentRoutes(
             newContent = newContent.replace(oldText, "");
             appliedCount++;
             applied.push({ type: "delete", context: adj.context });
-            console.log(`  Deleted: "${oldText.substring(0, 50)}..."`);
+            logger.debug(reportId, 'Deleted text', { preview: oldText.substring(0, 50) });
           } else {
             notFound.push(adj.context || (oldText ? oldText.substring(0, 50) : "unknown"));
-            console.log(`  Delete failed - not found: "${adj.context}"`);
+            logger.debug(reportId, 'Delete failed - text not found', { context: adj.context });
           }
         }
       }
@@ -271,7 +277,7 @@ export function registerAdjustmentRoutes(
       };
 
       if (notFound.length > 0) {
-        console.log(`[${reportId}] ${notFound.length} adjustments could not be applied (text not found)`);
+        logger.warn(reportId, 'Some adjustments could not be applied', { notFoundCount: notFound.length });
       }
     } else {
       // AI MODE: Use Editor prompt
@@ -304,7 +310,7 @@ export function registerAdjustmentRoutes(
         `apply-${reportId}`
       );
 
-      console.log(`[${reportId}] Using AI (${aiConfig.provider}/${aiConfig.model}) for ${adjustments.length} adjustments`);
+      logger.info(reportId, 'Using AI for adjustments', { provider: aiConfig.provider, model: aiConfig.model, count: adjustments.length });
 
       const aiFactory = AIModelFactory.getInstance();
       const response = await aiFactory.callModel(
@@ -350,7 +356,7 @@ export function registerAdjustmentRoutes(
       updatedAt: new Date()
     });
 
-    console.log(`[${reportId}] Applied ${appliedCount}/${adjustments.length} adjustments - v${snapshot.v} (mode: ${mode})`);
+    logger.info(reportId, 'Adjustments applied', { applied: appliedCount, total: adjustments.length, version: snapshot.v, mode });
 
     res.json(createApiSuccessResponse({
       success: true,
@@ -373,7 +379,7 @@ export function registerAdjustmentRoutes(
   app.post("/api/reports/:id/adjust/accept", asyncHandler(async (req: Request, res: Response) => {
     const { id: reportId } = req.params;
 
-    console.log(`[${reportId}] Accepting adjustment (legacy)`);
+    logger.info(reportId, 'Accepting adjustment (legacy)');
 
     const validatedData = acceptAdjustmentRequestSchema.parse(req.body);
     const { adjustmentId, proposedContent, instruction } = validatedData;
@@ -401,7 +407,7 @@ export function registerAdjustmentRoutes(
       updatedAt: new Date()
     });
 
-    console.log(`[${reportId}] Adjustment ${adjustmentId} accepted - v${snapshot.v}`);
+    logger.info(reportId, 'Adjustment accepted', { adjustmentId, version: snapshot.v });
 
     res.json(createApiSuccessResponse({
       success: true,

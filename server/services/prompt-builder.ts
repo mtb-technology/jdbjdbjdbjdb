@@ -1,6 +1,7 @@
 import type { DossierData, BouwplanData } from "@shared/schema";
 import type { StageResults, ConceptReportVersions } from "@shared/types/report-data";
 import { extractSnapshotContent } from "@shared/types/report-data";
+import { logger } from "./logger";
 
 /**
  * StagePromptConfig interface - configuratie per stage
@@ -174,9 +175,7 @@ export class PromptBuilder {
           (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
         try {
           JSON.parse(trimmed);
-          console.warn('⚠️ [PromptBuilder] WARNING: Data appears to be pre-stringified JSON!');
-          console.warn('   This may cause double-wrapping bugs. Pass objects instead of strings.');
-          console.warn('   String preview:', trimmed.substring(0, 100) + '...');
+          logger.warn('prompt-builder', 'Data appears to be pre-stringified JSON! This may cause double-wrapping bugs.', { preview: trimmed.substring(0, 100) });
         } catch {
           // Not valid JSON, safe to use as plain string
         }
@@ -371,8 +370,10 @@ ${currentDossierData}`;
       latestConcept = extractSnapshotContent(conceptReportVersions?.['3_generatie']) ?? '';
     }
 
-    console.log('[Editor Data] Concept report length:', latestConcept.length);
-    console.log('[Editor Data] Reviewer feedback keys:', Object.keys(reviewerFeedback).filter(k => reviewerFeedback[k as keyof typeof reviewerFeedback]));
+    logger.debug('prompt-builder', 'Building editor data', {
+      conceptLength: latestConcept.length,
+      feedbackKeys: Object.keys(reviewerFeedback).filter(k => reviewerFeedback[k as keyof typeof reviewerFeedback])
+    });
 
     return JSON.stringify({
       reviewer_feedback: reviewerFeedback,
@@ -413,7 +414,7 @@ ${currentDossierData}`;
       (dossier?.fiscale_gegevens?.vermogen || 0) > 0;
 
     // Debug: Log what data we're working with
-    console.log('📋 [FiscaleBriefing] Dossier data received:', {
+    logger.debug('prompt-builder', 'Fiscale Briefing dossier data received', {
       hasKlant: !!dossier?.klant,
       klantNaam: dossier?.klant?.naam || 'MISSING',
       hasSituatie: !!dossier?.klant?.situatie,

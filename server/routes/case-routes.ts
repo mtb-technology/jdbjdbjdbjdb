@@ -5,10 +5,11 @@
  * status management, and export functionality.
  */
 
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { PDFGenerator } from "../services/pdf-generator";
-import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
+import { asyncHandler, ServerError } from "../middleware/errorHandler";
+import { createApiSuccessResponse } from "@shared/errors";
 import { CACHE, HTTP_STATUS } from "../config/constants";
 
 export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): void {
@@ -25,28 +26,20 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
    *
    * Response: Paginated list of cases
    */
-  app.get("/api/cases", async (req, res) => {
-    try {
-      const { page = 1, limit = 10, status, search } = req.query;
+  app.get("/api/cases", asyncHandler(async (req: Request, res: Response) => {
+    const { page = 1, limit = 10, status, search } = req.query;
 
-      const cases = await storage.getAllReports({
-        page: Number(page),
-        limit: Number(limit),
-        status: status as string,
-        search: search as string
-      });
+    const cases = await storage.getAllReports({
+      page: Number(page),
+      limit: Number(limit),
+      status: status as string,
+      search: search as string
+    });
 
-      // Add caching headers for case list
-      res.set('Cache-Control', `public, max-age=${CACHE.REPORT_LIST_TTL / 1000}, stale-while-revalidate=60`);
-      res.json(createApiSuccessResponse(cases));
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Error fetching cases:", message);
-      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
-        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen cases")
-      );
-    }
-  });
+    // Add caching headers for case list
+    res.set('Cache-Control', `public, max-age=${CACHE.REPORT_LIST_TTL / 1000}, stale-while-revalidate=60`);
+    res.json(createApiSuccessResponse(cases));
+  }));
 
   /**
    * GET /api/cases/:id
@@ -55,27 +48,16 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
    *
    * Response: Case/report object
    */
-  app.get("/api/cases/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const report = await storage.getReport(id);
+  app.get("/api/cases/:id", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const report = await storage.getReport(id);
 
-      if (!report) {
-        res.status(HTTP_STATUS.NOT_FOUND).json(
-          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Case not found", "Case niet gevonden")
-        );
-        return;
-      }
-
-      res.json(createApiSuccessResponse(report));
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Error fetching case:", message);
-      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
-        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij ophalen case")
-      );
+    if (!report) {
+      throw ServerError.notFound("Case");
     }
-  });
+
+    res.json(createApiSuccessResponse(report));
+  }));
 
   /**
    * PATCH /api/cases/:id
@@ -86,62 +68,42 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
    * Request body: { clientName }
    * Response: Updated case object with new title
    */
-  app.patch("/api/cases/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { clientName } = req.body;
+  app.patch("/api/cases/:id", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { clientName } = req.body;
 
-      // Only clientName is editable - title is auto-generated
-      if (clientName === undefined) {
-        res.status(HTTP_STATUS.BAD_REQUEST).json(
-          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "No fields to update", "Geen velden om bij te werken")
-        );
-        return;
-      }
-
-      if (typeof clientName !== 'string' || clientName.trim().length === 0) {
-        res.status(HTTP_STATUS.BAD_REQUEST).json(
-          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Client name cannot be empty", "Clientnaam mag niet leeg zijn")
-        );
-        return;
-      }
-
-      // Get current report to access dossierNumber
-      const currentReport = await storage.getReport(id);
-      if (!currentReport) {
-        res.status(HTTP_STATUS.NOT_FOUND).json(
-          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Case not found", "Case niet gevonden")
-        );
-        return;
-      }
-
-      // Auto-generate title from dossierNumber + clientName
-      const formattedNumber = String(currentReport.dossierNumber).padStart(4, '0');
-      const newTitle = `D-${formattedNumber} - ${clientName.trim()}`;
-
-      const updates = {
-        clientName: clientName.trim(),
-        title: newTitle,
-      };
-
-      const updatedReport = await storage.updateReport(id, updates);
-
-      if (!updatedReport) {
-        res.status(HTTP_STATUS.NOT_FOUND).json(
-          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Case not found", "Case niet gevonden")
-        );
-        return;
-      }
-
-      res.json(createApiSuccessResponse(updatedReport, "Case succesvol bijgewerkt"));
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Error updating case:", message);
-      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
-        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij updaten case")
-      );
+    // Only clientName is editable - title is auto-generated
+    if (clientName === undefined) {
+      throw ServerError.validation("No fields to update", "Geen velden om bij te werken");
     }
-  });
+
+    if (typeof clientName !== 'string' || clientName.trim().length === 0) {
+      throw ServerError.validation("Client name cannot be empty", "Clientnaam mag niet leeg zijn");
+    }
+
+    // Get current report to access dossierNumber
+    const currentReport = await storage.getReport(id);
+    if (!currentReport) {
+      throw ServerError.notFound("Case");
+    }
+
+    // Auto-generate title from dossierNumber + clientName
+    const formattedNumber = String(currentReport.dossierNumber).padStart(4, '0');
+    const newTitle = `D-${formattedNumber} - ${clientName.trim()}`;
+
+    const updates = {
+      clientName: clientName.trim(),
+      title: newTitle,
+    };
+
+    const updatedReport = await storage.updateReport(id, updates);
+
+    if (!updatedReport) {
+      throw ServerError.notFound("Case");
+    }
+
+    res.json(createApiSuccessResponse(updatedReport, "Case succesvol bijgewerkt"));
+  }));
 
   /**
    * PATCH /api/cases/:id/status
@@ -151,28 +113,17 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
    * Request body: { status: 'draft' | 'processing' | 'generated' | 'exported' | 'archived' }
    * Response: Success confirmation
    */
-  app.patch("/api/cases/:id/status", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { status } = req.body;
+  app.patch("/api/cases/:id/status", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { status } = req.body;
 
-      if (!["draft", "processing", "generated", "exported", "archived"].includes(status)) {
-        res.status(HTTP_STATUS.BAD_REQUEST).json(
-          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Invalid status value", "Ongeldige status")
-        );
-        return;
-      }
-
-      await storage.updateReportStatus(id, status);
-      res.json(createApiSuccessResponse({ success: true }, "Status succesvol bijgewerkt"));
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Error updating case status:", message);
-      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
-        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij updaten status")
-      );
+    if (!["draft", "processing", "generated", "exported", "archived"].includes(status)) {
+      throw ServerError.validation("Invalid status value", "Ongeldige status");
     }
-  });
+
+    await storage.updateReportStatus(id, status);
+    res.json(createApiSuccessResponse({ success: true }, "Status succesvol bijgewerkt"));
+  }));
 
   /**
    * DELETE /api/cases/:id
@@ -181,19 +132,11 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
    *
    * Response: Success confirmation
    */
-  app.delete("/api/cases/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      await storage.deleteReport(id);
-      res.json(createApiSuccessResponse({ success: true }, "Case succesvol verwijderd"));
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Error deleting case:", message);
-      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
-        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij verwijderen case")
-      );
-    }
-  });
+  app.delete("/api/cases/:id", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    await storage.deleteReport(id);
+    res.json(createApiSuccessResponse({ success: true }, "Case succesvol verwijderd"));
+  }));
 
   /**
    * GET /api/cases/:id/export/:format
@@ -206,42 +149,29 @@ export function registerCaseRoutes(app: Express, pdfGenerator: PDFGenerator): vo
    *
    * Response: File download
    */
-  app.get("/api/cases/:id/export/:format", async (req, res) => {
-    try {
-      const { id, format } = req.params;
-      const report = await storage.getReport(id);
+  app.get("/api/cases/:id/export/:format", asyncHandler(async (req: Request, res: Response) => {
+    const { id, format } = req.params;
+    const report = await storage.getReport(id);
 
-      if (!report) {
-        res.status(HTTP_STATUS.NOT_FOUND).json(
-          createApiErrorResponse("NotFound", ERROR_CODES.REPORT_NOT_FOUND, "Case not found", "Case niet gevonden")
-        );
-        return;
-      }
-
-      if (format === "html") {
-        res.setHeader('Content-Type', 'text/html');
-        res.setHeader('Content-Disposition', `attachment; filename="case-${id}.html"`);
-        res.send(report.generatedContent || "Geen content beschikbaar");
-      } else if (format === "json") {
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Content-Disposition', `attachment; filename="case-${id}.json"`);
-        res.json(createApiSuccessResponse(report));
-      } else if (format === "pdf") {
-        const pdfBuffer = await pdfGenerator.generatePDF(report);
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="rapport-${report.clientName.replace(/[^a-zA-Z0-9]/g, '-')}-${id.slice(0, 8)}.pdf"`);
-        res.send(pdfBuffer);
-      } else {
-        res.status(HTTP_STATUS.BAD_REQUEST).json(
-          createApiErrorResponse("ValidationError", ERROR_CODES.VALIDATION_FAILED, "Invalid export format", "Ongeldige export format")
-        );
-      }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Error exporting case:", message);
-      res.status(HTTP_STATUS.INTERNAL_ERROR).json(
-        createApiErrorResponse("DatabaseError", ERROR_CODES.DATABASE_ERROR, message, "Fout bij exporteren case")
-      );
+    if (!report) {
+      throw ServerError.notFound("Case");
     }
-  });
+
+    if (format === "html") {
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `attachment; filename="case-${id}.html"`);
+      res.send(report.generatedContent || "Geen content beschikbaar");
+    } else if (format === "json") {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="case-${id}.json"`);
+      res.json(createApiSuccessResponse(report));
+    } else if (format === "pdf") {
+      const pdfBuffer = await pdfGenerator.generatePDF(report);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="rapport-${report.clientName.replace(/[^a-zA-Z0-9]/g, '-')}-${id.slice(0, 8)}.pdf"`);
+      res.send(pdfBuffer);
+    } else {
+      throw ServerError.validation("Invalid export format", "Ongeldige export format");
+    }
+  }));
 }

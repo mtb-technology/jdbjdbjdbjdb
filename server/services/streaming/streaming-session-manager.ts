@@ -1,11 +1,12 @@
-import type { 
-  StreamingSession, 
-  StreamingEvent, 
-  StageProgress, 
+import type {
+  StreamingSession,
+  StreamingEvent,
+  StageProgress,
   SubstepProgress,
-  SubstepDefinition 
+  SubstepDefinition
 } from "@shared/streaming-types";
 import { EventEmitter } from "events";
+import { logger } from "../logger";
 
 export class StreamingSessionManager {
   private sessions: Map<string, StreamingSession> = new Map();
@@ -49,7 +50,7 @@ export class StreamingSessionManager {
     };
 
     this.sessions.set(sessionId, session);
-    console.log(`🎬 [${sessionId}] Streaming session created with ${substeps.length} substeps`);
+    logger.info(sessionId, `Streaming session created with ${substeps.length} substeps`);
     
     return session;
   }
@@ -101,7 +102,7 @@ export class StreamingSessionManager {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`📊 [${reportId}-${stageId}] Substep ${substepId}: ${percentage}% - ${message || 'Progress update'}`);
+    logger.debug(`${reportId}-${stageId}`, `Substep ${substepId}: ${percentage}% - ${message || 'Progress update'}`);
   }
 
   // Mark substep as started
@@ -125,7 +126,7 @@ export class StreamingSessionManager {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`🚀 [${reportId}-${stageId}] Started substep: ${substepId} - ${substep.name}`);
+    logger.debug(`${reportId}-${stageId}`, `Started substep: ${substepId} - ${substep.name}`);
   }
 
   // Mark substep as completed
@@ -156,7 +157,7 @@ export class StreamingSessionManager {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ [${reportId}-${stageId}] Completed substep: ${substepId} - ${substep.name}`);
+    logger.debug(`${reportId}-${stageId}`, `Completed substep: ${substepId} - ${substep.name}`);
   }
 
   // Mark substep as error
@@ -180,7 +181,7 @@ export class StreamingSessionManager {
       timestamp: new Date().toISOString()
     });
 
-    console.error(`❌ [${reportId}-${stageId}] Error in substep ${substepId}: ${error}`);
+    logger.error(`${reportId}-${stageId}`, `Error in substep ${substepId}: ${error}`);
   }
 
   // Complete entire stage
@@ -207,7 +208,7 @@ export class StreamingSessionManager {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`🎉 [${reportId}-${stageId}] Stage completed successfully`);
+    logger.info(`${reportId}-${stageId}`, 'Stage completed successfully');
   }
 
   // Cancel session
@@ -224,7 +225,7 @@ export class StreamingSessionManager {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`🛑 [${reportId}-${stageId}] Session cancelled`);
+    logger.info(`${reportId}-${stageId}`, 'Session cancelled');
   }
 
   // Error entire stage
@@ -243,7 +244,7 @@ export class StreamingSessionManager {
       timestamp: new Date().toISOString()
     });
 
-    console.error(`💥 [${reportId}-${stageId}] Stage error: ${error}`);
+    logger.error(`${reportId}-${stageId}`, `Stage error: ${error}`);
   }
 
   // Event emission
@@ -283,7 +284,7 @@ export class StreamingSessionManager {
       const sessionTime = new Date(session.startTime).getTime();
       if (sessionTime < cutoff) {
         this.sessions.delete(sessionId);
-        console.log(`🧹 Cleaned up old session: ${sessionId}`);
+        logger.debug('session-manager', `Cleaned up old session: ${sessionId}`);
       }
     }
   }

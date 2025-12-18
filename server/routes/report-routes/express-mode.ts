@@ -13,6 +13,7 @@ import { PromptBuilder } from "../../services/prompt-builder";
 import { AIModelFactory } from "../../services/ai-models/ai-model-factory";
 import { asyncHandler, ServerError } from "../../middleware/errorHandler";
 import { ERROR_CODES } from "@shared/errors";
+import { logger } from "../../services/logger";
 import type { ReportRouteDependencies } from "./types";
 
 export function registerExpressModeRoutes(
@@ -33,7 +34,7 @@ export function registerExpressModeRoutes(
     const { id } = req.params;
     const validatedData = expressModeRequestSchema.parse(req.body);
 
-    console.log(`[${id}] Express Mode started`, { includeGeneration: validatedData.includeGeneration });
+    logger.info(id, 'Express Mode started', { includeGeneration: validatedData.includeGeneration });
 
     const expressStartTime = Date.now();
 
@@ -61,7 +62,7 @@ export function registerExpressModeRoutes(
         (stageResultsData['3_generatie']?.conceptReport);
 
       if (!hasStage3) {
-        console.log(`[${id}] Express Mode validation failed: No stage 3 concept found`, {
+        logger.warn(id, 'Express Mode validation failed: No stage 3 concept found', {
           hasConceptVersions: !!report.conceptReportVersions,
           conceptVersionKeys: Object.keys(conceptVersions),
           hasGeneratedContent: !!report.generatedContent,
@@ -324,7 +325,7 @@ export function registerExpressModeRoutes(
           });
 
         } catch (stageError: any) {
-          console.error(`[${id}] Express Mode failed at ${stageId}:`, stageError);
+          logger.error(id, `Express Mode failed at ${stageId}`, {}, stageError);
 
           sendEvent({
             type: 'stage_error',
@@ -387,9 +388,9 @@ export function registerExpressModeRoutes(
           timestamp: new Date().toISOString()
         });
 
-        console.log(`[${id}] Fiscale Briefing generated successfully`);
+        logger.info(id, 'Fiscale Briefing generated successfully');
       } catch (briefingError: any) {
-        console.error(`[${id}] Failed to generate Fiscale Briefing:`, briefingError.message);
+        logger.error(id, 'Failed to generate Fiscale Briefing', {}, briefingError);
         // Non-fatal - continue without briefing
         sendEvent({
           type: 'stage_error',
@@ -422,7 +423,7 @@ export function registerExpressModeRoutes(
       res.end();
 
     } catch (error: any) {
-      console.error(`[${id}] Express Mode failed:`, error);
+      logger.error(id, 'Express Mode failed', {}, error);
 
       sendEvent({
         type: 'express_error',
@@ -451,7 +452,7 @@ export function registerExpressModeRoutes(
   app.post("/api/reports/:id/fiscale-briefing", asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    console.log(`[${id}] Generating Fiscale Briefing standalone`);
+    logger.info(id, 'Generating Fiscale Briefing standalone');
 
     const report = await storage.getReport(id);
     if (!report) {
@@ -472,7 +473,7 @@ export function registerExpressModeRoutes(
     const hasBouwplan = !!report.bouwplanData;
     const hasReport = !!finalContent;
 
-    console.log(`[${id}] Briefing context:`, {
+    logger.debug(id, 'Briefing context', {
       hasStage1,
       hasStage2,
       hasBouwplan,
@@ -496,7 +497,7 @@ export function registerExpressModeRoutes(
     };
     await storage.updateReport(id, { stageResults: updatedStageResults });
 
-    console.log(`[${id}] Fiscale Briefing generated and saved`);
+    logger.info(id, 'Fiscale Briefing generated and saved');
 
     res.json({
       success: true,
@@ -520,7 +521,7 @@ export function registerExpressModeRoutes(
       throw ServerError.validation("Query is required", "Onderzoeksvraag is verplicht");
     }
 
-    console.log(`[${id}] Starting deep research:`, { query, maxQuestions, parallelExecutors });
+    logger.info(id, 'Starting deep research', { query, maxQuestions, parallelExecutors });
 
     const report = await storage.getReport(id);
     if (!report) {
@@ -566,14 +567,14 @@ export function registerExpressModeRoutes(
         duration: response.duration
       })}\n\n`);
 
-      console.log(`[${id}] Deep research completed`, {
+      logger.info(id, 'Deep research completed', {
         duration: response.duration,
         contentLength: response.content.length,
         metadata: response.metadata
       });
 
     } catch (error: any) {
-      console.error(`[${id}] Deep research failed:`, error);
+      logger.error(id, 'Deep research failed', {}, error);
 
       res.write(`data: ${JSON.stringify({
         stage: 'error',
@@ -596,7 +597,7 @@ export function registerExpressModeRoutes(
       throw ServerError.validation("Query is required", "Onderzoeksvraag is verplicht");
     }
 
-    console.log(`Starting standalone deep research:`, { query, maxQuestions, parallelExecutors });
+    logger.info('deep-research', 'Starting standalone deep research', { query, maxQuestions, parallelExecutors });
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -637,13 +638,13 @@ export function registerExpressModeRoutes(
         duration: response.duration
       })}\n\n`);
 
-      console.log(`Standalone deep research completed`, {
+      logger.info('deep-research', 'Standalone deep research completed', {
         duration: response.duration,
         contentLength: response.content.length
       });
 
     } catch (error: any) {
-      console.error(`Standalone deep research failed:`, error);
+      logger.error('deep-research', 'Standalone deep research failed', {}, error);
 
       res.write(`data: ${JSON.stringify({
         stage: 'error',

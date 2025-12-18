@@ -15,6 +15,7 @@
 
 import type { Express } from "express";
 import type { ReportRouteDependencies } from "./types";
+import { logger } from "../../services/logger";
 
 // Import all route modules
 import { registerCrudRoutes } from "./crud";
@@ -59,7 +60,7 @@ export function registerReportRoutes(
   // Express mode and deep research
   registerExpressModeRoutes(app, dependencies);
 
-  console.log("✅ Report routes registered (modular)");
+  logger.info('routes', 'Report routes registered (modular)');
 }
 
 // Re-export types for consumers

@@ -9,6 +9,7 @@ import { AIError, isAIError, getErrorCategory } from "@shared/errors";
 import { GoogleAIHandler } from "./google-handler";
 import { OpenAIStandardHandler } from "./openai-standard-handler";
 import type { AiConfig } from "@shared/schema";
+import { logger } from "../logger";
 
 export interface HealthCheckResult {
   service: string;
@@ -266,20 +267,20 @@ export class AIHealthService {
   startPeriodicHealthChecks(): void {
     // Prevent duplicate intervals - only start if not already running
     if (this.healthCheckIntervalId) {
-      console.log('⚠️ Periodic health checks already running, skipping duplicate start');
+      logger.warn('health-service', 'Periodic health checks already running, skipping duplicate start');
       return;
     }
 
     this.healthCheckIntervalId = setInterval(async () => {
       try {
         await this.getSystemHealth();
-        console.log(`🔍 Periodic health check completed at ${new Date().toISOString()}`);
+        logger.debug('health-service', 'Periodic health check completed');
       } catch (error) {
-        console.error(`❌ Periodic health check failed:`, error);
+        logger.error('health-service', 'Periodic health check failed', {}, error instanceof Error ? error : undefined);
       }
     }, this.healthCheckInterval);
 
-    console.log(`✅ Started periodic health checks (interval: ${this.healthCheckInterval}ms)`);
+    logger.info('health-service', `Started periodic health checks (interval: ${this.healthCheckInterval}ms)`);
   }
 
   // Stop periodic health checks - call on server shutdown
@@ -287,7 +288,7 @@ export class AIHealthService {
     if (this.healthCheckIntervalId) {
       clearInterval(this.healthCheckIntervalId);
       this.healthCheckIntervalId = undefined;
-      console.log('🛑 Stopped periodic health checks');
+      logger.info('health-service', 'Stopped periodic health checks');
     }
   }
 

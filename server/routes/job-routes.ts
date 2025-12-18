@@ -11,10 +11,9 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { asyncHandler, ServerError } from "../middleware/errorHandler";
 import { createApiSuccessResponse } from "@shared/errors";
+import { logger } from "../services/logger";
 import { z } from "zod";
 import type { JobProgress, SingleStageJobConfig, ExpressModeJobConfig } from "../services/job-processor";
-import type { StageId, DossierData, BouwplanData } from "@shared/schema";
-import { REVIEW_STAGES, getLatestConceptText } from "@shared/constants";
 
 // Schema for creating single stage job
 const createSingleStageJobSchema = z.object({
@@ -44,7 +43,7 @@ export function registerJobRoutes(app: Express): void {
     const { id } = req.params;
     const validatedData = createSingleStageJobSchema.parse(req.body);
 
-    console.log(`📋 [${id}] Creating single stage job for ${validatedData.stageId}`);
+    logger.info(id, 'Creating single stage job', { stageId: validatedData.stageId });
 
     // Check if report exists
     const report = await storage.getReport(id);
@@ -96,7 +95,7 @@ export function registerJobRoutes(app: Express): void {
     const { id } = req.params;
     const validatedData = createExpressModeJobSchema.parse(req.body);
 
-    console.log(`🚀 [${id}] Creating Express Mode job`, {
+    logger.info(id, 'Creating Express Mode job', {
       includeGeneration: validatedData.includeGeneration,
       reportLanguage: validatedData.reportLanguage
     });
@@ -212,7 +211,7 @@ export function registerJobRoutes(app: Express): void {
   app.post("/api/jobs/:id/cancel", asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    console.log(`🛑 [${id}] Cancelling job`);
+    logger.info(`job:${id}`, 'Cancelling job');
 
     const job = await storage.getJob(id);
     if (!job) {

@@ -12,6 +12,7 @@ import { STAGE_ORDER } from "@shared/constants";
 import { asyncHandler, ServerError, getErrorMessage } from "../../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { HTTP_STATUS } from "../../config/constants";
+import { logger } from "../../services/logger";
 import { deduplicateRequests } from "../../middleware/deduplicate";
 import { parseJsonWithMarkdown } from "./utils";
 import type { ReportRouteDependencies } from "./types";
@@ -30,35 +31,25 @@ export function registerStageRoutes(
    * Get prompt preview for a stage without executing it
    * GET /api/reports/:id/stage/:stage/preview
    */
-  app.get("/api/reports/:id/stage/:stage/preview", async (req, res) => {
-    try {
-      const { id, stage } = req.params;
-      const report = await storage.getReport(id);
+  app.get("/api/reports/:id/stage/:stage/preview", asyncHandler(async (req: Request, res: Response) => {
+    const { id, stage } = req.params;
+    const report = await storage.getReport(id);
 
-      if (!report) {
-        throw ServerError.notFound("Report");
-      }
-
-      const prompt = await reportGenerator.generatePromptForStage(
-        stage,
-        report.dossierData as DossierData,
-        report.bouwplanData as BouwplanData,
-        report.stageResults as Record<string, string> || {},
-        report.conceptReportVersions as Record<string, string> || {},
-        undefined
-      );
-
-      res.json(createApiSuccessResponse({ prompt }, "Prompt preview succesvol opgehaald"));
-    } catch (error: unknown) {
-      console.error("Error generating prompt preview:", error);
-      res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
-        'PreviewError',
-        ERROR_CODES.INTERNAL_SERVER_ERROR,
-        getErrorMessage(error),
-        'Fout bij het genereren van prompt preview'
-      ));
+    if (!report) {
+      throw ServerError.notFound("Report");
     }
-  });
+
+    const prompt = await reportGenerator.generatePromptForStage(
+      stage,
+      report.dossierData as DossierData,
+      report.bouwplanData as BouwplanData,
+      report.stageResults as Record<string, string> || {},
+      report.conceptReportVersions as Record<string, string> || {},
+      undefined
+    );
+
+    res.json(createApiSuccessResponse({ prompt }, "Prompt preview succesvol opgehaald"));
+  }));
 
   /**
    * Generate prompt for a stage (without executing AI)
@@ -135,7 +126,7 @@ export function registerStageRoutes(
           return !hasSubstantialText;
         }).length;
         if (pendingOcrCount > 0) {
-          console.log(`[${id}] ⛔ Stage 1a blocked: ${pendingOcrCount} attachment(s) still awaiting OCR`);
+          logger.info(id, 'Stage 1a blocked - attachments awaiting OCR', { pendingOcrCount });
           return res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
             'OCRPending',
             ERROR_CODES.VALIDATION_FAILED,
@@ -165,7 +156,7 @@ export function registerStageRoutes(
               ...dossierWithAttachments,
               rawText: existingRawText + attachmentTexts
             };
-            console.log(`[${id}] Stage 1a: Added ${textAttachments.length} text attachment(s) to dossier`);
+            logger.info(id, 'Stage 1a: Added text attachments to dossier', { count: textAttachments.length });
           }
 
           if (visionNeededAttachments.length > 0) {
@@ -174,7 +165,7 @@ export function registerStageRoutes(
               data: att.fileData,
               filename: att.filename
             }));
-            console.log(`[${id}] Stage 1a: Sending ${visionNeededAttachments.length} scanned PDF(s) to Gemini Vision for OCR`);
+            logger.info(id, 'Stage 1a: Sending scanned PDFs to Gemini Vision for OCR', { count: visionNeededAttachments.length });
           }
 
           for (const att of attachments) {
@@ -201,7 +192,7 @@ export function registerStageRoutes(
           reportLanguage
         );
       } catch (stageError: unknown) {
-        console.error(`Stage execution failed but recovering gracefully:`, getErrorMessage(stageError));
+        logger.error(id, 'Stage execution failed but recovering gracefully', {}, stageError as Error);
         res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
           'StageExecutionError',
           ERROR_CODES.AI_PROCESSING_FAILED,
@@ -244,7 +235,7 @@ export function registerStageRoutes(
         updateData.status = 'generated';
         // Persist language for subsequent review stages (4a-4f)
         updateData.reportLanguage = reportLanguage;
-        console.log(`[${id}] Stage 3: Persisting report language: ${reportLanguage}`);
+        logger.info(id, 'Stage 3: Persisting report language', { reportLanguage });
       }
 
       // Stage 1a: Update dossierData with extracted info
@@ -255,7 +246,7 @@ export function registerStageRoutes(
             const currentDossier = (report.dossierData as Record<string, any>) || {};
 
             if (parsed.status === 'COMPLEET') {
-              console.log(`[${id}] Stage 1a COMPLEET - updating dossierData with complete structured data`);
+              logger.info(id, 'Stage 1a COMPLEET - updating dossierData with complete structured data');
               updateData.dossierData = {
                 klant: {
                   naam: report.clientName,
@@ -265,7 +256,7 @@ export function registerStageRoutes(
                 samenvatting_onderwerp: parsed.dossier.samenvatting_onderwerp
               };
             } else if (parsed.status === 'INCOMPLEET') {
-              console.log(`[${id}] Stage 1a INCOMPLEET - accumulating partial dossierData for next re-run`);
+              logger.info(id, 'Stage 1a INCOMPLEET - accumulating partial dossierData for next re-run');
               updateData.dossierData = {
                 ...currentDossier,
                 klant: {
@@ -282,7 +273,7 @@ export function registerStageRoutes(
             }
           }
         } catch (parseError) {
-          console.warn(`[${id}] Could not parse Stage 1a output for dossierData update:`, parseError);
+          logger.warn(id, 'Could not parse Stage 1a output for dossierData update', { error: String(parseError) });
         }
       }
 
@@ -291,7 +282,7 @@ export function registerStageRoutes(
         try {
           const parsed = parseJsonWithMarkdown(stageExecution.stageOutput);
           if (parsed.next_action === 'PROCEED_TO_GENERATION' && parsed.origineel_dossier) {
-            console.log(`[${id}] Stage 2 COMPLEET - updating dossierData with corrected data from origineel_dossier`);
+            logger.info(id, 'Stage 2 COMPLEET - updating dossierData with corrected data from origineel_dossier');
             const currentDossier = (report.dossierData as Record<string, any>) || {};
             updateData.dossierData = {
               ...currentDossier,
@@ -304,13 +295,13 @@ export function registerStageRoutes(
             };
           }
         } catch (parseError) {
-          console.warn(`[${id}] Could not parse Stage 2 output for dossierData update:`, parseError);
+          logger.warn(id, 'Could not parse Stage 2 output for dossierData update', { error: String(parseError) });
         }
       }
 
       // Review stages (4a-4g): Just store raw feedback
       if (stage.startsWith('4')) {
-        console.log(`[${id}-${stage}] Review stage completed - storing raw feedback for user review (NO auto-processing)`);
+        logger.info(id, `Review stage ${stage} completed - storing raw feedback for user review`);
       }
 
       const updatedReport = await storage.updateReport(id, updateData);
@@ -334,69 +325,46 @@ export function registerStageRoutes(
    * Process manual stage content for any stage
    * POST /api/reports/:id/manual-stage
    */
-  app.post("/api/reports/:id/manual-stage", async (req, res) => {
-    try {
-      const { id } = req.params;
+  app.post("/api/reports/:id/manual-stage", asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
 
-      const manualStageSchema = z.object({
-        stage: z.string().min(1, "Stage mag niet leeg zijn"),
-        content: z.string().min(1, "Content mag niet leeg zijn"),
-        isManual: z.boolean().optional()
-      });
+    const manualStageSchema = z.object({
+      stage: z.string().min(1, "Stage mag niet leeg zijn"),
+      content: z.string().min(1, "Content mag niet leeg zijn"),
+      isManual: z.boolean().optional()
+    });
 
-      const validatedData = manualStageSchema.parse(req.body);
-      const { stage, content } = validatedData;
+    const validatedData = manualStageSchema.parse(req.body);
+    const { stage, content } = validatedData;
 
-      const report = await storage.getReport(id);
-      if (!report) {
-        throw ServerError.notFound("Report");
-      }
-
-      const currentStageResults = (report.stageResults as Record<string, string>) || {};
-      const currentConceptVersions = (report.conceptReportVersions as Record<string, string>) || {};
-
-      currentStageResults[stage] = content;
-
-      if (["3_generatie"].includes(stage)) {
-        const versionKey = `${stage}_${new Date().toISOString()}`;
-        currentConceptVersions[versionKey] = content;
-        currentConceptVersions[stage] = content;
-      }
-
-      const updatedReport = await storage.updateReport(id, {
-        stageResults: currentStageResults,
-        conceptReportVersions: currentConceptVersions,
-      });
-
-      res.json(createApiSuccessResponse({
-        report: updatedReport,
-        stageResult: content,
-        conceptReport: ["3_generatie"].includes(stage) ? content : undefined,
-        isManual: true
-      }, "Handmatige content succesvol verwerkt"));
-
-    } catch (error: unknown) {
-      console.error("Error processing manual stage:", error);
-      if (error instanceof z.ZodError) {
-        res.status(HTTP_STATUS.BAD_REQUEST).json(createApiErrorResponse(
-          'ValidationError',
-          ERROR_CODES.VALIDATION_FAILED,
-          JSON.stringify(error.errors),
-          'Validatiefout in invoergegevens'
-        ));
-      } else if (error instanceof ServerError) {
-        throw error;
-      } else {
-        const message = error instanceof Error ? error.message : String(error);
-        res.status(HTTP_STATUS.INTERNAL_ERROR).json(createApiErrorResponse(
-          'ProcessingError',
-          ERROR_CODES.INTERNAL_SERVER_ERROR,
-          message,
-          'Fout bij verwerken van handmatige content'
-        ));
-      }
+    const report = await storage.getReport(id);
+    if (!report) {
+      throw ServerError.notFound("Report");
     }
-  });
+
+    const currentStageResults = (report.stageResults as Record<string, string>) || {};
+    const currentConceptVersions = (report.conceptReportVersions as Record<string, string>) || {};
+
+    currentStageResults[stage] = content;
+
+    if (["3_generatie"].includes(stage)) {
+      const versionKey = `${stage}_${new Date().toISOString()}`;
+      currentConceptVersions[versionKey] = content;
+      currentConceptVersions[stage] = content;
+    }
+
+    const updatedReport = await storage.updateReport(id, {
+      stageResults: currentStageResults,
+      conceptReportVersions: currentConceptVersions,
+    });
+
+    res.json(createApiSuccessResponse({
+      report: updatedReport,
+      stageResult: content,
+      conceptReport: ["3_generatie"].includes(stage) ? content : undefined,
+      isManual: true
+    }, "Handmatige content succesvol verwerkt"));
+  }));
 
   // ============================================================
   // STAGE DELETION
@@ -494,7 +462,7 @@ export function registerStageRoutes(
       throw ServerError.notFound("Updated report not found");
     }
 
-    console.log(`Deleted stage ${stage} and all subsequent stages for report ${id}`);
+    logger.info(id, 'Deleted stage and all subsequent stages', { stage });
 
     res.json(createApiSuccessResponse({
       report: updatedReport,
@@ -515,7 +483,7 @@ export function registerStageRoutes(
     const { id } = req.params;
     const { customPrompt } = req.body;
 
-    console.log(`[${id}] Generating dossier context summary`);
+    logger.info(id, 'Generating dossier context summary');
 
     const report = await storage.getReport(id);
     if (!report) {
@@ -566,7 +534,7 @@ Gebruik bullet points. Max 150 woorden.
         operationId: "dossier-context"
       });
     } catch (error: any) {
-      console.error(`[${id}] Dossier context generation failed:`, {
+      logger.error(id, 'Dossier context generation failed', {
         error: error.message,
         stack: error.stack,
         code: error.code,
@@ -580,7 +548,7 @@ Gebruik bullet points. Max 150 woorden.
       updatedAt: new Date()
     });
 
-    console.log(`[${id}] Dossier context generated (${summary.length} chars)`);
+    logger.info(id, 'Dossier context generated', { summaryLength: summary.length });
 
     res.json(createApiSuccessResponse({
       summary,
