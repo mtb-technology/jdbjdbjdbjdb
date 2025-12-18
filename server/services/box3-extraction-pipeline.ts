@@ -1,7 +1,7 @@
 /**
  * Box3 Extraction Pipeline - Simplified Single-Call Approach
  *
- * Uses ONE multimodal LLM call with gemini-2.5-flash for speed.
+ * Uses ONE multimodal LLM call with gemini-3-flash-preview for best quality/speed balance.
  * All documents are processed together to extract the complete blueprint.
  */
 
@@ -16,7 +16,9 @@ import type {
   Box3RealEstateAsset,
   Box3YearSummary,
   Box3Debt,
-} from "@shared/schema";
+  Box3DocumentExtraction,
+  Box3ExtractedClaim,
+} from "@shared/schema/box3";
 
 // =============================================================================
 // TYPES
@@ -50,6 +52,10 @@ export interface PipelineResult {
     };
   };
   errors: string[];
+  /** Debug: full prompt sent to the AI */
+  fullPrompt?: string;
+  /** Debug: raw AI response before JSON parsing */
+  rawAiResponse?: string;
 }
 
 // =============================================================================
@@ -210,6 +216,105 @@ BELANGRIJK:
 - Zorg dat total_tax_assessed correct wordt geëxtraheerd - dit is cruciaal voor de berekening!`;
 
 // =============================================================================
+// SINGLE DOCUMENT EXTRACTION PROMPT (for incremental merge)
+// =============================================================================
+
+const SINGLE_DOC_EXTRACTION_PROMPT = `Je bent een expert fiscalist gespecialiseerd in Box 3 (vermogensbelasting).
+
+Analyseer het bijgevoegde document en extraheer alle relevante Box 3 data als "claims".
+
+## DOCUMENT CLASSIFICATIE
+Bepaal eerst wat voor type document dit is:
+- aangifte_ib: Aangifte inkomstenbelasting
+- aanslag_definitief: Definitieve aanslag van Belastingdienst
+- aanslag_voorlopig: Voorlopige aanslag van Belastingdienst
+- jaaropgave_bank: Jaaroverzicht van bank met saldi en rente
+- woz_beschikking: WOZ-beschikking
+- email_body: E-mail correspondentie
+- overig: Ander document
+
+## EXTRACTIE INSTRUCTIES
+
+Voor elk datapunt dat je vindt, maak een "claim" met:
+- path: Het pad waar deze waarde thuishoort in de blueprint
+- value: De geëxtraheerde waarde
+- confidence: Hoe zeker je bent (0.0-1.0)
+- source_snippet: Korte tekst uit document die dit bewijst
+
+### PATH VOORBEELDEN:
+- "assets.bank_savings[NEW].bank_name" → voor nieuwe bankrekening
+- "assets.bank_savings[MATCH:****1234].yearly_data.2023.value_jan_1" → voor bestaande rekening (match op laatste 4 cijfers)
+- "assets.real_estate[MATCH:1234AB].yearly_data.2024.woz_value" → voor bestaand pand (match op postcode)
+- "tax_authority_data.2023.household_totals.total_tax_assessed" → voor belastingdata
+- "fiscal_entity.taxpayer.name" → voor persoonsgegevens
+
+### ASSET IDENTIFICATIE (CRUCIAAL!)
+Voor bankrekeningen, geef ALTIJD:
+- account_last4: laatste 4 cijfers van rekeningnummer
+- iban_pattern: eerste deel van IBAN (bijv. "NL91INGB")
+- bank_name: naam van de bank
+
+Voor onroerend goed, geef ALTIJD:
+- address: volledig adres
+- postcode: postcode (4 cijfers + 2 letters)
+
+## OUTPUT FORMAT - Geef ALLEEN valid JSON:
+
+{
+  "document_classification": {
+    "detected_type": "jaaropgave_bank",
+    "detected_tax_years": ["2023"],
+    "detected_person": "taxpayer",
+    "confidence": 0.95
+  },
+  "asset_identifiers": {
+    "bank_accounts": [
+      { "account_last4": "1234", "bank_name": "ING", "iban_pattern": "NL91INGB" }
+    ],
+    "real_estate": [],
+    "investments": []
+  },
+  "claims": [
+    {
+      "path": "assets.bank_savings[MATCH:****1234].bank_name",
+      "value": "ING",
+      "confidence": 0.99,
+      "source_snippet": "ING Bank N.V."
+    },
+    {
+      "path": "assets.bank_savings[MATCH:****1234].account_masked",
+      "value": "NL91INGB****1234",
+      "confidence": 0.99,
+      "source_snippet": "Rekeningnummer: NL91INGB0001231234"
+    },
+    {
+      "path": "assets.bank_savings[MATCH:****1234].yearly_data.2023.value_jan_1",
+      "value": 45000.00,
+      "confidence": 0.95,
+      "source_snippet": "Saldo per 1-1-2023: € 45.000,00"
+    },
+    {
+      "path": "assets.bank_savings[MATCH:****1234].yearly_data.2023.interest_received",
+      "value": 625.50,
+      "confidence": 0.90,
+      "source_snippet": "Ontvangen rente 2023: € 625,50"
+    }
+  ]
+}
+
+BELANGRIJK:
+- Geef ALLEEN JSON output, geen uitleg
+- Gebruik [MATCH:identifier] voor bestaande assets, [NEW] voor nieuwe
+- Elke claim moet een source_snippet hebben als bewijs
+- confidence moet realistisch zijn (0.5-1.0)`;
+
+export interface SingleDocExtractionResult {
+  extraction: Box3DocumentExtraction;
+  rawResponse: string;
+  error?: string;
+}
+
+// =============================================================================
 // PIPELINE CLASS
 // =============================================================================
 
@@ -272,20 +377,22 @@ ${emailText ? `## AANVULLENDE EMAIL TEKST:\n${emailText}` : ''}
 Analyseer nu alle bijgevoegde documenten en geef de complete JSON output.`;
 
     let blueprint: Box3Blueprint;
+    let rawAiResponse: string | undefined;
 
     try {
       const result = await this.factory.callModel(
         {
-          model: 'gemini-2.5-pro',
+          model: 'gemini-3-flash-preview',
           provider: 'google',
-          temperature: 0.1,
-          topP: 0.95,
-          topK: 40,
-          maxOutputTokens: 32768, // Pro has 65K limit
+          temperature: 1.0, // Gemini 3 recommends keeping at 1.0
+          maxOutputTokens: 65536, // Gemini 3 has 64K output limit
         },
         prompt,
         { visionAttachments }
       );
+
+      // Store raw response for debugging
+      rawAiResponse = result.content;
 
       const json = this.parseJSON(result.content);
       if (!json) {
@@ -324,6 +431,8 @@ Analyseer nu alle bijgevoegde documenten en geef de complete JSON output.`;
         },
       },
       errors,
+      fullPrompt: prompt,
+      rawAiResponse,
     };
   }
 
@@ -545,5 +654,151 @@ Analyseer nu alle bijgevoegde documenten en geef de complete JSON output.`;
       logger.error('box3-pipeline', 'JSON parse error', {}, err instanceof Error ? err : undefined);
     }
     return null;
+  }
+
+  // ===========================================================================
+  // SINGLE DOCUMENT EXTRACTION (for incremental merge)
+  // ===========================================================================
+
+  /**
+   * Extract claims from a single document for incremental merge
+   * This is used when adding documents to an existing dossier
+   */
+  async extractSingleDocument(document: PipelineDocument): Promise<SingleDocExtractionResult> {
+    logger.info('box3-pipeline', `Single document extraction: ${document.filename}`);
+
+    // Prepare vision attachment
+    const visionAttachments = [];
+    if (document.mimeType.startsWith('image/') || document.mimeType === 'application/pdf') {
+      visionAttachments.push({
+        mimeType: document.mimeType,
+        data: document.fileData,
+        filename: document.filename,
+      });
+    }
+
+    const prompt = `${SINGLE_DOC_EXTRACTION_PROMPT}
+
+## DOCUMENT OM TE ANALYSEREN:
+Bestandsnaam: ${document.filename}
+Type: ${document.mimeType}
+${document.extractedText ? `\nGeëxtraheerde tekst:\n${document.extractedText.substring(0, 5000)}` : ''}
+
+Analyseer dit document en geef de claims JSON output.`;
+
+    try {
+      const result = await this.factory.callModel(
+        {
+          model: 'gemini-3-flash-preview', // Gemini 3 Flash: Pro-level intelligence at Flash speed
+          provider: 'google',
+          temperature: 1.0, // Gemini 3 recommends keeping at 1.0
+          maxOutputTokens: 16384,
+        },
+        prompt,
+        { visionAttachments }
+      );
+
+      const json = this.parseJSON(result.content);
+      if (!json) {
+        throw new Error('Kon JSON niet parsen uit LLM response');
+      }
+
+      // Transform the response into Box3DocumentExtraction format
+      const extraction = this.transformToDocumentExtraction(json, document);
+
+      logger.info('box3-pipeline', `Extracted ${extraction.claims.length} claims from ${document.filename}`);
+
+      return {
+        extraction,
+        rawResponse: result.content,
+      };
+
+    } catch (err: any) {
+      logger.error('box3-pipeline', 'Single document extraction failed', {
+        filename: document.filename,
+        error: err.message
+      });
+
+      // Return empty extraction with error
+      return {
+        extraction: {
+          document_id: document.id,
+          extraction_version: 1,
+          extracted_at: new Date().toISOString(),
+          model_used: 'gemini-3-flash-preview',
+          detected_type: 'overig',
+          detected_tax_years: [],
+          detected_person: null,
+          claims: [],
+        },
+        rawResponse: '',
+        error: err.message,
+      };
+    }
+  }
+
+  /**
+   * Transform LLM response to Box3DocumentExtraction
+   */
+  private transformToDocumentExtraction(
+    json: any,
+    document: PipelineDocument
+  ): Box3DocumentExtraction {
+    const classification = json.document_classification || {};
+
+    // Normalize the detected_type
+    const detectedType = this.normalizeDocumentType(classification.detected_type || 'overig');
+
+    // Transform claims - resolve [MATCH:x] and [NEW] patterns
+    const claims: Box3ExtractedClaim[] = (json.claims || []).map((claim: any) => {
+      let path = claim.path || '';
+
+      // Normalize path - replace [MATCH:xxx] with placeholder for merge engine
+      // The merge engine will handle actual matching
+      path = path.replace(/\[MATCH:([^\]]+)\]/g, '[?]');
+      path = path.replace(/\[NEW\]/g, '[?]');
+
+      return {
+        path,
+        value: claim.value,
+        confidence: typeof claim.confidence === 'number' ? claim.confidence : 0.5,
+        source_snippet: claim.source_snippet,
+      };
+    });
+
+    return {
+      document_id: document.id,
+      extraction_version: 1,
+      extracted_at: new Date().toISOString(),
+      model_used: 'gemini-2.5-flash',
+      detected_type: detectedType,
+      detected_tax_years: classification.detected_tax_years || [],
+      detected_person: classification.detected_person || null,
+      claims,
+      asset_identifiers: json.asset_identifiers || undefined,
+    };
+  }
+
+  /**
+   * Batch extract multiple documents (parallel for speed)
+   */
+  async extractMultipleDocuments(
+    documents: PipelineDocument[]
+  ): Promise<SingleDocExtractionResult[]> {
+    logger.info('box3-pipeline', `Batch extracting ${documents.length} documents`);
+
+    // Process in parallel with a concurrency limit
+    const CONCURRENCY = 3;
+    const results: SingleDocExtractionResult[] = [];
+
+    for (let i = 0; i < documents.length; i += CONCURRENCY) {
+      const batch = documents.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(doc => this.extractSingleDocument(doc))
+      );
+      results.push(...batchResults);
+    }
+
+    return results;
   }
 }

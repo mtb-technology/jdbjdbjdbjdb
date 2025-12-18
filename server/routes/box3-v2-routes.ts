@@ -22,6 +22,7 @@ import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@
 import { storage } from "../storage";
 import { logger } from "../services/logger";
 import { Box3ExtractionPipeline, type PipelineDocument } from "../services/box3-extraction-pipeline";
+import { Box3MergeEngine } from "../services/box3-merge-engine";
 import type { Box3Blueprint, Box3DocumentClassification } from "@shared/schema";
 
 export const box3V2Router = Router();
@@ -295,7 +296,9 @@ box3V2Router.post(
       _debug: {
         pipelineSteps: pipelineResult.stepResults,
         pipelineErrors: pipelineResult.errors,
-        model: 'gemini-3-pro-preview',
+        fullPrompt: pipelineResult.fullPrompt,
+        rawAiResponse: pipelineResult.rawAiResponse,
+        model: 'gemini-3-flash-preview',
         timestamp: new Date().toISOString(),
       }
     }, "Dossier aangemaakt en gevalideerd"));
@@ -425,8 +428,14 @@ box3V2Router.delete(
 );
 
 /**
- * Add documents to existing dossier
+ * Add documents to existing dossier with INCREMENTAL MERGE
  * POST /api/box3-v2/dossiers/:id/documents
+ *
+ * This endpoint now performs:
+ * 1. Store the new documents
+ * 2. Extract claims from each new document (parallel)
+ * 3. Merge claims into existing blueprint (preserving existing data)
+ * 4. Create new blueprint version
  */
 box3V2Router.post(
   "/dossiers/:id/documents",
@@ -445,6 +454,7 @@ box3V2Router.post(
   },
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
+    const { skipExtraction } = req.body; // Optional: skip AI extraction
 
     const dossier = await storage.getBox3Dossier(id);
     if (!dossier) {
@@ -456,8 +466,16 @@ box3V2Router.post(
       throw ServerError.validation("No files", "Geen bestanden geselecteerd");
     }
 
-    // Store new documents
+    logger.info('box3-v2', 'Adding documents with incremental merge', {
+      dossierId: id,
+      fileCount: files.length,
+      skipExtraction: !!skipExtraction
+    });
+
+    // Step 1: Store new documents and prepare for extraction
     const newDocs: Array<{ id: string; filename: string }> = [];
+    const pipelineDocs: PipelineDocument[] = [];
+
     for (const file of files) {
       const doc = await storage.createBox3Document({
         dossierId: id,
@@ -468,17 +486,154 @@ box3V2Router.post(
         uploadedVia: 'aanvulling',
       });
       newDocs.push({ id: doc.id, filename: doc.filename });
+
+      // Prepare for extraction
+      let extractedText: string | undefined;
+      const ext = file.originalname.toLowerCase().split('.').pop();
+      const isPDF = file.mimetype === 'application/pdf' ||
+                    (file.mimetype === 'application/octet-stream' && ext === 'pdf');
+      const isTXT = file.mimetype === 'text/plain' ||
+                    (file.mimetype === 'application/octet-stream' && ext === 'txt');
+
+      if (isPDF) {
+        try {
+          const PDFParseClass = await getPdfParse();
+          const parser = new PDFParseClass({ data: file.buffer });
+          const result = await parser.getText();
+          extractedText = result.text || "";
+        } catch {
+          // Vision will handle it
+        }
+      } else if (isTXT) {
+        extractedText = file.buffer.toString('utf-8');
+      }
+
+      pipelineDocs.push({
+        id: doc.id,
+        filename: doc.filename,
+        mimeType: doc.mimeType,
+        fileData: file.buffer.toString('base64'),
+        extractedText,
+      });
     }
 
-    logger.info('box3-v2', 'Added documents to dossier', { dossierId: id, count: newDocs.length });
+    // If skipExtraction is true, just return the stored docs
+    if (skipExtraction) {
+      await storage.updateBox3Dossier(id, { status: 'in_behandeling' });
+      return res.json(createApiSuccessResponse({
+        addedDocuments: newDocs,
+        message: `${newDocs.length} document(en) toegevoegd (zonder extractie)`,
+        extracted: false,
+      }, `${newDocs.length} document(en) toegevoegd`));
+    }
 
-    // Update dossier status
-    await storage.updateBox3Dossier(id, { status: 'in_behandeling' });
+    // Step 2: Get existing blueprint
+    const existingBlueprintRecord = await storage.getLatestBox3Blueprint(id);
+    if (!existingBlueprintRecord) {
+      throw ServerError.validation("No blueprint", "Geen bestaande blueprint gevonden. Voer eerst een intake validatie uit.");
+    }
+    const existingBlueprint = existingBlueprintRecord.blueprint as Box3Blueprint;
+
+    // Step 3: Extract claims from new documents (parallel)
+    const pipeline = new Box3ExtractionPipeline();
+    const extractionResults = await pipeline.extractMultipleDocuments(pipelineDocs);
+
+    logger.info('box3-v2', 'Extractions completed', {
+      totalDocs: pipelineDocs.length,
+      successfulExtractions: extractionResults.filter(r => !r.error).length,
+      totalClaims: extractionResults.reduce((sum, r) => sum + r.extraction.claims.length, 0)
+    });
+
+    // Step 4: Merge all extractions into blueprint
+    let mergedBlueprint = existingBlueprint;
+    const allConflicts: any[] = [];
+    const mergeStats = {
+      valuesAdded: 0,
+      valuesUpdated: 0,
+      valuesSkipped: 0,
+      conflictsDetected: 0,
+    };
+
+    for (const result of extractionResults) {
+      if (result.error) {
+        logger.warn('box3-v2', 'Skipping failed extraction', {
+          docId: result.extraction.document_id,
+          error: result.error
+        });
+        continue;
+      }
+
+      const mergeEngine = new Box3MergeEngine(mergedBlueprint);
+      const mergeResult = mergeEngine.mergeDocumentExtraction(result.extraction);
+
+      mergedBlueprint = mergeResult.blueprint;
+      allConflicts.push(...mergeResult.conflicts);
+
+      // Aggregate stats
+      mergeStats.valuesAdded += mergeResult.stats.valuesAdded;
+      mergeStats.valuesUpdated += mergeResult.stats.valuesUpdated;
+      mergeStats.valuesSkipped += mergeResult.stats.valuesSkipped;
+      mergeStats.conflictsDetected += mergeResult.stats.conflictsDetected;
+
+      // Update document classification
+      const classification: Box3DocumentClassification = {
+        document_type: mapDetectedTypeToClassification(result.extraction.detected_type),
+        tax_years: result.extraction.detected_tax_years,
+        for_person: result.extraction.detected_person,
+        confidence: result.extraction.claims.length > 0 ? 'high' : 'low',
+      };
+
+      await storage.updateBox3Document(result.extraction.document_id, {
+        classification,
+        extractionSummary: `${result.extraction.claims.length} claims geëxtraheerd`,
+      });
+    }
+
+    // Step 5: Save new blueprint version
+    const newVersion = existingBlueprintRecord.version + 1;
+
+    await storage.createBox3Blueprint({
+      dossierId: id,
+      version: newVersion,
+      blueprint: mergedBlueprint,
+      createdBy: 'aanvulling',
+    });
+
+    // Step 6: Update dossier metadata
+    const taxYears = extractTaxYearsFromBlueprint(mergedBlueprint);
+    const hasFiscalPartner = mergedBlueprint.fiscal_entity?.fiscal_partner?.has_partner || false;
+
+    await storage.updateBox3Dossier(id, {
+      taxYears: taxYears.length > 0 ? taxYears : null,
+      hasFiscalPartner,
+      status: 'in_behandeling',
+    });
+
+    logger.info('box3-v2', 'Incremental merge completed', {
+      dossierId: id,
+      newVersion,
+      ...mergeStats,
+      conflictsNeedingReview: allConflicts.filter(c => c.needs_review).length
+    });
 
     res.json(createApiSuccessResponse({
       addedDocuments: newDocs,
-      message: `${newDocs.length} document(en) toegevoegd`,
-    }, `${newDocs.length} document(en) toegevoegd`));
+      blueprint: mergedBlueprint,
+      blueprintVersion: newVersion,
+      taxYears,
+      mergeStats,
+      conflicts: allConflicts,
+      conflictsNeedingReview: allConflicts.filter(c => c.needs_review).length,
+      message: `${newDocs.length} document(en) toegevoegd en gemerged`,
+      _debug: {
+        extractions: extractionResults.map(r => ({
+          docId: r.extraction.document_id,
+          type: r.extraction.detected_type,
+          claimCount: r.extraction.claims.length,
+          error: r.error,
+        })),
+      }
+    }, `${newDocs.length} document(en) toegevoegd en gemerged (v${newVersion})`));
   })
 );
 
@@ -607,7 +762,9 @@ box3V2Router.post(
       _debug: {
         pipelineSteps: pipelineResult.stepResults,
         pipelineErrors: pipelineResult.errors,
-        model: 'gemini-3-pro-preview',
+        fullPrompt: pipelineResult.fullPrompt,
+        rawAiResponse: pipelineResult.rawAiResponse,
+        model: 'gemini-3-flash-preview',
         timestamp: new Date().toISOString(),
       }
     }, `Dossier opnieuw gevalideerd (v${newVersion})`));
