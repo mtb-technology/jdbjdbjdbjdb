@@ -396,6 +396,155 @@ export interface Box3ManualOverrideV2 {
   created_by: string;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// MERGE ENGINE TYPES (V3 Extensions)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Enhanced DataPoint with full provenance tracking
+ * Used by merge engine to track source and alternatives
+ */
+export interface Box3EnhancedDataPoint<T = number> {
+  value: T;
+
+  // Source tracking
+  source_doc_id: string;
+  source_type: 'document' | 'email' | 'manual_entry' | 'calculation' | 'default';
+  source_snippet?: string;
+  extraction_date: string;
+
+  // Quality indicators
+  confidence: number; // 0.0 - 1.0
+  requires_validation: boolean;
+  validation_note?: string;
+
+  // Alternative values (when conflicts were detected)
+  alternative_values?: Array<{
+    value: T;
+    source_doc_id: string;
+    confidence: number;
+    reason_not_used: 'lower_confidence' | 'lower_authority' | 'manual_override_preserved' | 'older_extraction';
+  }>;
+
+  // Override tracking
+  is_overridden: boolean;
+  original_extracted_value?: T;
+}
+
+/**
+ * Document Authority Ranking
+ * Higher number = higher authority, wins in conflicts
+ */
+export const DOCUMENT_AUTHORITY_RANKING: Record<string, number> = {
+  // Belastingdienst bronnen (hoogste autoriteit voor "hun versie")
+  'definitieve_aanslag': 100,
+  'aanslag_definitief': 100,
+  'voorlopige_aanslag': 90,
+  'aanslag_voorlopig': 90,
+  'aangifte_ib': 80,
+
+  // Financiele instellingen (hoogste autoriteit voor werkelijke waarden)
+  'jaaroverzicht_bank': 95,
+  'jaaropgave_bank': 95,
+  'spaarrekeningoverzicht': 95,
+  'effectenoverzicht': 95,
+
+  // Overheid
+  'woz_beschikking': 95,
+
+  // Overig
+  'hypotheekoverzicht': 85,
+  'leningoverzicht': 85,
+  'dividendnota': 80,
+  'email_body': 30,
+  'client_estimate': 20,
+  'overig': 10,
+};
+
+/**
+ * Extracted Claim - What a document claims about a field
+ */
+export interface Box3ExtractedClaim {
+  path: string;           // e.g., "assets.bank_savings[0].yearly_data.2023.value_jan_1"
+  value: any;
+  confidence: number;
+  source_snippet?: string;
+}
+
+/**
+ * Document Extraction Result
+ * What we extracted from a single document
+ */
+export interface Box3DocumentExtraction {
+  document_id: string;
+  extraction_version: number;
+  extracted_at: string;
+  model_used: string;
+
+  // Document classification
+  detected_type: Box3SourceDocumentEntry['detected_type'];
+  detected_tax_years: string[];
+  detected_person: 'taxpayer' | 'partner' | 'both' | null;
+
+  // Extracted claims
+  claims: Box3ExtractedClaim[];
+
+  // For asset matching
+  asset_identifiers?: {
+    bank_accounts?: Array<{ account_last4: string; bank_name: string; iban_pattern?: string }>;
+    real_estate?: Array<{ address: string; postcode?: string }>;
+    investments?: Array<{ account_number: string; institution: string }>;
+  };
+}
+
+/**
+ * Merge Conflict - When two sources disagree
+ */
+export interface Box3MergeConflict {
+  id: string;
+  path: string;
+
+  // What was kept
+  kept_value: any;
+  kept_source_doc_id: string;
+  kept_confidence: number;
+
+  // What was rejected
+  rejected_value: any;
+  rejected_source_doc_id: string;
+  rejected_confidence: number;
+
+  // Resolution
+  resolution_reason: 'higher_confidence' | 'higher_authority' | 'newer_document' | 'manual_override' | 'lower_confidence' | 'lower_authority';
+  occurred_at: string;
+
+  // For UI review
+  needs_review: boolean;
+  reviewed_at?: string;
+  reviewed_by?: string;
+}
+
+/**
+ * Document Contribution - Tracks what each document contributed to blueprint
+ */
+export interface Box3DocumentContribution {
+  document_id: string;
+  document_type: string;
+  contributed_paths: string[];
+  extraction_version: number;
+  extracted_at: string;
+}
+
+/**
+ * Asset Matcher Result
+ */
+export interface Box3AssetMatchResult {
+  matched: boolean;
+  index?: number;
+  match_reason?: 'account_number' | 'iban' | 'address' | 'description';
+  confidence: number;
+}
+
 /**
  * Document Classification (for box3_documents.classification)
  */
@@ -439,6 +588,10 @@ export interface Box3Blueprint {
 
   validation_flags: Box3ValidationFlag[];
   manual_overrides: Box3ManualOverrideV2[];
+
+  // V3 Merge tracking (optional for backwards compatibility)
+  document_contributions?: Box3DocumentContribution[];
+  merge_conflicts?: Box3MergeConflict[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -558,6 +711,9 @@ export type InsertBox3Dossier = typeof box3Dossiers.$inferInsert;
 
 export type Box3Document = typeof box3Documents.$inferSelect;
 export type InsertBox3Document = typeof box3Documents.$inferInsert;
+
+// Light version without file_data for list views (performance optimization)
+export type Box3DocumentLight = Omit<Box3Document, 'fileData'>;
 
 export type Box3BlueprintRecord = typeof box3Blueprints.$inferSelect;
 export type InsertBox3BlueprintRecord = typeof box3Blueprints.$inferInsert;
