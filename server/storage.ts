@@ -982,12 +982,13 @@ export class DatabaseStorage implements IStorage {
 
   // --- Combined operations ---
 
-  async getBox3DossierWithLatestBlueprint(dossierId: string): Promise<{ dossier: Box3Dossier; blueprint: Box3BlueprintRecord | null; documents: Box3Document[] } | undefined> {
+  async getBox3DossierWithLatestBlueprint(dossierId: string): Promise<{ dossier: Box3Dossier; blueprint: Box3BlueprintRecord | null; documents: Omit<Box3Document, 'fileData'>[] } | undefined> {
     const dossier = await this.getBox3Dossier(dossierId);
     if (!dossier) return undefined;
 
     const blueprint = await this.getLatestBox3Blueprint(dossierId);
-    const documents = await this.getBox3DocumentsForDossier(dossierId);
+    // Use light version to exclude large file_data column
+    const documents = await this.getBox3DocumentsForDossierLight(dossierId);
 
     return { dossier, blueprint: blueprint || null, documents };
   }
