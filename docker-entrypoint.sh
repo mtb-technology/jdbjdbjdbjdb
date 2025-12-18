@@ -52,6 +52,12 @@ server {
         proxy_send_timeout 600s;
         proxy_read_timeout 600s;
         send_timeout 600s;
+
+        # Increased proxy buffers to avoid disk buffering warnings
+        # Default is 8 4k buffers - we increase for large API responses
+        proxy_buffer_size 128k;
+        proxy_buffers 16 256k;
+        proxy_busy_buffers_size 512k;
     }
 
     # SSE (Server-Sent Events) specific configuration
