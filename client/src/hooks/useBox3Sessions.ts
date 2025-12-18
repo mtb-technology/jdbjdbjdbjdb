@@ -11,7 +11,7 @@ import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import type { Box3Blueprint, Box3Dossier } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
-import { UPLOAD_LIMITS, getOversizedFilesMessage } from "@/constants/upload.constants";
+import { BOX3_CONSTANTS } from "@shared/constants";
 
 // Light session type for list view
 export interface Box3DossierLight {
@@ -123,14 +123,14 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
     files: PendingFile[]
   ): Promise<boolean> => {
     // ✅ Client-side file size validation
-    const oversizedFiles = files.filter(pf => pf.file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES);
+    const oversizedFiles = files.filter(pf => pf.file.size > BOX3_CONSTANTS.MAX_FILE_SIZE_BYTES);
     if (oversizedFiles.length > 0) {
       const names = oversizedFiles
         .map(f => `${f.name} (${(f.file.size / 1024 / 1024).toFixed(1)}MB)`)
         .join(', ');
       toast({
         title: "Bestand(en) te groot",
-        description: getOversizedFilesMessage(names),
+        description: `Maximum grootte is ${BOX3_CONSTANTS.MAX_FILE_SIZE_MB}MB per bestand. Geweigerd: ${names}`,
         variant: "destructive",
       });
       return false;
@@ -140,10 +140,20 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
       const formData = new FormData();
       files.forEach((pf) => formData.append("files", pf.file, pf.name));
 
-      const res = await fetch(`/api/box3-validator/dossiers/${sessionId}/documents`, {
-        method: "POST",
-        body: formData,
-      });
+      // Timeout for AI processing (document extraction + merge)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), BOX3_CONSTANTS.AI_TIMEOUT_MS);
+
+      let res;
+      try {
+        res = await fetch(`/api/box3-validator/dossiers/${sessionId}/documents`, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
@@ -152,13 +162,20 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
 
       toast({
         title: "Documenten toegevoegd",
-        description: `${files.length} document(en) toegevoegd.`,
+        description: `${files.length} document(en) toegevoegd en geëxtraheerd.`,
       });
 
       refetchSessions();
       return true;
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Unknown error";
+      let message = "Kon documenten niet toevoegen.";
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          message = "Verzoek duurde te lang (timeout). Probeer met minder of kleinere bestanden.";
+        } else {
+          message = error.message;
+        }
+      }
       toast({
         title: "Toevoegen mislukt",
         description: message,

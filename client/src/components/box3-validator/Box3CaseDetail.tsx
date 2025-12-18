@@ -14,7 +14,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
   RefreshCw,
-  Settings as SettingsIcon,
   User,
   Mail,
   Paperclip,
@@ -63,13 +62,11 @@ import type { DebugInfo } from "@/hooks/useBox3Validation";
 
 interface Box3CaseDetailProps {
   dossierFull: Box3DossierFull;
-  systemPrompt: string;
   isRevalidating: boolean;
   isAddingDocs: boolean;
   debugInfo?: DebugInfo | null;
   onBack: () => void;
   onRevalidate: () => void;
-  onOpenSettings: () => void;
   onAddDocuments: (files: PendingFile[]) => Promise<void>;
 }
 
@@ -80,6 +77,39 @@ const formatCurrency = (value: number | null | undefined): string => {
     style: "currency",
     currency: "EUR",
   }).format(value);
+};
+
+/**
+ * Helper to extract numeric value from yearly_data fields.
+ * Handles backward compatibility for old blueprints that used:
+ * - "balance_jan1" instead of "value_jan_1"
+ * - { value: X } instead of { amount: X }
+ */
+type YearlyDataField = { amount?: number; value?: number } | number | null | undefined;
+
+interface YearlyDataLegacy {
+  value_jan_1?: YearlyDataField;
+  balance_jan1?: YearlyDataField;
+  interest_received?: YearlyDataField;
+  dividend_received?: YearlyDataField;
+  woz_value?: YearlyDataField;
+  rental_income_gross?: YearlyDataField;
+  value_dec_31?: YearlyDataField;
+  interest_paid?: YearlyDataField;
+  [key: string]: YearlyDataField | undefined;
+}
+
+const getFieldValue = (field: YearlyDataField): number | null => {
+  if (field == null) return null;
+  if (typeof field === 'number') return field;
+  // Handle both { amount: X } (new) and { value: X } (old)
+  return field.amount ?? field.value ?? null;
+};
+
+const getValueJan1 = (yearData: YearlyDataLegacy | undefined): number | null => {
+  if (!yearData) return null;
+  // Try new field name first, then legacy
+  return getFieldValue(yearData.value_jan_1) ?? getFieldValue(yearData.balance_jan1);
 };
 
 // Copyable currency component - shows copy button on hover
@@ -242,13 +272,11 @@ function DataPointDisplay({
 
 export const Box3CaseDetail = memo(function Box3CaseDetail({
   dossierFull,
-  systemPrompt,
   isRevalidating,
   isAddingDocs,
   debugInfo,
   onBack,
   onRevalidate,
-  onOpenSettings,
   onAddDocuments,
 }: Box3CaseDetailProps) {
   const { toast } = useToast();
@@ -259,6 +287,16 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [isCompressing, setIsCompressing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Email generation state
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [generatedEmail, setGeneratedEmail] = useState<{
+    emailType: string;
+    subject: string;
+    body: string;
+    metadata: any;
+  } | null>(null);
+  const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
 
   // Document preview state
   const [previewDocIndex, setPreviewDocIndex] = useState<number | null>(null);
@@ -284,6 +322,34 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
     maxWidthOrHeight: 2048,
     useWebWorker: true,
   };
+
+  // Generate follow-up email based on dossier status
+  const handleGenerateEmail = useCallback(async () => {
+    setIsGeneratingEmail(true);
+    try {
+      const response = await fetch(`/api/box3-validator/dossiers/${dossier.id}/generate-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emailType: 'auto' }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Kon email niet genereren');
+      }
+
+      const result = await response.json();
+      setGeneratedEmail(result.data);
+      setShowEmailPreview(true);
+    } catch (error) {
+      toast({
+        title: 'Fout',
+        description: 'Kon email niet genereren. Probeer het opnieuw.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGeneratingEmail(false);
+    }
+  }, [dossier.id, toast]);
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -415,18 +481,97 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Email Preview Modal */}
+      <Dialog open={showEmailPreview} onOpenChange={setShowEmailPreview}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Gegenereerde email
+              {generatedEmail && (
+                <Badge variant={
+                  generatedEmail.emailType === 'profitable' ? 'default' :
+                  generatedEmail.emailType === 'request_docs' ? 'secondary' : 'outline'
+                } className={
+                  generatedEmail.emailType === 'profitable' ? 'bg-green-600' :
+                  generatedEmail.emailType === 'request_docs' ? 'bg-amber-500' : ''
+                }>
+                  {generatedEmail.emailType === 'profitable' ? 'Kansrijk' :
+                   generatedEmail.emailType === 'request_docs' ? 'Docs nodig' : 'Niet kansrijk'}
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {generatedEmail && (
+            <div className="space-y-4">
+              {/* Subject */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Onderwerp</label>
+                <div className="p-2 bg-muted rounded-md text-sm font-medium">
+                  {generatedEmail.subject}
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Inhoud</label>
+                <div
+                  className="p-4 bg-white border rounded-md text-sm prose prose-sm max-h-[400px] overflow-y-auto"
+                  dangerouslySetInnerHTML={{ __html: generatedEmail.body }}
+                />
+              </div>
+
+              {/* Metadata */}
+              {generatedEmail.metadata && (
+                <div className="p-3 bg-muted/50 rounded-md text-xs text-muted-foreground">
+                  <div className="flex flex-wrap gap-4">
+                    <span>Jaren: {generatedEmail.metadata.yearRange}</span>
+                    <span>Indicatieve teruggave: €{generatedEmail.metadata.totalIndicativeRefund?.toFixed(2)}</span>
+                    <span>Min. winstgevend: €{generatedEmail.metadata.minimumProfitableAmount}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2 border-t">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      generatedEmail.subject + '\n\n' +
+                      generatedEmail.body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+                    );
+                    toast({ title: 'Gekopieerd', description: 'Email inhoud gekopieerd naar klembord' });
+                  }}
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Kopieer tekst
+                </Button>
+                <Button
+                  variant="default"
+                  className="flex-1"
+                  onClick={() => {
+                    const mailto = `mailto:${dossier.clientEmail || ''}?subject=${encodeURIComponent(generatedEmail.subject)}&body=${encodeURIComponent(generatedEmail.body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' '))}`;
+                    window.open(mailto, '_blank');
+                  }}
+                >
+                  <Mail className="h-4 w-4 mr-2" />
+                  Open in mail app
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Terug naar overzicht
-          </Button>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onOpenSettings}>
-            <SettingsIcon className="h-4 w-4 mr-2" />
-            Settings
           </Button>
         </div>
       </div>
@@ -814,19 +959,21 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
               years.forEach(year => {
                 const yearTax = taxAuthData[year]?.per_person?.[taxpayer.id || 'tp_01'];
                 const yearSummary = yearSummaries[year];
-                if (yearTax) {
-                  tpSummary.totalTaxAssessed += yearTax.tax_assessed || 0;
-                  // Estimate refund based on allocation percentage
-                  const allocation = yearTax.allocation_percentage || (hasPartner ? 50 : 100);
-                  const totalRefund = yearSummary?.calculated_totals?.indicative_refund || 0;
-                  const personRefund = totalRefund * (allocation / 100);
-                  tpSummary.totalIndicativeRefund += personRefund;
-                  tpSummary.yearBreakdown[year] = {
-                    taxAssessed: yearTax.tax_assessed || 0,
-                    allocation: allocation,
-                    refund: personRefund,
-                  };
-                }
+                const totalRefund = yearSummary?.calculated_totals?.indicative_refund || 0;
+
+                // Always calculate, even if no per_person data
+                // Default allocation: 50% if partner, 100% if single
+                const defaultAllocation = hasPartner ? 50 : 100;
+                const allocation = yearTax?.allocation_percentage || defaultAllocation;
+                const personRefund = totalRefund * (allocation / 100);
+
+                tpSummary.totalTaxAssessed += yearTax?.tax_assessed || 0;
+                tpSummary.totalIndicativeRefund += personRefund;
+                tpSummary.yearBreakdown[year] = {
+                  taxAssessed: yearTax?.tax_assessed || 0,
+                  allocation: allocation,
+                  refund: personRefund,
+                };
               });
               tpSummary.isProfitable = tpSummary.totalIndicativeRefund > 0;
               personSummaries.push(tpSummary);
@@ -847,18 +994,20 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
               years.forEach(year => {
                 const yearTax = taxAuthData[year]?.per_person?.[fpId];
                 const yearSummary = yearSummaries[year];
-                if (yearTax) {
-                  fpSummary.totalTaxAssessed += yearTax.tax_assessed || 0;
-                  const allocation = yearTax.allocation_percentage || 50;
-                  const totalRefund = yearSummary?.calculated_totals?.indicative_refund || 0;
-                  const personRefund = totalRefund * (allocation / 100);
-                  fpSummary.totalIndicativeRefund += personRefund;
-                  fpSummary.yearBreakdown[year] = {
-                    taxAssessed: yearTax.tax_assessed || 0,
-                    allocation: allocation,
-                    refund: personRefund,
-                  };
-                }
+                const totalRefund = yearSummary?.calculated_totals?.indicative_refund || 0;
+
+                // Always calculate, even if no per_person data
+                // Default allocation for partner: 50%
+                const allocation = yearTax?.allocation_percentage || 50;
+                const personRefund = totalRefund * (allocation / 100);
+
+                fpSummary.totalTaxAssessed += yearTax?.tax_assessed || 0;
+                fpSummary.totalIndicativeRefund += personRefund;
+                fpSummary.yearBreakdown[year] = {
+                  taxAssessed: yearTax?.tax_assessed || 0,
+                  allocation: allocation,
+                  refund: personRefund,
+                };
               });
               fpSummary.isProfitable = fpSummary.totalIndicativeRefund > 0;
               personSummaries.push(fpSummary);
@@ -879,7 +1028,9 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             years.forEach(year => {
               const missing = yearSummaries[year]?.missing_items || [];
               missing.forEach(item => {
-                allMissingItems.push({ year, description: item.description });
+                // Handle both string items and object items with description field
+                const description = typeof item === 'string' ? item : item.description;
+                allMissingItems.push({ year, description });
               });
             });
 
@@ -929,41 +1080,33 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             const selectedYearMissingItems = selectedYear
               ? (yearSummaries[selectedYear]?.missing_items || []).map(item => ({
                   year: selectedYear,
-                  description: item.description,
+                  description: typeof item === 'string' ? item : item.description,
                 }))
               : [];
+
+            // Status determination: missing docs takes priority over profitability
+            const hasMissingDocs = allMissingItems.length > 0;
+            const statusLabel = hasMissingDocs ? 'Onvolledig' : isProfitable ? 'Kansrijk' : 'Niet kansrijk';
+            const statusColor = hasMissingDocs ? 'bg-amber-100 text-amber-700' : isProfitable ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600';
+            const StatusIcon = hasMissingDocs ? AlertTriangle : isProfitable ? CheckCircle2 : Info;
 
             return (
               <div className="space-y-4">
                 {/* Compact Summary Bar - Always visible */}
                 <div className="flex items-center gap-4 p-4 bg-white rounded-xl border">
                   {/* Status Badge */}
-                  <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
-                    isProfitable
-                      ? 'bg-green-100 text-green-700'
-                      : !isComplete
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {isProfitable ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : !isComplete ? (
-                      <AlertTriangle className="h-5 w-5" />
-                    ) : (
-                      <Info className="h-5 w-5" />
-                    )}
-                    <span className="font-semibold">
-                      {isProfitable ? 'Kansrijk' : !isComplete ? 'Onvolledig' : 'Niet kansrijk'}
-                    </span>
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${statusColor}`}>
+                    <StatusIcon className="h-5 w-5" />
+                    <span className="font-semibold">{statusLabel}</span>
                     <span className="text-xs opacity-75">({profitableYears.length}/{years.length})</span>
                   </div>
 
                   {/* Divider */}
                   <div className="h-8 w-px bg-gray-200" />
 
-                  {/* Total */}
+                  {/* Total indicative refund */}
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Totaal:</span>
+                    <span className="text-sm text-muted-foreground">Indicatieve teruggave:</span>
                     <CopyableCurrency
                       value={totalRefund}
                       className={`text-xl font-bold ${totalRefund > 0 ? 'text-green-600' : 'text-gray-400'}`}
@@ -1001,12 +1144,70 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   )}
                 </div>
 
+                {/* Next Action Card - Shows what's needed */}
+                {allMissingItems.length > 0 && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-amber-100">
+                        <AlertTriangle className="h-5 w-5 text-amber-600" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-amber-800 mb-1">Actie vereist: documenten opvragen</h3>
+                        <p className="text-sm text-amber-700 mb-3">
+                          Om te bepalen of deze zaak kansrijk is, hebben we het werkelijke rendement nodig.
+                        </p>
+                        <div className="space-y-2">
+                          {/* Group by year */}
+                          {years.map(year => {
+                            const yearMissing = blueprint.year_summaries?.[year]?.missing_items || [];
+                            if (yearMissing.length === 0) return null;
+                            return (
+                              <div key={year} className="bg-white rounded-lg p-3 border border-amber-200">
+                                <p className="text-xs font-medium text-amber-800 mb-2">{year}</p>
+                                <ul className="space-y-1">
+                                  {yearMissing.map((item, idx) => (
+                                    <li key={idx} className="flex items-center gap-2 text-sm text-amber-900">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                                      {typeof item === 'string' ? item : item.description}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-amber-300 text-amber-700 hover:bg-amber-100"
+                            onClick={() => setShowAddDocs(true)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Document toevoegen
+                          </Button>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="bg-amber-600 hover:bg-amber-700"
+                            onClick={handleGenerateEmail}
+                            disabled={isGeneratingEmail}
+                          >
+                            <Mail className="h-3 w-3 mr-1" />
+                            {isGeneratingEmail ? 'Bezig...' : 'Genereer opvolg-email'}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Integrated Year Detail Card */}
                 <div className="bg-white rounded-xl border overflow-hidden">
                   {/* Year Tabs - Integrated header */}
                   <div className="flex items-stretch border-b bg-gray-50">
                     {years.map(year => {
-                      const summary = yearSummaries[year];
+                      const summary = blueprint.year_summaries?.[year];
                       const refund = summary?.calculated_totals?.indicative_refund || 0;
                       const yearProfitable = summary?.calculated_totals?.is_profitable || refund > 0;
                       const yearIncomplete = summary?.status === 'incomplete';
@@ -1062,117 +1263,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     })}
                   </div>
 
-                  {/* Year Detail Content */}
-                  {selectedYear && (() => {
-                    const summary = yearSummaries[selectedYear];
-                    const refund = summary?.calculated_totals?.indicative_refund || 0;
-                    const yearProfitable = summary?.calculated_totals?.is_profitable || refund > 0;
-                    const yearIncomplete = summary?.status === 'incomplete';
-                    const yearMissingItems = summary?.missing_items || [];
-
-                    return (
-                      <div className="p-5">
-                        {/* Year Header with status */}
-                        <div className="flex items-center justify-between mb-5">
-                          <div className="flex items-center gap-3">
-                            <h3 className="text-lg font-bold">Detail {selectedYear}</h3>
-                            <Badge variant={yearProfitable ? "default" : yearIncomplete ? "secondary" : "outline"}
-                                   className={yearProfitable ? 'bg-green-100 text-green-700 hover:bg-green-100' : yearIncomplete ? 'bg-amber-100 text-amber-700' : ''}>
-                              {yearProfitable ? 'Kansrijk' : yearIncomplete ? 'Onvolledig' : 'Niet kansrijk'}
-                            </Badge>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs text-muted-foreground">Indicatieve teruggave {selectedYear}</p>
-                            <CopyableCurrency
-                              value={refund}
-                              className={`text-2xl font-bold ${yearProfitable ? 'text-green-600' : 'text-gray-400'}`}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Missing items for THIS year */}
-                        {yearMissingItems.length > 0 && (
-                          <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center gap-2">
-                                <FileText className="h-4 w-4 text-amber-600" />
-                                <span className="font-medium text-amber-800">Ontbrekend voor {selectedYear}</span>
-                              </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-amber-300 text-amber-700 hover:bg-amber-100"
-                                onClick={() => setShowAddDocs(true)}
-                              >
-                                <Plus className="h-3 w-3 mr-1" />
-                                Toevoegen
-                              </Button>
-                            </div>
-                            <ul className="space-y-1">
-                              {yearMissingItems.map((item, idx) => (
-                                <li key={idx} className="flex items-center gap-2 text-sm text-amber-900">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                  {item.description}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        {/* Per person breakdown for THIS year */}
-                        {hasPartner && personSummaries.length > 1 && (
-                          <div className="grid grid-cols-2 gap-4 mb-5">
-                            {personSummaries.map((person) => {
-                              const yearData = person.yearBreakdown[selectedYear];
-                              return (
-                                <div
-                                  key={person.id}
-                                  className="p-4 bg-gray-50 rounded-lg border"
-                                >
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <User className="h-4 w-4 text-gray-500" />
-                                    <span className="font-medium">{person.name}</span>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">Vermogen</p>
-                                      <p className="font-medium">{yearData?.taxAssessed ? formatCurrency(yearData.taxAssessed) : '—'}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">Teruggave</p>
-                                      <p className={`font-medium ${yearData?.refund && yearData.refund > 0 ? 'text-green-600' : ''}`}>
-                                        {yearData?.refund ? formatCurrency(yearData.refund) : '—'}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Next step for complete years */}
-                        {!yearIncomplete && yearProfitable && (
-                          <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="p-2 rounded-lg bg-green-100">
-                                  <ChevronRight className="h-4 w-4 text-green-600" />
-                                </div>
-                                <div>
-                                  <p className="font-semibold text-green-800">Klaar voor bezwaar</p>
-                                  <p className="text-sm text-green-700">Bezwaarschrift opstellen voor {selectedYear}</p>
-                                </div>
-                              </div>
-                              <Button variant="default" size="sm" className="bg-green-600 hover:bg-green-700">
-                                Genereer bezwaar
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  {/* Year Detail Content - moved to YEAR DETAIL card below */}
                 </div>
               </div>
             );
@@ -1245,41 +1336,93 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <h3 className="text-lg font-semibold">Detail: {selectedYear}</h3>
-                              <Badge variant={refund > 0 ? "default" : "secondary"} className={refund > 0 ? "bg-green-600" : ""}>
-                                {refund > 0 ? 'Kansrijk' : 'Niet kansrijk'}
-                              </Badge>
+                              {(() => {
+                                const yearMissing = blueprint.year_summaries?.[selectedYear]?.missing_items || [];
+                                const yearHasMissing = yearMissing.length > 0;
+                                if (yearHasMissing) {
+                                  return <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300">Onvolledig</Badge>;
+                                }
+                                return (
+                                  <Badge variant={refund > 0 ? "default" : "secondary"} className={refund > 0 ? "bg-green-600" : ""}>
+                                    {refund > 0 ? 'Kansrijk' : 'Niet kansrijk'}
+                                  </Badge>
+                                );
+                              })()}
                             </div>
-                            <CopyableCurrency value={refund} className={`text-2xl font-bold ${refund > 0 ? 'text-green-600' : 'text-gray-500'}`} />
+                            <div className="text-right">
+                              {(() => {
+                                // Check if actual return is unknown (missing income data)
+                                const yearMissing = summary?.missing_items || [];
+                                const missingIncomeData = yearMissing.some(item =>
+                                  typeof item !== 'string' && (
+                                    item.field === 'bank_interest' ||
+                                    item.field === 'dividend' ||
+                                    item.field === 'rental_income'
+                                  )
+                                );
+                                const isMaximum = missingIncomeData && (actualReturn?.total === 0 || actualReturn?.total == null);
+
+                                return (
+                                  <>
+                                    <p className="text-xs text-muted-foreground">
+                                      {isMaximum ? 'Max. teruggave' : 'Indicatieve teruggave'}
+                                    </p>
+                                    <CopyableCurrency value={refund} className={`text-2xl font-bold ${refund > 0 ? 'text-green-600' : 'text-gray-500'}`} />
+                                  </>
+                                );
+                              })()}
+                            </div>
                           </div>
 
                           {/* Stats row */}
-                          <div className="grid grid-cols-4 gap-4 text-sm">
-                            <div className="bg-muted/30 rounded-lg p-2">
-                              <p className="text-xs text-muted-foreground">Totaal vermogen</p>
-                              <CopyableCurrency value={summary?.calculated_totals?.total_assets_jan_1} className="font-semibold" />
-                            </div>
-                            <div className="bg-muted/30 rounded-lg p-2">
-                              <p className="text-xs text-muted-foreground">Werkelijk rendement</p>
-                              <CopyableCurrency value={actualReturn?.total} className="font-semibold text-green-600" />
-                              {actualReturn && (actualReturn.bank_interest || actualReturn.dividends || actualReturn.rental_income_net) && (
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {[
-                                    actualReturn.bank_interest ? `Rente ${formatCurrency(actualReturn.bank_interest)}` : null,
-                                    actualReturn.dividends ? `Div ${formatCurrency(actualReturn.dividends)}` : null,
-                                    actualReturn.rental_income_net ? `Huur ${formatCurrency(actualReturn.rental_income_net)}` : null,
-                                  ].filter(Boolean).join(' · ')}
-                                </p>
-                              )}
-                            </div>
-                            <div className="bg-muted/30 rounded-lg p-2">
-                              <p className="text-xs text-muted-foreground">Forfaitair rendement</p>
-                              <CopyableCurrency value={summary?.calculated_totals?.deemed_return_from_tax_authority} className="font-semibold text-red-600" />
-                            </div>
-                            <div className="bg-muted/30 rounded-lg p-2">
-                              <p className="text-xs text-muted-foreground">Verschil (voordeel)</p>
-                              <CopyableCurrency value={(summary?.calculated_totals?.deemed_return_from_tax_authority || 0) - (actualReturn?.total || 0)} className="font-semibold" />
-                            </div>
-                          </div>
+                          {(() => {
+                            // Check if we're missing income data
+                            const yearMissing = summary?.missing_items || [];
+                            const missingIncomeData = yearMissing.some(item =>
+                              typeof item !== 'string' && (
+                                item.field === 'bank_interest' ||
+                                item.field === 'dividend' ||
+                                item.field === 'rental_income'
+                              )
+                            );
+                            const isActualReturnUnknown = missingIncomeData && (actualReturn?.total === 0 || actualReturn?.total == null);
+                            const box3TaxPaid = taxData?.household_totals?.total_tax_assessed || 0;
+                            const deemedReturn = summary?.calculated_totals?.deemed_return_from_tax_authority || 0;
+
+                            return (
+                              <div className="grid grid-cols-4 gap-4 text-sm">
+                                <div className="bg-muted/30 rounded-lg p-2">
+                                  <p className="text-xs text-muted-foreground">Totaal vermogen</p>
+                                  <CopyableCurrency value={summary?.calculated_totals?.total_assets_jan_1} className="font-semibold" />
+                                </div>
+                                <div className="bg-muted/30 rounded-lg p-2">
+                                  <p className="text-xs text-muted-foreground">Werkelijk rendement</p>
+                                  {isActualReturnUnknown ? (
+                                    <span className="font-semibold text-amber-600">Onbekend</span>
+                                  ) : (
+                                    <CopyableCurrency value={actualReturn?.total} className="font-semibold text-green-600" />
+                                  )}
+                                  {actualReturn && (actualReturn.bank_interest > 0 || actualReturn.dividends > 0 || actualReturn.rental_income_net > 0) && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      {[
+                                        actualReturn.bank_interest ? `Rente ${formatCurrency(actualReturn.bank_interest)}` : null,
+                                        actualReturn.dividends ? `Div ${formatCurrency(actualReturn.dividends)}` : null,
+                                        actualReturn.rental_income_net ? `Huur ${formatCurrency(actualReturn.rental_income_net)}` : null,
+                                      ].filter(Boolean).join(' · ')}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="bg-muted/30 rounded-lg p-2">
+                                  <p className="text-xs text-muted-foreground">Forfaitair rendement</p>
+                                  <CopyableCurrency value={deemedReturn} className="font-semibold text-red-600" />
+                                </div>
+                                <div className="bg-blue-50 rounded-lg p-2 border border-blue-200">
+                                  <p className="text-xs text-blue-600">Box 3 belasting betaald</p>
+                                  <CopyableCurrency value={box3TaxPaid} className="font-semibold text-blue-700" />
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {/* Per-person allocation row - only show if partner data exists */}
                           {hasPartnerData && (() => {
@@ -1308,7 +1451,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                         <div className="text-right">
                                           <CopyableCurrency value={personData.tax_assessed || 0} className="font-semibold text-amber-600" />
                                           <p className="text-xs text-muted-foreground">
-                                            Inkomen: {formatCurrency(personData.deemed_return)} • Belasting: {formatCurrency(personData.tax_assessed)}
+                                            Forfaitair: {formatCurrency(personData.deemed_return)} • Belasting: {formatCurrency(personData.tax_assessed)}
                                           </p>
                                         </div>
                                       </div>
@@ -1436,7 +1579,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                         <p className="font-semibold">{formatCurrency(taxData.household_totals.taxable_base)}</p>
                                       </div>
                                       <div className="bg-blue-50 p-2 rounded -m-2">
-                                        <p className="text-xs text-blue-700">Box 3 inkomen</p>
+                                        <p className="text-xs text-blue-700">Forfaitair rendement</p>
                                         <p className="font-semibold text-blue-800">{formatCurrency(taxData.household_totals.deemed_return)}</p>
                                       </div>
                                       <div className="bg-purple-50 p-2 rounded -m-2">
@@ -1474,7 +1617,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                                 <div className="flex gap-4 text-muted-foreground text-xs">
                                                   <span>Vermogen: <span className="text-foreground">{formatCurrency(personData.total_assets_box3)}</span></span>
                                                   <span>Schulden: <span className="text-foreground">{formatCurrency(personData.total_debts_box3)}</span></span>
-                                                  <span>Inkomen: <span className="text-blue-700 font-medium">{formatCurrency(personData.deemed_return)}</span></span>
+                                                  <span>Forfaitair: <span className="text-blue-700 font-medium">{formatCurrency(personData.deemed_return)}</span></span>
                                                   <span>Belasting: <span className="text-purple-700 font-medium">{formatCurrency(personData.tax_assessed)}</span></span>
                                                 </div>
                                               </div>
@@ -1512,6 +1655,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                             return asset.owner_id === selectedPersonId;
                           };
 
+                          // Filter by year AND person - show accounts that have data for this year
                           const yearBankSavings = bankSavings.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
 
                           let selectedPersonName = 'dit huishouden';
@@ -1537,12 +1681,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           let totalValue = 0;
                           let totalInterest = 0;
                           yearBankSavings.forEach(asset => {
-                            const yearData = asset.yearly_data?.[selectedYear];
-                            const val = yearData?.value_jan_1;
-                            const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                            const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                            const amount = getValueJan1(yearData);
                             if (typeof amount === 'number') totalValue += amount;
-                            const interest = yearData?.interest_received;
-                            const interestAmount = typeof interest === 'object' && interest !== null ? interest.amount : interest;
+                            const interestAmount = getFieldValue(yearData?.interest_received);
                             if (typeof interestAmount === 'number') totalInterest += interestAmount;
                           });
 
@@ -1573,16 +1715,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                   </thead>
                                   <tbody className="divide-y">
                                     {yearBankSavings.map((asset, idx) => {
-                                      const yearData = asset.yearly_data?.[selectedYear];
-                                      const val = yearData?.value_jan_1;
-                                      const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                      const interest = yearData?.interest_received;
-                                      const interestAmount = typeof interest === 'object' && interest !== null ? interest.amount : interest;
+                                      const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                      const amount = getValueJan1(yearData);
+                                      const interestAmount = getFieldValue(yearData?.interest_received);
 
                                       return (
                                         <tr key={asset.id || idx} className="hover:bg-muted/30">
                                           <td className="px-4 py-3">
-                                            <span className="font-medium">{asset.description}</span>
+                                            <span className="font-medium">{asset.description || asset.bank_name}</span>
                                             {asset.account_masked && (
                                               <span className="text-muted-foreground text-xs block">{asset.account_masked}</span>
                                             )}
@@ -1597,7 +1737,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                             {amount != null ? formatCurrency(amount) : '—'}
                                           </td>
                                           <td className="px-4 py-3 text-right text-green-600">
-                                            {interestAmount != null ? formatCurrency(interestAmount) : '—'}
+                                            {interestAmount != null ? formatCurrency(interestAmount) : <span className="text-muted-foreground text-xs">Onbekend</span>}
                                           </td>
                                         </tr>
                                       );
@@ -1628,6 +1768,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                             return asset.owner_id === selectedPersonId;
                           };
 
+                          // Filter by year AND person
                           const yearInvestments = investments.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
 
                           let selectedPersonName = 'dit huishouden';
@@ -1653,12 +1794,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           let totalValue = 0;
                           let totalDividend = 0;
                           yearInvestments.forEach(asset => {
-                            const yearData = asset.yearly_data?.[selectedYear];
-                            const val = yearData?.value_jan_1;
-                            const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                            const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                            const amount = getValueJan1(yearData);
                             if (typeof amount === 'number') totalValue += amount;
-                            const dividend = yearData?.dividend_received;
-                            const dividendAmount = typeof dividend === 'object' && dividend !== null ? dividend.amount : dividend;
+                            const dividendAmount = getFieldValue(yearData?.dividend_received);
                             if (typeof dividendAmount === 'number') totalDividend += dividendAmount;
                           });
 
@@ -1689,11 +1828,9 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                   </thead>
                                   <tbody className="divide-y">
                                     {yearInvestments.map((asset, idx) => {
-                                      const yearData = asset.yearly_data?.[selectedYear];
-                                      const val = yearData?.value_jan_1;
-                                      const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                      const dividend = yearData?.dividend_received;
-                                      const dividendAmount = typeof dividend === 'object' && dividend !== null ? dividend.amount : dividend;
+                                      const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                      const amount = getValueJan1(yearData);
+                                      const dividendAmount = getFieldValue(yearData?.dividend_received);
 
                                       const typeLabel = {
                                         stocks: 'Aandelen',
@@ -1723,7 +1860,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                             {amount != null ? formatCurrency(amount) : '—'}
                                           </td>
                                           <td className="px-4 py-3 text-right text-green-600">
-                                            {dividendAmount != null ? formatCurrency(dividendAmount) : '—'}
+                                            {dividendAmount != null ? formatCurrency(dividendAmount) : <span className="text-muted-foreground text-xs">Onbekend</span>}
                                           </td>
                                         </tr>
                                       );
@@ -1755,6 +1892,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                             return asset.owner_id === selectedPersonId;
                           };
 
+                          // Filter by year AND person
                           const yearRealEstate = realEstate.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
                           const yearOtherAssets = otherAssets.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
 
@@ -1784,12 +1922,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 let totalWoz = 0;
                                 let totalRental = 0;
                                 yearRealEstate.forEach(asset => {
-                                  const yearData = asset.yearly_data?.[selectedYear];
-                                  const val = yearData?.woz_value;
-                                  const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                  const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                  const amount = getFieldValue(yearData?.woz_value);
                                   if (typeof amount === 'number') totalWoz += amount;
-                                  const rental = yearData?.rental_income_gross;
-                                  const rentalAmount = typeof rental === 'object' && rental !== null ? rental.amount : rental;
+                                  const rentalAmount = getFieldValue(yearData?.rental_income_gross);
                                   if (typeof rentalAmount === 'number') totalRental += rentalAmount;
                                 });
 
@@ -1820,16 +1956,16 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                         </thead>
                                         <tbody className="divide-y">
                                           {yearRealEstate.map((asset, idx) => {
-                                            const yearData = asset.yearly_data?.[selectedYear];
-                                            const val = yearData?.woz_value;
-                                            const amount = typeof val === 'object' && val !== null ? val.amount : val;
-                                            const rental = yearData?.rental_income_gross;
-                                            const rentalAmount = typeof rental === 'object' && rental !== null ? rental.amount : rental;
+                                            const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                            const amount = getFieldValue(yearData?.woz_value);
+                                            const rentalAmount = getFieldValue(yearData?.rental_income_gross);
 
                                             const typeLabel = {
                                               rented_residential: 'Verhuurpand',
                                               rented_commercial: 'Commercieel',
                                               vacation_home: 'Vakantiewoning',
+                                              second_home: 'Tweede woning',
+                                              foreign_property: 'Buitenlands vastgoed',
                                               land: 'Grond',
                                               other: 'Overig',
                                             }[asset.type] || asset.type;
@@ -1851,7 +1987,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                                   {amount != null ? formatCurrency(amount) : '—'}
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-green-600">
-                                                  {rentalAmount != null ? formatCurrency(rentalAmount) : '—'}
+                                                  {rentalAmount != null ? formatCurrency(rentalAmount) : <span className="text-muted-foreground text-xs">Onbekend</span>}
                                                 </td>
                                               </tr>
                                             );
@@ -1874,13 +2010,13 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                               {yearOtherAssets.length > 0 && (() => {
                                 let totalValue = 0;
                                 yearOtherAssets.forEach(asset => {
-                                  const yearData = asset.yearly_data?.[selectedYear];
-                                  const val = yearData?.value_jan_1;
-                                  const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                  const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                  const amount = getValueJan1(yearData);
                                   if (typeof amount === 'number') totalValue += amount;
                                 });
 
                                 const typeLabels: Record<string, string> = {
+                                  premiedepot: 'Premiedepot',
                                   vve_share: 'VvE reserve',
                                   claims: 'Vorderingen',
                                   rights: 'Rechten',
@@ -1888,6 +2024,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                   loaned_money: 'Uitgeleend geld',
                                   cash: 'Contant geld',
                                   periodic_benefits: 'Periodieke uitkeringen',
+                                  crypto: 'Cryptovaluta',
                                   other: 'Overig',
                                 };
 
@@ -1916,9 +2053,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                         </thead>
                                         <tbody className="divide-y">
                                           {yearOtherAssets.map((asset, idx) => {
-                                            const yearData = asset.yearly_data?.[selectedYear];
-                                            const val = yearData?.value_jan_1;
-                                            const amount = typeof val === 'object' && val !== null ? val.amount : val;
+                                            const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                            const amount = getValueJan1(yearData);
 
                                             return (
                                               <tr key={asset.id || idx} className="hover:bg-muted/30">
@@ -1965,6 +2101,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                             return debt.owner_id === selectedPersonId;
                           };
 
+                          // Filter by year AND person
                           const yearDebts = debts.filter(d => d.yearly_data?.[selectedYear] && matchesPerson(d));
 
                           // Get selected person name for display
@@ -1992,15 +2129,12 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           let totalDec31 = 0;
                           let totalInterest = 0;
                           yearDebts.forEach(debt => {
-                            const yearData = debt.yearly_data?.[selectedYear];
-                            const jan1Val = yearData?.value_jan_1;
-                            const jan1Amount = typeof jan1Val === 'object' && jan1Val !== null ? jan1Val.amount : jan1Val;
+                            const yearData = debt.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                            const jan1Amount = getValueJan1(yearData);
                             if (typeof jan1Amount === 'number') totalJan1 += jan1Amount;
-                            const dec31Val = yearData?.value_dec_31;
-                            const dec31Amount = typeof dec31Val === 'object' && dec31Val !== null ? dec31Val.amount : dec31Val;
+                            const dec31Amount = getFieldValue(yearData?.value_dec_31);
                             if (typeof dec31Amount === 'number') totalDec31 += dec31Amount;
-                            const interestVal = yearData?.interest_paid;
-                            const interestAmount = typeof interestVal === 'object' && interestVal !== null ? interestVal.amount : interestVal;
+                            const interestAmount = getFieldValue(yearData?.interest_paid);
                             if (typeof interestAmount === 'number') totalInterest += interestAmount;
                           });
 
@@ -2031,13 +2165,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                   </thead>
                                   <tbody className="divide-y">
                                     {yearDebts.map((debt, idx) => {
-                                      const yearData = debt.yearly_data?.[selectedYear];
-                                      const jan1Val = yearData?.value_jan_1;
-                                      const jan1Amount = typeof jan1Val === 'object' && jan1Val !== null ? jan1Val.amount : jan1Val;
-                                      const dec31Val = yearData?.value_dec_31;
-                                      const dec31Amount = typeof dec31Val === 'object' && dec31Val !== null ? dec31Val.amount : dec31Val;
-                                      const interestVal = yearData?.interest_paid;
-                                      const interestAmount = typeof interestVal === 'object' && interestVal !== null ? interestVal.amount : interestVal;
+                                      const yearData = debt.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                      const jan1Amount = getValueJan1(yearData);
+                                      const dec31Amount = getFieldValue(yearData?.value_dec_31);
+                                      const interestAmount = getFieldValue(yearData?.interest_paid);
 
                                       return (
                                         <tr key={debt.id || idx} className="hover:bg-muted/30">
@@ -2051,7 +2182,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                             {dec31Amount != null ? formatCurrency(dec31Amount) : '—'}
                                           </td>
                                           <td className="px-4 py-3 text-right text-orange-600">
-                                            {interestAmount != null ? formatCurrency(interestAmount) : '—'}
+                                            {interestAmount != null ? formatCurrency(interestAmount) : <span className="text-muted-foreground text-xs">Onbekend</span>}
                                           </td>
                                         </tr>
                                       );
@@ -2106,10 +2237,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
               <div className="space-y-4">
                 {/* AI Debug Info */}
                 {debugInfo && (
-                  <RawOutputPanel
-                    debugInfo={debugInfo}
-                    systemPrompt={systemPrompt}
-                  />
+                  <RawOutputPanel debugInfo={debugInfo} />
                 )}
 
                 {/* Blueprint Debug */}

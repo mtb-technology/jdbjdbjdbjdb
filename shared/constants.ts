@@ -388,3 +388,70 @@ export function getLatestConceptText(conceptVersions: ConceptVersionsMap | null 
 
   return '';
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BOX3 VALIDATOR CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Box3 module constants - shared between client and server
+ */
+export const BOX3_CONSTANTS = {
+  /**
+   * Minimum indicative refund (EUR) to be considered profitable.
+   * Below this amount, the cost of filing an objection exceeds the potential benefit.
+   */
+  MINIMUM_PROFITABLE_AMOUNT: 250,
+
+  /**
+   * Request timeout for AI processing (ms) - 5 minutes.
+   * Used for validation and revalidation requests that involve LLM processing.
+   */
+  AI_TIMEOUT_MS: 5 * 60 * 1000,
+
+  /**
+   * Maximum file size for uploads (bytes) - 25MB.
+   * Lower than general upload limit due to vision processing constraints.
+   */
+  MAX_FILE_SIZE_BYTES: 25 * 1024 * 1024,
+
+  /**
+   * Maximum file size for uploads (MB) - for display purposes.
+   */
+  MAX_FILE_SIZE_MB: 25,
+
+  /**
+   * Maximum number of files per upload request.
+   */
+  MAX_FILES_PER_UPLOAD: 10,
+
+  /**
+   * Allowed file types for Box3 uploads.
+   */
+  ALLOWED_MIME_TYPES: [
+    'application/pdf',
+    'text/plain',
+    'application/octet-stream', // For .pdf and .txt with incorrect mime
+    'image/jpeg',
+    'image/png',
+  ] as const,
+
+  /**
+   * Allowed file extensions for Box3 uploads.
+   */
+  ALLOWED_EXTENSIONS: ['pdf', 'txt', 'jpg', 'jpeg', 'png'] as const,
+
+  /**
+   * Box 3 tax rates per year (decimal form, e.g., 0.36 = 36%)
+   */
+  TAX_RATES: {
+    '2024': 0.36,
+    '2023': 0.32,
+    '2022': 0.31,
+    '2021': 0.31,
+    '2020': 0.30,
+    '2019': 0.30,
+    '2018': 0.30,
+    '2017': 0.30,
+  } as Record<string, number>,
+} as const;

@@ -747,6 +747,166 @@ export const insertBox3BlueprintSchema = createInsertSchema(box3Blueprints, {
 }).omit({ id: true, createdAt: true });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MULTI-STAGE PIPELINE TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Stage 1: Document Classification Result
+ */
+export interface Box3ClassificationResult {
+  document_id: string;
+  detected_type: Box3SourceDocumentEntry['detected_type'];
+  detected_tax_years: number[];
+  detected_persons: Array<{
+    name: string;
+    bsn_last4?: string;
+    role: 'taxpayer' | 'partner';
+  }>;
+  asset_hints: {
+    bank_accounts: Array<{ bank_name: string; account_last4?: string }>;
+    properties: Array<{ address?: string; postcode?: string }>;
+    investments: Array<{ institution?: string }>;
+  };
+  confidence: number;
+  notes?: string;
+}
+
+/**
+ * Stage 2: Asset References (checklist from aangifte)
+ */
+export interface Box3AssetReferences {
+  bank_count: number;
+  bank_descriptions: string[];
+  investment_count: number;
+  investment_descriptions: string[];
+  real_estate_count: number;
+  real_estate_descriptions: string[];
+  other_assets_count: number;
+  other_descriptions: string[];
+}
+
+/**
+ * Stage 2: Tax Authority Extraction Result
+ */
+export interface Box3TaxAuthorityExtractionResult {
+  fiscal_entity: Box3FiscalEntity;
+  tax_authority_data: Record<string, Box3TaxAuthorityYearData>;
+  asset_references: Box3AssetReferences;
+}
+
+/**
+ * Stage 3: Asset Extraction Notes (per category)
+ */
+export interface Box3ExtractionNotes {
+  total_found: number;
+  expected_from_checklist: number;
+  missing: string[];
+  warnings: string[];
+}
+
+/**
+ * Stage 3a: Bank Extraction Result
+ */
+export interface Box3BankExtractionResult {
+  bank_savings: Box3BankSavingsAsset[];
+  extraction_notes: Box3ExtractionNotes;
+}
+
+/**
+ * Stage 3b: Investment Extraction Result
+ */
+export interface Box3InvestmentExtractionResult {
+  investments: Box3InvestmentAsset[];
+  extraction_notes: Box3ExtractionNotes;
+}
+
+/**
+ * Stage 3c: Real Estate Extraction Result
+ */
+export interface Box3RealEstateExtractionResult {
+  real_estate: Box3RealEstateAsset[];
+  extraction_notes: Box3ExtractionNotes & {
+    peildatum_mappings?: Array<{
+      peildatum: string;
+      applies_to_tax_year: number;
+    }>;
+  };
+}
+
+/**
+ * Stage 3d: Other Assets & Debts Extraction Result
+ */
+export interface Box3OtherAssetsExtractionResult {
+  other_assets: Box3OtherAsset[];
+  debts: Box3Debt[];
+  extraction_notes: Box3ExtractionNotes;
+}
+
+/**
+ * Stage 5: Validation Result
+ */
+export interface Box3ValidationResult {
+  is_valid: boolean;
+  checks: Box3ValidationCheck[];
+  summary: {
+    total_checks: number;
+    passed: number;
+    warnings: number;
+    errors: number;
+  };
+}
+
+export interface Box3ValidationCheck {
+  check_type: 'asset_total' | 'asset_count' | 'interest_plausibility' | 'missing_data' | 'discrepancy';
+  year?: string;
+  passed: boolean;
+  severity: 'info' | 'warning' | 'error';
+  message: string;
+  details?: {
+    expected?: number;
+    actual?: number;
+    difference?: number;
+    field?: string;
+  };
+}
+
+/**
+ * Multi-Stage Pipeline Progress
+ */
+export interface Box3PipelineProgress {
+  stage: 'classification' | 'tax_authority' | 'assets' | 'merge' | 'validation' | 'complete';
+  stage_number: number;
+  total_stages: number;
+  message: string;
+  sub_progress?: {
+    current: number;
+    total: number;
+    item?: string;
+  };
+}
+
+/**
+ * Multi-Stage Pipeline Result
+ */
+export interface Box3MultiStageResult {
+  blueprint: Box3Blueprint;
+  classification_results: Box3ClassificationResult[];
+  tax_authority_result: Box3TaxAuthorityExtractionResult | null;
+  asset_results: {
+    banks: Box3BankExtractionResult | null;
+    investments: Box3InvestmentExtractionResult | null;
+    real_estate: Box3RealEstateExtractionResult | null;
+    other: Box3OtherAssetsExtractionResult | null;
+  };
+  validation_result: Box3ValidationResult;
+  timing: {
+    total_ms: number;
+    stage_times: Record<string, number>;
+  };
+  errors: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 

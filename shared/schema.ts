@@ -445,6 +445,11 @@ export const toolAiConfigSchema = z.object({
   description: z.string().optional(), // Voor UI weergave
 });
 
+// Schema voor Box 3 Validator configuratie
+export const box3ConfigSchema = z.object({
+  emailPrompt: z.string().default(""), // Prompt for generating follow-up emails
+});
+
 // Multi-stage prompting workflow schema
 export const promptConfigSchema = z.object({
   // === RAPPORT STAGES ===
@@ -464,6 +469,9 @@ export const promptConfigSchema = z.object({
   // === TOOLS (alleen AI config, geen prompts) ===
   "test_ai": toolAiConfigSchema.optional(), // AI Test functionaliteit
   "follow_up_assistant": toolAiConfigSchema.optional(), // Email assistant
+
+  // === BOX 3 VALIDATOR ===
+  "box3Config": box3ConfigSchema.optional(), // Box 3 validator settings
 
   // === GLOBAL DEFAULTS ===
   aiConfig: aiConfigSchema.optional(),
@@ -571,6 +579,7 @@ export type DossierData = z.infer<typeof dossierSchema>;
 /** AI configuration types */
 export type AiConfig = z.infer<typeof aiConfigSchema>;
 export type StageConfig = z.infer<typeof stageConfigSchema>;
+export type Box3Config = z.infer<typeof box3ConfigSchema>;
 
 /** Stage execution tracking */
 export type ReportStage = z.infer<typeof reportStageSchema>;

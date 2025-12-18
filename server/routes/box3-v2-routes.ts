@@ -24,6 +24,7 @@ import { logger } from "../services/logger";
 import { Box3ExtractionPipeline, type PipelineDocument } from "../services/box3-extraction-pipeline";
 import { Box3MergeEngine } from "../services/box3-merge-engine";
 import type { Box3Blueprint, Box3DocumentClassification } from "@shared/schema";
+import { BOX3_CONSTANTS } from "@shared/constants";
 
 export const box3V2Router = Router();
 
@@ -38,16 +39,16 @@ async function getPdfParse() {
   return pdfParseFunc;
 }
 
-// Configure multer for memory storage
+// Configure multer for memory storage using shared constants
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 25 * 1024 * 1024, // 25MB max
+    fileSize: BOX3_CONSTANTS.MAX_FILE_SIZE_BYTES,
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['application/pdf', 'text/plain', 'application/octet-stream', 'image/jpeg', 'image/png'];
     const ext = file.originalname.toLowerCase().split('.').pop();
-    const allowedExtensions = ['pdf', 'txt', 'jpg', 'jpeg', 'png'];
+    const allowedTypes = BOX3_CONSTANTS.ALLOWED_MIME_TYPES as readonly string[];
+    const allowedExtensions = BOX3_CONSTANTS.ALLOWED_EXTENSIONS as readonly string[];
 
     if (allowedTypes.includes(file.mimetype) || (ext && allowedExtensions.includes(ext))) {
       cb(null, true);
@@ -246,8 +247,10 @@ box3V2Router.post(
 
     logger.info('box3-v2', 'Blueprint v1 created', { dossierId: dossier.id });
 
-    // Update document classifications from source_documents_registry
+    // Update document classifications from source_documents_registry (batched)
     if (blueprint.source_documents_registry) {
+      const updates: Array<{ id: string; data: { classification: Box3DocumentClassification; extractionSummary: string | null } }> = [];
+
       for (const regEntry of blueprint.source_documents_registry) {
         const matchingDoc = pipelineDocs.find(d =>
           d.filename.toLowerCase() === regEntry.filename.toLowerCase() ||
@@ -256,18 +259,23 @@ box3V2Router.post(
         );
 
         if (matchingDoc) {
-          const classification: Box3DocumentClassification = {
-            document_type: mapDetectedTypeToClassification(regEntry.detected_type),
-            tax_years: regEntry.detected_tax_year ? [String(regEntry.detected_tax_year)] : [],
-            for_person: null,
-            confidence: regEntry.is_readable ? 'high' : 'low',
-          };
-
-          await storage.updateBox3Document(matchingDoc.id, {
-            classification,
-            extractionSummary: regEntry.notes || null,
+          updates.push({
+            id: matchingDoc.id,
+            data: {
+              classification: {
+                document_type: mapDetectedTypeToClassification(regEntry.detected_type),
+                tax_years: regEntry.detected_tax_year ? [String(regEntry.detected_tax_year)] : [],
+                for_person: null,
+                confidence: regEntry.is_readable ? 'high' : 'low',
+              },
+              extractionSummary: regEntry.notes || null,
+            },
           });
         }
+      }
+
+      if (updates.length > 0) {
+        await storage.updateBox3DocumentsBatch(updates);
       }
     }
 
@@ -328,22 +336,11 @@ function mapDetectedTypeToClassification(detectedType: string): Box3DocumentClas
 box3V2Router.get(
   "/dossiers",
   asyncHandler(async (req: Request, res: Response) => {
-    const dossiers = await storage.getAllBox3Dossiers();
-
-    // Return light version (no file data)
-    const dossiersLight = dossiers.map(d => ({
-      id: d.id,
-      dossierNummer: d.dossierNummer,
-      clientName: d.clientName,
-      clientEmail: d.clientEmail,
-      status: d.status,
-      taxYears: d.taxYears,
-      hasFiscalPartner: d.hasFiscalPartner,
-      createdAt: d.createdAt,
-      updatedAt: d.updatedAt,
-    }));
-
-    res.json(createApiSuccessResponse(dossiersLight));
+    const start = Date.now();
+    // Use light query - excludes intakeText for faster loading
+    const dossiers = await storage.getAllBox3DossiersLight();
+    logger.info('box3-v2', `GET /dossiers query took ${Date.now() - start}ms`, { count: dossiers.length });
+    res.json(createApiSuccessResponse(dossiers));
   })
 );
 
@@ -554,6 +551,9 @@ box3V2Router.post(
       conflictsDetected: 0,
     };
 
+    // Collect document classification updates for batch processing
+    const docUpdates: Array<{ id: string; data: { classification: Box3DocumentClassification; extractionSummary: string } }> = [];
+
     for (const result of extractionResults) {
       if (result.error) {
         logger.warn('box3-v2', 'Skipping failed extraction', {
@@ -575,18 +575,24 @@ box3V2Router.post(
       mergeStats.valuesSkipped += mergeResult.stats.valuesSkipped;
       mergeStats.conflictsDetected += mergeResult.stats.conflictsDetected;
 
-      // Update document classification
-      const classification: Box3DocumentClassification = {
-        document_type: mapDetectedTypeToClassification(result.extraction.detected_type),
-        tax_years: result.extraction.detected_tax_years,
-        for_person: result.extraction.detected_person,
-        confidence: result.extraction.claims.length > 0 ? 'high' : 'low',
-      };
-
-      await storage.updateBox3Document(result.extraction.document_id, {
-        classification,
-        extractionSummary: `${result.extraction.claims.length} claims geëxtraheerd`,
+      // Collect document classification update
+      docUpdates.push({
+        id: result.extraction.document_id,
+        data: {
+          classification: {
+            document_type: mapDetectedTypeToClassification(result.extraction.detected_type),
+            tax_years: result.extraction.detected_tax_years,
+            for_person: result.extraction.detected_person,
+            confidence: result.extraction.claims.length > 0 ? 'high' : 'low',
+          },
+          extractionSummary: `${result.extraction.claims.length} claims geëxtraheerd`,
+        },
       });
+    }
+
+    // Batch update all document classifications
+    if (docUpdates.length > 0) {
+      await storage.updateBox3DocumentsBatch(docUpdates);
     }
 
     // Step 5: Save new blueprint version
@@ -730,26 +736,33 @@ box3V2Router.post(
       hasFiscalPartner,
     });
 
-    // Update document classifications from source_documents_registry
+    // Update document classifications from source_documents_registry (batched)
     if (blueprint.source_documents_registry) {
+      const updates: Array<{ id: string; data: { classification: Box3DocumentClassification; extractionSummary: string | null } }> = [];
+
       for (let i = 0; i < blueprint.source_documents_registry.length; i++) {
         const regEntry = blueprint.source_documents_registry[i];
         // Match by index since AI generates its own filenames
         const matchingDoc = documents[i];
 
         if (matchingDoc) {
-          const classification: Box3DocumentClassification = {
-            document_type: mapDetectedTypeToClassification(regEntry.detected_type),
-            tax_years: regEntry.detected_tax_year ? [String(regEntry.detected_tax_year)] : [],
-            for_person: null,
-            confidence: regEntry.is_readable ? 'high' : 'low',
-          };
-
-          await storage.updateBox3Document(matchingDoc.id, {
-            classification,
-            extractionSummary: regEntry.notes || null,
+          updates.push({
+            id: matchingDoc.id,
+            data: {
+              classification: {
+                document_type: mapDetectedTypeToClassification(regEntry.detected_type),
+                tax_years: regEntry.detected_tax_year ? [String(regEntry.detected_tax_year)] : [],
+                for_person: null,
+                confidence: regEntry.is_readable ? 'high' : 'low',
+              },
+              extractionSummary: regEntry.notes || null,
+            },
           });
         }
+      }
+
+      if (updates.length > 0) {
+        await storage.updateBox3DocumentsBatch(updates);
       }
     }
 
@@ -813,8 +826,13 @@ box3V2Router.get(
       throw ServerError.notFound("Dossier");
     }
 
+    const versionNum = parseInt(version, 10);
+    if (isNaN(versionNum)) {
+      throw ServerError.validation("Invalid version parameter", "Ongeldige versie nummer");
+    }
+
     const blueprints = await storage.getAllBox3Blueprints(id);
-    const blueprint = blueprints.find(b => b.version === parseInt(version, 10));
+    const blueprint = blueprints.find(b => b.version === versionNum);
 
     if (!blueprint) {
       throw ServerError.notFound(`Blueprint versie ${version}`);
@@ -847,5 +865,176 @@ box3V2Router.get(
     });
 
     res.send(buffer);
+  })
+);
+
+/**
+ * Generate follow-up email based on dossier status
+ * POST /api/box3-v2/dossiers/:id/generate-email
+ *
+ * Generates a contextual email based on the current state of the dossier:
+ * - Missing documents: Request for additional documents
+ * - Not profitable: Explain that costs outweigh potential refund
+ * - Profitable: Congratulate and offer to file objection
+ */
+box3V2Router.post(
+  "/dossiers/:id/generate-email",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { emailType } = req.body; // Optional: 'request_docs' | 'not_profitable' | 'profitable' | 'auto'
+
+    const data = await storage.getBox3DossierWithLatestBlueprint(id);
+    if (!data) {
+      throw ServerError.notFound("Dossier");
+    }
+
+    const { dossier } = data;
+    const blueprint = data.blueprint?.blueprint as Box3Blueprint | null;
+    if (!blueprint) {
+      throw ServerError.validation("No blueprint", "Dossier heeft nog geen gevalideerde data");
+    }
+
+    // Analyze the dossier status
+    const years = Object.keys(blueprint.year_summaries || {});
+    const allMissingItems: Array<{ year: string; description: string }> = [];
+    let totalIndicativeRefund = 0;
+    let totalDeemedReturn = 0;
+    let hasCompleteData = true;
+
+    years.forEach(year => {
+      const summary = blueprint.year_summaries?.[year];
+      const missingItems = summary?.missing_items || [];
+      missingItems.forEach(item => {
+        // Handle both string items and object items with description field
+        const description = typeof item === 'string' ? item : item.description;
+        allMissingItems.push({ year, description });
+      });
+
+      if (summary?.status === 'incomplete') {
+        hasCompleteData = false;
+      }
+
+      totalIndicativeRefund += summary?.calculated_totals?.indicative_refund || 0;
+      totalDeemedReturn += summary?.calculated_totals?.deemed_return_from_tax_authority || 0;
+    });
+
+    // Determine email type automatically if not specified
+    let determinedType = emailType || 'auto';
+
+    if (determinedType === 'auto') {
+      if (allMissingItems.length > 0) {
+        determinedType = 'request_docs';
+      } else if (totalIndicativeRefund > BOX3_CONSTANTS.MINIMUM_PROFITABLE_AMOUNT) {
+        determinedType = 'profitable';
+      } else {
+        determinedType = 'not_profitable';
+      }
+    }
+
+    // Get client info
+    const clientName = dossier.clientName || 'heer/mevrouw';
+    const firstName = clientName.split(' ')[0];
+    const yearRange = years.length > 1 ? `${Math.min(...years.map(Number))}-${Math.max(...years.map(Number))}` : years[0];
+
+    // Generate email based on type
+    let subject = '';
+    let body = '';
+
+    if (determinedType === 'request_docs') {
+      subject = `Box 3 bezwaar ${yearRange} - aanvullende documenten nodig`;
+
+      // Group missing items by year
+      const missingByYear: Record<string, string[]> = {};
+      allMissingItems.forEach(item => {
+        if (!missingByYear[item.year]) missingByYear[item.year] = [];
+        missingByYear[item.year].push(item.description);
+      });
+
+      const missingListHtml = Object.entries(missingByYear)
+        .map(([year, items]) => `<p><strong>${year}:</strong></p><ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`)
+        .join('');
+
+      body = `<p>Beste ${firstName},</p>
+
+<p>Bedankt voor uw aanmelding voor het Box 3 bezwaar over ${yearRange}.</p>
+
+<p>Om te kunnen beoordelen of bezwaar maken voor u voordelig is, hebben wij nog de volgende documenten nodig:</p>
+
+${missingListHtml}
+
+<p>Met deze documenten kunnen wij berekenen wat uw werkelijke rendement was en of dit lager ligt dan het forfaitaire rendement dat de Belastingdienst heeft gehanteerd.</p>
+
+<p>U kunt de documenten eenvoudig uploaden via uw persoonlijke dossier of als bijlage bij een reply op deze email sturen.</p>
+
+<p>Heeft u vragen? Neem gerust contact met ons op.</p>
+
+<p>Met vriendelijke groet,</p>`;
+
+    } else if (determinedType === 'not_profitable') {
+      subject = `Box 3 bezwaar ${yearRange} - onze beoordeling`;
+
+      const refundText = totalIndicativeRefund > 0
+        ? `De indicatieve teruggave bedraagt €${totalIndicativeRefund.toFixed(2)}.`
+        : 'Op basis van de gegevens is er geen teruggave te verwachten.';
+
+      body = `<p>Beste ${firstName},</p>
+
+<p>Wij hebben uw Box 3 gegevens over ${yearRange} beoordeeld.</p>
+
+<p><strong>Conclusie:</strong> Bezwaar maken is in uw situatie helaas niet rendabel.</p>
+
+<p>${refundText} De kosten voor het indienen van een bezwaarschrift bedragen €${BOX3_CONSTANTS.MINIMUM_PROFITABLE_AMOUNT},-. Omdat de mogelijke teruggave lager is dan deze kosten, raden wij af om bezwaar te maken.</p>
+
+<p><strong>Waarom geen voordeel?</strong></p>
+<p>Het Box 3 bezwaar is gebaseerd op het verschil tussen uw werkelijke rendement en het forfaitaire rendement dat de Belastingdienst hanteert. In uw geval ligt uw werkelijke rendement niet significant lager dan het forfaitaire rendement.</p>
+
+<p>Mocht uw situatie in de toekomst veranderen (bijvoorbeeld door lagere rendementen op spaargeld), dan kunt u altijd opnieuw contact met ons opnemen.</p>
+
+<p>Heeft u vragen over deze beoordeling? Wij lichten het graag toe.</p>
+
+<p>Met vriendelijke groet,</p>`;
+
+    } else { // profitable
+      subject = `Box 3 bezwaar ${yearRange} - goed nieuws!`;
+
+      body = `<p>Beste ${firstName},</p>
+
+<p>Goed nieuws! Wij hebben uw Box 3 gegevens over ${yearRange} beoordeeld en bezwaar maken is in uw situatie <strong>wél voordelig</strong>.</p>
+
+<p><strong>Indicatieve teruggave: €${totalIndicativeRefund.toFixed(2)}</strong></p>
+
+<p>Dit bedrag is gebaseerd op het verschil tussen uw werkelijke rendement en het forfaitaire rendement dat de Belastingdienst heeft gehanteerd. De daadwerkelijke teruggave kan afwijken afhankelijk van de definitieve beoordeling door de Belastingdienst.</p>
+
+<p><strong>Hoe nu verder?</strong></p>
+<p>Als u wilt dat wij het bezwaarschrift voor u opstellen en indienen, dan kunt u dat via deze link bevestigen. De kosten hiervoor bedragen €${BOX3_CONSTANTS.MINIMUM_PROFITABLE_AMOUNT},-.</p>
+
+<p>Na uw bevestiging stellen wij het bezwaarschrift op en dienen dit namens u in bij de Belastingdienst.</p>
+
+<p>Heeft u vragen? Neem gerust contact met ons op.</p>
+
+<p>Met vriendelijke groet,</p>`;
+    }
+
+    logger.info('box3-v2', 'Generated follow-up email', {
+      dossierId: id,
+      emailType: determinedType,
+      indicativeRefund: totalIndicativeRefund,
+      missingItemsCount: allMissingItems.length,
+    });
+
+    res.json(createApiSuccessResponse({
+      emailType: determinedType,
+      subject,
+      body,
+      metadata: {
+        clientName,
+        yearRange,
+        totalIndicativeRefund,
+        totalDeemedReturn,
+        missingItemsCount: allMissingItems.length,
+        hasCompleteData,
+        minimumProfitableAmount: BOX3_CONSTANTS.MINIMUM_PROFITABLE_AMOUNT,
+      }
+    }, "Email gegenereerd"));
   })
 );

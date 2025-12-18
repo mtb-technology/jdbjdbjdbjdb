@@ -1,117 +1,63 @@
-import { useState, useEffect } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+/**
+ * Box 3 Settings Card
+ *
+ * Displays Box 3 configuration settings in the settings page:
+ * - E-mail prompt for follow-up emails
+ * - Reference table with forfaitaire rendementen
+ */
+
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RotateCcw, Info, Calculator, Mail } from "lucide-react";
+import { RotateCcw, Info, Calculator, Mail, FileCheck } from "lucide-react";
 import {
   FORFAITAIRE_RENDEMENTEN,
   BOX3_TARIEVEN,
 } from "@/constants/box3.constants";
+import type { Box3Config } from "@shared/schema";
 
-// =============================================================================
-// NOTE: Intake prompt is NO LONGER used - pipeline has built-in prompts
-// Only email prompt remains configurable
-// =============================================================================
+// Re-export the type for convenience
+export type { Box3Config } from "@shared/schema";
 
-export const DEFAULT_INTAKE_PROMPT = ""; // Deprecated - pipeline uses built-in prompts
-export const DEFAULT_EMAIL_PROMPT = "";
-
-// Legacy export for backwards compatibility (also empty)
-export const DEFAULT_BOX3_SYSTEM_PROMPT = "";
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-export interface Box3Prompts {
-  intake: string; // Deprecated - kept for backwards compat
-  email: string;
-}
-
-interface Box3SettingsModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  prompts: Box3Prompts;
-  onPromptsChange: (prompts: Box3Prompts) => void;
-  // Legacy support
-  systemPrompt?: string;
-  onSystemPromptChange?: (prompt: string) => void;
+interface Box3SettingsCardProps {
+  config: Box3Config | undefined;
+  onConfigChange: (field: keyof Box3Config, value: string) => void;
 }
 
 // =============================================================================
 // COMPONENT
 // =============================================================================
 
-export function Box3SettingsModal({
-  open,
-  onOpenChange,
-  prompts,
-  onPromptsChange,
-  // Legacy props - if provided, use them for backwards compatibility
-  systemPrompt,
-  onSystemPromptChange,
-}: Box3SettingsModalProps) {
-  // If using legacy props, convert to new format
-  const effectivePrompts: Box3Prompts = prompts || {
-    intake: systemPrompt || DEFAULT_INTAKE_PROMPT,
-    email: DEFAULT_EMAIL_PROMPT,
-  };
-
-  const [localPrompts, setLocalPrompts] = useState<Box3Prompts>(effectivePrompts);
+export function Box3SettingsCard({ config, onConfigChange }: Box3SettingsCardProps) {
   const [activeTab, setActiveTab] = useState("email");
 
-  useEffect(() => {
-    if (prompts) {
-      setLocalPrompts(prompts);
-    } else if (systemPrompt) {
-      setLocalPrompts((prev) => ({ ...prev, intake: systemPrompt }));
-    }
-  }, [prompts, systemPrompt]);
+  const emailPrompt = config?.emailPrompt || "";
+  const isEmailConfigured = emailPrompt.trim().length > 0;
 
-  const handleSave = () => {
-    if (onPromptsChange) {
-      onPromptsChange(localPrompts);
-    }
-    // Legacy support
-    if (onSystemPromptChange && !onPromptsChange) {
-      onSystemPromptChange(localPrompts.intake);
-    }
-    onOpenChange(false);
-  };
-
-  const handleClear = (promptType: keyof Box3Prompts) => {
-    setLocalPrompts((prev) => ({ ...prev, [promptType]: "" }));
-  };
-
-  const handleClearAll = () => {
-    setLocalPrompts({
-      intake: "",
-      email: "",
-    });
-  };
-
-  // Check if prompts are configured
-  const isEmailConfigured = localPrompts.email.trim().length > 0;
-
-  const updatePrompt = (key: keyof Box3Prompts, value: string) => {
-    setLocalPrompts((prev) => ({ ...prev, [key]: value }));
+  const handleClearEmail = () => {
+    onConfigChange("emailPrompt", "");
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Box 3 Validator Instellingen</DialogTitle>
-        </DialogHeader>
-
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+            <FileCheck className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <CardTitle className="text-lg">Box 3 Validator</CardTitle>
+            <CardDescription>
+              Configureer de e-mail prompt en bekijk de forfaitaire rendementen referentie
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="email" className="flex items-center gap-2">
@@ -139,7 +85,7 @@ export function Box3SettingsModal({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleClear("email")}
+                  onClick={handleClearEmail}
                   className="h-8"
                   disabled={!isEmailConfigured}
                 >
@@ -159,9 +105,9 @@ export function Box3SettingsModal({
               )}
               <Textarea
                 id="email-prompt"
-                value={localPrompts.email}
-                onChange={(e) => updatePrompt("email", e.target.value)}
-                className="font-mono text-sm min-h-[400px]"
+                value={emailPrompt}
+                onChange={(e) => onConfigChange("emailPrompt", e.target.value)}
+                className="font-mono text-sm min-h-[300px]"
                 placeholder="Voer de e-mail prompt in..."
               />
             </div>
@@ -215,28 +161,7 @@ export function Box3SettingsModal({
             </div>
           </TabsContent>
         </Tabs>
-
-        {/* Actions */}
-        <div className="flex justify-between items-center pt-4 border-t">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClearAll}
-            disabled={!isEmailConfigured}
-          >
-            <RotateCcw className="h-4 w-4 mr-2" />
-            Wis prompt
-          </Button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Annuleren
-            </Button>
-            <Button onClick={handleSave}>
-              Opslaan
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+      </CardContent>
+    </Card>
   );
 }

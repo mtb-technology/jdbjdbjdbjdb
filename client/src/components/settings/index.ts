@@ -12,3 +12,4 @@ export { GlobalAiConfigCard } from "./GlobalAiConfigCard";
 export { PipelineHeader } from "./PipelineHeader";
 export { WorkflowInfoCard } from "./WorkflowInfoCard";
 export { ToolAiConfigCard, TOOL_CONFIGS } from "./ToolAiConfigCard";
+export { Box3SettingsCard, type Box3Config } from "./Box3SettingsCard";

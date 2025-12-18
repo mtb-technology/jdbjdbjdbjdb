@@ -23,38 +23,19 @@ interface DebugInfo {
   pipelineErrors?: string[];
 }
 
-// V2 interface - simplified
+// V2 interface - simplified (systemPrompt removed - pipeline has built-in prompts)
 interface RawOutputPanelPropsV2 {
   debugInfo: DebugInfo;
-  systemPrompt: string;
 }
 
-// Legacy V1 interface - for backwards compatibility
-interface RawOutputPanelPropsV1 {
-  validationResult: Record<string, any>;
-  lastUsedPrompt: string | null;
-  systemPrompt: string;
-  debugInfo?: DebugInfo | null;
-}
-
-type RawOutputPanelProps = RawOutputPanelPropsV2 | RawOutputPanelPropsV1;
-
-// Type guard
-function isV2Props(props: RawOutputPanelProps): props is RawOutputPanelPropsV2 {
-  return !('validationResult' in props) && 'debugInfo' in props && props.debugInfo !== null;
-}
+type RawOutputPanelProps = RawOutputPanelPropsV2;
 
 export const RawOutputPanel = memo(function RawOutputPanel(props: RawOutputPanelProps) {
   const [showRawOutput, setShowRawOutput] = useState(false);
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [localDebugInfo, setLocalDebugInfo] = useState<DebugInfo | null>(null);
 
-  // Determine which props format we're using
-  const isV2 = isV2Props(props);
-  const debugInfo = isV2 ? props.debugInfo : (props as RawOutputPanelPropsV1).debugInfo;
-  const systemPrompt = props.systemPrompt;
-  const validationResult = isV2 ? null : (props as RawOutputPanelPropsV1).validationResult;
-  const lastUsedPrompt = isV2 ? null : (props as RawOutputPanelPropsV1).lastUsedPrompt;
+  const debugInfo = props.debugInfo;
 
   // Try to load from localStorage if not provided
   useEffect(() => {
@@ -102,31 +83,30 @@ export const RawOutputPanel = memo(function RawOutputPanel(props: RawOutputPanel
       {showRawOutput && (
         <div className="p-4 space-y-4 border-t border-orange-200 bg-orange-50/30">
           {/* Full Prompt (Input) */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <Label className="text-sm font-semibold text-orange-800">
-                Volledige Prompt (Input naar AI)
-              </Label>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => copyToClipboard(
-                  effectiveDebug?.fullPrompt || lastUsedPrompt || systemPrompt,
-                  'prompt'
-                )}
-                className="h-7 text-xs"
-              >
-                {copiedSection === 'prompt' ? (
-                  <><Check className="h-3 w-3 mr-1" /> Gekopieerd</>
-                ) : (
-                  <><Copy className="h-3 w-3 mr-1" /> Kopieer</>
-                )}
-              </Button>
+          {effectiveDebug?.fullPrompt && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-sm font-semibold text-orange-800">
+                  Volledige Prompt (Input naar AI)
+                </Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => copyToClipboard(effectiveDebug.fullPrompt || '', 'prompt')}
+                  className="h-7 text-xs"
+                >
+                  {copiedSection === 'prompt' ? (
+                    <><Check className="h-3 w-3 mr-1" /> Gekopieerd</>
+                  ) : (
+                    <><Copy className="h-3 w-3 mr-1" /> Kopieer</>
+                  )}
+                </Button>
+              </div>
+              <pre className="bg-white border rounded p-3 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap">
+                {effectiveDebug.fullPrompt}
+              </pre>
             </div>
-            <pre className="bg-white border rounded p-3 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap">
-              {effectiveDebug?.fullPrompt || lastUsedPrompt || systemPrompt}
-            </pre>
-          </div>
+          )}
 
           {/* Raw AI Response (before JSON parsing) */}
           {effectiveDebug?.rawAiResponse && (
@@ -150,32 +130,6 @@ export const RawOutputPanel = memo(function RawOutputPanel(props: RawOutputPanel
               </div>
               <pre className="bg-white border rounded p-3 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap">
                 {effectiveDebug.rawAiResponse}
-              </pre>
-            </div>
-          )}
-
-          {/* Parsed JSON Output (V1 only) */}
-          {validationResult && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-sm font-semibold text-orange-800">
-                  Geparsed validationResult (na JSON parsing)
-                </Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => copyToClipboard(JSON.stringify(validationResult, null, 2), 'parsed')}
-                  className="h-7 text-xs"
-                >
-                  {copiedSection === 'parsed' ? (
-                    <><Check className="h-3 w-3 mr-1" /> Gekopieerd</>
-                  ) : (
-                    <><Copy className="h-3 w-3 mr-1" /> Kopieer</>
-                  )}
-                </Button>
-              </div>
-              <pre className="bg-white border rounded p-3 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap">
-                {JSON.stringify(validationResult, null, 2)}
               </pre>
             </div>
           )}

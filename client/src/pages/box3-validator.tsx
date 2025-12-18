@@ -7,8 +7,9 @@
  * - New case view: Create new validation (creates dossier + blueprint)
  */
 
-import { useState, useCallback, memo, useEffect } from "react";
+import { useState, useCallback, memo, useEffect, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { AppHeader } from "@/components/app-header";
 
 // Hooks
@@ -17,17 +18,13 @@ import { useBox3Validation } from "@/hooks/useBox3Validation";
 
 // Components
 import {
-  Box3SettingsModal,
-  DEFAULT_INTAKE_PROMPT,
-  DEFAULT_EMAIL_PROMPT,
   Box3CaseList,
   Box3CaseDetail,
   Box3NewCase,
 } from "@/components/box3-validator";
-import type { Box3Prompts } from "@/components/box3-validator";
 
-// Constants
-import { STORAGE_KEY_PROMPTS } from "@/constants/box3.constants";
+// Query keys
+import { QUERY_KEYS } from "@/lib/queryKeys";
 
 // Types
 import type { PendingFile } from "@/types/box3Validator.types";
@@ -45,31 +42,17 @@ const Box3Validator = memo(function Box3Validator() {
   // View state
   const [selectedDossier, setSelectedDossier] = useState<Box3DossierFull | null>(null);
   const [isLoadingDossier, setIsLoadingDossier] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isAddingDocs, setIsAddingDocs] = useState(false);
 
-  // Load prompts from localStorage
-  const [prompts, setPrompts] = useState<Box3Prompts>(() => {
-    const defaults: Box3Prompts = {
-      intake: DEFAULT_INTAKE_PROMPT,
-      email: DEFAULT_EMAIL_PROMPT,
-    };
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY_PROMPTS);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          return { ...defaults, ...parsed };
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    }
-    return defaults;
+  // Load Box3 config from prompt config (server-side settings)
+  const { data: promptConfig } = useQuery<{ config: { box3Config?: { emailPrompt?: string } } }>({
+    queryKey: QUERY_KEYS.prompts.active(),
   });
 
-  // System prompt is the intake prompt
-  const systemPrompt = prompts.intake;
+  // Email prompt from server config (used for email generation in detail view)
+  const emailPrompt = useMemo(() => {
+    return promptConfig?.config?.box3Config?.emailPrompt || "";
+  }, [promptConfig]);
 
   // Session management hook
   const {
@@ -92,15 +75,8 @@ const Box3Validator = memo(function Box3Validator() {
     loadFromDossier,
     handleReset,
   } = useBox3Validation({
-    systemPrompt,
     refetchSessions,
   });
-
-  // Handler to update prompts and save to localStorage
-  const handlePromptsChange = useCallback((newPrompts: Box3Prompts) => {
-    setPrompts(newPrompts);
-    localStorage.setItem(STORAGE_KEY_PROMPTS, JSON.stringify(newPrompts));
-  }, []);
 
   // Load dossier when URL changes to detail view
   useEffect(() => {
@@ -202,14 +178,6 @@ const Box3Validator = memo(function Box3Validator() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Settings Modal */}
-      <Box3SettingsModal
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        prompts={prompts}
-        onPromptsChange={handlePromptsChange}
-      />
-
       <AppHeader />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
@@ -232,13 +200,11 @@ const Box3Validator = memo(function Box3Validator() {
         {viewMode === "detail" && !isLoadingDossier && selectedDossier && (
           <Box3CaseDetail
             dossierFull={selectedDossier}
-            systemPrompt={systemPrompt}
             isRevalidating={isValidating}
             isAddingDocs={isAddingDocs}
             debugInfo={debugInfo}
             onBack={handleBackToList}
             onRevalidate={handleRevalidate}
-            onOpenSettings={() => setSettingsOpen(true)}
             onAddDocuments={handleAddDocuments}
           />
         )}
@@ -260,7 +226,6 @@ const Box3Validator = memo(function Box3Validator() {
             isValidating={isValidating}
             onBack={handleBackToList}
             onValidate={handleValidate}
-            onOpenSettings={() => setSettingsOpen(true)}
           />
         )}
       </div>

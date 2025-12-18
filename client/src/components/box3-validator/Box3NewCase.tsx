@@ -19,7 +19,6 @@ import {
   FileText,
   Mail,
   User,
-  Settings as SettingsIcon,
 } from "lucide-react";
 
 import type { PendingFile } from "@/types/box3Validator.types";
@@ -28,14 +27,12 @@ interface Box3NewCaseProps {
   isValidating: boolean;
   onBack: () => void;
   onValidate: (clientName: string, inputText: string, files: PendingFile[]) => void;
-  onOpenSettings: () => void;
 }
 
 export const Box3NewCase = memo(function Box3NewCase({
   isValidating,
   onBack,
   onValidate,
-  onOpenSettings,
 }: Box3NewCaseProps) {
   const [clientName, setClientName] = useState("");
   const [inputText, setInputText] = useState("");
@@ -110,23 +107,17 @@ export const Box3NewCase = memo(function Box3NewCase({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Terug naar overzicht
-          </Button>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Nieuwe Case</h1>
-            <p className="text-sm text-muted-foreground">
-              Voer klantgegevens in en upload documenten
-            </p>
-          </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={onOpenSettings}>
-          <SettingsIcon className="h-4 w-4 mr-2" />
-          Settings
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Terug naar overzicht
         </Button>
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Nieuwe Case</h1>
+          <p className="text-sm text-muted-foreground">
+            Voer klantgegevens in en upload documenten
+          </p>
+        </div>
       </div>
 
       {/* Input Form */}

@@ -7,6 +7,20 @@ import * as fs from "fs";
 import * as path from "path";
 import { logger } from "./services/logger";
 
+// Lighter type for list views - excludes large JSON fields
+export interface ReportListItem {
+  id: string;
+  dossierNumber: number;
+  title: string;
+  clientName: string;
+  status: string;
+  currentStage: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  stageResults: unknown;
+  conceptReportVersions: unknown;
+}
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -18,7 +32,7 @@ export interface IStorage {
     limit?: number;
     status?: string;
     search?: string;
-  }): Promise<{ reports: Report[]; total: number; page: number; totalPages: number }>;
+  }): Promise<{ reports: ReportListItem[]; total: number; page: number; totalPages: number }>;
   createReport(report: InsertReport): Promise<Report>;
   updateReport(id: string, report: Partial<Report>): Promise<Report | undefined>;
   updateReportStatus(id: string, status: string): Promise<void>;
@@ -84,6 +98,7 @@ export interface IStorage {
   // Dossiers
   getBox3Dossier(id: string): Promise<Box3Dossier | undefined>;
   getAllBox3Dossiers(): Promise<Box3Dossier[]>;
+  getAllBox3DossiersLight(): Promise<Omit<Box3Dossier, 'intakeText'>[]>;
   createBox3Dossier(dossier: InsertBox3Dossier): Promise<Box3Dossier>;
   updateBox3Dossier(id: string, data: Partial<Box3Dossier>): Promise<Box3Dossier | undefined>;
   deleteBox3Dossier(id: string): Promise<void>;
@@ -94,6 +109,7 @@ export interface IStorage {
   getBox3DocumentsForDossierLight(dossierId: string): Promise<Omit<Box3Document, 'fileData'>[]>;
   createBox3Document(doc: InsertBox3Document): Promise<Box3Document>;
   updateBox3Document(id: string, data: Partial<Box3Document>): Promise<Box3Document | undefined>;
+  updateBox3DocumentsBatch(updates: Array<{ id: string; data: Partial<Box3Document> }>): Promise<number>;
   deleteBox3Document(id: string): Promise<void>;
 
   // Blueprints
@@ -253,7 +269,7 @@ export class DatabaseStorage implements IStorage {
     limit?: number;
     status?: string;
     search?: string;
-  }): Promise<{ reports: Report[]; total: number; page: number; totalPages: number }> {
+  }): Promise<{ reports: ReportListItem[]; total: number; page: number; totalPages: number }> {
     // Ensure dossier_number column exists before querying
     await this.ensureDossierNumberMigration();
 
@@ -285,9 +301,22 @@ export class DatabaseStorage implements IStorage {
         .from(reports)
         .where(whereClause);
 
-      // Get paginated results
+      // Get paginated results - only select fields needed for list view
+      // Excludes large JSON fields like dossierData, generatedContent, documentState, etc.
       const reportList = await db
-        .select()
+        .select({
+          id: reports.id,
+          dossierNumber: reports.dossierNumber,
+          title: reports.title,
+          clientName: reports.clientName,
+          status: reports.status,
+          currentStage: reports.currentStage,
+          createdAt: reports.createdAt,
+          updatedAt: reports.updatedAt,
+          // For progress calculation - only keys are used, not full content
+          stageResults: reports.stageResults,
+          conceptReportVersions: reports.conceptReportVersions,
+        })
         .from(reports)
         .where(whereClause)
         .orderBy(desc(reports.createdAt))
@@ -888,6 +917,20 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(box3Dossiers).orderBy(desc(box3Dossiers.createdAt));
   }
 
+  async getAllBox3DossiersLight(): Promise<Omit<Box3Dossier, 'intakeText'>[]> {
+    return db.select({
+      id: box3Dossiers.id,
+      dossierNummer: box3Dossiers.dossierNummer,
+      clientName: box3Dossiers.clientName,
+      clientEmail: box3Dossiers.clientEmail,
+      status: box3Dossiers.status,
+      taxYears: box3Dossiers.taxYears,
+      hasFiscalPartner: box3Dossiers.hasFiscalPartner,
+      createdAt: box3Dossiers.createdAt,
+      updatedAt: box3Dossiers.updatedAt,
+    }).from(box3Dossiers).orderBy(desc(box3Dossiers.createdAt));
+  }
+
   async createBox3Dossier(dossier: InsertBox3Dossier): Promise<Box3Dossier> {
     const [created] = await db.insert(box3Dossiers).values(dossier).returning();
     return created;
@@ -944,6 +987,25 @@ export class DatabaseStorage implements IStorage {
       .where(eq(box3Documents.id, id))
       .returning();
     return updated;
+  }
+
+  async updateBox3DocumentsBatch(updates: Array<{ id: string; data: Partial<Box3Document> }>): Promise<number> {
+    if (updates.length === 0) return 0;
+
+    // Execute all updates in a single transaction
+    let updatedCount = 0;
+    await db.transaction(async (tx) => {
+      for (const update of updates) {
+        const [result] = await tx
+          .update(box3Documents)
+          .set(update.data)
+          .where(eq(box3Documents.id, update.id))
+          .returning({ id: box3Documents.id });
+        if (result) updatedCount++;
+      }
+    });
+
+    return updatedCount;
   }
 
   async deleteBox3Document(id: string): Promise<void> {

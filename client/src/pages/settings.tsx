@@ -13,7 +13,8 @@
  * - Consolidated constants and types into separate files
  */
 
-import { useState, useEffect, memo, useRef } from "react";
+import { useState, useEffect, memo, useRef, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { QUERY_KEYS } from "@/lib/queryKeys";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,11 +42,20 @@ import {
   WorkflowInfoCard,
   ToolAiConfigCard,
   TOOL_CONFIGS,
+  Box3SettingsCard,
+  type Box3Config,
 } from "@/components/settings";
 
 type StageConfigKey = keyof Omit<PromptConfig, "aiConfig">;
 
 const Settings = memo(function Settings() {
+  // Get initial tab from URL query parameter
+  const [location] = useLocation();
+  const initialTab = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("tab") || "pipeline";
+  }, []);
+
   // State
   const [activeConfig, setActiveConfig] = useState<PromptConfig | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -100,14 +110,37 @@ const Settings = memo(function Settings() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [activeConfig]);
 
-  // Sync config from server
+  // Sync config from server + migrate localStorage Box3 prompts if needed
   useEffect(() => {
     if (activePromptConfig?.config) {
       const config = activePromptConfig.config as PromptConfig;
-      setActiveConfig(config);
-      originalConfig.current = config;
-      if (config.aiConfig) {
-        setAiConfig(config.aiConfig);
+
+      // Migrate Box3 prompts from localStorage if box3Config is empty
+      const configWithMigration = { ...config };
+      if (!config.box3Config?.emailPrompt) {
+        try {
+          const savedPrompts = localStorage.getItem("box3-validator-prompts");
+          if (savedPrompts) {
+            const parsed = JSON.parse(savedPrompts);
+            if (parsed.email) {
+              configWithMigration.box3Config = {
+                ...configWithMigration.box3Config,
+                emailPrompt: parsed.email,
+              };
+              // Clear localStorage after migration to prevent re-migration
+              localStorage.removeItem("box3-validator-prompts");
+              console.log("📦 Migrated Box3 email prompt from localStorage to settings");
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      setActiveConfig(configWithMigration);
+      originalConfig.current = configWithMigration;
+      if (configWithMigration.aiConfig) {
+        setAiConfig(configWithMigration.aiConfig);
       }
       setHasUnsavedChanges(false);
     }
@@ -142,13 +175,16 @@ const Settings = memo(function Settings() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="pipeline" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+        <Tabs defaultValue={initialTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 lg:w-[500px]">
             <TabsTrigger value="general" data-testid="tab-general">
               Algemeen
             </TabsTrigger>
             <TabsTrigger value="pipeline" data-testid="tab-pipeline">
               Rapport Pipeline
+            </TabsTrigger>
+            <TabsTrigger value="box3" data-testid="tab-box3">
+              Box 3
             </TabsTrigger>
           </TabsList>
 
@@ -284,6 +320,41 @@ const Settings = memo(function Settings() {
             <GlobalAiConfigCard aiConfig={aiConfig} onAiConfigChange={handleGlobalAiConfigChange} />
 
             <WorkflowInfoCard />
+          </TabsContent>
+
+          {/* Tab: Box 3 */}
+          <TabsContent value="box3" className="space-y-6">
+            {/* Header with save button */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Box 3 Validator Instellingen</h2>
+                <p className="text-sm text-muted-foreground">
+                  Configureer de e-mail prompt en bekijk de forfaitaire rendementen referentie.
+                </p>
+              </div>
+              <Button
+                onClick={handleSave}
+                disabled={isSaving}
+                data-testid="button-save-box3"
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {isSaving ? "Opslaan..." : "Opslaan"}
+              </Button>
+            </div>
+
+            <Box3SettingsCard
+              config={(activeConfig as any)?.box3Config as Box3Config | undefined}
+              onConfigChange={(field, value) => {
+                if (!activeConfig) return;
+                setActiveConfig({
+                  ...activeConfig,
+                  box3Config: {
+                    ...((activeConfig as any).box3Config || {}),
+                    [field]: value,
+                  },
+                });
+              }}
+            />
           </TabsContent>
         </Tabs>
       </div>

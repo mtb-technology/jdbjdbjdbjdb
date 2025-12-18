@@ -4,6 +4,8 @@
  * V2 architecture using Blueprint data model.
  * V1 components (KansrijkheidAnalyse, GevondenDataCards, DocumentChecklist,
  * Box3YearEntry, Box3TotalOverview, SessionSidebar, ConceptMailEditor) removed.
+ *
+ * Note: Box3 settings are now in the main Settings page (/settings?tab=box3)
  */
 
 // Page-level components
@@ -13,11 +15,4 @@ export { Box3NewCase } from "./Box3NewCase";
 
 // Shared components
 export { RawOutputPanel } from "./RawOutputPanel";
-export {
-  Box3SettingsModal,
-  DEFAULT_BOX3_SYSTEM_PROMPT,
-  DEFAULT_INTAKE_PROMPT,
-  DEFAULT_EMAIL_PROMPT,
-} from "./Box3SettingsModal";
-export type { Box3Prompts } from "./Box3SettingsModal";
 export { Box3AttachmentsPanel } from "./Box3AttachmentsPanel";

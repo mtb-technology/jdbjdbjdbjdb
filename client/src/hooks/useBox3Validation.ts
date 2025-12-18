@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Box3Blueprint } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
 import type { Box3DossierFull } from "./useBox3Sessions";
-import { UPLOAD_LIMITS, getOversizedFilesMessage } from "@/constants/upload.constants";
+import { BOX3_CONSTANTS } from "@shared/constants";
 
 // Debug info from API response
 interface DebugInfo {
@@ -33,7 +33,6 @@ interface ValidationState {
 }
 
 interface UseBox3ValidationProps {
-  systemPrompt: string;
   refetchSessions: () => void;
 }
 
@@ -51,7 +50,6 @@ interface UseBox3ValidationReturn extends ValidationState {
 }
 
 export function useBox3Validation({
-  systemPrompt,
   refetchSessions,
 }: UseBox3ValidationProps): UseBox3ValidationReturn {
   const { toast } = useToast();
@@ -95,24 +93,15 @@ export function useBox3Validation({
       return null;
     }
 
-    if (!systemPrompt.trim()) {
-      toast({
-        title: "Geen prompt",
-        description: "Configureer eerst een intake prompt in de instellingen.",
-        variant: "destructive",
-      });
-      return null;
-    }
-
     // ✅ Client-side file size validation
-    const oversizedFiles = pendingFiles.filter(pf => pf.file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES);
+    const oversizedFiles = pendingFiles.filter(pf => pf.file.size > BOX3_CONSTANTS.MAX_FILE_SIZE_BYTES);
     if (oversizedFiles.length > 0) {
       const names = oversizedFiles
         .map(f => `${f.name} (${(f.file.size / 1024 / 1024).toFixed(1)}MB)`)
         .join(', ');
       toast({
         title: "Bestand(en) te groot",
-        description: getOversizedFilesMessage(names),
+        description: `Maximum grootte is ${BOX3_CONSTANTS.MAX_FILE_SIZE_MB}MB per bestand. Geweigerd: ${names}`,
         variant: "destructive",
       });
       return null;
@@ -124,15 +113,14 @@ export function useBox3Validation({
       const formData = new FormData();
       formData.append("clientName", clientName.trim());
       formData.append("inputText", inputText.trim() || "(geen mail tekst)");
-      formData.append("systemPrompt", systemPrompt);
 
       for (const pf of pendingFiles) {
         formData.append("files", pf.file, pf.name);
       }
 
-      // 5 minute timeout for AI processing with multiple images
+      // Timeout for AI processing with multiple images
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+      const timeoutId = setTimeout(() => controller.abort(), BOX3_CONSTANTS.AI_TIMEOUT_MS);
 
       let response;
       try {
@@ -220,21 +208,12 @@ export function useBox3Validation({
       return null;
     }
 
-    if (!systemPrompt.trim()) {
-      toast({
-        title: "Geen prompt",
-        description: "Configureer eerst een intake prompt in de instellingen.",
-        variant: "destructive",
-      });
-      return null;
-    }
-
     setIsValidating(true);
 
     try {
-      // 5 minute timeout for AI processing
+      // Timeout for AI processing
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+      const timeoutId = setTimeout(() => controller.abort(), BOX3_CONSTANTS.AI_TIMEOUT_MS);
 
       let response;
       try {
@@ -245,7 +224,7 @@ export function useBox3Validation({
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ systemPrompt }),
+            body: JSON.stringify({}),
             signal: controller.signal,
           }
         );

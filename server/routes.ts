@@ -46,7 +46,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   try {
     await (storage as any).initializeDefaultPrompts?.();
   } catch (error) {
-    logger.warn('routes', 'Could not initialize default prompts', {}, error instanceof Error ? error : undefined);
+    logger.warn('routes', 'Could not initialize default prompts', { error: error instanceof Error ? error.message : String(error) });
   }
   const reportGenerator = new ReportGenerator();
   const sourceValidator = new SourceValidator();

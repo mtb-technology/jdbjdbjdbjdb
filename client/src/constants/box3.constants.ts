@@ -153,3 +153,31 @@ export const CATEGORY_LABELS: Record<string, string> = {
  */
 export const STORAGE_KEY_SYSTEM_PROMPT = "box3-validator-system-prompt"; // Legacy
 export const STORAGE_KEY_PROMPTS = "box3-validator-prompts"; // New multi-prompt structure
+
+// =============================================================================
+// BOX3 BUSINESS LOGIC CONSTANTS
+// =============================================================================
+
+/**
+ * Minimum indicative refund to be considered profitable
+ * Below this amount, the cost of filing an objection exceeds the potential benefit
+ */
+export const MINIMUM_PROFITABLE_AMOUNT_EUR = 250;
+
+/**
+ * Request timeout for AI processing (5 minutes)
+ * Used for validation and revalidation requests that involve LLM processing
+ */
+export const BOX3_AI_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Maximum file size for Box3 uploads (25MB)
+ * Lower than general upload limit due to vision processing constraints
+ */
+export const BOX3_MAX_FILE_SIZE_MB = 25;
+export const BOX3_MAX_FILE_SIZE_BYTES = BOX3_MAX_FILE_SIZE_MB * 1024 * 1024;
+
+/**
+ * Maximum number of files per upload
+ */
+export const BOX3_MAX_FILES_PER_UPLOAD = 10;

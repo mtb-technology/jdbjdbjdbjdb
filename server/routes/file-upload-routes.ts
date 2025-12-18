@@ -7,6 +7,18 @@ import { storage } from "../storage";
 import { AIModelFactory } from "../services/ai-models/ai-model-factory";
 import { logger } from "../services/logger";
 
+// OCR Model Configuration - centralized to avoid duplication
+const OCR_MODEL = 'gemini-3-pro-preview' as const;
+const OCR_CONFIG = {
+  model: OCR_MODEL,
+  temperature: 0.1,
+  maxOutputTokens: 32768,
+  topP: 0.95,
+  topK: 40,
+  thinkingLevel: 'low' as const,
+  provider: 'google' as const
+};
+
 export const fileUploadRouter = Router();
 
 /**
@@ -28,8 +40,7 @@ async function processOcrWithRetry(
   }
 
   const factory = AIModelFactory.getInstance();
-  // Use gemini-3-pro-preview for best OCR quality (same as other stages)
-  const handler = factory.getHandler('gemini-3-pro-preview');
+  const handler = factory.getHandler(OCR_MODEL);
   if (!handler) {
     logger.error(reportId, 'No Gemini handler available for OCR');
     return false;
@@ -51,15 +62,7 @@ async function processOcrWithRetry(
 
       const ocrResult = await handler.call(
         prompt,
-        {
-          model: 'gemini-3-pro-preview',
-          temperature: 0.1,
-          maxOutputTokens: 32768,
-          topP: 0.95,
-          topK: 40,
-          thinkingLevel: 'low', // Low thinking for OCR - just extract text
-          provider: 'google'
-        },
+        OCR_CONFIG,
         {
           jobId: `async-ocr-${attachmentId.slice(-8)}-${Date.now()}`,
           visionAttachments: [{
@@ -260,7 +263,7 @@ fileUploadRouter.post(
         logger.info('file-upload', 'Processing image', { filename: file.originalname, size: file.size });
         try {
           const factory = AIModelFactory.getInstance();
-          const handler = factory.getHandler('gemini-3-pro-preview');
+          const handler = factory.getHandler(OCR_MODEL);
           if (!handler) {
             throw new Error('Gemini handler not available for image OCR');
           }
@@ -270,15 +273,7 @@ fileUploadRouter.post(
 
           const ocrResult = await handler.call(
             `Analyseer deze afbeelding en extraheer ALLE relevante informatie. Als het een document of scan is, extraheer dan alle tekst. Als het een screenshot of foto is, beschrijf dan de relevante inhoud. Return de geëxtraheerde tekst/informatie zonder extra commentaar.`,
-            {
-              model: 'gemini-3-pro-preview',
-              temperature: 0.1,
-              maxOutputTokens: 32768,
-              topP: 0.95,
-              topK: 40,
-              thinkingLevel: 'low',
-              provider: 'google'
-            },
+            OCR_CONFIG,
             {
               jobId: `image-extract-${Date.now()}`,
               visionAttachments: [{
@@ -929,7 +924,7 @@ fileUploadRouter.post(
     for (const att of scannedPdfs) {
       try {
         const factory = AIModelFactory.getInstance();
-        const handler = factory.getHandler('gemini-3-pro-preview');
+        const handler = factory.getHandler(OCR_MODEL);
         if (!handler) {
           throw new Error('Gemini handler not available');
         }
@@ -938,15 +933,7 @@ fileUploadRouter.post(
 
         const ocrResult = await handler.call(
           `Extract ALL text from this scanned PDF document. Return ONLY the extracted text, no commentary or formatting instructions. Preserve the original structure and formatting as much as possible.`,
-          {
-            model: 'gemini-3-pro-preview',
-            temperature: 0.1,
-            maxOutputTokens: 32768,
-            topP: 0.95,
-            topK: 40,
-            thinkingLevel: 'low',
-            provider: 'google'
-          },
+          OCR_CONFIG,
           {
             jobId: `ocr-b-${reportId.slice(-8)}-${Date.now()}`,
             visionAttachments: [{
