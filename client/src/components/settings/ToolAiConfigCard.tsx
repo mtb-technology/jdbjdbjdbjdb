@@ -1,7 +1,7 @@
 /**
  * ToolAiConfigCard Component
  *
- * AI configuration card for tools (test_ai, follow_up_assistant, box3_validator).
+ * AI configuration card for tools (test_ai, follow_up_assistant).
  * Simpler than stage config - only AI settings, no prompts.
  */
 
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Brain, Zap, TestTube, Mail, Calculator, type LucideIcon } from "lucide-react";
+import { Brain, Zap, TestTube, Mail, type LucideIcon } from "lucide-react";
 import { AI_MODELS, AI_PARAMETER_LIMITS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_AI_CONFIG } from "@/constants/settings.constants";
 import type { AiConfig } from "@shared/schema";
 
@@ -40,12 +40,6 @@ export const TOOL_CONFIGS = [
     title: "Follow-up Assistant",
     description: "Configuratie voor de email assistant tool",
     icon: Mail,
-  },
-  {
-    key: "box3_validator",
-    title: "Box 3 Validator",
-    description: "Configuratie voor de Box 3 fiscaal validator tool",
-    icon: Calculator,
   },
 ] as const;
 

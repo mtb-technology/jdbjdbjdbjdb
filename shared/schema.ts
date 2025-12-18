@@ -464,7 +464,6 @@ export const promptConfigSchema = z.object({
   // === TOOLS (alleen AI config, geen prompts) ===
   "test_ai": toolAiConfigSchema.optional(), // AI Test functionaliteit
   "follow_up_assistant": toolAiConfigSchema.optional(), // Email assistant
-  "box3_validator": toolAiConfigSchema.optional(), // Box3 fiscaal validator
 
   // === GLOBAL DEFAULTS ===
   aiConfig: aiConfigSchema.optional(),

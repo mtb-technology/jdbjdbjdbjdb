@@ -437,7 +437,6 @@ export interface PromptConfigData {
   '5_feedback_verwerker'?: StagePromptConfig;
   test_ai?: ToolAIConfig;
   follow_up_assistant?: ToolAIConfig;
-  box3_validator?: ToolAIConfig;
   aiConfig?: AIConfig;
 }
 

@@ -91,6 +91,7 @@ export interface IStorage {
   // Documents
   getBox3Document(id: string): Promise<Box3Document | undefined>;
   getBox3DocumentsForDossier(dossierId: string): Promise<Box3Document[]>;
+  getBox3DocumentsForDossierLight(dossierId: string): Promise<Omit<Box3Document, 'fileData'>[]>;
   createBox3Document(doc: InsertBox3Document): Promise<Box3Document>;
   updateBox3Document(id: string, data: Partial<Box3Document>): Promise<Box3Document | undefined>;
   deleteBox3Document(id: string): Promise<void>;
@@ -102,7 +103,7 @@ export interface IStorage {
   createBox3Blueprint(blueprint: InsertBox3BlueprintRecord): Promise<Box3BlueprintRecord>;
 
   // Combined operations
-  getBox3DossierWithLatestBlueprint(dossierId: string): Promise<{ dossier: Box3Dossier; blueprint: Box3BlueprintRecord | null; documents: Box3Document[] } | undefined>;
+  getBox3DossierWithLatestBlueprint(dossierId: string): Promise<{ dossier: Box3Dossier; blueprint: Box3BlueprintRecord | null; documents: Omit<Box3Document, 'fileData'>[] } | undefined>;
 }
 
 // Flag to track if dossier number migration has been checked
@@ -516,7 +517,7 @@ export class DatabaseStorage implements IStorage {
     if (insertConfig.isActive) {
       await db.update(promptConfigs).set({ isActive: false });
     }
-    
+
     const [config] = await db.insert(promptConfigs).values(insertConfig).returning();
     return config;
   }
@@ -914,6 +915,21 @@ export class DatabaseStorage implements IStorage {
 
   async getBox3DocumentsForDossier(dossierId: string): Promise<Box3Document[]> {
     return db.select().from(box3Documents).where(eq(box3Documents.dossierId, dossierId));
+  }
+
+  async getBox3DocumentsForDossierLight(dossierId: string): Promise<Omit<Box3Document, 'fileData'>[]> {
+    return db.select({
+      id: box3Documents.id,
+      dossierId: box3Documents.dossierId,
+      filename: box3Documents.filename,
+      mimeType: box3Documents.mimeType,
+      fileSize: box3Documents.fileSize,
+      uploadedAt: box3Documents.uploadedAt,
+      uploadedVia: box3Documents.uploadedVia,
+      classification: box3Documents.classification,
+      extractionSummary: box3Documents.extractionSummary,
+      extractedValues: box3Documents.extractedValues,
+    }).from(box3Documents).where(eq(box3Documents.dossierId, dossierId));
   }
 
   async createBox3Document(doc: InsertBox3Document): Promise<Box3Document> {
