@@ -12,7 +12,7 @@ import { logger } from "./logger";
 
 /** Provider-specific maximum token limits (API limieten) */
 const PROVIDER_MAX_LIMITS = {
-  google: 65536,
+  google: 65535, // Gemini 2.5/3 output limit
   openai: 200000,
 } as const;
 

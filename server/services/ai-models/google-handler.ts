@@ -255,10 +255,14 @@ export class GoogleAIHandler extends BaseAIHandler {
       if (config.maxOutputTokens < 100) {
         throw AIError.validationFailed(`MaxOutputTokens must be at least 100 for Google AI, got ${config.maxOutputTokens}`);
       }
-      // ✅ AUTO-CAP: Gemini 2.5 Pro has hard limit of 65,535. If user requests more, cap with warning
-      if (config.maxOutputTokens > 65535) {
-        logger.warn('google-handler', `maxOutputTokens ${config.maxOutputTokens} exceeds Gemini 2.5 Pro limit. Auto-capping to 65,535`);
-        config.maxOutputTokens = 65535;
+      // Gemini models have different output limits:
+      // - Gemini 2.5 Pro/Flash: 65,535 tokens
+      // - Gemini 3 Pro/Flash: 65,536 tokens (64K)
+      // Auto-cap to 65535 for compatibility with all models
+      const MAX_OUTPUT_TOKENS = 65535;
+      if (config.maxOutputTokens > MAX_OUTPUT_TOKENS) {
+        logger.debug('google-handler', `maxOutputTokens ${config.maxOutputTokens} exceeds limit, capping to ${MAX_OUTPUT_TOKENS}`);
+        config.maxOutputTokens = MAX_OUTPUT_TOKENS;
       }
     }
   }

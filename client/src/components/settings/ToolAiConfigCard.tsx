@@ -159,7 +159,7 @@ export const ToolAiConfigCard = memo(function ToolAiConfigCard({
               max={AI_PARAMETER_LIMITS.maxOutputTokens.max}
               value={effectiveConfig?.maxOutputTokens ?? DEFAULT_AI_CONFIG.maxOutputTokens}
               onChange={(e) => handleFieldChange("maxOutputTokens", parseInt(e.target.value) || 8192)}
-              placeholder="100 - 65536"
+              placeholder="100 - 65535"
             />
           </div>
         </div>

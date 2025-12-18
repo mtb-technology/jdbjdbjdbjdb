@@ -552,7 +552,7 @@ De API key voor ${aiConfig.provider === 'google' ? 'Google AI' : 'OpenAI'} is ni
 2. Zorg dat de API key actief en geldig is
 3. Controleer of de API key toegang heeft tot ${aiConfig.model}`;
       } else if (isTokenLimitError) {
-        const suggestedTokens = Math.min(aiConfig.maxOutputTokens * 2, 65536);
+        const suggestedTokens = Math.min(aiConfig.maxOutputTokens * 2, 65535);
         errorGuidance = `
 ### Token Limiet Probleem:
 Het model heeft meer tokens nodig dan geconfigureerd.
