@@ -1,13 +1,12 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
+import { Pool } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
 import * as schema from "@shared/schema";
 import { config } from './config';
 import { ServerError } from './middleware/errorHandler';
 import { ERROR_CODES } from '@shared/errors';
 import { logger } from './services/logger';
 
-neonConfig.webSocketConstructor = ws;
+// Node.js 22+ has native WebSocket support, no need for ws package workaround
 
 // Validate database configuration
 if (!config.database.url) {
@@ -37,5 +36,31 @@ export async function checkDatabaseConnection(): Promise<boolean> {
   } catch (error) {
     logger.error('db', 'Database connection check failed', {}, error instanceof Error ? error : undefined);
     return false;
+  }
+}
+
+// Keep connection pool warm to avoid cold starts
+// Neon serverless can have 1-2s latency on first connection after idle
+let keepAliveInterval: ReturnType<typeof setInterval> | null = null;
+
+export function startConnectionKeepAlive(intervalMs = 30000): void {
+  if (keepAliveInterval) return;
+
+  keepAliveInterval = setInterval(async () => {
+    try {
+      await db.execute(`SELECT 1`);
+    } catch {
+      // Ignore errors - connection will be re-established on next real query
+    }
+  }, intervalMs);
+
+  logger.info('db', `Connection keep-alive started (every ${intervalMs}ms)`);
+}
+
+export function stopConnectionKeepAlive(): void {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+    logger.info('db', 'Connection keep-alive stopped');
   }
 }

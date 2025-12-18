@@ -4,7 +4,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { errorHandler } from "./middleware/errorHandler";
 import { config, validateConfig } from "./config";
-import { checkDatabaseConnection } from "./db";
+import { checkDatabaseConnection, startConnectionKeepAlive } from "./db";
 import { initializeDossierSequence } from "./storage";
 import { startJobProcessor, stopJobProcessor } from "./services/job-processor";
 import { logger } from "./services/logger";
@@ -134,6 +134,8 @@ app.use((req, res, next) => {
       }
     } else {
       logger.info('startup', 'Database connection verified');
+      // Keep connection warm to avoid Neon cold start latency
+      startConnectionKeepAlive(25000); // Every 25s (under 30s Neon idle timeout)
     }
   } catch (error) {
     logger.error('startup', 'Database connection error', {}, error instanceof Error ? error : undefined);
@@ -183,22 +185,35 @@ app.use((req, res, next) => {
     process.exit(1);
   });
 
-  // Graceful shutdown
-  process.on('SIGTERM', () => {
-    logger.info('shutdown', 'SIGTERM received, shutting down gracefully...');
-    stopJobProcessor();
-    server.close(() => {
-      logger.info('shutdown', 'Server closed');
-      process.exit(0);
-    });
-  });
+  // Graceful shutdown with timeout
+  let isShuttingDown = false;
 
-  process.on('SIGINT', () => {
-    logger.info('shutdown', 'SIGINT received, shutting down gracefully...');
+  const gracefulShutdown = (signal: string) => {
+    if (isShuttingDown) {
+      logger.info('shutdown', 'Force exit requested...');
+      process.exit(1);
+    }
+
+    isShuttingDown = true;
+    logger.info('shutdown', `${signal} received, shutting down gracefully...`);
+
+    // Stop job processor immediately
     stopJobProcessor();
+
+    // Force exit after 3 seconds if server.close() hangs
+    const forceExitTimeout = setTimeout(() => {
+      logger.warn('shutdown', 'Graceful shutdown timeout, forcing exit...');
+      process.exit(0);
+    }, 3000);
+
+    // Try graceful close
     server.close(() => {
+      clearTimeout(forceExitTimeout);
       logger.info('shutdown', 'Server closed');
       process.exit(0);
     });
-  });
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 })();
