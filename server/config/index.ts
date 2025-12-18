@@ -151,6 +151,25 @@ export const AI_MODELS = {
       maxRequestsPerMinute: 60
     }
   },
+  // Gemini 3 Flash - Pro-level intelligence at Flash speed/pricing
+  'gemini-3-flash-preview': {
+    provider: 'google' as const,
+    handlerType: 'google' as const,
+    supportedParameters: ['temperature', 'topP', 'topK', 'maxOutputTokens', 'thinkingLevel', 'useGrounding'],
+    requiresResponsesAPI: false,
+    timeout: 600000, // 10 minutes
+    defaultConfig: {
+      temperature: 1.0, // Gemini 3 optimized for default 1.0
+      topP: 0.95,
+      topK: 40,
+      maxOutputTokens: 16384,
+      thinkingLevel: 'high' // default: high (dynamic thinking)
+    },
+    limits: {
+      maxTokensPerRequest: 64000, // 64k output token limit
+      maxRequestsPerMinute: 1000 // Higher rate limit than Pro
+    }
+  },
 
   // OpenAI Models
   'gpt-4o': {

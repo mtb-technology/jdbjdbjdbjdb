@@ -13,7 +13,8 @@ import type { AiConfig, AiModelsByProvider, PromptStage, StageKey } from "@/type
  */
 export const AI_MODELS: AiModelsByProvider = {
   google: [
-    { value: "gemini-3-pro-preview", label: "🧠 Gemini 3 Pro (Nieuwste - Advanced Reasoning)" },
+    { value: "gemini-3-flash-preview", label: "⚡ Gemini 3 Flash (Pro-level @ Flash snelheid)" },
+    { value: "gemini-3-pro-preview", label: "🧠 Gemini 3 Pro (Advanced Reasoning)" },
     { value: "gemini-2.5-pro", label: "🌟 Gemini 2.5 Pro (Beste kwaliteit)" },
     { value: "gemini-2.5-flash", label: "⚡ Gemini 2.5 Flash (Snelste)" },
     { value: "gemini-2.5-pro-deep-research", label: "🔬 Gemini 2.5 Pro Deep Research (Diepgaande analyse)" },
