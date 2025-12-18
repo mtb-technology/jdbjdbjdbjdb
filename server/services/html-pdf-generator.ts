@@ -90,18 +90,18 @@ export class HtmlPdfGenerator {
     // - H3 = Subsections → Should be Heading 2 in Google Docs
 
     // H1 headers - Document title, keep as Title (larger)
-    html = html.replace(/<h1>/g, '<h1 style="font-size: 20pt; font-weight: 700; color: #ff0000; margin-top: 0; margin-bottom: 20px; line-height: 1.3;">');
+    html = html.replace(/<h1>/g, '<h1 style="font-size: 20pt; font-weight: 700; color: #1e3a8a; margin-top: 0; margin-bottom: 20px; line-height: 1.3;">');
 
     // H2 headers - Main sections (1. Introduction, etc.) → Transform to H1 for Google Docs Heading 1
-    html = html.replace(/<h2>/g, '<h1 style="font-size: 14pt; font-weight: 700; color: #ff0000; margin-top: 30px; margin-bottom: 12px; line-height: 1.5;">');
+    html = html.replace(/<h2>/g, '<h1 style="font-size: 14pt; font-weight: 700; color: #1e3a8a; margin-top: 30px; margin-bottom: 12px; line-height: 1.5;">');
     html = html.replace(/<\/h2>/g, '</h1>');
 
     // H3 headers - Subsections → Transform to H2 for Google Docs Heading 2
-    html = html.replace(/<h3>/g, '<h2 style="font-size: 12pt; font-weight: 600; color: #ff0000; margin-top: 20px; margin-bottom: 10px; line-height: 1.5;">');
+    html = html.replace(/<h3>/g, '<h2 style="font-size: 12pt; font-weight: 600; color: #1e3a8a; margin-top: 20px; margin-bottom: 10px; line-height: 1.5;">');
     html = html.replace(/<\/h3>/g, '</h2>');
 
     // H4 headers → Transform to H3 for Google Docs Heading 3
-    html = html.replace(/<h4>/g, '<h3 style="font-size: 11pt; font-weight: 600; color: #ff0000; margin-top: 15px; margin-bottom: 8px; line-height: 1.5;">');
+    html = html.replace(/<h4>/g, '<h3 style="font-size: 11pt; font-weight: 600; color: #1e3a8a; margin-top: 15px; margin-bottom: 8px; line-height: 1.5;">');
     html = html.replace(/<\/h4>/g, '</h3>');
 
     // Paragraphs with line-height 1.5 and dark blue text color
