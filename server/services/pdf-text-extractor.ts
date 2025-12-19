@@ -12,6 +12,21 @@ import { logger } from './logger';
 // Dynamic import for pdfjs-dist (ESM compatibility)
 let pdfjsLib: any = null;
 
+// Dynamic import for pdf-parse (legacy parser)
+let pdfParseFunc: any = null;
+
+/**
+ * Get the pdf-parse function (dynamically imported for ESM compatibility)
+ * This is the legacy parser - use extractPdfText for better results with locked PDFs
+ */
+export async function getPdfParse() {
+  if (!pdfParseFunc) {
+    const module = await import('pdf-parse');
+    pdfParseFunc = (module as any).PDFParse || (module as any).default || module;
+  }
+  return pdfParseFunc;
+}
+
 async function getPdfjs() {
   if (!pdfjsLib) {
     // pdfjs-dist needs to be imported dynamically
