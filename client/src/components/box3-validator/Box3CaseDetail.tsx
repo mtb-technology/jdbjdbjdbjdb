@@ -67,6 +67,9 @@ import type { PendingFile } from "@/types/box3Validator.types";
 import type { Box3DossierFull } from "@/hooks/useBox3Sessions";
 import type { DebugInfo, PipelineProgress } from "@/hooks/useBox3Validation";
 
+// Constants
+import { BOX3_CONSTANTS } from "@shared/constants";
+
 interface Box3CaseDetailProps {
   dossierFull: Box3DossierFull;
   isRevalidating: boolean;
@@ -1208,10 +1211,63 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             const profitableYears = years.filter(y => yearSummaries[y]?.calculated_totals?.is_profitable);
             const incompleteYears = years.filter(y => yearSummaries[y]?.status === 'incomplete');
 
+            // Calculate estimated refund per year (same logic as breakdown)
+            // This ensures consistency between summary bar and breakdown section
+            const bankSavings = blueprint.assets?.bank_savings || [];
+            let hasUnknownInterest = false;
+            let estimatedRefund = 0;
+
+            years.forEach(year => {
+              const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[year] || 0.001;
+              const taxRate = BOX3_CONSTANTS.TAX_RATES[year] || 0.31;
+              const yearSummary = yearSummaries[year];
+              const calc = yearSummary?.calculated_totals;
+              const deemedReturn = calc?.deemed_return_from_tax_authority || 0;
+              const actualReturn = calc?.actual_return?.total || 0;
+              const yearRefund = calc?.indicative_refund || 0;
+
+              // Calculate estimated interest for this year
+              let yearEstimatedInterest = 0;
+              let yearHasUnknown = false;
+
+              bankSavings.forEach(asset => {
+                const yearData = asset.yearly_data?.[year];
+                if (!yearData) return;
+
+                const interestField = yearData.interest_received;
+                const hasInterest = interestField != null &&
+                  (typeof interestField === 'number' ? interestField > 0 :
+                   typeof interestField === 'object' && interestField.amount != null);
+
+                if (!hasInterest) {
+                  yearHasUnknown = true;
+                  hasUnknownInterest = true;
+                  const balance = typeof yearData.value_jan_1 === 'number' ? yearData.value_jan_1 :
+                    typeof yearData.value_jan_1 === 'object' ? yearData.value_jan_1?.amount :
+                    typeof (yearData as any).balance_jan1 === 'number' ? (yearData as any).balance_jan1 : 0;
+
+                  if (balance && balance > 0) {
+                    yearEstimatedInterest += balance * savingsRate;
+                  }
+                }
+              });
+
+              // Calculate this year's estimated refund using same formula as breakdown
+              if (yearHasUnknown) {
+                const estimatedActualReturn = actualReturn + yearEstimatedInterest;
+                const estimatedDifference = deemedReturn - estimatedActualReturn;
+                const yearEstimatedRefund = Math.max(0, estimatedDifference * taxRate);
+                estimatedRefund += yearEstimatedRefund;
+              } else {
+                estimatedRefund += yearRefund;
+              }
+            });
+
             // Calculate costs: €250 per year
             const costPerYear = 250; // BOX3_CONSTANTS.COST_PER_YEAR
             const totalCost = years.length * costPerYear;
             const netRefund = totalRefund - totalCost;
+            const netEstimatedRefund = estimatedRefund - totalCost;
 
             const isProfitable = netRefund > 0 || profitableYears.length > 0;
             const isComplete = incompleteYears.length === 0 && years.length > 0;
@@ -1305,15 +1361,31 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
                   {/* Total Refund with costs breakdown */}
                   <div className="flex items-center gap-4">
-                    {/* Gross refund */}
+                    {/* Gross refund - show estimated if we have unknown interest */}
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                        {hasMissingDocs ? 'Max. teruggave' : 'Teruggave'}
+                        {hasMissingDocs ? (hasUnknownInterest ? 'Geschat' : 'Max.') : 'Teruggave'}
                       </span>
                       <CopyableCurrency
-                        value={totalRefund}
-                        className={`text-xl font-bold tracking-tight ${totalRefund > 0 ? 'text-green-600' : 'text-muted-foreground'}`}
+                        value={hasUnknownInterest ? estimatedRefund : totalRefund}
+                        className={`text-xl font-bold tracking-tight ${(hasUnknownInterest ? estimatedRefund : totalRefund) > 0 ? 'text-green-600' : 'text-muted-foreground'}`}
                       />
+                      {hasUnknownInterest && hasMissingDocs && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-xs">
+                              <p className="text-xs">
+                                <strong>Max: {formatCurrency(totalRefund)}</strong><br />
+                                Geschat op basis van gemiddelde spaarrentes.
+                                Werkelijke teruggave kan hoger of lager zijn.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </div>
 
                     {/* Costs */}
@@ -1340,8 +1412,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           Netto
                         </span>
                         <CopyableCurrency
-                          value={netRefund}
-                          className={`text-2xl font-bold tracking-tight ${netRefund > 0 ? 'text-green-600' : 'text-red-500'}`}
+                          value={hasUnknownInterest ? netEstimatedRefund : netRefund}
+                          className={`text-2xl font-bold tracking-tight ${(hasUnknownInterest ? netEstimatedRefund : netRefund) > 0 ? 'text-green-600' : 'text-red-500'}`}
                         />
                       </div>
                     )}
@@ -1385,7 +1457,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                       {/* Formula explanation */}
                       <div className="bg-white/60 rounded-lg p-3 text-sm">
                         <p className="text-gray-700 mb-2">
-                          <strong>Formule:</strong> (Forfaitair rendement − Werkelijk rendement) × 31%
+                          <strong>Formule:</strong> (Forfaitair rendement − Werkelijk rendement) × Box 3 belastingtarief
                         </p>
                         <p className="text-gray-600 text-xs">
                           Als het werkelijke rendement lager is dan het forfaitaire rendement waarmee de Belastingdienst
@@ -1414,49 +1486,105 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                             )
                           );
 
+                          // Pre-calculate estimated refund for header
+                          const savingsRateForHeader = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[year] || 0.001;
+                          const taxRateForHeader = BOX3_CONSTANTS.TAX_RATES[year] || 0.31;
+                          let yearEstInterestForHeader = 0;
+                          let yearHasUnknownForHeader = false;
+                          (blueprint.assets?.bank_savings || []).forEach(asset => {
+                            const assetYearData = asset.yearly_data?.[year];
+                            if (!assetYearData) return;
+                            const interestField = assetYearData.interest_received;
+                            const hasInterest = interestField != null &&
+                              (typeof interestField === 'number' ? interestField > 0 :
+                               typeof interestField === 'object' && interestField.amount != null);
+                            if (!hasInterest) {
+                              yearHasUnknownForHeader = true;
+                              const balance = typeof assetYearData.value_jan_1 === 'number' ? assetYearData.value_jan_1 :
+                                typeof assetYearData.value_jan_1 === 'object' ? assetYearData.value_jan_1?.amount :
+                                typeof (assetYearData as any).balance_jan1 === 'number' ? (assetYearData as any).balance_jan1 : 0;
+                              if (balance && balance > 0) {
+                                yearEstInterestForHeader += balance * savingsRateForHeader;
+                              }
+                            }
+                          });
+                          const estimatedActualReturnForHeader = (actualReturn?.total || 0) + yearEstInterestForHeader;
+                          const estimatedDiffForHeader = deemedReturn - estimatedActualReturnForHeader;
+                          const yearEstRefundForHeader = yearHasUnknownForHeader ? Math.max(0, estimatedDiffForHeader * taxRateForHeader) : yearRefund;
+
                           return (
                             <div key={year} className="bg-white rounded-lg p-3 border border-green-100">
                               <div className="flex items-center justify-between mb-2">
                                 <span className="font-semibold text-gray-800">{year}</span>
-                                <span className={`font-bold ${yearRefund > 0 ? 'text-green-600' : 'text-gray-500'}`}>
-                                  {yearRefund > 0 ? '+' : ''}{formatCurrency(yearRefund)}
+                                <span className={`font-bold ${yearEstRefundForHeader > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                  {yearHasUnknownForHeader && '~'}{yearEstRefundForHeader > 0 ? '+' : ''}{formatCurrency(yearEstRefundForHeader)}
                                 </span>
                               </div>
 
                               {/* Calculation steps */}
+                              {(() => {
+                                // Calculate estimated interest for this year
+                                const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[year] || 0.001;
+                                const taxRate = BOX3_CONSTANTS.TAX_RATES[year] || 0.31;
+                                const bankCount = blueprint.assets?.bank_savings?.length || 0;
+                                const invCount = blueprint.assets?.investments?.length || 0;
+                                const reCount = blueprint.assets?.real_estate?.length || 0;
+                                const bankInterest = actualReturn?.bank_interest || 0;
+                                const dividends = actualReturn?.dividends || 0;
+                                const realizedGains = actualReturn?.investment_gain || 0;
+                                const rentalNet = actualReturn?.rental_income_net || 0;
+
+                                // Calculate estimated bank interest for this year
+                                let yearEstimatedInterest = 0;
+                                let yearHasUnknownInterest = false;
+                                (blueprint.assets?.bank_savings || []).forEach(asset => {
+                                  const assetYearData = asset.yearly_data?.[year];
+                                  if (!assetYearData) return;
+                                  const interestField = assetYearData.interest_received;
+                                  const hasInterest = interestField != null &&
+                                    (typeof interestField === 'number' ? interestField > 0 :
+                                     typeof interestField === 'object' && interestField.amount != null);
+                                  if (!hasInterest) {
+                                    yearHasUnknownInterest = true;
+                                    const balance = typeof assetYearData.value_jan_1 === 'number' ? assetYearData.value_jan_1 :
+                                      typeof assetYearData.value_jan_1 === 'object' ? assetYearData.value_jan_1?.amount :
+                                      typeof (assetYearData as any).balance_jan1 === 'number' ? (assetYearData as any).balance_jan1 : 0;
+                                    if (balance && balance > 0) {
+                                      yearEstimatedInterest += balance * savingsRate;
+                                    }
+                                  }
+                                });
+
+                                // Calculate estimated actual return and refund
+                                const estimatedActualReturn = (actualReturn?.total || 0) + yearEstimatedInterest;
+                                const estimatedDifference = deemedReturn - estimatedActualReturn;
+                                const yearEstimatedRefund = Math.max(0, estimatedDifference * taxRate);
+
+                                return (
                               <div className="space-y-1 text-sm">
                                 <div className="flex justify-between text-gray-600">
                                   <span>Forfaitair rendement (Belastingdienst)</span>
                                   <span className="font-medium text-red-600">{formatCurrency(deemedReturn)}</span>
                                 </div>
                                 <div className="flex justify-between text-gray-600">
-                                  <span>Werkelijk rendement</span>
-                                  <span className="font-medium text-green-600">{formatCurrency(actualReturn?.total || 0)}</span>
+                                  <span>Werkelijk rendement {yearHasUnknownInterest && <span className="text-amber-600 text-xs">(incl. schatting)</span>}</span>
+                                  <span className={`font-medium ${yearHasUnknownInterest ? 'text-amber-600' : 'text-green-600'}`}>
+                                    {formatCurrency(yearHasUnknownInterest ? estimatedActualReturn : (actualReturn?.total || 0))}
+                                  </span>
                                 </div>
 
                                 {/* Actual return breakdown - always show to clarify what's missing */}
-                                {(() => {
-                                  const bankCount = blueprint.assets?.bank_savings?.length || 0;
-                                  const invCount = blueprint.assets?.investments?.length || 0;
-                                  const reCount = blueprint.assets?.real_estate?.length || 0;
-                                  const bankInterest = actualReturn?.bank_interest || 0;
-                                  const dividends = actualReturn?.dividends || 0;
-                                  const realizedGains = actualReturn?.investment_gain || 0;
-                                  const rentalNet = actualReturn?.rental_income_net || 0;
-
-                                  // Show breakdown if we have any assets
-                                  if (bankCount === 0 && invCount === 0 && reCount === 0) return null;
-
-                                  return (
+                                {(bankCount > 0 || invCount > 0 || reCount > 0) && (
                                     <div className="ml-4 text-xs space-y-0.5">
                                       {/* Bank interest - show even if 0 when we have banks */}
                                       {bankCount > 0 && (
                                         <div className="flex justify-between">
                                           <span className={bankInterest === 0 ? 'text-amber-600' : 'text-gray-500'}>
-                                            └ Bankrente {bankInterest === 0 && <span className="text-amber-500">(ontbreekt)</span>}
+                                            └ Bankrente {bankInterest === 0 && yearHasUnknownInterest && <span className="text-amber-500">(geschat ~{formatCurrency(yearEstimatedInterest)})</span>}
+                                            {bankInterest === 0 && !yearHasUnknownInterest && <span className="text-amber-500">(ontbreekt)</span>}
                                           </span>
                                           <span className={bankInterest === 0 ? 'text-amber-600' : 'text-gray-500'}>
-                                            {formatCurrency(bankInterest)}
+                                            {bankInterest > 0 ? formatCurrency(bankInterest) : (yearHasUnknownInterest ? `~${formatCurrency(yearEstimatedInterest)}` : formatCurrency(0))}
                                           </span>
                                         </div>
                                       )}
@@ -1494,18 +1622,19 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                         </div>
                                       )}
                                     </div>
-                                  );
-                                })()}
+                                )}
 
                                 <div className="flex justify-between text-gray-600 border-t border-dashed pt-1 mt-1">
                                   <span>Verschil</span>
-                                  <span className="font-medium">{formatCurrency(calc.difference)}</span>
+                                  <span className="font-medium">{formatCurrency(yearHasUnknownInterest ? estimatedDifference : calc.difference)}</span>
                                 </div>
                                 <div className="flex justify-between text-gray-600">
-                                  <span>× 31% belastingtarief</span>
-                                  <span className="font-bold text-green-600">{formatCurrency(yearRefund)}</span>
+                                  <span>× {(taxRate * 100).toFixed(0)}% belastingtarief</span>
+                                  <span className="font-bold text-green-600">{formatCurrency(yearHasUnknownInterest ? yearEstimatedRefund : yearRefund)}</span>
                                 </div>
                               </div>
+                                );
+                              })()}
 
                               {/* Warning if income data missing or suspiciously low */}
                               {(() => {
@@ -1573,8 +1702,12 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
                       {/* Total summary */}
                       <div className="bg-green-100/50 rounded-lg p-3 flex justify-between items-center">
-                        <span className="font-medium text-green-800">Totale indicatieve teruggave</span>
-                        <span className="text-xl font-bold text-green-700">{formatCurrency(totalRefund)}</span>
+                        <span className="font-medium text-green-800">
+                          {hasUnknownInterest ? 'Geschatte teruggave' : 'Totale indicatieve teruggave'}
+                        </span>
+                        <span className="text-xl font-bold text-green-700">
+                          {hasUnknownInterest && '~'}{formatCurrency(hasUnknownInterest ? estimatedRefund : totalRefund)}
+                        </span>
                       </div>
 
                       {/* Per person split if partner */}
@@ -2205,6 +2338,28 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 </CardTitle>
                               </CardHeader>
                               <CardContent className="p-0">
+                                {(() => {
+                                  // Get savings rate for this year
+                                  const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[selectedYear] || 0.001;
+                                  const hasAnyUnknownInterest = yearBankSavings.some(asset => {
+                                    const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                    return getFieldValue(yearData?.interest_received) == null;
+                                  });
+
+                                  // Calculate estimated totals
+                                  let totalEstimatedInterest = 0;
+                                  yearBankSavings.forEach(asset => {
+                                    const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                    const interestAmount = getFieldValue(yearData?.interest_received);
+                                    if (interestAmount == null) {
+                                      const amount = getValueJan1(yearData);
+                                      if (amount != null) {
+                                        totalEstimatedInterest += amount * savingsRate;
+                                      }
+                                    }
+                                  });
+
+                                  return (
                                 <table className="w-full text-sm">
                                   <thead className="bg-muted/50 border-y">
                                     <tr>
@@ -2214,6 +2369,21 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                       <th className="text-right px-4 py-2 font-medium">Eigendom</th>
                                       <th className="text-right px-4 py-2 font-medium">1 jan {selectedYear}</th>
                                       <th className="text-right px-4 py-2 font-medium">Rente</th>
+                                      {hasAnyUnknownInterest && (
+                                        <th className="text-right px-4 py-2 font-medium">
+                                          <TooltipProvider>
+                                            <Tooltip>
+                                              <TooltipTrigger className="flex items-center gap-1 ml-auto">
+                                                Schatting
+                                                <Info className="h-3 w-3 text-muted-foreground" />
+                                              </TooltipTrigger>
+                                              <TooltipContent side="top" className="max-w-xs">
+                                                <p>Geschatte rente op basis van {(savingsRate * 100).toFixed(2)}% gemiddelde spaarrente in {selectedYear}</p>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                        </th>
+                                      )}
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y">
@@ -2221,6 +2391,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                       const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
                                       const amount = getValueJan1(yearData);
                                       const interestAmount = getFieldValue(yearData?.interest_received);
+                                      const estimatedInterest = interestAmount == null && amount != null ? amount * savingsRate : null;
 
                                       return (
                                         <tr key={asset.id || idx} className="hover:bg-muted/30">
@@ -2242,6 +2413,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                           <td className="px-4 py-3 text-right text-green-600">
                                             {interestAmount != null ? formatCurrency(interestAmount) : <span className="text-muted-foreground text-xs">Onbekend</span>}
                                           </td>
+                                          {hasAnyUnknownInterest && (
+                                            <td className="px-4 py-3 text-right text-amber-600">
+                                              {estimatedInterest != null ? `~${formatCurrency(estimatedInterest)}` : '—'}
+                                            </td>
+                                          )}
                                         </tr>
                                       );
                                     })}
@@ -2251,9 +2427,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                       <td className="px-4 py-2" colSpan={4}>Subtotaal</td>
                                       <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
                                       <td className="px-4 py-2 text-right text-green-600">{formatCurrency(totalInterest)}</td>
+                                      {hasAnyUnknownInterest && (
+                                        <td className="px-4 py-2 text-right text-amber-600">~{formatCurrency(totalEstimatedInterest)}</td>
+                                      )}
                                     </tr>
                                   </tfoot>
                                 </table>
+                                  );
+                                })()}
                               </CardContent>
                             </Card>
                           );

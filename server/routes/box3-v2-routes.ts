@@ -1159,7 +1159,10 @@ box3V2Router.post(
     const allMissingItems: Array<{ year: string; description: string }> = [];
     let totalIndicativeRefund = 0;
     let totalDeemedReturn = 0;
+    let totalEstimatedRefund = 0;
     let hasCompleteData = true;
+    let hasUnknownInterest = false;
+    const bankSavings = blueprint.assets?.bank_savings || [];
 
     years.forEach(year => {
       const summary = blueprint.year_summaries?.[year];
@@ -1174,8 +1177,50 @@ box3V2Router.post(
         hasCompleteData = false;
       }
 
-      totalIndicativeRefund += summary?.calculated_totals?.indicative_refund || 0;
+      const yearRefund = summary?.calculated_totals?.indicative_refund || 0;
+      totalIndicativeRefund += yearRefund;
       totalDeemedReturn += summary?.calculated_totals?.deemed_return_from_tax_authority || 0;
+
+      // Calculate estimated refund (same logic as frontend)
+      const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[year] || 0.001;
+      const taxRate = BOX3_CONSTANTS.TAX_RATES[year] || 0.31;
+      const deemedReturn = summary?.calculated_totals?.deemed_return_from_tax_authority || 0;
+      const actualReturn = summary?.calculated_totals?.actual_return?.total || 0;
+
+      let yearEstimatedInterest = 0;
+      let yearHasUnknown = false;
+
+      bankSavings.forEach(asset => {
+        const yearData = asset.yearly_data?.[year];
+        if (!yearData) return;
+
+        const interestField = yearData.interest_received;
+        const hasInterest = interestField != null &&
+          (typeof interestField === 'number' ? (interestField as number) > 0 :
+           typeof interestField === 'object' && (interestField as any).amount != null);
+
+        if (!hasInterest) {
+          yearHasUnknown = true;
+          hasUnknownInterest = true;
+          const balance = typeof yearData.value_jan_1 === 'number' ? yearData.value_jan_1 :
+            typeof yearData.value_jan_1 === 'object' ? (yearData.value_jan_1 as any)?.amount :
+            typeof (yearData as any).balance_jan1 === 'number' ? (yearData as any).balance_jan1 : 0;
+
+          if (balance && balance > 0) {
+            yearEstimatedInterest += balance * savingsRate;
+          }
+        }
+      });
+
+      // Calculate this year's estimated refund
+      if (yearHasUnknown) {
+        const estimatedActualReturn = actualReturn + yearEstimatedInterest;
+        const estimatedDifference = deemedReturn - estimatedActualReturn;
+        const yearEstimatedRefund = Math.max(0, estimatedDifference * taxRate);
+        totalEstimatedRefund += yearEstimatedRefund;
+      } else {
+        totalEstimatedRefund += yearRefund;
+      }
     });
 
     // Determine email type automatically if not specified
@@ -1214,15 +1259,32 @@ box3V2Router.post(
         .map(([year, items]) => `<p><strong>${year}:</strong></p><ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`)
         .join('');
 
+      // Calculate costs
+      const costPerYear = 249;
+      const totalCost = years.length * costPerYear;
+      const displayRefund = hasUnknownInterest ? totalEstimatedRefund : totalIndicativeRefund;
+      const netRefund = displayRefund - totalCost;
+
+      // Build the positive outlook section
+      const refundSection = displayRefund > 0
+        ? `<p><strong>Goed nieuws:</strong> Op basis van uw aangifte zien wij aanleiding voor een teruggave van circa <strong>€${displayRefund.toFixed(2)}</strong>.</p>`
+        : '';
+
+      const costSection = years.length === 1
+        ? `<p>Wij kunnen het bezwaar volledig voor u verzorgen. De kosten hiervoor bedragen <strong>€${costPerYear},-</strong> per belastingjaar${netRefund > 0 ? `, wat netto <strong>€${netRefund.toFixed(2)}</strong> oplevert` : ''}.</p>`
+        : `<p>Wij kunnen de bezwaren volledig voor u verzorgen. De kosten hiervoor bedragen <strong>€${costPerYear},-</strong> per belastingjaar (totaal €${totalCost},- voor ${years.length} jaar)${netRefund > 0 ? `, wat netto <strong>€${netRefund.toFixed(2)}</strong> oplevert` : ''}.</p>`;
+
       body = `<p>Beste ${firstName},</p>
 
 <p>Bedankt voor uw aanmelding voor het Box 3 bezwaar over ${yearRange}.</p>
 
-<p>Om te kunnen beoordelen of bezwaar maken voor u voordelig is, hebben wij nog de volgende documenten nodig:</p>
+${refundSection}
+
+<p>Om de exacte teruggave te kunnen berekenen, hebben wij nog de volgende documenten nodig:</p>
 
 ${missingListHtml}
 
-<p>Met deze documenten kunnen wij berekenen wat uw werkelijke rendement was en of dit lager ligt dan het forfaitaire rendement dat de Belastingdienst heeft gehanteerd.</p>
+${displayRefund > 0 ? costSection : ''}
 
 <p>U kunt de documenten eenvoudig uploaden via uw persoonlijke dossier of als bijlage bij een reply op deze email sturen.</p>
 
