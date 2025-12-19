@@ -7,14 +7,64 @@
  * - Check API status
  */
 
-import type { Express, Request, Response } from "express";
+import crypto from "crypto";
+import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { asyncHandler, ServerError } from "../middleware/errorHandler";
-import { createApiSuccessResponse } from "@shared/errors";
+import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { HTTP_STATUS } from "../config/constants";
+import { AUTOMAIL_CONFIG } from "../config";
 import { automailCreateDraftRequestSchema } from "@shared/schema/automail";
 import { createDraft, isAutomailConfigured } from "../services/automail-api";
 import { logger } from "../services/logger";
+
+// ============================================================
+// EMBED TOKEN VALIDATION
+// ============================================================
+
+/**
+ * Timing-safe token comparison
+ */
+function timingSafeCompare(a: string, b: string): boolean {
+  const maxLength = Math.max(a.length, b.length);
+  const paddedA = a.padEnd(maxLength, '\0');
+  const paddedB = b.padEnd(maxLength, '\0');
+  return crypto.timingSafeEqual(
+    Buffer.from(paddedA, 'utf-8'),
+    Buffer.from(paddedB, 'utf-8')
+  );
+}
+
+/**
+ * Validates embed access token from query parameter
+ */
+function validateEmbedToken(req: Request, res: Response, next: NextFunction): void {
+  const token = req.query.token as string;
+  const expectedToken = AUTOMAIL_CONFIG.embedAccessToken;
+
+  // If no token configured, allow access (for development)
+  if (!expectedToken) {
+    logger.warn('automail-routes', 'EMBED_ACCESS_TOKEN not configured - allowing unauthenticated access');
+    next();
+    return;
+  }
+
+  // Validate token
+  if (!token || !timingSafeCompare(token, expectedToken)) {
+    logger.warn('automail-routes', 'Invalid embed token attempt', { ip: req.ip });
+    res.status(HTTP_STATUS.UNAUTHORIZED).json(
+      createApiErrorResponse(
+        'AuthenticationError',
+        ERROR_CODES.EXTERNAL_API_ERROR,
+        'Invalid or missing access token',
+        'Ongeldige toegangstoken'
+      )
+    );
+    return;
+  }
+
+  next();
+}
 
 // ============================================================
 // ROUTE REGISTRATION
@@ -114,15 +164,43 @@ export function registerAutomailRoutes(app: Express): void {
   );
 
   /**
+   * GET /api/embed/verify
+   *
+   * Verify embed access token. Used by frontend to check if access is allowed.
+   *
+   * Query params:
+   * - token: string - The embed access token
+   *
+   * Response: { success: true, data: { valid: true } }
+   */
+  app.get(
+    "/api/embed/verify",
+    validateEmbedToken,
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.status(HTTP_STATUS.OK).json(
+        createApiSuccessResponse(
+          { valid: true },
+          'Token is geldig'
+        )
+      );
+    })
+  );
+
+  /**
    * GET /api/automail/conversations/:conversationId/cases
    *
    * Get all cases/reports belonging to a specific Automail conversation.
    * Uses efficient database JSONB filtering.
+   * Protected by embed token when accessed from embed view.
+   *
+   * Query params:
+   * - token: string (optional) - Embed access token
    *
    * Response: { success: true, data: { conversationId, cases: [...], count } }
    */
   app.get(
     "/api/automail/conversations/:conversationId/cases",
+    validateEmbedToken,
     asyncHandler(async (req: Request, res: Response) => {
       const { conversationId } = req.params;
       const conversationIdNum = parseInt(conversationId, 10);

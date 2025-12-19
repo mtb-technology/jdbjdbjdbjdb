@@ -35,6 +35,28 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    # Embedded views - NO basic auth (for iframe embedding in Automail)
+    location ^~ /embed/ {
+        auth_basic off;
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # Automail API routes - NO basic auth (for embedded view)
+    location ^~ /api/automail/ {
+        auth_basic off;
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
     # Proxy to Node.js application
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -60,8 +82,9 @@ server {
         proxy_busy_buffers_size 512k;
     }
 
-    # SSE (Server-Sent Events) specific configuration
+    # SSE (Server-Sent Events) specific configuration - NO basic auth for embedded view
     location /api/reports/ {
+        auth_basic off;
         proxy_pass http://127.0.0.1:5000;
         proxy_http_version 1.1;
         proxy_set_header Connection '';
@@ -87,7 +110,7 @@ EOF
 
 echo "✅ nginx configured to listen on port $PORT"
 
-# Run database migrations (sync schema)
+can# Run database migrations (sync schema)
 echo "🗄️ Running database schema sync..."
 cd /app && npm run db:push 2>&1 || echo "⚠️ db:push failed, continuing anyway"
 echo "✅ Database schema sync complete"

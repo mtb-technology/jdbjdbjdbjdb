@@ -48,6 +48,9 @@ const envSchema = z.object({
   AUTOMAIL_API_KEY: z.string().optional(),
   AUTOMAIL_USER_ID: z.coerce.number().default(1),
   AUTOMAIL_BASE_URL: z.string().url().default('https://automail.jandebelastingman.nl'),
+
+  // Embed access token (for iframe embedding without basic auth)
+  EMBED_ACCESS_TOKEN: z.string().min(16, 'EMBED_ACCESS_TOKEN must be at least 16 characters').optional(),
 });
 
 // Validate environment variables
@@ -400,8 +403,10 @@ export const AUTOMAIL_CONFIG = {
   apiKey: env.AUTOMAIL_API_KEY,
   userId: env.AUTOMAIL_USER_ID,
   webhookSecret: env.AUTOMAIL_WEBHOOK_SECRET,
+  embedAccessToken: env.EMBED_ACCESS_TOKEN,
   isConfigured: !!env.AUTOMAIL_API_KEY,
   isWebhookEnabled: !!env.AUTOMAIL_WEBHOOK_SECRET,
+  isEmbedEnabled: !!env.EMBED_ACCESS_TOKEN,
 } as const;
 
 // Export all configuration

@@ -19,6 +19,7 @@ const BatchProcessing = lazy(() => import("@/pages/batch-processing"));
 const FollowUpAssistant = lazy(() => import("@/pages/follow-up-assistant"));
 const TextStyler = lazy(() => import("@/pages/text-styler"));
 const Box3Validator = lazy(() => import("@/pages/box3-validator"));
+const AutomailEmbed = lazy(() => import("@/pages/automail-embed"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 // Loading fallback component for better UX during code splitting
@@ -159,6 +160,13 @@ function Router() {
         </Route>
         <Route path="/settings">
           <LazyRoute Component={Settings} />
+        </Route>
+        {/* Embedded views for Automail integration */}
+        <Route path="/embed/automail/:conversationId">
+          <LazyRoute Component={AutomailEmbed} />
+        </Route>
+        <Route path="/embed/case/:reportId">
+          <LazyRoute Component={AutomailEmbed} />
         </Route>
         <Route>
           <LazyRoute Component={NotFound} />
