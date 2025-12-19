@@ -110,7 +110,7 @@ EOF
 
 echo "✅ nginx configured to listen on port $PORT"
 
-can# Run database migrations (sync schema)
+# Run database migrations (sync schema)
 echo "🗄️ Running database schema sync..."
 cd /app && npm run db:push 2>&1 || echo "⚠️ db:push failed, continuing anyway"
 echo "✅ Database schema sync complete"
@@ -126,4 +126,3 @@ fi
 
 # Now run the start script
 exec /start.sh
-EOF
