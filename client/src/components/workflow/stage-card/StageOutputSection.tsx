@@ -140,6 +140,7 @@ export const StageOutputSection = memo(function StageOutputSection({
               rawOutput={stageResult}
               emailOutput={emailOutput}
               isGeneratingEmail={isGeneratingEmail}
+              reportId={reportId}
             />
           )}
           {stageKey === "2_complexiteitscheck" && (

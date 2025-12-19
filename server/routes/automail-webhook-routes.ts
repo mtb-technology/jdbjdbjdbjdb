@@ -5,176 +5,39 @@
  * Authentication via X-Automail-API-Key header against AUTOMAIL_WEBHOOK_SECRET.
  */
 
+import crypto from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { asyncHandler, ServerError } from "../middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
 import { HTTP_STATUS } from "../config/constants";
+import { AUTOMAIL_CONFIG } from "../config";
+import { automailWebhookPayloadSchema } from "@shared/schema/automail";
 import { logger } from "../services/logger";
-import { z } from "zod";
-
-// ============================================================
-// ZOD SCHEMAS FOR AUTOMAIL WEBHOOK PAYLOAD
-// ============================================================
-// Generated from actual Automail/FreeScout webhook payload
-// Last updated: 2025-12-17
-
-// User schema (for assignee, createdBy, etc.)
-const automailUserSchema = z.object({
-  id: z.number(),
-  type: z.literal("user"),
-  firstName: z.string(),
-  lastName: z.string(),
-  photoUrl: z.string().optional(),
-  email: z.string().email(),
-}).passthrough();
-
-// Customer schema
-const automailCustomerSchema = z.object({
-  id: z.number(),
-  type: z.literal("customer").optional(),
-  firstName: z.string(),
-  lastName: z.string(),
-  photoUrl: z.string().optional(),
-  email: z.string().email(),
-  phone: z.string().optional().nullable(),
-  company: z.string().optional().nullable(),
-}).passthrough();
-
-// Custom field schema
-const automailCustomFieldSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  value: z.string().optional().nullable(),
-  text: z.string().optional().nullable(),
-}).passthrough();
-
-// Attachment schema (nested in threads)
-const automailAttachmentSchema = z.object({
-  id: z.number(),
-  fileName: z.string(),
-  fileUrl: z.string().url(),
-  mimeType: z.string(),
-  size: z.number(),
-  extractedText: z.string().optional().nullable(),
-  extractionSuccess: z.boolean().optional(),
-  extractionCached: z.boolean().optional(),
-}).passthrough();
-
-// Action schema (in threads)
-const automailActionSchema = z.object({
-  type: z.string(),
-  text: z.string(),
-  associatedEntities: z.array(z.unknown()).optional(),
-}).passthrough();
-
-// Source schema
-const automailSourceSchema = z.object({
-  type: z.string(),
-  via: z.string(),
-}).passthrough();
-
-// Thread schema (messages, notes, lineitems, customer replies)
-const automailThreadSchema = z.object({
-  id: z.number(),
-  type: z.enum(["note", "message", "customer", "lineitem"]),
-  status: z.string().optional(),
-  state: z.string().optional(),
-  action: automailActionSchema.optional(),
-  body: z.string().nullable().transform(val => val ?? ''),
-  source: automailSourceSchema.optional(),
-  customer: automailCustomerSchema.optional().nullable(),
-  createdBy: z.union([automailUserSchema, automailCustomerSchema]).optional().nullable(),
-  assignedTo: automailUserSchema.optional().nullable(),
-  to: z.array(z.string()).optional().default([]),
-  cc: z.array(z.string()).optional().default([]),
-  bcc: z.array(z.string()).optional().default([]),
-  createdAt: z.string(),
-  openedAt: z.string().optional().nullable(),
-  _embedded: z.object({
-    attachments: z.array(automailAttachmentSchema).optional().default([]),
-  }).optional(),
-}).passthrough();
-
-// CustomerWaitingSince schema
-const automailCustomerWaitingSinceSchema = z.object({
-  time: z.string(),
-  friendly: z.string(),
-  latestReplyFrom: z.string(),
-}).passthrough();
-
-// Main webhook payload schema
-const automailWebhookPayloadSchema = z.object({
-  // Core identifiers
-  id: z.number(),
-  number: z.number(),
-  externalId: z.string().optional().nullable(),
-
-  // Conversation metadata
-  threadsCount: z.number().optional(),
-  type: z.string().optional(), // "email", etc.
-  folderId: z.number().optional(),
-  status: z.string().optional(), // "pending", "active", "closed"
-  state: z.string().optional(), // "published", etc.
-  subject: z.string(),
-  preview: z.string().optional(),
-  mailboxId: z.number().optional(),
-  language: z.string().optional(),
-
-  // People
-  customer: automailCustomerSchema,
-  assignee: automailUserSchema.optional().nullable(),
-  createdBy: automailUserSchema.optional().nullable(),
-  closedBy: z.unknown().optional().nullable(),
-  closedByUser: z.unknown().optional().nullable(),
-
-  // Timestamps
-  createdAt: z.string().optional(),
-  updatedAt: z.string().optional(),
-  closedAt: z.string().optional().nullable(),
-  userUpdatedAt: z.string().optional(),
-  customerWaitingSince: automailCustomerWaitingSinceSchema.optional(),
-
-  // Source info
-  source: automailSourceSchema.optional(),
-
-  // Recipients
-  cc: z.array(z.string()).optional().default([]),
-  bcc: z.array(z.string()).optional().default([]),
-
-  // Custom fields
-  customFields: z.array(automailCustomFieldSchema).optional().default([]),
-
-  // Embedded data (threads with attachments)
-  _embedded: z.object({
-    threads: z.array(automailThreadSchema).optional().default([]),
-  }).optional(),
-
-  // Pre-formatted threads text (optional, for backward compatibility)
-  formattedThreads: z.string().optional().default(""),
-}).passthrough(); // Allow additional fields we haven't mapped
-
-export type AutomailWebhookPayload = z.infer<typeof automailWebhookPayloadSchema>;
 
 // ============================================================
 // AUTHENTICATION MIDDLEWARE
 // ============================================================
 
 /**
- * Timing-safe string comparison to prevent timing attacks
+ * Timing-safe string comparison using Node.js crypto
+ * Prevents timing attacks on webhook secret validation
  */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
+function timingSafeCompare(a: string, b: string): boolean {
+  // Pad strings to same length to prevent length-based timing leaks
+  const maxLength = Math.max(a.length, b.length);
+  const paddedA = a.padEnd(maxLength, '\0');
+  const paddedB = b.padEnd(maxLength, '\0');
+
+  return crypto.timingSafeEqual(
+    Buffer.from(paddedA, 'utf-8'),
+    Buffer.from(paddedB, 'utf-8')
+  );
 }
 
 /**
  * Middleware to validate Automail webhook API key
- * Validates X-API-Key header against AUTOMAIL_WEBHOOK_SECRET env var
+ * Validates X-Automail-API-Key header against AUTOMAIL_WEBHOOK_SECRET
  */
 function validateAutomailApiKey(
   req: Request,
@@ -182,7 +45,7 @@ function validateAutomailApiKey(
   next: NextFunction
 ): void {
   const apiKey = req.headers['x-automail-api-key'] as string;
-  const expectedKey = process.env.AUTOMAIL_WEBHOOK_SECRET;
+  const expectedKey = AUTOMAIL_CONFIG.webhookSecret;
 
   // Reject if no secret configured (fail secure)
   if (!expectedKey) {
@@ -199,7 +62,7 @@ function validateAutomailApiKey(
   }
 
   // Validate API key using timing-safe comparison
-  if (!apiKey || !timingSafeEqual(apiKey, expectedKey)) {
+  if (!apiKey || !timingSafeCompare(apiKey, expectedKey)) {
     logger.warn('automail-webhook', 'Invalid API key attempt', { ip: req.ip });
     res.status(HTTP_STATUS.UNAUTHORIZED).json(
       createApiErrorResponse(
@@ -228,7 +91,7 @@ export function registerAutomailWebhookRoutes(app: Express): void {
    *
    * Headers:
    * - X-Automail-API-Key: Automail webhook authentication
-   * - x-freescout-event: Event type (optional, for logging)
+   * - x-automail-event: Event type (optional, for logging)
    *
    * Response: { success: true, data: { reportId, dossierNumber, clientName } }
    */

@@ -43,8 +43,11 @@ const envSchema = z.object({
   SLACK_WEBHOOK_URL: z.string().url().optional(),
   PORTAL_BASE_URL: z.string().url().optional(),
 
-  // Automail webhook integration
+  // Automail integration
   AUTOMAIL_WEBHOOK_SECRET: z.string().min(16, 'AUTOMAIL_WEBHOOK_SECRET must be at least 16 characters').optional(),
+  AUTOMAIL_API_KEY: z.string().optional(),
+  AUTOMAIL_USER_ID: z.coerce.number().default(1),
+  AUTOMAIL_BASE_URL: z.string().url().default('https://automail.jandebelastingman.nl'),
 });
 
 // Validate environment variables
@@ -391,6 +394,16 @@ export const LOGGING_CONFIG = {
   enableRequestId: true
 } as const;
 
+// Automail configuratie
+export const AUTOMAIL_CONFIG = {
+  baseUrl: env.AUTOMAIL_BASE_URL,
+  apiKey: env.AUTOMAIL_API_KEY,
+  userId: env.AUTOMAIL_USER_ID,
+  webhookSecret: env.AUTOMAIL_WEBHOOK_SECRET,
+  isConfigured: !!env.AUTOMAIL_API_KEY,
+  isWebhookEnabled: !!env.AUTOMAIL_WEBHOOK_SECRET,
+} as const;
+
 // Export all configuration
 export const config = {
   // Environment
@@ -414,7 +427,8 @@ export const config = {
   logging: LOGGING_CONFIG,
   sourceValidation: SOURCE_VALIDATION,
   reports: REPORT_CONFIG,
-  aiModels: AI_MODELS
+  aiModels: AI_MODELS,
+  automail: AUTOMAIL_CONFIG
 } as const;
 
 export type Config = typeof config;

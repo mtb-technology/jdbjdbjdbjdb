@@ -33,6 +33,7 @@ export interface IStorage {
     status?: string;
     search?: string;
   }): Promise<{ reports: ReportListItem[]; total: number; page: number; totalPages: number }>;
+  getReportsByAutomailConversation(conversationId: number): Promise<Report[]>;
   createReport(report: InsertReport): Promise<Report>;
   updateReport(id: string, report: Partial<Report>): Promise<Report | undefined>;
   updateReportStatus(id: string, status: string): Promise<void>;
@@ -335,6 +336,27 @@ export class DatabaseStorage implements IStorage {
       return result;
     } catch (error) {
       logger.error('storage', 'Error in getAllReports', {}, error instanceof Error ? error : undefined);
+      throw error;
+    }
+  }
+
+  /**
+   * Get reports by Automail conversation ID
+   * Uses PostgreSQL JSONB path filtering for efficient querying
+   */
+  async getReportsByAutomailConversation(conversationId: number): Promise<Report[]> {
+    try {
+      const result = await db
+        .select()
+        .from(reports)
+        .where(
+          sql`(${reports.dossierData}->'automail'->>'conversationId')::integer = ${conversationId}`
+        )
+        .orderBy(desc(reports.createdAt));
+
+      return result;
+    } catch (error) {
+      logger.error('storage', 'Error in getReportsByAutomailConversation', { conversationId }, error instanceof Error ? error : undefined);
       throw error;
     }
   }

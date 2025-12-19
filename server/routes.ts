@@ -29,6 +29,7 @@ import { registerJobRoutes } from "./routes/job-routes";
 import { box3V2Router } from "./routes/box3-v2-routes";
 import { externalReportRouter } from "./routes/external-report-routes";
 import { registerAutomailWebhookRoutes } from "./routes/automail-webhook-routes";
+import { registerAutomailRoutes } from "./routes/automail-routes";
 import { z } from "zod";
 import { ServerError, asyncHandler, getErrorMessage, isErrorWithMessage } from "./middleware/errorHandler";
 import { createApiSuccessResponse, createApiErrorResponse, ERROR_CODES } from "@shared/errors";
@@ -96,8 +97,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // External Report Sessions (paste & adjust existing reports)
   app.use("/api/external-reports", externalReportRouter);
 
-  // Automail webhook integration
+  // Automail integration (webhooks + API)
   registerAutomailWebhookRoutes(app);
+  registerAutomailRoutes(app);
   // ==============================================
 
   // Start periodic health checks and run immediate warm-up

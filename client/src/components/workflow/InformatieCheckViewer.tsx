@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Copy, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle, Mail, Loader2, Building2, Landmark, TrendingUp, FileText, Calendar, ArrowRightLeft, Receipt, FolderOpen } from "lucide-react";
+import { Copy, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle, Mail, Loader2, Building2, Landmark, TrendingUp, FileText, Calendar, ArrowRightLeft, Receipt, FolderOpen, Send } from "lucide-react";
 import type { InformatieCheckOutput } from "@shared/schema";
 import { parseInformatieCheckOutput } from "@/lib/workflowParsers";
 import DOMPurify from "isomorphic-dompurify";
@@ -451,6 +451,8 @@ interface InformatieCheckViewerProps {
   emailOutput?: string;
   /** Whether email generation is in progress */
   isGeneratingEmail?: boolean;
+  /** Report ID for creating draft in Automail */
+  reportId?: string;
 }
 
 /**
@@ -459,10 +461,13 @@ interface InformatieCheckViewerProps {
  * - Missing info + email interface for INCOMPLEET status
  * - Dossier summary for COMPLEET status (complete information)
  */
-export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmail }: InformatieCheckViewerProps) {
+export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmail, reportId }: InformatieCheckViewerProps) {
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false);
+  const [draftCreated, setDraftCreated] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
 
   const handleCopyJson = (jsonData: any) => {
     navigator.clipboard.writeText(JSON.stringify(jsonData, null, 2));
@@ -523,6 +528,41 @@ export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmai
       } catch (fallbackErr) {
         console.error('Copy failed:', fallbackErr);
       }
+    }
+  };
+
+  // Create draft in Automail
+  const createDraftInAutomail = async (htmlText: string) => {
+    if (!reportId) {
+      setDraftError('Geen rapport ID beschikbaar');
+      return;
+    }
+
+    setIsCreatingDraft(true);
+    setDraftError(null);
+
+    try {
+      const response = await fetch(`/api/reports/${reportId}/automail/draft`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: htmlText }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.userMessage || 'Fout bij aanmaken draft');
+      }
+
+      setDraftCreated(true);
+      setTimeout(() => setDraftCreated(false), 3000);
+    } catch (err) {
+      console.error('Failed to create draft:', err);
+      setDraftError(err instanceof Error ? err.message : 'Fout bij aanmaken draft');
+      setTimeout(() => setDraftError(null), 5000);
+    } finally {
+      setIsCreatingDraft(false);
     }
   };
 
@@ -659,23 +699,53 @@ export function InformatieCheckViewer({ rawOutput, emailOutput, isGeneratingEmai
                   })
                 }}
               />
-              <Button
-                onClick={() => copyEmailToClipboard(cleanedEmail)}
-                variant="outline"
-                className="w-full"
-              >
-                {copiedEmail ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
-                    Gekopieerd!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Kopieer Email
-                  </>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => copyEmailToClipboard(cleanedEmail)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  {copiedEmail ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
+                      Gekopieerd!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Kopieer Email
+                    </>
+                  )}
+                </Button>
+                {reportId && (
+                  <Button
+                    onClick={() => createDraftInAutomail(cleanedEmail)}
+                    variant="default"
+                    className="flex-1"
+                    disabled={isCreatingDraft || draftCreated}
+                  >
+                    {isCreatingDraft ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Aanmaken...
+                      </>
+                    ) : draftCreated ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
+                        Draft Aangemaakt!
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-2" />
+                        Maak Draft in Automail
+                      </>
+                    )}
+                  </Button>
                 )}
-              </Button>
+              </div>
+              {draftError && (
+                <p className="text-sm text-red-600 mt-2">{draftError}</p>
+              )}
             </CardContent>
           </Card>
         );
