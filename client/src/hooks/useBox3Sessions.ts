@@ -41,6 +41,9 @@ export interface Box3DossierFull {
     uploadedVia: string | null;
     classification: any;
     extractionSummary: string | null;
+    extractedText: string | null;
+    extractionStatus: string | null;
+    extractionCharCount: number | null;
   }>;
 }
 

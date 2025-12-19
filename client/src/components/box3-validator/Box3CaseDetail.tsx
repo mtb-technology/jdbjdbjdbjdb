@@ -318,6 +318,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
   // Document preview state
   const [previewDocIndex, setPreviewDocIndex] = useState<number | null>(null);
+  const [previewTab, setPreviewTab] = useState<"preview" | "rawtext">("preview");
   const previewDoc = previewDocIndex !== null ? documents[previewDocIndex] : null;
 
   // Year-first navigation: year is the primary selector
@@ -532,7 +533,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
     <>
       {/* Modals - outside the grid */}
       {/* Document Preview Modal */}
-      <Dialog open={previewDocIndex !== null} onOpenChange={(open) => !open && setPreviewDocIndex(null)}>
+      <Dialog open={previewDocIndex !== null} onOpenChange={(open) => { if (!open) { setPreviewDocIndex(null); setPreviewTab("preview"); } }}>
         <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
           {previewDoc && (
             <>
@@ -575,29 +576,56 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   </div>
                 </div>
               </DialogHeader>
-              <div className="overflow-auto max-h-[calc(90vh-60px)] bg-muted/10">
-                {isImageFile(previewDoc.mimeType) ? (
-                  <img
-                    src={getPreviewUrl(previewDoc) || ''}
-                    alt={previewDoc.filename}
-                    className="w-full h-auto"
-                  />
-                ) : isPdfFile(previewDoc.mimeType) ? (
-                  <iframe
-                    src={getPreviewUrl(previewDoc) || ''}
-                    className="w-full h-[80vh]"
-                    title={previewDoc.filename}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-64 text-muted-foreground">
-                    <div className="text-center">
-                      <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>Preview niet beschikbaar voor dit bestandstype</p>
-                      <p className="text-sm">{previewDoc.mimeType}</p>
-                    </div>
+              <Tabs value={previewTab} onValueChange={(v) => setPreviewTab(v as "preview" | "rawtext")}>
+                <TabsList className="mx-4 mt-2 w-fit">
+                  <TabsTrigger value="preview">Preview</TabsTrigger>
+                  <TabsTrigger value="rawtext" disabled={!previewDoc.extractedText}>
+                    Raw Text {previewDoc.extractionCharCount ? `(${(previewDoc.extractionCharCount / 1000).toFixed(1)}k)` : ''}
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="preview" className="mt-0">
+                  <div className="overflow-auto max-h-[calc(90vh-120px)] bg-muted/10">
+                    {isImageFile(previewDoc.mimeType) ? (
+                      <img
+                        src={getPreviewUrl(previewDoc) || ''}
+                        alt={previewDoc.filename}
+                        className="w-full h-auto"
+                      />
+                    ) : isPdfFile(previewDoc.mimeType) ? (
+                      <iframe
+                        src={getPreviewUrl(previewDoc) || ''}
+                        className="w-full h-[calc(90vh-120px)]"
+                        title={previewDoc.filename}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-64 text-muted-foreground">
+                        <div className="text-center">
+                          <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          <p>Preview niet beschikbaar voor dit bestandstype</p>
+                          <p className="text-sm">{previewDoc.mimeType}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </TabsContent>
+                <TabsContent value="rawtext" className="mt-0">
+                  <div className="overflow-auto max-h-[calc(90vh-120px)] p-4">
+                    {previewDoc.extractedText ? (
+                      <pre className="text-xs font-mono whitespace-pre-wrap bg-muted/30 p-4 rounded-lg border">
+                        {previewDoc.extractedText}
+                      </pre>
+                    ) : (
+                      <div className="flex items-center justify-center h-64 text-muted-foreground">
+                        <div className="text-center">
+                          <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          <p>Geen tekst geëxtraheerd</p>
+                          <p className="text-sm">Status: {previewDoc.extractionStatus || 'onbekend'}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
             </>
           )}
         </DialogContent>

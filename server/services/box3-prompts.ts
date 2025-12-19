@@ -435,6 +435,14 @@ Beoordeel de volgende extractie op plausibiliteit en mogelijke fouten.
 ## EXTRACTIE DATA
 {EXTRACTED_DATA}
 
+## EMAIL CONTEXT VAN KLANT
+{EMAIL_CONTEXT}
+
+BELANGRIJK: De email van de klant kan extra informatie bevatten die de extractie context geeft.
+Als de klant in de email bijvoorbeeld rente-inkomsten, rentepercentages, of andere details vermeldt,
+MOET je die informatie meenemen in je beoordeling. Een vordering ZONDER rente in de extractie maar
+MET rente vermeld in de email is GEEN anomalie - de informatie is gewoon in de email vermeld.
+
 ## TE CONTROLEREN
 
 ### 1. Rente Plausibiliteit

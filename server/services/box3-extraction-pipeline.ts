@@ -128,6 +128,7 @@ export interface ExclusionContext {
 export class Box3ExtractionPipeline {
   private factory: AIModelFactory;
   private onProgress?: (progress: PipelineProgress) => void;
+  private emailText: string | null = null; // Email context from client
   private readonly MODEL = 'gemini-3-flash-preview';
   private readonly CONCURRENCY = 3;
 
@@ -208,6 +209,9 @@ export class Box3ExtractionPipeline {
     const debugResponses: Record<string, string> = {};
     const totalSteps = 5;
 
+    // Store email text for use in extraction stages
+    this.emailText = emailText;
+
     // Prepare documents with text extraction
     const preparedDocs = await this.prepareDocuments(documents);
 
@@ -226,15 +230,24 @@ export class Box3ExtractionPipeline {
     stageTimes['classification'] = Date.now() - stage1Start;
 
     // Build document registry from classification
-    const sourceDocRegistry: Box3SourceDocumentEntry[] = classificationResults.map((result, i) => ({
-      file_id: result.document_id,
-      filename: documents[i]?.filename || `doc_${i + 1}`,
-      detected_type: result.detected_type,
-      detected_tax_year: result.detected_tax_years[0] || null,
-      for_person: null,
-      is_readable: true,
-      used_for_extraction: true,
-    }));
+    // is_readable = true only if we have extracted text OR the AI could classify it (not 'overig')
+    const sourceDocRegistry: Box3SourceDocumentEntry[] = classificationResults.map((result, i) => {
+      const preparedDoc = preparedDocs[i];
+      const hasExtractedText = !!preparedDoc?.extractedText && preparedDoc.extractedText.length > 100;
+      const wasClassified = result.detected_type !== 'overig';
+      // Document is readable if we got text OR AI could identify it via vision
+      const isReadable = hasExtractedText || wasClassified;
+
+      return {
+        file_id: result.document_id,
+        filename: documents[i]?.filename || `doc_${i + 1}`,
+        detected_type: result.detected_type,
+        detected_tax_year: result.detected_tax_years[0] || null,
+        for_person: null,
+        is_readable: isReadable,
+        used_for_extraction: isReadable, // Can only use for extraction if readable
+      };
+    });
 
     // =========================================================================
     // STAGE 2: Tax Authority Data Extraction
@@ -1285,7 +1298,12 @@ export class Box3ExtractionPipeline {
       return `### Document ${i + 1}: ${doc.filename}\n(Zie bijgevoegde afbeelding/PDF)`;
     });
 
-    const fullPrompt = `${prompt}${exclusionInstruction}\n\n## DOCUMENTEN:\n${docSections.join('\n\n')}\n\nExtraheer nu ALLE overige bezittingen en schulden.`;
+    // Add email context if available - important for claims with interest info
+    const emailSection = this.emailText
+      ? `\n\n## EMAIL VAN KLANT:\nDit is de originele email van de klant met mogelijk extra context over hun vermogensbestanddelen:\n\`\`\`\n${this.emailText}\n\`\`\`\n\nLET OP: De email kan belangrijke informatie bevatten over rente-inkomsten, rentepercentages, of andere details die niet in de documenten staan. Gebruik deze informatie om de extractie te verrijken.`
+      : '';
+
+    const fullPrompt = `${prompt}${exclusionInstruction}\n\n## DOCUMENTEN:\n${docSections.join('\n\n')}${emailSection}\n\nExtraheer nu ALLE overige bezittingen en schulden.`;
     debugPrompts['other_extraction'] = fullPrompt;
 
     const visionAttachments = documents
@@ -2167,10 +2185,14 @@ export class Box3ExtractionPipeline {
       ),
     };
 
-    const prompt = ANOMALY_DETECTION_PROMPT.replace(
-      '{EXTRACTED_DATA}',
-      JSON.stringify(extractionSummary, null, 2)
-    );
+    // Build prompt with email context if available
+    const emailContext = this.emailText
+      ? this.emailText
+      : '(Geen email ontvangen van klant)';
+
+    const prompt = ANOMALY_DETECTION_PROMPT
+      .replace('{EXTRACTED_DATA}', JSON.stringify(extractionSummary, null, 2))
+      .replace('{EMAIL_CONTEXT}', emailContext);
 
     debugPrompts['anomaly_detection'] = prompt;
 
@@ -2298,7 +2320,12 @@ export class Box3ExtractionPipeline {
         return `### Document ${i + 1}: ${doc.filename}\n(Bijgevoegde afbeelding/PDF)`;
       });
 
-      const fullPrompt = `${prompt}\n\n## BRON DOCUMENTEN:\n${docSections.join('\n\n')}`;
+      // Add email context if available
+      const emailSection = this.emailText
+        ? `\n\n## EMAIL VAN KLANT:\n\`\`\`\n${this.emailText}\n\`\`\`\n\nLET OP: De email kan extra informatie bevatten over vermogensbestanddelen, rente-inkomsten, of andere relevante details.`
+        : '';
+
+      const fullPrompt = `${prompt}\n\n## BRON DOCUMENTEN:\n${docSections.join('\n\n')}${emailSection}`;
 
       // Use high-thinking model for reconciliation (text-only, no images needed - we have the extracted text)
       const aiResult = await this.factory.callModel(

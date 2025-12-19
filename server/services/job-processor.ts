@@ -826,6 +826,15 @@ class JobProcessor {
         fileData: doc.fileData,
         extractedText,
       });
+
+      // Save extracted text to database for UI access
+      if (extractedText !== undefined) {
+        await storage.updateBox3Document(doc.id, {
+          extractedText: extractedText,
+          extractionStatus: extractedText.length > 100 ? 'success' : 'low_yield',
+          extractionCharCount: extractedText.length,
+        });
+      }
     }
 
     // Check if cancelled before pipeline
