@@ -1160,6 +1160,7 @@ box3V2Router.post(
     let totalIndicativeRefund = 0;
     let totalDeemedReturn = 0;
     let totalEstimatedRefund = 0;
+    let totalTaxPaid = 0;
     let hasCompleteData = true;
     let hasUnknownInterest = false;
     const bankSavings = blueprint.assets?.bank_savings || [];
@@ -1180,6 +1181,12 @@ box3V2Router.post(
       const yearRefund = summary?.calculated_totals?.indicative_refund || 0;
       totalIndicativeRefund += yearRefund;
       totalDeemedReturn += summary?.calculated_totals?.deemed_return_from_tax_authority || 0;
+
+      // Get tax paid from tax_authority_data
+      const taxAuthorityYear = blueprint.tax_authority_data?.[year];
+      if (taxAuthorityYear?.household_totals?.total_tax_assessed) {
+        totalTaxPaid += taxAuthorityYear.household_totals.total_tax_assessed;
+      }
 
       // Calculate estimated refund (same logic as frontend)
       const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[year] || 0.001;
@@ -1259,20 +1266,26 @@ box3V2Router.post(
         .map(([year, items]) => `<p><strong>${year}:</strong></p><ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`)
         .join('');
 
-      // Calculate costs
+      // Calculate costs - round to whole euros for email
       const costPerYear = 249;
       const totalCost = years.length * costPerYear;
       const displayRefund = hasUnknownInterest ? totalEstimatedRefund : totalIndicativeRefund;
-      const netRefund = displayRefund - totalCost;
+      const displayRefundRounded = Math.round(displayRefund);
+      const netRefund = displayRefundRounded - totalCost;
 
-      // Build the positive outlook section
-      const refundSection = displayRefund > 0
-        ? `<p><strong>Goed nieuws:</strong> Op basis van uw aangifte zien wij aanleiding voor een teruggave van circa <strong>€${displayRefund.toFixed(2)}</strong>.</p>`
+      // Build the positive outlook section with tax paid context
+      const totalTaxPaidRounded = Math.round(totalTaxPaid);
+      const taxPaidText = totalTaxPaidRounded > 0
+        ? `U heeft in ${yearRange} <strong>€${totalTaxPaidRounded},-</strong> Box 3 belasting betaald. `
+        : '';
+
+      const refundSection = displayRefundRounded > 0
+        ? `<p><strong>Goed nieuws:</strong> ${taxPaidText}Afhankelijk van uw werkelijke rendement kunt u tot <strong>€${displayRefundRounded},-</strong> terugkrijgen.</p>`
         : '';
 
       const costSection = years.length === 1
-        ? `<p>Wij kunnen het bezwaar volledig voor u verzorgen. De kosten hiervoor bedragen <strong>€${costPerYear},-</strong> per belastingjaar${netRefund > 0 ? `, wat netto <strong>€${netRefund.toFixed(2)}</strong> oplevert` : ''}.</p>`
-        : `<p>Wij kunnen de bezwaren volledig voor u verzorgen. De kosten hiervoor bedragen <strong>€${costPerYear},-</strong> per belastingjaar (totaal €${totalCost},- voor ${years.length} jaar)${netRefund > 0 ? `, wat netto <strong>€${netRefund.toFixed(2)}</strong> oplevert` : ''}.</p>`;
+        ? `<p>Wij kunnen het bezwaar volledig voor u verzorgen. De kosten hiervoor bedragen <strong>€${costPerYear},-</strong> per belastingjaar${netRefund > 0 ? `, wat netto <strong>€${netRefund},-</strong> oplevert` : ''}.</p>`
+        : `<p>Wij kunnen de bezwaren volledig voor u verzorgen. De kosten hiervoor bedragen <strong>€${costPerYear},-</strong> per belastingjaar (totaal €${totalCost},- voor ${years.length} jaar)${netRefund > 0 ? `, wat netto <strong>€${netRefund},-</strong> oplevert` : ''}.</p>`;
 
       body = `<p>Beste ${firstName},</p>
 
@@ -1284,7 +1297,7 @@ ${refundSection}
 
 ${missingListHtml}
 
-${displayRefund > 0 ? costSection : ''}
+${displayRefundRounded > 0 ? costSection : ''}
 
 <p>U kunt de documenten eenvoudig uploaden via uw persoonlijke dossier of als bijlage bij een reply op deze email sturen.</p>
 

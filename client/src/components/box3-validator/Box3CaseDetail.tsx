@@ -636,7 +636,22 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
               {/* Body */}
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Inhoud</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-muted-foreground">Inhoud</label>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        generatedEmail.subject + '\n\n' +
+                        generatedEmail.body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+                      );
+                      toast({ title: 'Gekopieerd', description: 'Email inhoud gekopieerd naar klembord' });
+                    }}
+                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    title="Kopieer email"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
+                </div>
                 <div
                   className="p-4 bg-white border rounded-md text-sm prose prose-sm max-h-[400px] overflow-y-auto"
                   dangerouslySetInnerHTML={{ __html: generatedEmail.body }}
@@ -654,34 +669,6 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="flex gap-2 pt-2 border-t">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    navigator.clipboard.writeText(
-                      generatedEmail.subject + '\n\n' +
-                      generatedEmail.body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-                    );
-                    toast({ title: 'Gekopieerd', description: 'Email inhoud gekopieerd naar klembord' });
-                  }}
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Kopieer tekst
-                </Button>
-                <Button
-                  variant="default"
-                  className="flex-1"
-                  onClick={() => {
-                    const mailto = `mailto:${dossier.clientEmail || ''}?subject=${encodeURIComponent(generatedEmail.subject)}&body=${encodeURIComponent(generatedEmail.body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' '))}`;
-                    window.open(mailto, '_blank');
-                  }}
-                >
-                  <Mail className="h-4 w-4 mr-2" />
-                  Open in mail app
-                </Button>
-              </div>
             </div>
           )}
         </DialogContent>
