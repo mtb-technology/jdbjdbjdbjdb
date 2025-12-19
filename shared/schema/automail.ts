@@ -98,7 +98,7 @@ export const automailCustomerWaitingSinceSchema = z.object({
 export const automailWebhookPayloadSchema = z.object({
   // Core identifiers
   id: z.number(),
-  number: z.number().optional().default(0),
+  number: z.number(),
   externalId: z.string().optional().nullable(),
 
   // Conversation metadata
@@ -107,7 +107,7 @@ export const automailWebhookPayloadSchema = z.object({
   folderId: z.number().optional(),
   status: z.string().optional(),
   state: z.string().optional(),
-  subject: z.string().optional().default(""),
+  subject: z.string(),
   preview: z.string().optional(),
   mailboxId: z.number().optional(),
   language: z.string().optional(),
