@@ -1349,8 +1349,6 @@ box3V2Router.post(
       // Build the email with new structure
       body = `<p>Beste ${firstName},</p>
 
-<h3>Resultaat van onze controle</h3>
-
 <p>Goed nieuws! Wij hebben uw aangifte inkomstenbelasting ${yearRange} gecontroleerd en zien een mogelijkheid voor teruggave van Box 3 belasting.</p>
 
 <p>${totalTaxPaidRounded > 0 ? `U heeft <strong>€${totalTaxPaidRounded},-</strong> Box 3 belasting betaald. ` : ''}De <strong>Hoge Raad</strong> heeft bepaald dat u niet meer belasting hoeft te betalen dan uw <strong>werkelijk behaalde rendement</strong>. Dit betekent dat als uw daadwerkelijke rente en dividend lager was dan wat de Belastingdienst veronderstelde, u recht heeft op teruggave.</p>
@@ -1359,13 +1357,9 @@ ${displayRefundRounded > 0 ? `<p>Op basis van onze eerste analyse schatten wij u
 
 <refund_visual></refund_visual>
 
-<h3>Benodigde documenten</h3>
-
 <p>Om de exacte teruggave te berekenen hebben wij nog de volgende jaaropgaven nodig:</p>
 
 ${missingListHtml}
-
-<h3>Onze service</h3>
 
 <ul>
 <li><strong>Service:</strong> Opstellen en indienen van het officiële verzoek tot toepassing werkelijk rendement</li>
@@ -1374,8 +1368,6 @@ ${netRefund > 0 ? `<li><strong>Geschat netto voordeel:</strong> €${netRefund},
 </ul>
 
 <p><em>Het netto voordeel kan variëren op basis van het vastgestelde werkelijk rendement.</em></p>
-
-<h3>Hoe gaan wij te werk?</h3>
 
 <ol>
 <li>Na akkoord en aanlevering van de jaaropgaven maken wij het dossier definitief</li>
@@ -1398,21 +1390,15 @@ ${netRefund > 0 ? `<li><strong>Geschat netto voordeel:</strong> €${netRefund},
 
       body = `<p>Beste ${firstName},</p>
 
-<h3>Resultaat van onze controle</h3>
-
 <p>Wij hebben uw aangifte inkomstenbelasting ${yearRange} gecontroleerd op mogelijkheden voor teruggave van Box 3 belasting.</p>
 
 ${totalTaxPaidRoundedNotProfitable > 0 ? `<p>U heeft <strong>€${totalTaxPaidRoundedNotProfitable},-</strong> Box 3 belasting betaald.</p>` : ''}
-
-<h3>Onze conclusie</h3>
 
 <p>Helaas is een verzoek tot toepassing werkelijk rendement in uw situatie <strong>niet rendabel</strong>.</p>
 
 ${indicativeRefundRounded > 0
   ? `<p>De mogelijke teruggave bedraagt circa <strong>€${indicativeRefundRounded},-</strong>. De kosten voor het indienen van een verzoek bedragen €${costPerYearNotProfitable},- per jaar. Omdat de teruggave lager is dan de kosten, raden wij af om door te gaan.</p>`
   : `<p>Op basis van de gegevens is er geen teruggave te verwachten. Uw werkelijke rendement ligt niet lager dan het forfaitaire rendement dat de Belastingdienst heeft gehanteerd.</p>`}
-
-<h3>Waarom geen voordeel?</h3>
 
 <p>Het verzoek werkelijk rendement is gebaseerd op het verschil tussen uw <strong>daadwerkelijke rente en dividend</strong> en het <strong>forfaitaire rendement</strong> dat de Belastingdienst hanteert. In uw geval ligt uw werkelijke rendement niet significant lager dan het forfaitaire rendement.</p>
 
@@ -1433,29 +1419,21 @@ ${indicativeRefundRounded > 0
 
       body = `<p>Beste ${firstName},</p>
 
-<h3>Resultaat van onze controle</h3>
-
 <p>Goed nieuws! Wij hebben uw aangifte inkomstenbelasting ${yearRange} gecontroleerd en de berekening is compleet.</p>
 
 <p>${totalTaxPaidRoundedProfitable > 0 ? `U heeft <strong>€${totalTaxPaidRoundedProfitable},-</strong> Box 3 belasting betaald. ` : ''}De <strong>Hoge Raad</strong> heeft bepaald dat u niet meer belasting hoeft te betalen dan uw <strong>werkelijk behaalde rendement</strong>. Uw werkelijke rendement was lager dan wat de Belastingdienst veronderstelde.</p>
 
 <refund_visual></refund_visual>
 
-<h3>Uw teruggave</h3>
-
 <p><strong>Berekende teruggave: €${Math.round(totalIndicativeRefund)},-</strong></p>
 
 <p>Dit bedrag is gebaseerd op het verschil tussen uw werkelijke rendement en het forfaitaire rendement dat de Belastingdienst heeft gehanteerd.</p>
-
-<h3>Onze service</h3>
 
 <ul>
 <li><strong>Service:</strong> Opstellen en indienen van het officiële verzoek tot toepassing werkelijk rendement</li>
 <li><strong>Kosten:</strong> €${costPerYear},- per belastingjaar${years.length > 1 ? ` (totaal €${totalCost},- voor ${years.length} jaren)` : ''}</li>
 <li><strong>Netto voordeel:</strong> €${netRefundProfitable},- (teruggave minus kosten)</li>
 </ul>
-
-<h3>Hoe gaan wij te werk?</h3>
 
 <ol>
 <li>U geeft akkoord om door te gaan</li>

@@ -605,7 +605,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
       {/* Email Preview Modal */}
       <Dialog open={showEmailPreview} onOpenChange={setShowEmailPreview}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden">
+        <DialogContent className="max-w-4xl max-h-[95vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Mail className="h-5 w-5" />
@@ -653,7 +653,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   </button>
                 </div>
                 <div
-                  className="p-4 bg-white border rounded-md text-sm prose prose-sm max-h-[400px] overflow-y-auto"
+                  className="p-4 bg-white border rounded-md text-sm prose prose-sm max-h-[60vh] overflow-y-auto"
                   dangerouslySetInnerHTML={{ __html: generatedEmail.body }}
                 />
               </div>
