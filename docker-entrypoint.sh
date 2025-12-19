@@ -57,6 +57,17 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    # Embed API routes - NO basic auth (token verification for embedded view)
+    location ^~ /api/embed/ {
+        auth_basic off;
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
     # Proxy to Node.js application
     location / {
         proxy_pass http://127.0.0.1:5000;
