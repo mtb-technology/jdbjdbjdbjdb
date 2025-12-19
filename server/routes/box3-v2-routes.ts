@@ -644,144 +644,315 @@ box3V2Router.post(
 );
 
 /**
- * Revalidate dossier with all documents
+ * Start revalidation job (background processing)
+ * POST /api/box3-v2/dossiers/:id/revalidate-job
+ *
+ * Creates a background job to revalidate the dossier.
+ * Returns job ID immediately - client can poll for progress.
+ */
+box3V2Router.post(
+  "/dossiers/:id/revalidate-job",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    // Validate dossier exists
+    const dossier = await storage.getBox3Dossier(id);
+    if (!dossier) {
+      res.status(404).json(createApiErrorResponse(
+        'NOT_FOUND',
+        ERROR_CODES.REPORT_NOT_FOUND,
+        'Dossier niet gevonden',
+        'Dossier niet gevonden'
+      ));
+      return;
+    }
+
+    // Check for documents
+    const documents = await storage.getBox3DocumentsForDossier(id);
+    if (documents.length === 0) {
+      res.status(400).json(createApiErrorResponse(
+        'VALIDATION_ERROR',
+        ERROR_CODES.VALIDATION_FAILED,
+        'Geen documenten om te valideren',
+        'Geen documenten om te valideren'
+      ));
+      return;
+    }
+
+    // Check if there's already an active job for this dossier
+    const activeJobs = await storage.getJobsForReport(id, ['queued', 'processing']);
+    const existingBox3Job = activeJobs.find(j => j.type === 'box3_revalidation');
+    if (existingBox3Job) {
+      // Return existing job ID instead of creating duplicate
+      res.json(createApiSuccessResponse({
+        jobId: existingBox3Job.id,
+        status: existingBox3Job.status,
+        existing: true,
+        message: 'Revalidatie job is al actief'
+      }));
+      return;
+    }
+
+    // Create job (using reportId field to store dossierId)
+    const job = await storage.createJob({
+      type: 'box3_revalidation',
+      status: 'queued',
+      reportId: id, // Dossier ID stored here
+      result: {}, // No additional config needed
+    });
+
+    logger.info('box3-v2', 'Revalidation job created', {
+      jobId: job.id,
+      dossierId: id,
+      documentCount: documents.length
+    });
+
+    res.json(createApiSuccessResponse({
+      jobId: job.id,
+      status: 'queued',
+      message: 'Revalidatie job gestart'
+    }));
+  })
+);
+
+/**
+ * Get active job for dossier
+ * GET /api/box3-v2/dossiers/:id/job
+ *
+ * Returns the active revalidation job for this dossier, if any.
+ */
+box3V2Router.get(
+  "/dossiers/:id/job",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    // Get active jobs for this dossier
+    const activeJobs = await storage.getJobsForReport(id, ['queued', 'processing']);
+    const box3Job = activeJobs.find(j => j.type === 'box3_revalidation');
+
+    if (!box3Job) {
+      res.json(createApiSuccessResponse({
+        hasActiveJob: false,
+        job: null
+      }));
+      return;
+    }
+
+    // Parse progress JSON
+    let progress = null;
+    if (box3Job.progress) {
+      try {
+        progress = JSON.parse(box3Job.progress);
+      } catch {
+        progress = null;
+      }
+    }
+
+    res.json(createApiSuccessResponse({
+      hasActiveJob: true,
+      job: {
+        id: box3Job.id,
+        status: box3Job.status,
+        progress,
+        createdAt: box3Job.createdAt,
+        startedAt: box3Job.startedAt,
+      }
+    }));
+  })
+);
+
+/**
+ * Revalidate dossier with all documents (SSE streaming)
  * POST /api/box3-v2/dossiers/:id/revalidate
+ *
+ * DEPRECATED: Use /revalidate-job instead for background processing.
+ * Returns Server-Sent Events with progress updates during extraction,
+ * then a final result event with the complete blueprint.
  */
 box3V2Router.post(
   "/dossiers/:id/revalidate",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { id } = req.params;
-    // Note: systemPrompt is no longer required - pipeline has built-in prompts
 
-    const dossier = await storage.getBox3Dossier(id);
-    if (!dossier) {
-      throw ServerError.notFound("Dossier");
-    }
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
 
-    // Get all documents
-    const documents = await storage.getBox3DocumentsForDossier(id);
-    if (documents.length === 0) {
-      throw ServerError.validation("No documents", "Geen documenten om te valideren");
-    }
+    // Helper to send SSE events
+    const sendEvent = (event: string, data: object) => {
+      res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
 
-    logger.info('box3-v2', 'Revalidating dossier', { dossierId: id, documentCount: documents.length });
-
-    // Prepare documents for pipeline
-    const pipelineDocs: PipelineDocument[] = [];
-    for (const doc of documents) {
-      // Extract text from PDFs
-      let extractedText: string | undefined;
-      const ext = doc.filename.toLowerCase().split('.').pop();
-      const isPDF = doc.mimeType === 'application/pdf' ||
-                    (doc.mimeType === 'application/octet-stream' && ext === 'pdf');
-      const isTXT = doc.mimeType === 'text/plain' ||
-                    (doc.mimeType === 'application/octet-stream' && ext === 'txt');
-
-      if (isPDF) {
-        try {
-          const PDFParseClass = await getPdfParse();
-          const buffer = Buffer.from(doc.fileData, 'base64');
-          const parser = new PDFParseClass({ data: buffer });
-          const result = await parser.getText();
-          extractedText = result.text || "";
-        } catch {
-          // Vision will handle it
-        }
-      } else if (isTXT) {
-        extractedText = Buffer.from(doc.fileData, 'base64').toString('utf-8');
+    try {
+      const dossier = await storage.getBox3Dossier(id);
+      if (!dossier) {
+        sendEvent('error', { message: 'Dossier niet gevonden' });
+        res.end();
+        return;
       }
 
-      pipelineDocs.push({
-        id: doc.id,
-        filename: doc.filename,
-        mimeType: doc.mimeType,
-        fileData: doc.fileData,
-        extractedText,
+      // Get all documents
+      const documents = await storage.getBox3DocumentsForDossier(id);
+      if (documents.length === 0) {
+        sendEvent('error', { message: 'Geen documenten om te valideren' });
+        res.end();
+        return;
+      }
+
+      logger.info('box3-v2', 'Revalidating dossier', { dossierId: id, documentCount: documents.length });
+
+      // Send initial progress
+      sendEvent('progress', {
+        step: 0,
+        totalSteps: 5,
+        message: 'Documenten voorbereiden...',
+        phase: 'preparation',
       });
-    }
 
-    // Run extraction pipeline
-    const pipeline = new Box3ExtractionPipeline((progress) => {
-      logger.debug('box3-v2', `Pipeline step ${progress.stepNumber}/${progress.totalSteps}`, { message: progress.message });
-    });
+      // Prepare documents for pipeline
+      const pipelineDocs: PipelineDocument[] = [];
+      for (const doc of documents) {
+        // Extract text from PDFs
+        let extractedText: string | undefined;
+        const ext = doc.filename.toLowerCase().split('.').pop();
+        const isPDF = doc.mimeType === 'application/pdf' ||
+                      (doc.mimeType === 'application/octet-stream' && ext === 'pdf');
+        const isTXT = doc.mimeType === 'text/plain' ||
+                      (doc.mimeType === 'application/octet-stream' && ext === 'txt');
 
-    const pipelineResult = await pipeline.run(pipelineDocs, dossier.intakeText || null);
-    const blueprint = pipelineResult.blueprint;
+        if (isPDF) {
+          try {
+            const PDFParseClass = await getPdfParse();
+            const buffer = Buffer.from(doc.fileData, 'base64');
+            const parser = new PDFParseClass({ data: buffer });
+            const result = await parser.getText();
+            extractedText = result.text || "";
+          } catch {
+            // Vision will handle it
+          }
+        } else if (isTXT) {
+          extractedText = Buffer.from(doc.fileData, 'base64').toString('utf-8');
+        }
 
-    logger.info('box3-v2', 'Pipeline revalidation completed');
+        pipelineDocs.push({
+          id: doc.id,
+          filename: doc.filename,
+          mimeType: doc.mimeType,
+          fileData: doc.fileData,
+          extractedText,
+        });
+      }
 
-    // Log any pipeline errors
-    if (pipelineResult.errors.length > 0) {
-      logger.warn('box3-v2', 'Pipeline had non-fatal errors', { errorCount: pipelineResult.errors.length, errors: pipelineResult.errors });
-    }
+      // Run extraction pipeline with SSE progress callback
+      const pipeline = new Box3ExtractionPipeline((progress) => {
+        logger.debug('box3-v2', `Pipeline step ${progress.stepNumber}/${progress.totalSteps}`, { message: progress.message });
+        sendEvent('progress', {
+          step: progress.stepNumber,
+          totalSteps: progress.totalSteps,
+          message: progress.message,
+          phase: progress.step,
+        });
+      });
 
-    // Get current version and increment
-    const currentBlueprint = await storage.getLatestBox3Blueprint(id);
-    const newVersion = (currentBlueprint?.version || 0) + 1;
+      const pipelineResult = await pipeline.run(pipelineDocs, dossier.intakeText || null);
+      const blueprint = pipelineResult.blueprint;
 
-    // Store new blueprint
-    await storage.createBox3Blueprint({
-      dossierId: id,
-      version: newVersion,
-      blueprint,
-      createdBy: 'pipeline',
-    });
+      logger.info('box3-v2', 'Pipeline revalidation completed');
 
-    // Update dossier
-    const taxYears = extractTaxYearsFromBlueprint(blueprint);
-    const hasFiscalPartner = blueprint.fiscal_entity?.fiscal_partner?.has_partner || false;
+      // Log any pipeline errors
+      if (pipelineResult.errors.length > 0) {
+        logger.warn('box3-v2', 'Pipeline had non-fatal errors', { errorCount: pipelineResult.errors.length, errors: pipelineResult.errors });
+      }
 
-    await storage.updateBox3Dossier(id, {
-      taxYears: taxYears.length > 0 ? taxYears : null,
-      hasFiscalPartner,
-    });
+      // Send saving progress
+      sendEvent('progress', {
+        step: 5,
+        totalSteps: 5,
+        message: 'Blueprint opslaan...',
+        phase: 'saving',
+      });
 
-    // Update document classifications from source_documents_registry (batched)
-    if (blueprint.source_documents_registry) {
-      const updates: Array<{ id: string; data: { classification: Box3DocumentClassification; extractionSummary: string | null } }> = [];
+      // Get current version and increment
+      const currentBlueprint = await storage.getLatestBox3Blueprint(id);
+      const newVersion = (currentBlueprint?.version || 0) + 1;
 
-      for (let i = 0; i < blueprint.source_documents_registry.length; i++) {
-        const regEntry = blueprint.source_documents_registry[i];
-        // Match by index since AI generates its own filenames
-        const matchingDoc = documents[i];
+      // Store new blueprint
+      await storage.createBox3Blueprint({
+        dossierId: id,
+        version: newVersion,
+        blueprint,
+        createdBy: 'pipeline',
+      });
 
-        if (matchingDoc) {
-          updates.push({
-            id: matchingDoc.id,
-            data: {
-              classification: {
-                document_type: mapDetectedTypeToClassification(regEntry.detected_type),
-                tax_years: regEntry.detected_tax_year ? [String(regEntry.detected_tax_year)] : [],
-                for_person: null,
-                confidence: regEntry.is_readable ? 'high' : 'low',
+      // Update dossier
+      const taxYears = extractTaxYearsFromBlueprint(blueprint);
+      const hasFiscalPartner = blueprint.fiscal_entity?.fiscal_partner?.has_partner || false;
+
+      await storage.updateBox3Dossier(id, {
+        taxYears: taxYears.length > 0 ? taxYears : null,
+        hasFiscalPartner,
+      });
+
+      // Update document classifications from source_documents_registry (batched)
+      if (blueprint.source_documents_registry) {
+        const updates: Array<{ id: string; data: { classification: Box3DocumentClassification; extractionSummary: string | null } }> = [];
+
+        for (let i = 0; i < blueprint.source_documents_registry.length; i++) {
+          const regEntry = blueprint.source_documents_registry[i];
+          // Match by index since AI generates its own filenames
+          const matchingDoc = documents[i];
+
+          if (matchingDoc) {
+            updates.push({
+              id: matchingDoc.id,
+              data: {
+                classification: {
+                  document_type: mapDetectedTypeToClassification(regEntry.detected_type),
+                  tax_years: regEntry.detected_tax_year ? [String(regEntry.detected_tax_year)] : [],
+                  for_person: null,
+                  confidence: regEntry.is_readable ? 'high' : 'low',
+                },
+                extractionSummary: regEntry.notes || null,
               },
-              extractionSummary: regEntry.notes || null,
-            },
-          });
+            });
+          }
+        }
+
+        if (updates.length > 0) {
+          await storage.updateBox3DocumentsBatch(updates);
         }
       }
 
-      if (updates.length > 0) {
-        await storage.updateBox3DocumentsBatch(updates);
-      }
+      logger.info('box3-v2', `Blueprint v${newVersion} created`, { dossierId: id });
+
+      // Send final result event
+      sendEvent('result', {
+        success: true,
+        blueprint,
+        blueprintVersion: newVersion,
+        taxYears,
+        _debug: {
+          pipelineSteps: pipelineResult.stepResults,
+          pipelineErrors: pipelineResult.errors,
+          fullPrompt: pipelineResult.fullPrompt,
+          rawAiResponse: pipelineResult.rawAiResponse,
+          model: 'gemini-3-flash-preview',
+          timestamp: new Date().toISOString(),
+        },
+        message: `Dossier opnieuw gevalideerd (v${newVersion})`,
+      });
+
+      res.end();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Onbekende fout';
+      logger.error('box3-v2', 'Revalidation failed', { dossierId: id, error: message });
+      sendEvent('error', { message });
+      res.end();
     }
-
-    logger.info('box3-v2', `Blueprint v${newVersion} created`, { dossierId: id });
-
-    res.json(createApiSuccessResponse({
-      blueprint,
-      blueprintVersion: newVersion,
-      taxYears,
-      _debug: {
-        pipelineSteps: pipelineResult.stepResults,
-        pipelineErrors: pipelineResult.errors,
-        fullPrompt: pipelineResult.fullPrompt,
-        rawAiResponse: pipelineResult.rawAiResponse,
-        model: 'gemini-3-flash-preview',
-        timestamp: new Date().toISOString(),
-      }
-    }, `Dossier opnieuw gevalideerd (v${newVersion})`));
-  })
+  }
 );
 
 /**
