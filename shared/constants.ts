@@ -398,6 +398,12 @@ export function getLatestConceptText(conceptVersions: ConceptVersionsMap | null 
  */
 export const BOX3_CONSTANTS = {
   /**
+   * Cost per tax year for filing a Box 3 objection (EUR).
+   * This is the fee charged to the client per year of objection.
+   */
+  COST_PER_YEAR: 250,
+
+  /**
    * Minimum indicative refund (EUR) to be considered profitable.
    * Below this amount, the cost of filing an objection exceeds the potential benefit.
    */
@@ -455,5 +461,24 @@ export const BOX3_CONSTANTS = {
     '2019': 0.30,
     '2018': 0.30,
     '2017': 0.30,
+  } as Record<string, number>,
+
+  /**
+   * Gemiddelde spaarrente per jaar (decimal form, e.g., 0.015 = 1.5%)
+   * Gebruikt voor het schatten van rente-inkomsten wanneer jaaropgaves ontbreken.
+   * Gebaseerd op gemiddelde Nederlandse spaarrentes van grote banken.
+   *
+   * Bron: DNB / Spaarrente.nl historische data
+   */
+  AVERAGE_SAVINGS_RATES: {
+    '2025': 0.025,   // ~2.5%
+    '2024': 0.025,   // ~2.5%
+    '2023': 0.015,   // ~1.5%
+    '2022': 0.001,   // ~0.1%
+    '2021': 0.0001,  // ~0.01%
+    '2020': 0.0003,  // ~0.03%
+    '2019': 0.001,   // ~0.1%
+    '2018': 0.002,   // ~0.2%
+    '2017': 0.003,   // ~0.3%
   } as Record<string, number>,
 } as const;

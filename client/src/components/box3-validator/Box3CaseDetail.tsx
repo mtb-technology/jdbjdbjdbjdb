@@ -46,6 +46,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 
 // Extracted components
@@ -1201,7 +1207,13 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             }, 0);
             const profitableYears = years.filter(y => yearSummaries[y]?.calculated_totals?.is_profitable);
             const incompleteYears = years.filter(y => yearSummaries[y]?.status === 'incomplete');
-            const isProfitable = totalRefund > 0 || profitableYears.length > 0;
+
+            // Calculate costs: €250 per year
+            const costPerYear = 250; // BOX3_CONSTANTS.COST_PER_YEAR
+            const totalCost = years.length * costPerYear;
+            const netRefund = totalRefund - totalCost;
+
+            const isProfitable = netRefund > 0 || profitableYears.length > 0;
             const isComplete = incompleteYears.length === 0 && years.length > 0;
 
             // Collect ALL missing items across all years
@@ -1291,15 +1303,48 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
                   <div className="h-6 w-px bg-border" />
 
-                  {/* Total Refund - Hero number */}
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                      {hasMissingDocs ? 'Max. teruggave' : 'Teruggave'}
-                    </span>
-                    <CopyableCurrency
-                      value={totalRefund}
-                      className={`text-2xl font-bold tracking-tight ${totalRefund > 0 ? 'text-green-600' : 'text-muted-foreground'}`}
-                    />
+                  {/* Total Refund with costs breakdown */}
+                  <div className="flex items-center gap-4">
+                    {/* Gross refund */}
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                        {hasMissingDocs ? 'Max. teruggave' : 'Teruggave'}
+                      </span>
+                      <CopyableCurrency
+                        value={totalRefund}
+                        className={`text-xl font-bold tracking-tight ${totalRefund > 0 ? 'text-green-600' : 'text-muted-foreground'}`}
+                      />
+                    </div>
+
+                    {/* Costs */}
+                    {years.length > 0 && (
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-xs text-muted-foreground">−</span>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Kosten
+                        </span>
+                        <span className="text-sm font-medium text-gray-600">
+                          €{totalCost.toLocaleString('nl-NL')}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          ({years.length}×€{costPerYear})
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Net refund */}
+                    {years.length > 0 && (
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-xs text-muted-foreground">=</span>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                          Netto
+                        </span>
+                        <CopyableCurrency
+                          value={netRefund}
+                          className={`text-2xl font-bold tracking-tight ${netRefund > 0 ? 'text-green-600' : 'text-red-500'}`}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Per person split */}
@@ -1644,27 +1689,99 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-0 pb-4">
-                <div className="space-y-2">
-                  {blueprint.audit_checks.map((check, idx) => (
-                    <div
-                      key={check.id || idx}
-                      className={`flex items-center gap-3 p-2 rounded-lg ${
-                        check.passed
-                          ? 'bg-green-50 border border-green-200'
-                          : 'bg-yellow-50 border border-yellow-200'
-                      }`}
-                    >
-                      {check.passed ? (
-                        <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                      ) : (
-                        <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
-                      )}
-                      <span className={`text-sm ${check.passed ? 'text-green-800' : 'text-yellow-800'}`}>
-                        {check.message}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <TooltipProvider delayDuration={300}>
+                  <div className="space-y-2">
+                    {blueprint.audit_checks.map((check, idx) => {
+                      // Build tooltip content from details
+                      const hasDetails = check.details && (
+                        check.details.expected !== undefined ||
+                        check.details.actual !== undefined ||
+                        check.details.difference !== undefined
+                      );
+
+                      const tooltipContent = hasDetails ? (
+                        <div className="space-y-1 text-xs">
+                          <div className="font-medium text-gray-200 mb-1">
+                            {check.check_type === 'asset_total' && 'Vermogenstotaal controle'}
+                            {check.check_type === 'asset_count' && 'Aantal assets controle'}
+                            {check.check_type === 'interest_plausibility' && 'Rente plausibiliteit'}
+                            {check.check_type === 'missing_data' && 'Ontbrekende data'}
+                            {check.check_type === 'duplicate_asset' && 'Duplicaat detectie'}
+                            {check.check_type === 'discrepancy' && 'Afwijking gedetecteerd'}
+                          </div>
+                          {check.details?.expected !== undefined && (
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-400">Verwacht:</span>
+                              <span className="font-mono">
+                                {typeof check.details.expected === 'number'
+                                  ? check.check_type === 'asset_count'
+                                    ? check.details.expected
+                                    : `€${check.details.expected.toLocaleString('nl-NL')}`
+                                  : check.details.expected}
+                              </span>
+                            </div>
+                          )}
+                          {check.details?.actual !== undefined && (
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-400">Gevonden:</span>
+                              <span className="font-mono">
+                                {typeof check.details.actual === 'number'
+                                  ? check.check_type === 'asset_count'
+                                    ? check.details.actual
+                                    : `€${check.details.actual.toLocaleString('nl-NL')}`
+                                  : check.details.actual}
+                              </span>
+                            </div>
+                          )}
+                          {check.details?.difference !== undefined && check.details.difference !== 0 && (
+                            <div className="flex justify-between gap-4 pt-1 border-t border-gray-600">
+                              <span className="text-gray-400">Verschil:</span>
+                              <span className={`font-mono ${check.details.difference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                €{Math.abs(check.details.difference).toLocaleString('nl-NL')}
+                              </span>
+                            </div>
+                          )}
+                          {check.year && (
+                            <div className="text-gray-500 text-[10px] mt-1">
+                              Belastingjaar {check.year}
+                            </div>
+                          )}
+                        </div>
+                      ) : null;
+
+                      return (
+                        <Tooltip key={check.id || idx}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className={`flex items-center gap-3 p-2 rounded-lg cursor-default transition-colors ${
+                                check.passed
+                                  ? 'bg-green-50 border border-green-200 hover:bg-green-100'
+                                  : 'bg-yellow-50 border border-yellow-200 hover:bg-yellow-100'
+                              }`}
+                            >
+                              {check.passed ? (
+                                <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                              ) : (
+                                <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
+                              )}
+                              <span className={`text-sm ${check.passed ? 'text-green-800' : 'text-yellow-800'}`}>
+                                {check.message}
+                              </span>
+                              {hasDetails && (
+                                <Info className="h-3.5 w-3.5 text-gray-400 ml-auto shrink-0" />
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          {tooltipContent && (
+                            <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 max-w-xs">
+                              {tooltipContent}
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                </TooltipProvider>
               </CardContent>
             </Card>
           )}
