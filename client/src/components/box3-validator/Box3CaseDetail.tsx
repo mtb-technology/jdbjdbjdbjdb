@@ -1642,6 +1642,41 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             );
           })()}
 
+          {/* Audit Trail - Validation checks with checkmarks */}
+          {blueprint.audit_checks && blueprint.audit_checks.length > 0 && (
+            <Card className="border-gray-200 bg-gray-50">
+              <CardHeader className="pb-3 pt-4">
+                <CardTitle className="text-base font-bold flex items-center gap-2 text-gray-700">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  Validatie ({blueprint.audit_checks.filter(c => c.passed).length}/{blueprint.audit_checks.length} checks geslaagd)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4">
+                <div className="space-y-2">
+                  {blueprint.audit_checks.map((check, idx) => (
+                    <div
+                      key={check.id || idx}
+                      className={`flex items-center gap-3 p-2 rounded-lg ${
+                        check.passed
+                          ? 'bg-green-50 border border-green-200'
+                          : 'bg-yellow-50 border border-yellow-200'
+                      }`}
+                    >
+                      {check.passed ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
+                      )}
+                      <span className={`text-sm ${check.passed ? 'text-green-800' : 'text-yellow-800'}`}>
+                        {check.message}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Aandachtspunten - After hero, with blocks and human-readable labels */}
           {validationFlags.length > 0 && (() => {
             // Map technical flag types to human-readable labels

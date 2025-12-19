@@ -250,16 +250,8 @@ export class Box3ExtractionPipeline {
     stageTimes['assets'] = Date.now() - stage3Start;
 
     // Collect extraction warnings
-    // Note: Some "missing" bank accounts are intentionally extracted as investments/other_assets
-    // (e.g., BinckBank, premiedepots). Only warn if they're truly missing from all categories.
     if (bankResult?.extraction_notes.missing.length) {
-      const knownReclassified = ['binck', 'degiro', 'saxo', 'lynx', 'premie', 'depot', 'kapitaal', 'lijfrente', 'vve'];
-      const trulyMissing = bankResult.extraction_notes.missing.filter((name: string) =>
-        !knownReclassified.some(kw => name.toLowerCase().includes(kw))
-      );
-      if (trulyMissing.length > 0) {
-        errors.push(`Ontbrekende bankrekeningen: ${trulyMissing.join(', ')}`);
-      }
+      errors.push(`Ontbrekende bankrekeningen: ${bankResult.extraction_notes.missing.join(', ')}`);
     }
     if (realEstateResult?.extraction_notes.missing.length) {
       errors.push(`Ontbrekende onroerende zaken: ${realEstateResult.extraction_notes.missing.join(', ')}`);
@@ -307,7 +299,7 @@ export class Box3ExtractionPipeline {
       }
     }
 
-    // Store validation flags in blueprint
+    // Store validation flags in blueprint (only failed checks for warnings UI)
     blueprint.validation_flags = validation.checks
       .filter(c => !c.passed)
       .map((check, i) => ({
@@ -318,6 +310,20 @@ export class Box3ExtractionPipeline {
         severity: check.severity === 'error' ? 'high' : 'medium' as const,
         created_at: new Date().toISOString(),
       }));
+
+    // Store ALL checks in audit_checks for audit trail (both passed and failed)
+    blueprint.audit_checks = validation.checks.map((check, i) => ({
+      id: `audit_${i}`,
+      check_type: check.check_type,
+      passed: check.passed,
+      message: check.message,
+      year: check.year,
+      details: check.details ? {
+        expected: check.details.expected,
+        actual: check.details.actual,
+        difference: check.details.difference,
+      } : undefined,
+    }));
 
     // =========================================================================
     // COMPLETE
@@ -972,27 +978,22 @@ export class Box3ExtractionPipeline {
       });
     }
 
-    // Check 2: Bank Account Count (includes investments and other_assets since BD groups them together)
-    // The Belastingdienst counts BinckBank, premiedepots etc. as "bankrekeningen" but we correctly
-    // categorize them as investments/other_assets. So we count total financial assets.
+    // Check 2: Bank Account Count
     const extractedBankCount = blueprint.assets.bank_savings.length;
-    const extractedInvestmentCount = blueprint.assets.investments.length;
-    const extractedOtherCount = blueprint.assets.other_assets.length;
-    const totalFinancialAssets = extractedBankCount + extractedInvestmentCount + extractedOtherCount;
     const expectedBankCount = assetReferences.bank_count;
 
     if (expectedBankCount > 0) {
       checks.push({
         check_type: 'asset_count',
-        passed: totalFinancialAssets >= expectedBankCount,
-        severity: totalFinancialAssets < expectedBankCount ? 'warning' : 'info',
-        message: totalFinancialAssets >= expectedBankCount
-          ? `Alle ${expectedBankCount} financiële assets gevonden (${extractedBankCount} bank, ${extractedInvestmentCount} belegging, ${extractedOtherCount} overig)`
-          : `${expectedBankCount - totalFinancialAssets} van ${expectedBankCount} financiële assets niet gevonden`,
+        passed: extractedBankCount >= expectedBankCount,
+        severity: extractedBankCount < expectedBankCount ? 'warning' : 'info',
+        message: extractedBankCount >= expectedBankCount
+          ? `Alle ${expectedBankCount} bankrekeningen gevonden`
+          : `${expectedBankCount - extractedBankCount} van ${expectedBankCount} bankrekeningen niet gevonden`,
         details: {
           expected: expectedBankCount,
-          actual: totalFinancialAssets,
-          field: 'financial_asset_count',
+          actual: extractedBankCount,
+          field: 'bank_count',
         },
       });
     }

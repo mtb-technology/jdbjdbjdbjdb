@@ -388,7 +388,7 @@ export interface Box3YearSummary {
 }
 
 /**
- * Validation Flag
+ * Validation Flag (for warnings/errors shown in UI)
  */
 export interface Box3ValidationFlag {
   id: string;
@@ -398,6 +398,22 @@ export interface Box3ValidationFlag {
   severity: 'low' | 'medium' | 'high';
   created_at: string;
   resolved_at?: string;
+}
+
+/**
+ * Audit Trail Check (for both passed and failed validations - shown as audit trail)
+ */
+export interface Box3AuditCheck {
+  id: string;
+  check_type: 'asset_total' | 'asset_count' | 'interest_plausibility' | 'missing_data' | 'duplicate_asset' | 'discrepancy';
+  passed: boolean;
+  message: string;
+  year?: string;
+  details?: {
+    expected?: number;
+    actual?: number;
+    difference?: number;
+  };
 }
 
 /**
@@ -604,6 +620,7 @@ export interface Box3Blueprint {
   year_summaries: Record<string, Box3YearSummary>;
 
   validation_flags: Box3ValidationFlag[];
+  audit_checks?: Box3AuditCheck[];  // Audit trail with passed/failed checks
   manual_overrides: Box3ManualOverrideV2[];
 
   // V3 Merge tracking (optional for backwards compatibility)
