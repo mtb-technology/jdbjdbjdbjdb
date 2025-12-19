@@ -22,6 +22,7 @@ import {
   buildRealEstateExtractionPrompt,
   buildOtherAssetsExtractionPrompt,
 } from "./box3-prompts";
+import { BOX3_CONSTANTS } from "@shared/constants";
 import type {
   Box3Blueprint,
   Box3SourceDocumentEntry,
@@ -1263,8 +1264,8 @@ export class Box3ExtractionPipeline {
       const deemedReturn = taxData.household_totals?.deemed_return || 0;
       const box3TaxPaid = taxData.household_totals?.total_tax_assessed || 0;
 
-      // Tax rate per year
-      const taxRate = year === '2024' ? 0.36 : year === '2023' ? 0.32 : 0.31;
+      // Tax rate per year (from constants, fallback to 31% for older years)
+      const taxRate = BOX3_CONSTANTS.TAX_RATES[year] ?? 0.31;
 
       // Calculate indicative refund
       const hasActualReturnData = totalBankInterest > 0 || totalDividends > 0 || totalRentalIncomeNet > 0;

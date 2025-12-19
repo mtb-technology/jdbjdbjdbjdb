@@ -443,8 +443,10 @@ export const BOX3_CONSTANTS = {
 
   /**
    * Box 3 tax rates per year (decimal form, e.g., 0.36 = 36%)
+   * Source: https://www.rijksoverheid.nl/onderwerpen/inkomstenbelasting/box-3
    */
   TAX_RATES: {
+    '2025': 0.36,
     '2024': 0.36,
     '2023': 0.32,
     '2022': 0.31,

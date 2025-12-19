@@ -67,17 +67,19 @@ export const FORFAITAIRE_RENDEMENTEN: Record<string, ForfaitaireRendementen> = {
 };
 
 /**
- * Box 3 tarief (belastingpercentage over het forfaitaire rendement)
+ * Box 3 tarief per jaar (belastingpercentage over het forfaitaire rendement)
+ * Source: https://www.rijksoverheid.nl/onderwerpen/inkomstenbelasting/box-3
  */
 export const BOX3_TARIEVEN: Record<string, number> = {
-  "2017": 0.3,
-  "2018": 0.3,
-  "2019": 0.3,
-  "2020": 0.3,
+  "2017": 0.30,
+  "2018": 0.30,
+  "2019": 0.30,
+  "2020": 0.30,
   "2021": 0.31,
   "2022": 0.31,
   "2023": 0.32,
   "2024": 0.36,
+  "2025": 0.36,
 };
 
 /**
