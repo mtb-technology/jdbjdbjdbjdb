@@ -743,7 +743,8 @@ export class DatabaseStorage implements IStorage {
 
   async createJob(insertJob: InsertJob): Promise<Job> {
     const [job] = await db.insert(jobs).values(insertJob).returning();
-    logger.info('jobs', `Created job ${job.id} of type "${job.type}" for report ${job.reportId}`);
+    const targetId = job.reportId || job.box3DossierId || 'n/a';
+    logger.info('jobs', `Created job ${job.id} of type "${job.type}" for ${job.box3DossierId ? 'dossier' : 'report'} ${targetId}`);
     return job;
   }
 

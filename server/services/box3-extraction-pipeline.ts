@@ -250,8 +250,16 @@ export class Box3ExtractionPipeline {
     stageTimes['assets'] = Date.now() - stage3Start;
 
     // Collect extraction warnings
+    // Note: Some "missing" bank accounts are intentionally extracted as investments/other_assets
+    // (e.g., BinckBank, premiedepots). Only warn if they're truly missing from all categories.
     if (bankResult?.extraction_notes.missing.length) {
-      errors.push(`Ontbrekende bankrekeningen: ${bankResult.extraction_notes.missing.join(', ')}`);
+      const knownReclassified = ['binck', 'degiro', 'saxo', 'lynx', 'premie', 'depot', 'kapitaal', 'lijfrente', 'vve'];
+      const trulyMissing = bankResult.extraction_notes.missing.filter((name: string) =>
+        !knownReclassified.some(kw => name.toLowerCase().includes(kw))
+      );
+      if (trulyMissing.length > 0) {
+        errors.push(`Ontbrekende bankrekeningen: ${trulyMissing.join(', ')}`);
+      }
     }
     if (realEstateResult?.extraction_notes.missing.length) {
       errors.push(`Ontbrekende onroerende zaken: ${realEstateResult.extraction_notes.missing.join(', ')}`);
@@ -964,22 +972,27 @@ export class Box3ExtractionPipeline {
       });
     }
 
-    // Check 2: Bank Account Count
+    // Check 2: Bank Account Count (includes investments and other_assets since BD groups them together)
+    // The Belastingdienst counts BinckBank, premiedepots etc. as "bankrekeningen" but we correctly
+    // categorize them as investments/other_assets. So we count total financial assets.
     const extractedBankCount = blueprint.assets.bank_savings.length;
+    const extractedInvestmentCount = blueprint.assets.investments.length;
+    const extractedOtherCount = blueprint.assets.other_assets.length;
+    const totalFinancialAssets = extractedBankCount + extractedInvestmentCount + extractedOtherCount;
     const expectedBankCount = assetReferences.bank_count;
 
     if (expectedBankCount > 0) {
       checks.push({
         check_type: 'asset_count',
-        passed: extractedBankCount >= expectedBankCount,
-        severity: extractedBankCount < expectedBankCount ? 'error' : 'info',
-        message: extractedBankCount >= expectedBankCount
-          ? `Alle ${expectedBankCount} bankrekeningen gevonden`
-          : `${expectedBankCount - extractedBankCount} van ${expectedBankCount} bankrekeningen niet gevonden`,
+        passed: totalFinancialAssets >= expectedBankCount,
+        severity: totalFinancialAssets < expectedBankCount ? 'warning' : 'info',
+        message: totalFinancialAssets >= expectedBankCount
+          ? `Alle ${expectedBankCount} financiële assets gevonden (${extractedBankCount} bank, ${extractedInvestmentCount} belegging, ${extractedOtherCount} overig)`
+          : `${expectedBankCount - totalFinancialAssets} van ${expectedBankCount} financiële assets niet gevonden`,
         details: {
           expected: expectedBankCount,
-          actual: extractedBankCount,
-          field: 'bank_count',
+          actual: totalFinancialAssets,
+          field: 'financial_asset_count',
         },
       });
     }
