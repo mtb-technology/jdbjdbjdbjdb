@@ -410,7 +410,20 @@ export interface Box3ValidationFlag {
  */
 export interface Box3AuditCheck {
   id: string;
-  check_type: 'asset_total' | 'asset_count' | 'interest_plausibility' | 'missing_data' | 'duplicate_asset' | 'discrepancy';
+  check_type:
+    | 'asset_total'
+    | 'asset_count'
+    | 'interest_plausibility'
+    | 'missing_data'
+    | 'discrepancy'
+    | 'duplicate_asset'
+    // New fiscal validation checks (Tier 1)
+    | 'kew_exclusion'
+    | 'lijfrente_exclusion'
+    | 'studieschuld_exclusion'
+    | 'eigen_woning_exclusion'
+    | 'final_assessment_only'
+    | 'anomaly_detected';
   passed: boolean;
   message: string;
   year?: string;
@@ -904,7 +917,20 @@ export interface Box3ValidationResult {
 }
 
 export interface Box3ValidationCheck {
-  check_type: 'asset_total' | 'asset_count' | 'interest_plausibility' | 'missing_data' | 'discrepancy' | 'duplicate_asset';
+  check_type:
+    | 'asset_total'
+    | 'asset_count'
+    | 'interest_plausibility'
+    | 'missing_data'
+    | 'discrepancy'
+    | 'duplicate_asset'
+    // New fiscal validation checks (Tier 1)
+    | 'kew_exclusion'           // KEW should be Box 1
+    | 'lijfrente_exclusion'     // Lijfrente should be Box 1
+    | 'studieschuld_exclusion'  // Study loan not deductible
+    | 'eigen_woning_exclusion'  // Primary residence is Box 1
+    | 'final_assessment_only'   // Claim only against definitieve aanslag
+    | 'anomaly_detected';       // LLM-detected anomaly
   year?: string;
   passed: boolean;
   severity: 'info' | 'warning' | 'error';
@@ -918,6 +944,16 @@ export interface Box3ValidationCheck {
     description?: string;
     amount?: number;
     categories?: string[];
+    // For fiscal validation checks
+    asset_type?: string;
+    debt_type?: string;
+    property_type?: string;
+    document_type?: string;
+    is_final?: boolean;
+    suggestion?: string;
+    // For anomaly detection
+    anomaly_type?: string;
+    confidence?: number;
   };
 }
 

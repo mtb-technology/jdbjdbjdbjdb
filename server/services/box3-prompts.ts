@@ -200,6 +200,298 @@ BELANGRIJK:
 - Als partner niet aanwezig: "has_partner": false`;
 
 // =============================================================================
+// STAGE 2a: FISCAL ENTITY EXTRACTION (NEW - focused sub-stage)
+// =============================================================================
+
+export const TAX_AUTHORITY_PERSONS_PROMPT = `Je bent een expert fiscalist. Extraheer ALLEEN de fiscale entiteit (personen) uit dit document.
+
+## OPDRACHT
+Identificeer de belastingplichtige en eventuele fiscaal partner.
+
+## TE EXTRAHEREN VELDEN
+
+### Belastingplichtige (verplicht)
+- Naam (volledige naam zoals vermeld)
+- BSN (gemaskeerd als ****XXXX - alleen laatste 4 cijfers)
+- Geboortedatum (YYYY-MM-DD formaat)
+
+### Fiscaal Partner (indien aanwezig)
+- Heeft deze aangifte een fiscaal partner? (ja/nee)
+- Zo ja: naam, BSN (gemaskeerd), geboortedatum
+
+### Verdeling (allocation)
+- Hoe is het Box 3 vermogen verdeeld? (standaard 50/50)
+- Kijk naar "verdeling" of "toerekening" in de aangifte
+
+## OUTPUT FORMAT (alleen JSON):
+{
+  "fiscal_entity": {
+    "taxpayer": {
+      "id": "tp_01",
+      "name": "Jan de Vries",
+      "bsn_masked": "****1234",
+      "date_of_birth": "1975-03-15"
+    },
+    "fiscal_partner": {
+      "has_partner": true,
+      "id": "fp_01",
+      "name": "Anna de Vries",
+      "bsn_masked": "****5678",
+      "date_of_birth": "1978-06-20"
+    },
+    "allocation_percentage": {
+      "taxpayer": 50,
+      "partner": 50
+    }
+  }
+}
+
+BELANGRIJK:
+- Focus ALLEEN op personen, niet op bedragen
+- Als geen partner: "has_partner": false
+- BSN altijd maskeren als ****XXXX`;
+
+// =============================================================================
+// STAGE 2b: OFFICIAL TOTALS EXTRACTION (NEW - focused sub-stage)
+// =============================================================================
+
+export const TAX_AUTHORITY_TOTALS_PROMPT = `Je bent een expert fiscalist. Extraheer ALLEEN de officiële Box 3 cijfers.
+
+## OPDRACHT
+Haal de Belastingdienst totalen uit de aangifte/aanslag per belastingjaar.
+
+## KRITIEK: TYPE AANSLAG
+Bepaal of dit een VOORLOPIGE of DEFINITIEVE aanslag is!
+- "Voorlopige aanslag" = voorlopig (claim nog niet mogelijk)
+- "Definitieve aanslag" = definitief (claim WEL mogelijk)
+- Aangifte zonder aanslag = alleen aangifte
+
+## TE EXTRAHEREN VELDEN PER JAAR
+
+Zoek naar deze velden in de Box 3 sectie:
+- total_assets_gross: "Totaal bezittingen" of "Rendementsgrondslag"
+- total_debts: "Schulden"
+- total_exempt: "Heffingsvrij vermogen" (2024: €57.000 p.p.)
+- taxable_base: "Grondslag sparen en beleggen"
+- deemed_return: "Voordeel uit sparen en beleggen" (forfaitair rendement)
+- total_tax_assessed: "Inkomstenbelasting box 3" - CRUCIAAL!
+
+## AANSLAG IDENTIFICATIE
+Extraheer ook:
+- assessment_number: Aanslagbiljetnummer (vaak 12 cijfers)
+- assessment_date: Dagtekening van de aanslag
+- is_final_assessment: Is dit een DEFINITIEVE aanslag?
+
+## OUTPUT FORMAT (alleen JSON):
+{
+  "tax_authority_data": {
+    "2023": {
+      "source_doc_id": "doc_1",
+      "document_type": "definitieve_aanslag",
+      "assessment_number": "123456789012",
+      "assessment_date": "2024-03-15",
+      "is_final_assessment": true,
+      "household_totals": {
+        "total_assets_gross": 450000,
+        "total_debts": 0,
+        "net_assets": 450000,
+        "total_exempt": 114000,
+        "taxable_base": 336000,
+        "deemed_return": 18480,
+        "total_tax_assessed": 5914
+      },
+      "per_person": {
+        "tp_01": {
+          "allocation_percentage": 50,
+          "total_assets_box3": 225000,
+          "exempt_amount": 57000,
+          "taxable_base": 168000,
+          "deemed_return": 9240,
+          "tax_assessed": 2957
+        }
+      }
+    }
+  }
+}
+
+BELANGRIJK:
+- total_tax_assessed is CRUCIAAL voor teruggave berekening
+- is_final_assessment bepaalt of claim mogelijk is
+- Focus ALLEEN op cijfers, niet op asset details`;
+
+// =============================================================================
+// STAGE 2c: ASSET REFERENCES EXTRACTION (NEW - focused sub-stage)
+// =============================================================================
+
+export const TAX_AUTHORITY_CHECKLIST_PROMPT = `Je bent een expert fiscalist. Maak een inventarisatie van alle vermogensbestanddelen.
+
+## OPDRACHT
+Tel en beschrijf ALLE vermogensbestanddelen die in de aangifte worden genoemd.
+Dit wordt de checklist voor latere extractie.
+
+## TE INVENTARISEREN
+
+### Bankrekeningen
+Tel ALLE bankrekeningen, inclusief:
+- Gewone spaarrekeningen
+- Premiedepots
+- Kapitaalverzekeringen
+- Beleggingsrekeningen met ALLEEN een saldo (geen portefeuille details)
+  Bijv: "BinckBank €1.050" zonder aandelen detail = bankrekening
+
+### Beleggingen
+Alleen rekeningen MET portefeuille/aandelen details.
+Een saldo zonder details is GEEN belegging!
+
+### Onroerend goed
+Kijk naar "Woningen en andere onroerende zaken" totaal.
+Als dit > 0: er IS onroerend goed in Box 3!
+- Vakantiewoningen
+- Verhuurde woningen
+- Tweede woningen
+- Grond
+- Buitenlands vastgoed
+
+LET OP: Eigen woning (hoofdverblijf) = Box 1, NIET meetellen!
+
+### Overige bezittingen
+- VvE reserves
+- Uitgeleend geld
+- Contant geld > €560
+- Overige
+
+### Schulden
+- Hypotheek op Box 3 pand
+- Consumptief krediet
+- Persoonlijke leningen
+
+LET OP: Studieschuld telt NIET mee voor Box 3!
+
+## CATEGORIE TOTALEN (BELANGRIJK!)
+Zoek naar subtotalen per categorie:
+- Banktegoeden totaal
+- Aandelen, obligaties totaal
+- Woningen en andere onroerende zaken totaal
+- Overige bezittingen totaal
+- Schulden totaal
+
+## OUTPUT FORMAT (alleen JSON):
+{
+  "asset_references": {
+    "bank_count": 7,
+    "bank_descriptions": [
+      "ING Betaalrekening ****1234",
+      "ING Spaarrekening ****5678",
+      "Rabobank Spaarrekening",
+      "ASN Groenrekening",
+      "Premiedepot Aegon",
+      "Binck saldo (geen portefeuille)"
+    ],
+    "investment_count": 1,
+    "investment_descriptions": [
+      "DEGIRO Beleggingsrekening (met portefeuille)"
+    ],
+    "real_estate_count": 1,
+    "real_estate_descriptions": [
+      "Vakantiewoning 2142GD Cruquius"
+    ],
+    "other_assets_count": 0,
+    "other_descriptions": [],
+    "debts_count": 1,
+    "debts_descriptions": [
+      "Hypotheek vakantiewoning Rabobank"
+    ]
+  },
+  "category_totals": {
+    "2023": {
+      "bank_savings_total": 125000,
+      "investments_total": 75000,
+      "real_estate_total": 245000,
+      "other_assets_total": 0,
+      "debts_total": 150000
+    }
+  },
+  "extraction_notes": {
+    "has_real_estate": true,
+    "has_green_investments": true,
+    "has_foreign_assets": false
+  }
+}
+
+BELANGRIJK:
+- Dit wordt de CHECKLIST: in volgende stappen moeten we ALLE items vinden
+- Als "real_estate_total" > 0: er IS onroerend goed, zoek naar WOZ/adressen
+- Let op groene beleggingen (ASN, Triodos) - deze hebben vrijstelling`;
+
+// =============================================================================
+// STAGE 5c: LLM-ASSISTED ANOMALY DETECTION (NEW)
+// =============================================================================
+
+export const ANOMALY_DETECTION_PROMPT = `Je bent een senior fiscalist die een kwaliteitscontrole uitvoert op geëxtraheerde Box 3 data.
+
+## OPDRACHT
+Beoordeel de volgende extractie op plausibiliteit en mogelijke fouten.
+
+## EXTRACTIE DATA
+{EXTRACTED_DATA}
+
+## TE CONTROLEREN
+
+### 1. Rente Plausibiliteit
+- Is de rente realistisch voor het type rekening?
+- Spaarrente 2023: ~1-3% was normaal
+- Spaarrente 2024: ~2-4% was normaal
+- > 5% is verdacht, > 10% is vrijwel zeker fout
+
+### 2. Vermogensconsistentie
+- Past de omvang van het vermogen bij elkaar?
+- Een vakantiewoning van €500k zonder hypotheek is ongebruikelijk
+- Grote crypto-posities zonder andere beleggingen is verdacht
+
+### 3. Classificatie Fouten
+- Staat er iets in Box 3 dat er niet hoort?
+  - Kapitaalverzekering Eigen Woning (KEW) = Box 1!
+  - Lijfrente = Box 1!
+  - Studieschuld = NIET aftrekbaar in Box 3!
+  - Eigen woning = Box 1!
+
+### 4. Ontbrekende Data
+- Is er logisch ontbrekende informatie?
+- Beleggingen zonder dividend is ongebruikelijk
+- Verhuurpand zonder huurinkomsten is verdacht
+
+### 5. Dubbele Entries
+- Staat hetzelfde vermogen dubbel?
+- BinckBank als bank EN als belegging?
+
+## OUTPUT FORMAT (alleen JSON):
+{
+  "anomalies": [
+    {
+      "type": "interest_implausible",
+      "severity": "error",
+      "asset_id": "bank_1",
+      "message": "15% rente op spaarrekening is niet plausibel",
+      "suggestion": "Controleer of dit dividend is ipv rente"
+    },
+    {
+      "type": "classification_error",
+      "severity": "warning",
+      "asset_id": "oa_2",
+      "message": "Lijfrente hoort in Box 1, niet Box 3",
+      "suggestion": "Verwijder uit Box 3 extractie"
+    }
+  ],
+  "overall_quality": "needs_review",
+  "confidence": 0.7
+}
+
+Severity levels:
+- "error": Vrijwel zeker fout, moet gecorrigeerd
+- "warning": Mogelijk fout, controleren
+- "info": Opvallend maar mogelijk correct`;
+
+// =============================================================================
 // STAGE 3a: BANK ACCOUNT EXTRACTION PROMPT
 // =============================================================================
 
