@@ -139,14 +139,10 @@ export function useBox3Validation({
       }
 
       const data = await response.json();
-      console.log("📋 [Box3] Raw API response:", JSON.stringify(data, null, 2));
       const result = data.success ? data.data : data;
-      console.log("📋 [Box3] Extracted result:", JSON.stringify(result, null, 2));
 
       // Validate response BEFORE updating state
       if (!result.dossier?.id) {
-        console.error("API returned no dossier. Full response:", data);
-        console.error("Extracted result:", result);
         throw new Error("Server gaf geen dossier terug");
       }
 
@@ -185,7 +181,6 @@ export function useBox3Validation({
           message = error.message;
         }
       }
-      console.error("Validation failed:", error);
       toast({
         title: "Validatie mislukt",
         description: message,
@@ -267,7 +262,6 @@ export function useBox3Validation({
           message = error.message;
         }
       }
-      console.error("Re-validation failed:", error);
       toast({
         title: "Hervalidatie mislukt",
         description: message,

@@ -46,6 +46,7 @@ import type {
   Box3ValidationCheck,
   Box3PipelineProgress,
   Box3MultiStageResult,
+  Box3MissingItem,
 } from "@shared/schema/box3";
 
 // =============================================================================
@@ -92,6 +93,10 @@ export interface PipelineResult {
     total_ms: number;
     stage_times: Record<string, number>;
   };
+  /** Debug: full prompts sent to the AI (legacy compatibility) */
+  fullPrompt?: string;
+  /** Debug: raw AI response (legacy compatibility) */
+  rawAiResponse?: string;
   /** Debug: full prompts sent to the AI */
   debugPrompts?: Record<string, string>;
   /** Debug: raw AI responses */
@@ -107,6 +112,15 @@ export class Box3ExtractionPipeline {
   private onProgress?: (progress: PipelineProgress) => void;
   private readonly MODEL = 'gemini-3-flash-preview';
   private readonly CONCURRENCY = 3;
+
+  // Default model config
+  private readonly MODEL_CONFIG = {
+    model: 'gemini-3-flash-preview',
+    provider: 'google' as const,
+    temperature: 0.0,
+    topP: 0.95,
+    topK: 40,
+  };
 
   constructor(onProgress?: (progress: PipelineProgress) => void) {
     this.factory = AIModelFactory.getInstance();
@@ -202,6 +216,16 @@ export class Box3ExtractionPipeline {
       other_assets_count: 0,
       other_descriptions: [],
     };
+
+    // Log asset references for debugging
+    logger.info('box3-pipeline', 'Asset references from tax authority', {
+      bank_count: assetReferences.bank_count,
+      bank_descriptions: assetReferences.bank_descriptions.slice(0, 5),
+      investment_count: assetReferences.investment_count,
+      real_estate_count: assetReferences.real_estate_count,
+      real_estate_descriptions: assetReferences.real_estate_descriptions,
+      other_assets_count: assetReferences.other_assets_count,
+    });
 
     // =========================================================================
     // STAGE 3: Asset Category Extraction (parallel)
@@ -328,6 +352,9 @@ export class Box3ExtractionPipeline {
         total_ms: totalTime,
         stage_times: stageTimes,
       },
+      // Legacy compatibility
+      fullPrompt: debugPrompts['tax_authority'] || Object.values(debugPrompts)[0] || '',
+      rawAiResponse: debugResponses['tax_authority'] || Object.values(debugResponses)[0] || '',
       debugPrompts,
       debugResponses,
     };
@@ -423,9 +450,7 @@ export class Box3ExtractionPipeline {
     try {
       const result = await this.factory.callModel(
         {
-          model: this.MODEL,
-          provider: 'google',
-          temperature: 0.0,
+          ...this.MODEL_CONFIG,
           maxOutputTokens: 4096,
         },
         prompt,
@@ -494,9 +519,7 @@ export class Box3ExtractionPipeline {
     try {
       const result = await this.factory.callModel(
         {
-          model: this.MODEL,
-          provider: 'google',
-          temperature: 0.0,
+          ...this.MODEL_CONFIG,
           maxOutputTokens: 16384,
         },
         prompt,
@@ -522,6 +545,7 @@ export class Box3ExtractionPipeline {
             real_estate_descriptions: json.asset_references?.real_estate_descriptions || [],
             other_assets_count: json.asset_references?.other_assets_count || 0,
             other_descriptions: json.asset_references?.other_descriptions || [],
+            category_totals: json.category_totals || undefined,
           },
         };
       }
@@ -568,9 +592,7 @@ export class Box3ExtractionPipeline {
     try {
       const result = await this.factory.callModel(
         {
-          model: this.MODEL,
-          provider: 'google',
-          temperature: 0.0,
+          ...this.MODEL_CONFIG,
           maxOutputTokens: 32768,
         },
         fullPrompt,
@@ -645,9 +667,7 @@ export class Box3ExtractionPipeline {
     try {
       const result = await this.factory.callModel(
         {
-          model: this.MODEL,
-          provider: 'google',
-          temperature: 0.0,
+          ...this.MODEL_CONFIG,
           maxOutputTokens: 16384,
         },
         fullPrompt,
@@ -721,9 +741,7 @@ export class Box3ExtractionPipeline {
     try {
       const result = await this.factory.callModel(
         {
-          model: this.MODEL,
-          provider: 'google',
-          temperature: 0.0,
+          ...this.MODEL_CONFIG,
           maxOutputTokens: 16384,
         },
         fullPrompt,
@@ -800,9 +818,7 @@ export class Box3ExtractionPipeline {
     try {
       const result = await this.factory.callModel(
         {
-          model: this.MODEL,
-          provider: 'google',
-          temperature: 0.0,
+          ...this.MODEL_CONFIG,
           maxOutputTokens: 16384,
         },
         fullPrompt,
@@ -861,10 +877,11 @@ export class Box3ExtractionPipeline {
     otherResult: Box3OtherAssetsExtractionResult | null
   ): Box3Blueprint {
     // Determine tax years from all sources
-    const taxYears = new Set<string>();
+    const taxYearsSet = new Set<string>();
     if (taxAuthorityResult?.tax_authority_data) {
-      Object.keys(taxAuthorityResult.tax_authority_data).forEach(y => taxYears.add(y));
+      Object.keys(taxAuthorityResult.tax_authority_data).forEach(y => taxYearsSet.add(y));
     }
+    const taxYears = Array.from(taxYearsSet);
 
     // Create year summaries
     const yearSummaries: Record<string, Box3YearSummary> = {};
@@ -1029,28 +1046,40 @@ export class Box3ExtractionPipeline {
   // HELPER METHODS
   // ===========================================================================
 
+  /**
+   * Sum all assets for a given year.
+   *
+   * IMPORTANT: For validation against the aangifte (household total), we sum
+   * the FULL amounts without applying ownership_percentage. The aangifte shows
+   * household totals, not per-person amounts. ownership_percentage is only
+   * relevant for calculating per-person allocation, not household totals.
+   */
   private sumAllAssets(blueprint: Box3Blueprint, year: string): number {
     let total = 0;
 
-    // Bank savings
+    // Bank savings - full amount (aangifte shows household total)
     for (const bank of blueprint.assets.bank_savings || []) {
       const value = this.getAmount(bank.yearly_data?.[year]?.value_jan_1);
-      total += value * ((bank.ownership_percentage || 100) / 100);
+      total += value;
     }
 
-    // Investments
+    // Investments - full amount
     for (const inv of blueprint.assets.investments || []) {
       const value = this.getAmount(inv.yearly_data?.[year]?.value_jan_1);
-      total += value * ((inv.ownership_percentage || 100) / 100);
+      total += value;
     }
 
-    // Real estate
+    // Real estate - full amount (apply ownership only for external co-owners)
     for (const re of blueprint.assets.real_estate || []) {
       const value = this.getAmount(re.yearly_data?.[year]?.woz_value);
-      total += value * ((re.ownership_percentage || 100) / 100);
+      // Only apply ownership_percentage if explicitly set to something other than
+      // 50 or 100 (indicating external co-ownership, not fiscal partner split)
+      const ownershipPct = re.ownership_percentage || 100;
+      const isExternalCoOwnership = ownershipPct !== 50 && ownershipPct !== 100;
+      total += isExternalCoOwnership ? value * (ownershipPct / 100) : value;
     }
 
-    // Other assets
+    // Other assets - full amount
     for (const oa of blueprint.assets.other_assets || []) {
       const value = this.getAmount(oa.yearly_data?.[year]?.value_jan_1);
       total += value;
@@ -1082,24 +1111,24 @@ export class Box3ExtractionPipeline {
       let totalInvestmentGain = 0;
       let totalDebtInterestPaid = 0;
 
-      // Bank interest
+      // Bank interest - full household amount (ownership_percentage is for partner allocation, not value)
       for (const bank of blueprint.assets?.bank_savings || []) {
         const yearData = bank.yearly_data?.[year];
         if (yearData) {
-          totalBankInterest += this.getAmount(yearData.interest_received) * ((bank.ownership_percentage || 100) / 100);
+          totalBankInterest += this.getAmount(yearData.interest_received);
         }
       }
 
-      // Investment dividends & gains
+      // Investment dividends & gains - full household amount
       for (const inv of blueprint.assets?.investments || []) {
         const yearData = inv.yearly_data?.[year];
         if (yearData) {
-          totalDividends += this.getAmount(yearData.dividend_received) * ((inv.ownership_percentage || 100) / 100);
-          totalInvestmentGain += this.getAmount(yearData.realized_gains) * ((inv.ownership_percentage || 100) / 100);
+          totalDividends += this.getAmount(yearData.dividend_received);
+          totalInvestmentGain += this.getAmount(yearData.realized_gains);
         }
       }
 
-      // Rental income
+      // Rental income - full household amount
       for (const re of blueprint.assets?.real_estate || []) {
         const yearData = re.yearly_data?.[year];
         if (yearData) {
@@ -1108,15 +1137,15 @@ export class Box3ExtractionPipeline {
             this.getAmount(yearData.property_tax) +
             this.getAmount(yearData.insurance) +
             this.getAmount(yearData.other_costs);
-          totalRentalIncomeNet += (rentalGross - costs) * ((re.ownership_percentage || 100) / 100);
+          totalRentalIncomeNet += rentalGross - costs;
         }
       }
 
-      // Debt interest
+      // Debt interest - full household amount
       for (const debt of blueprint.debts || []) {
         const yearData = debt.yearly_data?.[year];
         if (yearData) {
-          totalDebtInterestPaid += this.getAmount(yearData.interest_paid) * ((debt.ownership_percentage || 100) / 100);
+          totalDebtInterestPaid += this.getAmount(yearData.interest_paid);
         }
       }
 
@@ -1143,18 +1172,86 @@ export class Box3ExtractionPipeline {
       const indicativeRefund = Math.min(theoreticalRefund, box3TaxPaid);
       const difference = deemedReturn - actualReturnTotal;
 
+      // =========================================================================
+      // DETERMINE MISSING ITEMS
+      // =========================================================================
+      const missingItems: Box3MissingItem[] = [];
+
+      // Count assets per category for this year
+      const bankCount = (blueprint.assets?.bank_savings || []).filter(b => b.yearly_data?.[year]).length;
+      const invCount = (blueprint.assets?.investments || []).filter(i => i.yearly_data?.[year]).length;
+      const reCount = (blueprint.assets?.real_estate || []).filter(r => r.yearly_data?.[year]).length;
+
+      // Check bank interest - if we have banks but no interest data
+      if (bankCount > 0 && totalBankInterest === 0) {
+        missingItems.push({
+          field: 'bank_interest',
+          description: `Jaaropgave(s) bank ${year} met ontvangen rente`,
+          severity: 'high',
+          action: 'ask_client',
+        });
+      }
+
+      // Check dividends - if we have investments but no dividend data
+      if (invCount > 0 && totalDividends === 0) {
+        missingItems.push({
+          field: 'dividends',
+          description: `Jaaroverzicht beleggingen ${year} met ontvangen dividend`,
+          severity: 'high',
+          action: 'ask_client',
+        });
+      }
+
+      // Check realized gains - if we have investments but no realized gains data
+      if (invCount > 0 && totalInvestmentGain === 0) {
+        missingItems.push({
+          field: 'realized_gains',
+          description: `Transactieoverzicht ${year} met gerealiseerde koerswinst`,
+          severity: 'medium',
+          action: 'ask_client',
+        });
+      }
+
+      // Check rental income - if we have real estate but no rental income data
+      if (reCount > 0 && totalRentalIncomeNet === 0) {
+        missingItems.push({
+          field: 'rental_income',
+          description: `Huurinkomsten overzicht ${year} (bruto ontvangsten en kosten)`,
+          severity: 'high',
+          action: 'ask_client',
+        });
+      }
+
+      // Determine status based on missing items
+      const hasMissingData = missingItems.length > 0;
+      const yearStatus = hasMissingData
+        ? 'incomplete'
+        : indicativeRefund > 0
+          ? 'complete'
+          : 'ready_for_calculation';
+
       // Update year summary
       if (!blueprint.year_summaries[year]) {
         blueprint.year_summaries[year] = {
-          status: 'incomplete',
+          status: yearStatus,
           completeness: {
-            bank_savings: 'incomplete',
-            investments: 'incomplete',
-            real_estate: 'incomplete',
-            debts: 'incomplete',
-            tax_return: 'incomplete',
+            bank_savings: bankCount > 0 && totalBankInterest === 0 ? 'incomplete' : bankCount > 0 ? 'complete' : 'not_applicable',
+            investments: invCount > 0 && (totalDividends === 0 && totalInvestmentGain === 0) ? 'incomplete' : invCount > 0 ? 'complete' : 'not_applicable',
+            real_estate: reCount > 0 && totalRentalIncomeNet === 0 ? 'incomplete' : reCount > 0 ? 'complete' : 'not_applicable',
+            debts: 'not_applicable',
+            tax_return: taxData ? 'complete' : 'incomplete',
           },
-          missing_items: [],
+          missing_items: missingItems,
+        };
+      } else {
+        blueprint.year_summaries[year].status = yearStatus;
+        blueprint.year_summaries[year].missing_items = missingItems;
+        blueprint.year_summaries[year].completeness = {
+          bank_savings: bankCount > 0 && totalBankInterest === 0 ? 'incomplete' : bankCount > 0 ? 'complete' : 'not_applicable',
+          investments: invCount > 0 && (totalDividends === 0 && totalInvestmentGain === 0) ? 'incomplete' : invCount > 0 ? 'complete' : 'not_applicable',
+          real_estate: reCount > 0 && totalRentalIncomeNet === 0 ? 'incomplete' : reCount > 0 ? 'complete' : 'not_applicable',
+          debts: 'not_applicable',
+          tax_return: taxData ? 'complete' : 'incomplete',
         };
       }
 
@@ -1173,11 +1270,7 @@ export class Box3ExtractionPipeline {
         indicative_refund: Math.round(indicativeRefund * 100) / 100,
         is_profitable: indicativeRefund > 0,
       };
-
-      // Update status
-      if (taxData.household_totals?.total_tax_assessed) {
-        blueprint.year_summaries[year].status = indicativeRefund > 0 ? 'complete' : 'ready_for_calculation';
-      }
+      // Note: status is already set above based on missing_items
     }
   }
 
@@ -1281,8 +1374,15 @@ export class Box3ExtractionPipeline {
         detected_person: classification.detected_persons[0]?.role || null,
         claims: [],
         asset_identifiers: {
-          bank_accounts: classification.asset_hints.bank_accounts,
-          real_estate: classification.asset_hints.properties,
+          bank_accounts: classification.asset_hints.bank_accounts.map(b => ({
+            account_last4: b.account_last4 || '',
+            bank_name: b.bank_name,
+            iban_pattern: undefined,
+          })),
+          real_estate: classification.asset_hints.properties.map(p => ({
+            address: p.address || '',
+            postcode: p.postcode,
+          })),
           investments: classification.asset_hints.investments.map(i => ({
             account_number: '',
             institution: i.institution || '',
@@ -1291,5 +1391,24 @@ export class Box3ExtractionPipeline {
       },
       rawResponse: debugResponses['classification_0'] || '',
     };
+  }
+
+  /**
+   * Legacy support: Extract multiple documents (for incremental merge)
+   */
+  async extractMultipleDocuments(
+    documents: PipelineDocument[]
+  ): Promise<Array<{ extraction: Box3DocumentExtraction; rawResponse: string; error?: string }>> {
+    const results: Array<{ extraction: Box3DocumentExtraction; rawResponse: string; error?: string }> = [];
+
+    for (let i = 0; i < documents.length; i += this.CONCURRENCY) {
+      const batch = documents.slice(i, i + this.CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(doc => this.extractSingleDocument(doc))
+      );
+      results.push(...batchResults);
+    }
+
+    return results;
   }
 }

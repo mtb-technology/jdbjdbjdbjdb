@@ -1144,6 +1144,232 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   )}
                 </div>
 
+                {/* Calculation Breakdown - Collapsible */}
+                {totalRefund > 0 && (
+                  <details className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl overflow-hidden">
+                    <summary className="p-4 cursor-pointer hover:bg-green-100/50 transition-colors flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-800">Hoe komt deze teruggave tot stand?</span>
+                      <ChevronDown className="h-4 w-4 text-green-600 ml-auto" />
+                    </summary>
+                    <div className="p-4 pt-0 space-y-4">
+                      {/* Formula explanation */}
+                      <div className="bg-white/60 rounded-lg p-3 text-sm">
+                        <p className="text-gray-700 mb-2">
+                          <strong>Formule:</strong> (Forfaitair rendement − Werkelijk rendement) × 31%
+                        </p>
+                        <p className="text-gray-600 text-xs">
+                          Als het werkelijke rendement lager is dan het forfaitaire rendement waarmee de Belastingdienst
+                          rekent, kan een deel van de eerder betaalde Box 3 belasting worden teruggevraagd.
+                        </p>
+                      </div>
+
+                      {/* Per year breakdown */}
+                      <div className="space-y-3">
+                        {years.map(year => {
+                          const summary = yearSummaries[year];
+                          const calc = summary?.calculated_totals;
+                          if (!calc) return null;
+
+                          const actualReturn = calc.actual_return;
+                          const deemedReturn = calc.deemed_return_from_tax_authority;
+                          const yearRefund = calc.indicative_refund;
+                          const yearMissing = summary?.missing_items || [];
+                          const hasMissingIncome = yearMissing.some(item =>
+                            typeof item !== 'string' && (
+                              item.field?.includes('interest') ||
+                              item.field?.includes('dividend') ||
+                              item.field?.includes('rental') ||
+                              item.description?.toLowerCase().includes('rente') ||
+                              item.description?.toLowerCase().includes('jaaroverzicht')
+                            )
+                          );
+
+                          return (
+                            <div key={year} className="bg-white rounded-lg p-3 border border-green-100">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-semibold text-gray-800">{year}</span>
+                                <span className={`font-bold ${yearRefund > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                  {yearRefund > 0 ? '+' : ''}{formatCurrency(yearRefund)}
+                                </span>
+                              </div>
+
+                              {/* Calculation steps */}
+                              <div className="space-y-1 text-sm">
+                                <div className="flex justify-between text-gray-600">
+                                  <span>Forfaitair rendement (Belastingdienst)</span>
+                                  <span className="font-medium text-red-600">{formatCurrency(deemedReturn)}</span>
+                                </div>
+                                <div className="flex justify-between text-gray-600">
+                                  <span>Werkelijk rendement</span>
+                                  <span className="font-medium text-green-600">{formatCurrency(actualReturn?.total || 0)}</span>
+                                </div>
+
+                                {/* Actual return breakdown - always show to clarify what's missing */}
+                                {(() => {
+                                  const bankCount = blueprint.assets?.bank_savings?.length || 0;
+                                  const invCount = blueprint.assets?.investments?.length || 0;
+                                  const reCount = blueprint.assets?.real_estate?.length || 0;
+                                  const bankInterest = actualReturn?.bank_interest || 0;
+                                  const dividends = actualReturn?.dividends || 0;
+                                  const realizedGains = actualReturn?.investment_gain || 0;
+                                  const rentalNet = actualReturn?.rental_income_net || 0;
+
+                                  // Show breakdown if we have any assets
+                                  if (bankCount === 0 && invCount === 0 && reCount === 0) return null;
+
+                                  return (
+                                    <div className="ml-4 text-xs space-y-0.5">
+                                      {/* Bank interest - show even if 0 when we have banks */}
+                                      {bankCount > 0 && (
+                                        <div className="flex justify-between">
+                                          <span className={bankInterest === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            └ Bankrente {bankInterest === 0 && <span className="text-amber-500">(ontbreekt)</span>}
+                                          </span>
+                                          <span className={bankInterest === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            {formatCurrency(bankInterest)}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {/* Dividends - show even if 0 when we have investments */}
+                                      {invCount > 0 && (
+                                        <div className="flex justify-between">
+                                          <span className={dividends === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            └ Dividend {dividends === 0 && <span className="text-amber-500">(ontbreekt)</span>}
+                                          </span>
+                                          <span className={dividends === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            {formatCurrency(dividends)}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {/* Realized gains - show even if 0 when we have investments */}
+                                      {invCount > 0 && (
+                                        <div className="flex justify-between">
+                                          <span className={realizedGains === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            └ Koerswinst {realizedGains === 0 && <span className="text-amber-500">(ontbreekt)</span>}
+                                          </span>
+                                          <span className={realizedGains === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            {formatCurrency(realizedGains)}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {/* Rental income - show even if 0 when we have real estate */}
+                                      {reCount > 0 && (
+                                        <div className="flex justify-between">
+                                          <span className={rentalNet === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            └ Huurinkomsten {rentalNet === 0 && <span className="text-amber-500">(ontbreekt)</span>}
+                                          </span>
+                                          <span className={rentalNet === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            {formatCurrency(rentalNet)}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+
+                                <div className="flex justify-between text-gray-600 border-t border-dashed pt-1 mt-1">
+                                  <span>Verschil</span>
+                                  <span className="font-medium">{formatCurrency(calc.difference)}</span>
+                                </div>
+                                <div className="flex justify-between text-gray-600">
+                                  <span>× 31% belastingtarief</span>
+                                  <span className="font-bold text-green-600">{formatCurrency(yearRefund)}</span>
+                                </div>
+                              </div>
+
+                              {/* Warning if income data missing or suspiciously low */}
+                              {(() => {
+                                // Check what's missing
+                                const bankInterest = actualReturn?.bank_interest || 0;
+                                const dividends = actualReturn?.dividends || 0;
+                                const totalAssets = calc.total_assets_jan_1 || 0;
+
+                                // Calculate expected minimum return (0.5% is conservative)
+                                const expectedMinReturn = totalAssets * 0.005;
+                                const actualTotal = actualReturn?.total || 0;
+
+                                // Missing items analysis
+                                const missingItems: string[] = [];
+
+                                // If we have bank accounts but no interest
+                                const bankCount = blueprint.assets?.bank_savings?.length || 0;
+                                if (bankCount > 0 && bankInterest === 0) {
+                                  missingItems.push('bankrente');
+                                }
+
+                                // If we have investments but no dividends
+                                const invCount = blueprint.assets?.investments?.length || 0;
+                                if (invCount > 0 && dividends === 0) {
+                                  missingItems.push('dividend');
+                                }
+
+                                // Show warning if there are known missing items OR if return seems too low
+                                const showWarning = hasMissingIncome || missingItems.length > 0 ||
+                                  (totalAssets > 10000 && actualTotal < expectedMinReturn);
+
+                                if (!showWarning) return null;
+
+                                return (
+                                  <div className="mt-2 flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded p-2">
+                                    <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                                    <div>
+                                      <span className="font-medium">Werkelijk rendement onvolledig</span>
+                                      {missingItems.length > 0 && (
+                                        <span> — ontbreekt: {missingItems.join(', ')}</span>
+                                      )}
+                                      <p className="mt-1 text-amber-600">
+                                        Upload jaaroverzichten van banken/brokers om de exacte rente en dividend toe te voegen.
+                                        Dit verhoogt mogelijk de teruggave.
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Total summary */}
+                      <div className="bg-green-100/50 rounded-lg p-3 flex justify-between items-center">
+                        <span className="font-medium text-green-800">Totale indicatieve teruggave</span>
+                        <span className="text-xl font-bold text-green-700">{formatCurrency(totalRefund)}</span>
+                      </div>
+
+                      {/* Per person split if partner */}
+                      {hasPartner && personSummaries.length > 1 && (
+                        <div className="text-xs text-gray-600 bg-white/60 rounded-lg p-3">
+                          <p className="font-medium mb-2">Verdeling per persoon:</p>
+                          <div className="space-y-1">
+                            {personSummaries.map(person => {
+                              // Calculate allocation percentage
+                              const totalAllocation = Object.values(person.yearBreakdown).reduce(
+                                (sum, yb) => sum + yb.allocation, 0
+                              );
+                              const avgAllocation = years.length > 0
+                                ? (totalAllocation / years.length).toFixed(0)
+                                : '50';
+
+                              return (
+                                <div key={person.id} className="flex justify-between">
+                                  <span>{person.name} ({avgAllocation}% toerekening)</span>
+                                  <span className="font-medium">{formatCurrency(person.totalIndicativeRefund)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Disclaimer */}
+                      <p className="text-xs text-gray-500 italic">
+                        Let op: dit is een indicatieve berekening. De definitieve teruggave wordt vastgesteld door de Belastingdienst.
+                      </p>
+                    </div>
+                  </details>
+                )}
+
                 {/* Next Action Card - Shows what's needed */}
                 {allMissingItems.length > 0 && (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">

@@ -783,6 +783,14 @@ export interface Box3AssetReferences {
   real_estate_descriptions: string[];
   other_assets_count: number;
   other_descriptions: string[];
+  /** Category totals per year from aangifte - for validation */
+  category_totals?: Record<string, {
+    bank_savings_total?: number;
+    investments_total?: number;
+    real_estate_total?: number;
+    other_assets_total?: number;
+    debts_total?: number;
+  }>;
 }
 
 /**

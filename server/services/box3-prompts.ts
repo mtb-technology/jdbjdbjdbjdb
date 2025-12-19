@@ -87,8 +87,19 @@ Zoek naar deze velden in Box 3 sectie:
 Tel en beschrijf ALLE vermogensbestanddelen die in de aangifte staan:
 - Hoeveel bankrekeningen? Welke banken?
 - Hoeveel beleggingsrekeningen?
-- Hoeveel onroerende zaken?
+- Hoeveel onroerende zaken? (kijk naar "Woningen en andere onroerende zaken" totaal)
 - Overige bezittingen?
+
+### Totaalbedragen per categorie (BELANGRIJK!)
+Zoek in Box 3 sectie naar deze subtotalen:
+- Banktegoeden totaal
+- Aandelen, obligaties totaal
+- Woningen en andere onroerende zaken totaal (dit is CRUCIAAL!)
+- Overige bezittingen totaal
+- Schulden totaal
+
+LET OP: Als "Woningen en andere onroerende zaken" > 0, dan IS er onroerend goed in Box 3!
+Dit kan een vakantiewoning, verhuurpand, grond, of buitenlands vastgoed zijn.
 
 ## OUTPUT FORMAT:
 {
@@ -166,12 +177,23 @@ Tel en beschrijf ALLE vermogensbestanddelen die in de aangifte staan:
       "Premiedepot pensioenverzekering",
       "Kapitaalverzekering"
     ]
+  },
+  "category_totals": {
+    "2023": {
+      "bank_savings_total": 125000,
+      "investments_total": 75000,
+      "real_estate_total": 245000,
+      "other_assets_total": 5000,
+      "debts_total": 0
+    }
   }
 }
 
 BELANGRIJK:
 - total_tax_assessed is CRUCIAAL voor teruggave berekening
 - asset_references wordt checklist: in volgende stap moeten we ALLE vermelde assets vinden
+- category_totals bevat de SUBTOTALEN per categorie uit de aangifte - gebruik dit voor validatie!
+- Als "real_estate_total" > 0: er IS onroerend goed, zoek naar WOZ waarden of adressen
 - Als partner niet aanwezig: "has_partner": false`;
 
 // =============================================================================
@@ -200,9 +222,10 @@ Je MOET alle rekeningen uit de checklist vinden! Als een rekening ontbreekt, mel
 - interest_received: Ontvangen rente over het jaar
 
 ### Eigendom
-- owner_id: "tp_01" (belastingplichtige) of "fp_01" (partner) of "joint"
-- ownership_percentage: 100 (eigen) of 50 (gezamenlijk)
-- is_joint_account: true/false
+- owner_id: "tp_01" (belastingplichtige) of "fp_01" (partner) of "joint" (gezamenlijk)
+- is_joint_account: true als "en/of" in naam rekeninghouder staat
+- ownership_percentage: ALTIJD 100 - het VOLLEDIGE saldo wordt opgegeven in de aangifte
+  (De verdeling tussen partners gebeurt via allocatie, niet via ownership!)
 
 ### Bijzonder
 - is_green_investment: true als het een groene spaarrekening is (ASN, Triodos groen)
@@ -219,7 +242,7 @@ Je MOET alle rekeningen uit de checklist vinden! Als een rekening ontbreekt, mel
       "account_masked": "NL91INGB****1234",
       "country": "NL",
       "is_joint_account": false,
-      "ownership_percentage": 100,
+      "ownership_percentage": 100,  // Altijd 100! Volledige saldo in aangifte
       "is_green_investment": false,
       "yearly_data": {
         "2023": {
@@ -243,7 +266,8 @@ KRITIEKE REGELS:
 3. Zoek naar: "Saldo per 1-1", "Openingssaldo", "Stand per 1 januari"
 4. Rente staat vaak apart: "Creditrente", "Ontvangen rente", "Spaarrente"
 5. IBAN formaat: NL + 2 cijfers + 4 letters (bank) + 10 cijfers
-6. Bij gezamenlijke rekening: ownership_percentage = 50 per persoon`;
+6. ownership_percentage is ALTIJD 100! De aangifte toont het volledige saldo.
+   Bij gezamenlijke rekeningen: is_joint_account = true, owner_id = "joint"`;
 
 // =============================================================================
 // STAGE 3b: INVESTMENT EXTRACTION PROMPT
@@ -270,8 +294,9 @@ OPDRACHT: Extraheer ALLE beleggingsrekeningen uit de documenten.
 - transaction_costs: Transactiekosten
 
 ### Eigendom
-- owner_id: "tp_01" of "fp_01"
-- ownership_percentage: meestal 100
+- owner_id: "tp_01" of "fp_01" of "joint"
+- ownership_percentage: ALTIJD 100! Volledige waarde in aangifte
+  (Verdeling tussen partners is allocatie, niet ownership)
 
 ## OUTPUT FORMAT:
 {
