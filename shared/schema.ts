@@ -1165,6 +1165,7 @@ export {
   type Box3DocumentClassification,
   type Box3SourceDocumentEntry,
   type Box3Blueprint,
+  type Box3GeneratedEmail,
 
   // Zod schemas
   box3DataPointSchema,

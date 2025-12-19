@@ -425,6 +425,7 @@ export function useBox3Validation({
         dossier: result.dossier,
         blueprint: result.blueprint,
         blueprintVersion: result.blueprintVersion || 1,
+        generatedEmail: result.generatedEmail || null,
         documents: result.documents || [],
       };
     } catch (error: unknown) {

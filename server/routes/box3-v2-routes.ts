@@ -374,6 +374,7 @@ box3V2Router.get(
       dossier: data.dossier,
       blueprint: data.blueprint?.blueprint || null,
       blueprintVersion: data.blueprint?.version || 0,
+      generatedEmail: data.blueprint?.generatedEmail || null,
       documents: documentsLight,
     }));
   })
@@ -658,25 +659,23 @@ box3V2Router.post(
     // Validate dossier exists
     const dossier = await storage.getBox3Dossier(id);
     if (!dossier) {
-      res.status(404).json(createApiErrorResponse(
+      return res.status(404).json(createApiErrorResponse(
         'NOT_FOUND',
         ERROR_CODES.REPORT_NOT_FOUND,
         'Dossier niet gevonden',
         'Dossier niet gevonden'
       ));
-      return;
     }
 
     // Check for documents
     const documents = await storage.getBox3DocumentsForDossier(id);
     if (documents.length === 0) {
-      res.status(400).json(createApiErrorResponse(
+      return res.status(400).json(createApiErrorResponse(
         'VALIDATION_ERROR',
         ERROR_CODES.VALIDATION_FAILED,
         'Geen documenten om te valideren',
         'Geen documenten om te valideren'
       ));
-      return;
     }
 
     // Check if there's already an active job for this dossier
@@ -1186,26 +1185,32 @@ ${missingListHtml}
 <p>Met vriendelijke groet,</p>`;
     }
 
-    logger.info('box3-v2', 'Generated follow-up email', {
+    const emailData = {
+      emailType: determinedType,
+      subject,
+      body,
+      metadata: {
+        yearRange,
+        totalIndicativeRefund,
+        missingItemsCount: allMissingItems.length,
+        minimumProfitableAmount: BOX3_CONSTANTS.MINIMUM_PROFITABLE_AMOUNT,
+      },
+      generatedAt: new Date().toISOString(),
+    };
+
+    // Save the generated email to the blueprint record
+    if (data.blueprint) {
+      await storage.updateBox3BlueprintGeneratedEmail(data.blueprint.id, emailData);
+    }
+
+    logger.info('box3-v2', 'Generated and saved follow-up email', {
       dossierId: id,
+      blueprintId: data.blueprint?.id,
       emailType: determinedType,
       indicativeRefund: totalIndicativeRefund,
       missingItemsCount: allMissingItems.length,
     });
 
-    res.json(createApiSuccessResponse({
-      emailType: determinedType,
-      subject,
-      body,
-      metadata: {
-        clientName,
-        yearRange,
-        totalIndicativeRefund,
-        totalDeemedReturn,
-        missingItemsCount: allMissingItems.length,
-        hasCompleteData,
-        minimumProfitableAmount: BOX3_CONSTANTS.MINIMUM_PROFITABLE_AMOUNT,
-      }
-    }, "Email gegenereerd"));
+    res.json(createApiSuccessResponse(emailData, "Email gegenereerd"));
   })
 );

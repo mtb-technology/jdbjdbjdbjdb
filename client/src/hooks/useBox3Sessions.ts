@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { QUERY_KEYS } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
-import type { Box3Blueprint, Box3Dossier } from "@shared/schema";
+import type { Box3Blueprint, Box3Dossier, Box3GeneratedEmail } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
 import { BOX3_CONSTANTS } from "@shared/constants";
 
@@ -31,6 +31,7 @@ export interface Box3DossierFull {
   dossier: Box3Dossier;
   blueprint: Box3Blueprint | null;
   blueprintVersion: number;
+  generatedEmail: Box3GeneratedEmail | null;
   documents: Array<{
     id: string;
     filename: string;

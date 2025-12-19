@@ -5,7 +5,7 @@
  * Uses the new Blueprint data model with source tracking.
  */
 
-import { memo, useState, useCallback, useRef, useMemo } from "react";
+import { memo, useState, useCallback, useRef, useMemo, useEffect } from "react";
 import imageCompression from "browser-image-compression";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -289,7 +289,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   onAddDocuments,
 }: Box3CaseDetailProps) {
   const { toast } = useToast();
-  const { dossier, blueprint, blueprintVersion, documents } = dossierFull;
+  const { dossier, blueprint, blueprintVersion, generatedEmail: savedEmail, documents } = dossierFull;
 
   const [showInputDetails, setShowInputDetails] = useState(false);
   const [showAddDocs, setShowAddDocs] = useState(false);
@@ -297,14 +297,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   const [isCompressing, setIsCompressing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Email generation state
+  // Email generation state - initialize from saved email if available
   const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [generatedEmail, setGeneratedEmail] = useState<{
     emailType: string;
     subject: string;
     body: string;
-    metadata: any;
-  } | null>(null);
+    metadata?: any;
+  } | null>(savedEmail ?? null);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
 
   // Document preview state
@@ -435,7 +435,6 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
       const result = await response.json();
       setGeneratedEmail(result.data);
-      setShowEmailPreview(true);
     } catch (error) {
       toast({
         title: 'Fout',
@@ -446,6 +445,22 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
       setIsGeneratingEmail(false);
     }
   }, [dossier.id, toast]);
+
+  // Auto-generate email only when:
+  // 1. Blueprint exists and has no saved email yet
+  // 2. Not currently generating or revalidating
+  useEffect(() => {
+    if (
+      blueprint &&
+      blueprintVersion > 0 &&
+      !savedEmail &&
+      !generatedEmail &&
+      !isGeneratingEmail &&
+      !isRevalidating
+    ) {
+      handleGenerateEmail();
+    }
+  }, [blueprint, blueprintVersion, savedEmail, generatedEmail, isGeneratingEmail, isRevalidating, handleGenerateEmail]);
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1252,7 +1267,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
             // Status determination: missing docs takes priority over profitability
             const hasMissingDocs = allMissingItems.length > 0;
-            const statusLabel = hasMissingDocs ? 'Onvolledig' : isProfitable ? 'Kansrijk' : 'Niet kansrijk';
+            const incompleteYearsCount = years.filter(y => (yearSummaries[y]?.missing_items || []).length > 0).length;
+            // Consistent status label: "Docs nodig" when incomplete, shows which years
+            const statusLabel = hasMissingDocs
+              ? `Docs nodig`
+              : isProfitable ? 'Kansrijk' : 'Niet kansrijk';
             const statusColor = hasMissingDocs ? 'bg-amber-100 text-amber-700' : isProfitable ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600';
             const StatusIcon = hasMissingDocs ? AlertTriangle : isProfitable ? CheckCircle2 : Info;
 
@@ -1264,7 +1283,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   <div className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm font-medium ${statusColor}`}>
                     <StatusIcon className="h-4 w-4" />
                     {statusLabel}
-                    <span className="text-xs opacity-70">({profitableYears.length}/{years.length})</span>
+                    {hasMissingDocs
+                      ? <span className="text-xs opacity-70">({incompleteYearsCount} jaar)</span>
+                      : <span className="text-xs opacity-70">({profitableYears.length}/{years.length})</span>
+                    }
                   </div>
 
                   <div className="h-6 w-px bg-border" />
@@ -1283,17 +1305,21 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     <>
                       <div className="h-6 w-px bg-border" />
                       <div className="flex items-center gap-3 text-sm">
-                        {personSummaries.map((person, idx) => (
-                          <div key={person.id} className="flex items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">
-                              {idx === 0 ? 'T.' : 'E.'}:
-                            </span>
-                            <CopyableCurrency
-                              value={person.totalIndicativeRefund}
-                              className={`font-semibold ${person.isProfitable ? 'text-green-600' : 'text-muted-foreground'}`}
-                            />
-                          </div>
-                        ))}
+                        {personSummaries.map((person) => {
+                          // Show first name, with full name on hover
+                          const firstName = person.name.split(' ')[0];
+                          return (
+                            <div key={person.id} className="flex items-center gap-1.5">
+                              <span className="text-xs text-muted-foreground" title={person.name}>
+                                {firstName}:
+                              </span>
+                              <CopyableCurrency
+                                value={person.totalIndicativeRefund}
+                                className={`font-semibold ${person.isProfitable ? 'text-green-600' : 'text-muted-foreground'}`}
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                     </>
                   )}
@@ -1559,6 +1585,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     onGenerateEmail={handleGenerateEmail}
                     isGeneratingEmail={isGeneratingEmail}
                     generatedEmail={generatedEmail}
+                    onShowEmailPreview={() => setShowEmailPreview(true)}
                   />
                 </div>
 
@@ -1604,7 +1631,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 ? 'text-green-600'
                                 : 'text-muted-foreground'
                           }`}>
-                            {yearIncomplete ? 'Onvolledig' : formatCurrency(refund)}
+                            {yearIncomplete ? 'Docs nodig' : formatCurrency(refund)}
                           </p>
                         </button>
                       );
@@ -1686,7 +1713,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 const yearMissing = blueprint.year_summaries?.[selectedYear]?.missing_items || [];
                                 const yearHasMissing = yearMissing.length > 0;
                                 if (yearHasMissing) {
-                                  return <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300">Onvolledig</Badge>;
+                                  return <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300">Docs nodig</Badge>;
                                 }
                                 return (
                                   <Badge variant={refund > 0 ? "default" : "secondary"} className={refund > 0 ? "bg-green-600" : ""}>

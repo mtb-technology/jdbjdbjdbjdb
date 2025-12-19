@@ -1042,6 +1042,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async updateBox3BlueprintGeneratedEmail(blueprintId: string, generatedEmail: Box3BlueprintRecord['generatedEmail']): Promise<Box3BlueprintRecord | undefined> {
+    const [updated] = await db
+      .update(box3Blueprints)
+      .set({ generatedEmail })
+      .where(eq(box3Blueprints.id, blueprintId))
+      .returning();
+    return updated;
+  }
+
   // --- Combined operations ---
 
   async getBox3DossierWithLatestBlueprint(dossierId: string): Promise<{ dossier: Box3Dossier; blueprint: Box3BlueprintRecord | null; documents: Omit<Box3Document, 'fileData'>[] } | undefined> {

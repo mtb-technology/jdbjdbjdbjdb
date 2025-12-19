@@ -58,6 +58,7 @@ interface Box3ActionCardsProps {
   onGenerateEmail: () => void;
   isGeneratingEmail: boolean;
   generatedEmail: GeneratedEmail | null;
+  onShowEmailPreview?: () => void;
 }
 
 export const Box3ActionCards = memo(function Box3ActionCards({
@@ -70,6 +71,7 @@ export const Box3ActionCards = memo(function Box3ActionCards({
   onGenerateEmail,
   isGeneratingEmail,
   generatedEmail,
+  onShowEmailPreview,
 }: Box3ActionCardsProps) {
   const { toast } = useToast();
   const [copiedEmail, setCopiedEmail] = useState(false);
@@ -202,25 +204,26 @@ export const Box3ActionCards = memo(function Box3ActionCards({
           Email naar klant
         </div>
         {!generatedEmail ? (
-          // Generate button
-          <Button
-            onClick={onGenerateEmail}
-            disabled={isGeneratingEmail}
-            className="w-full h-9"
-            variant="outline"
-          >
-            {isGeneratingEmail ? (
-              <>
-                <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                Genereren...
-              </>
-            ) : (
-              <>
-                <Mail className="h-3.5 w-3.5 mr-1.5" />
-                Genereer email
-              </>
-            )}
-          </Button>
+          // Generate button - centered, elegant
+          <div className="flex justify-center items-center py-6">
+            <button
+              onClick={onGenerateEmail}
+              disabled={isGeneratingEmail}
+              className="group flex items-center gap-2 px-5 py-2.5 rounded-full border border-slate-200 bg-white text-slate-600 text-sm font-medium shadow-sm hover:shadow-md hover:border-slate-300 hover:text-slate-900 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGeneratingEmail ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <span>Genereren...</span>
+                </>
+              ) : (
+                <>
+                  <Mail className="h-4 w-4 group-hover:scale-110 transition-transform" />
+                  <span>Genereer email</span>
+                </>
+              )}
+            </button>
+          </div>
         ) : (
           // Email preview - compact
           <div className="space-y-2.5">
@@ -256,9 +259,9 @@ export const Box3ActionCards = memo(function Box3ActionCards({
                   <><Copy className="h-3 w-3 mr-1" />Kopieer</>
                 )}
               </Button>
-              <Button variant="default" size="sm" className="flex-1 h-8 text-xs" onClick={handleOpenInMailApp}>
-                <ExternalLink className="h-3 w-3 mr-1" />
-                Mail app
+              <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={onShowEmailPreview}>
+                <FileText className="h-3 w-3 mr-1" />
+                Bekijk
               </Button>
             </div>
 

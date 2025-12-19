@@ -75,12 +75,29 @@ export const box3Documents = pgTable("box3_documents", {
   dossierIdIdx: index("box3_documents_dossier_id_idx").on(table.dossierId),
 }));
 
+// Generated email structure (stored with blueprint)
+export interface Box3GeneratedEmail {
+  emailType: string;
+  subject: string;
+  body: string;
+  metadata?: {
+    yearRange?: string;
+    totalIndicativeRefund?: number;
+    minimumProfitableAmount?: number;
+    missingItemsCount?: number;
+  };
+  generatedAt: string; // ISO timestamp
+}
+
 export const box3Blueprints = pgTable("box3_blueprints", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   dossierId: varchar("dossier_id").notNull().references(() => box3Dossiers.id, { onDelete: 'cascade' }),
 
   version: integer("version").notNull(), // 1, 2, 3...
   blueprint: jsonb("blueprint").notNull().$type<Box3Blueprint>(),
+
+  // Generated email for this blueprint version
+  generatedEmail: jsonb("generated_email").$type<Box3GeneratedEmail>(),
 
   createdAt: timestamp("created_at").defaultNow(),
   createdBy: text("created_by"), // "intake" | "aanvulling" | "hervalidatie" | "manual"
