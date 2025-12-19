@@ -26,7 +26,7 @@ import type {
 } from "@shared/types/report-data";
 
 // Job types
-export type JobType = "single_stage" | "express_mode" | "generation" | "box3_revalidation";
+export type JobType = "single_stage" | "express_mode" | "generation" | "box3_validation" | "box3_revalidation";
 
 // Progress structure stored in jobs.progress JSON
 export interface JobProgress {
@@ -177,7 +177,9 @@ class JobProcessor {
         case "express_mode":
           await this.processExpressMode(job, config as ExpressModeJobConfig);
           break;
+        case "box3_validation":
         case "box3_revalidation":
+          // Both use the same processing logic - extract from documents and create blueprint
           await this.processBox3Revalidation(job);
           break;
         default:
@@ -767,8 +769,8 @@ class JobProcessor {
    * Extracts data from documents and creates a new blueprint version.
    */
   private async processBox3Revalidation(job: Job): Promise<void> {
-    // For Box3 jobs, reportId contains the dossier ID
-    const dossierId = job.reportId!;
+    // For Box3 jobs, use the dedicated box3DossierId field
+    const dossierId = job.box3DossierId!;
 
     // Update progress - starting
     await this.updateBox3Progress(job.id, 0, 5, 'Dossier laden...', 'loading');
@@ -880,10 +882,11 @@ class JobProcessor {
     const taxYears = this.extractTaxYearsFromBlueprint(blueprint);
     const hasFiscalPartner = blueprint.fiscal_entity?.fiscal_partner?.has_partner || false;
 
-    // Update dossier
+    // Update dossier (including status for initial validation jobs)
     await storage.updateBox3Dossier(dossierId, {
       taxYears: taxYears.length > 0 ? taxYears : null,
       hasFiscalPartner,
+      status: taxYears.length > 0 ? 'in_behandeling' : 'intake',
     });
 
     // Update document classifications (batched)

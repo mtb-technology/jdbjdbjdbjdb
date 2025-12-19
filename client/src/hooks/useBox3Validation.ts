@@ -72,12 +72,26 @@ interface UseBox3ValidationProps {
   refetchSessions: () => void;
 }
 
+/** Result of starting a validation job - contains dossier info for immediate navigation */
+export interface ValidationJobStartResult {
+  dossierId: string;
+  jobId: string;
+  clientName: string;
+}
+
 interface UseBox3ValidationReturn extends ValidationState {
+  /** @deprecated Use startValidationJob for job-based flow with immediate navigation */
   validate: (
     clientName: string,
     inputText: string,
     pendingFiles: PendingFile[]
   ) => Promise<Box3DossierFull | null>;
+  /** Start background validation job for new dossier - creates dossier and returns immediately */
+  startValidationJob: (
+    clientName: string,
+    inputText: string,
+    pendingFiles: PendingFile[]
+  ) => Promise<ValidationJobStartResult | null>;
   /** @deprecated Use startRevalidationJob instead */
   revalidate: (dossierId: string) => Promise<Box3Blueprint | null>;
   /** Start background revalidation job - returns jobId */
@@ -283,6 +297,103 @@ export function useBox3Validation({
       setPipelineProgress(null);
 
       const message = error instanceof Error ? error.message : "Kon revalidatie niet starten.";
+      toast({
+        title: "Start mislukt",
+        description: message,
+        variant: "destructive",
+      });
+      return null;
+    }
+  }, [toast]);
+
+  // Start background validation job for new dossier
+  const startValidationJob = useCallback(async (
+    clientName: string,
+    inputText: string,
+    pendingFiles: PendingFile[]
+  ): Promise<ValidationJobStartResult | null> => {
+    if (!clientName.trim()) {
+      toast({
+        title: "Klantnaam vereist",
+        description: "Vul een klantnaam in.",
+        variant: "destructive",
+      });
+      return null;
+    }
+
+    if (!inputText.trim() && pendingFiles.length === 0) {
+      toast({
+        title: "Geen input",
+        description: "Voer mail tekst in of upload documenten.",
+        variant: "destructive",
+      });
+      return null;
+    }
+
+    // Client-side file size validation
+    const oversizedFiles = pendingFiles.filter(pf => pf.file.size > BOX3_CONSTANTS.MAX_FILE_SIZE_BYTES);
+    if (oversizedFiles.length > 0) {
+      const names = oversizedFiles
+        .map(f => `${f.name} (${(f.file.size / 1024 / 1024).toFixed(1)}MB)`)
+        .join(', ');
+      toast({
+        title: "Bestand(en) te groot",
+        description: `Maximum grootte is ${BOX3_CONSTANTS.MAX_FILE_SIZE_MB}MB per bestand. Geweigerd: ${names}`,
+        variant: "destructive",
+      });
+      return null;
+    }
+
+    setIsValidating(true);
+    setPipelineProgress({ step: 0, totalSteps: 5, message: 'Dossier aanmaken...', phase: 'starting' });
+
+    try {
+      const formData = new FormData();
+      formData.append("clientName", clientName.trim());
+      formData.append("inputText", inputText.trim() || "(geen mail tekst)");
+
+      for (const pf of pendingFiles) {
+        formData.append("files", pf.file, pf.name);
+      }
+
+      const response = await fetch("/api/box3-validator/validate-job", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      const data = result.success ? result.data : result;
+
+      // Validate response
+      if (!data.dossier?.id || !data.jobId) {
+        throw new Error("Server gaf geen dossier of job ID terug");
+      }
+
+      // Update state for job tracking
+      setCurrentDossierId(data.dossier.id);
+      setActiveJobId(data.jobId);
+
+      toast({
+        title: "Validatie gestart",
+        description: "Je kan de browser sluiten, de verwerking gaat door.",
+      });
+
+      // Return info for immediate navigation
+      return {
+        dossierId: data.dossier.id,
+        jobId: data.jobId,
+        clientName: data.dossier.clientName,
+      };
+    } catch (error: unknown) {
+      setIsValidating(false);
+      setPipelineProgress(null);
+
+      const message = error instanceof Error ? error.message : "Kon validatie niet starten.";
       toast({
         title: "Start mislukt",
         description: message,
@@ -618,6 +729,7 @@ export function useBox3Validation({
     activeJobId,
     activeJob,
     validate,
+    startValidationJob,
     revalidate,
     startRevalidationJob,
     cancelRevalidationJob,

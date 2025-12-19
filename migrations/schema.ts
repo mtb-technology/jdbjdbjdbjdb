@@ -1,8 +1,7 @@
-import { pgTable, index, unique, varchar, text, json, boolean, timestamp, foreignKey, jsonb, integer, pgSequence } from "drizzle-orm/pg-core"
+import { pgTable, index, unique, varchar, text, json, boolean, timestamp, jsonb, integer, foreignKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
-export const dossierNumberSeq = pgSequence("dossier_number_seq", {  startWith: "1", increment: "1", minValue: "1", maxValue: "9223372036854775807", cache: "1", cycle: false })
 
 export const promptConfigs = pgTable("prompt_configs", {
 	id: varchar().default(gen_random_uuid()).primaryKey().notNull(),
@@ -36,25 +35,6 @@ export const users = pgTable("users", {
 	unique("users_username_unique").on(table.username),
 ]);
 
-export const jobs = pgTable("jobs", {
-	id: varchar().default(gen_random_uuid()).primaryKey().notNull(),
-	type: text().notNull(),
-	status: text().default('queued').notNull(),
-	reportId: varchar("report_id"),
-	progress: text(),
-	result: json(),
-	error: text(),
-	startedAt: timestamp("started_at", { mode: 'string' }),
-	completedAt: timestamp("completed_at", { mode: 'string' }),
-	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow(),
-}, (table) => [
-	foreignKey({
-			columns: [table.reportId],
-			foreignColumns: [reports.id],
-			name: "jobs_report_id_reports_id_fk"
-		}),
-]);
-
 export const reports = pgTable("reports", {
 	id: varchar().default(gen_random_uuid()).primaryKey().notNull(),
 	title: text().notNull(),
@@ -76,6 +56,7 @@ export const reports = pgTable("reports", {
 	dossierContextSummary: text("dossier_context_summary"),
 	dossierNumber: integer("dossier_number").notNull(),
 	rolledBackChanges: jsonb("rolled_back_changes"),
+	reportLanguage: text("report_language").default('nl'),
 }, (table) => [
 	index("reports_client_name_idx").using("btree", table.clientName.asc().nullsLast().op("text_ops")),
 	index("reports_created_at_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamp_ops")),
@@ -83,6 +64,26 @@ export const reports = pgTable("reports", {
 	index("reports_dossier_number_idx").using("btree", table.dossierNumber.asc().nullsLast().op("int4_ops")),
 	index("reports_status_idx").using("btree", table.status.asc().nullsLast().op("text_ops")),
 	unique("reports_dossier_number_unique").on(table.dossierNumber),
+]);
+
+export const jobs = pgTable("jobs", {
+	id: varchar().default(gen_random_uuid()).primaryKey().notNull(),
+	type: text().notNull(),
+	status: text().default('queued').notNull(),
+	reportId: varchar("report_id"),
+	progress: text(),
+	result: json(),
+	error: text(),
+	startedAt: timestamp("started_at", { mode: 'string' }),
+	completedAt: timestamp("completed_at", { mode: 'string' }),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow(),
+	box3DossierId: varchar("box3_dossier_id"),
+}, (table) => [
+	foreignKey({
+			columns: [table.reportId],
+			foreignColumns: [reports.id],
+			name: "jobs_report_id_reports_id_fk"
+		}),
 ]);
 
 export const followUpSessions = pgTable("follow_up_sessions", {
@@ -129,6 +130,7 @@ export const attachments = pgTable("attachments", {
 	usedInStages: json("used_in_stages").default([]),
 	uploadedAt: timestamp("uploaded_at", { mode: 'string' }).defaultNow(),
 	needsVisionOcr: boolean("needs_vision_ocr").default(false),
+	externalUrl: text("external_url"),
 }, (table) => [
 	index("attachments_report_id_idx").using("btree", table.reportId.asc().nullsLast().op("text_ops")),
 	foreignKey({
@@ -136,27 +138,6 @@ export const attachments = pgTable("attachments", {
 			foreignColumns: [reports.id],
 			name: "attachments_report_id_reports_id_fk"
 		}).onDelete("cascade"),
-]);
-
-export const box3ValidatorSessions = pgTable("box3_validator_sessions", {
-	id: varchar().default(gen_random_uuid()).primaryKey().notNull(),
-	clientName: text("client_name").notNull(),
-	belastingjaar: text(),
-	inputText: text("input_text").notNull(),
-	attachmentNames: jsonb("attachment_names"),
-	validationResult: jsonb("validation_result"),
-	conceptMail: jsonb("concept_mail"),
-	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow(),
-	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow(),
-	attachments: jsonb(),
-	manualOverrides: jsonb("manual_overrides"),
-	dossierStatus: text("dossier_status").default('in_behandeling'),
-	notes: text(),
-	multiYearData: jsonb("multi_year_data"),
-	isMultiYear: boolean("is_multi_year").default(false),
-}, (table) => [
-	index("box3_validator_client_name_idx").using("btree", table.clientName.asc().nullsLast().op("text_ops")),
-	index("box3_validator_created_at_idx").using("btree", table.createdAt.asc().nullsLast().op("timestamp_ops")),
 ]);
 
 export const externalReportSessions = pgTable("external_report_sessions", {
@@ -235,6 +216,7 @@ export const box3Blueprints = pgTable("box3_blueprints", {
 	blueprint: jsonb().notNull(),
 	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow(),
 	createdBy: text("created_by"),
+	generatedEmail: jsonb("generated_email"),
 }, (table) => [
 	index("box3_blueprints_dossier_id_idx").using("btree", table.dossierId.asc().nullsLast().op("text_ops")),
 	index("box3_blueprints_version_idx").using("btree", table.dossierId.asc().nullsLast().op("int4_ops"), table.version.asc().nullsLast().op("int4_ops")),

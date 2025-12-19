@@ -645,6 +645,96 @@ box3V2Router.post(
 );
 
 /**
+ * Start validation job for new dossier (background processing)
+ * POST /api/box3-v2/validate-job
+ *
+ * Creates a new dossier, stores documents, and starts a background job.
+ * Returns dossier ID and job ID immediately - client navigates to dossier
+ * and can poll for progress.
+ */
+box3V2Router.post(
+  "/validate-job",
+  (req: Request, res: Response, next: NextFunction) => {
+    upload.array('files', 10)(req, res, (err: any) => {
+      if (err) {
+        return res.status(400).json(createApiErrorResponse(
+          'VALIDATION_ERROR',
+          ERROR_CODES.VALIDATION_FAILED,
+          err.message || 'Bestand upload mislukt',
+          err.message
+        ));
+      }
+      next();
+    });
+  },
+  asyncHandler(async (req: Request, res: Response) => {
+    const { inputText, clientName, clientEmail } = req.body;
+
+    if (!clientName || clientName.trim().length === 0) {
+      throw ServerError.validation("clientName is required", "Klantnaam is verplicht");
+    }
+
+    const files = req.files as Express.Multer.File[] || [];
+
+    if (files.length === 0) {
+      throw ServerError.validation("No files", "Upload minimaal één document");
+    }
+
+    logger.info('box3-v2', `Creating dossier with job for ${clientName}`, { fileCount: files.length });
+
+    // Create dossier first (status: intake, will be updated when job completes)
+    const dossier = await storage.createBox3Dossier({
+      clientName: clientName.trim(),
+      clientEmail: clientEmail?.trim() || null,
+      intakeText: inputText?.trim() || null,
+      status: 'intake',
+    });
+
+    logger.info('box3-v2', 'Dossier created', { dossierId: dossier.id });
+
+    // Store documents
+    for (const file of files) {
+      await storage.createBox3Document({
+        dossierId: dossier.id,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        fileData: file.buffer.toString('base64'),
+        uploadedVia: 'intake',
+      });
+    }
+
+    logger.info('box3-v2', 'Documents stored', { dossierId: dossier.id, count: files.length });
+
+    // Create validation job
+    const job = await storage.createJob({
+      type: 'box3_validation',
+      status: 'queued',
+      box3DossierId: dossier.id, // Use dedicated field for box3 dossiers
+      result: {}, // No additional config needed
+    });
+
+    logger.info('box3-v2', 'Validation job created', {
+      jobId: job.id,
+      dossierId: dossier.id,
+      documentCount: files.length
+    });
+
+    res.json(createApiSuccessResponse({
+      dossier: {
+        id: dossier.id,
+        clientName: dossier.clientName,
+        status: dossier.status,
+        createdAt: dossier.createdAt,
+      },
+      jobId: job.id,
+      status: 'queued',
+      message: 'Dossier aangemaakt, validatie gestart'
+    }));
+  })
+);
+
+/**
  * Start revalidation job (background processing)
  * POST /api/box3-v2/dossiers/:id/revalidate-job
  *
@@ -679,7 +769,7 @@ box3V2Router.post(
     }
 
     // Check if there's already an active job for this dossier
-    const activeJobs = await storage.getJobsForReport(id, ['queued', 'processing']);
+    const activeJobs = await storage.getJobsForBox3Dossier(id, ['queued', 'processing']);
     const existingBox3Job = activeJobs.find(j => j.type === 'box3_revalidation');
     if (existingBox3Job) {
       // Return existing job ID instead of creating duplicate
@@ -692,11 +782,11 @@ box3V2Router.post(
       return;
     }
 
-    // Create job (using reportId field to store dossierId)
+    // Create job for box3 revalidation
     const job = await storage.createJob({
       type: 'box3_revalidation',
       status: 'queued',
-      reportId: id, // Dossier ID stored here
+      box3DossierId: id, // Use dedicated field for box3 dossiers
       result: {}, // No additional config needed
     });
 
@@ -725,9 +815,9 @@ box3V2Router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
-    // Get active jobs for this dossier
-    const activeJobs = await storage.getJobsForReport(id, ['queued', 'processing']);
-    const box3Job = activeJobs.find(j => j.type === 'box3_revalidation');
+    // Get active jobs for this dossier (both validation and revalidation)
+    const activeJobs = await storage.getJobsForBox3Dossier(id, ['queued', 'processing']);
+    const box3Job = activeJobs.find(j => j.type === 'box3_revalidation' || j.type === 'box3_validation');
 
     if (!box3Job) {
       res.json(createApiSuccessResponse({

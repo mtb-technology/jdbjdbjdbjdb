@@ -882,7 +882,7 @@ export interface Box3ValidationResult {
 }
 
 export interface Box3ValidationCheck {
-  check_type: 'asset_total' | 'asset_count' | 'interest_plausibility' | 'missing_data' | 'discrepancy';
+  check_type: 'asset_total' | 'asset_count' | 'interest_plausibility' | 'missing_data' | 'discrepancy' | 'duplicate_asset';
   year?: string;
   passed: boolean;
   severity: 'info' | 'warning' | 'error';
@@ -892,6 +892,10 @@ export interface Box3ValidationCheck {
     actual?: number;
     difference?: number;
     field?: string;
+    // For duplicate detection
+    description?: string;
+    amount?: number;
+    categories?: string[];
   };
 }
 

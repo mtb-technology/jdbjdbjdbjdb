@@ -85,6 +85,7 @@ export interface IStorage {
   getJob(id: string): Promise<Job | undefined>;
   getJobsByStatus(status: string | string[]): Promise<Job[]>;
   getJobsForReport(reportId: string, status?: string | string[]): Promise<Job[]>;
+  getJobsForBox3Dossier(dossierId: string, status?: string | string[]): Promise<Job[]>;
   updateJobProgress(id: string, progress: Record<string, any>): Promise<Job | undefined>;
   startJob(id: string): Promise<Job | undefined>;
   completeJob(id: string, result: Record<string, any>): Promise<Job | undefined>;
@@ -770,6 +771,21 @@ export class DatabaseStorage implements IStorage {
     }
     return await db.select().from(jobs)
       .where(eq(jobs.reportId, reportId))
+      .orderBy(desc(jobs.createdAt));
+  }
+
+  async getJobsForBox3Dossier(dossierId: string, status?: string | string[]): Promise<Job[]> {
+    if (status) {
+      const statuses = Array.isArray(status) ? status : [status];
+      return await db.select().from(jobs)
+        .where(and(
+          eq(jobs.box3DossierId, dossierId),
+          inArray(jobs.status, statuses)
+        ))
+        .orderBy(desc(jobs.createdAt));
+    }
+    return await db.select().from(jobs)
+      .where(eq(jobs.box3DossierId, dossierId))
       .orderBy(desc(jobs.createdAt));
   }
 

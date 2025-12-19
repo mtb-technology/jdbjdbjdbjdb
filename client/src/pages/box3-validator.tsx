@@ -73,7 +73,7 @@ const Box3Validator = memo(function Box3Validator() {
     pipelineProgress,
     activeJobId,
     activeJob,
-    validate,
+    startValidationJob,
     startRevalidationJob,
     cancelRevalidationJob,
     loadFromDossier,
@@ -132,16 +132,16 @@ const Box3Validator = memo(function Box3Validator() {
     [deleteSession, refetchSessions]
   );
 
-  // Validation handler for new case
+  // Validation handler for new case - uses job-based flow for immediate navigation
   const handleValidate = useCallback(
     async (clientName: string, inputText: string, files: PendingFile[]) => {
-      const result = await validate(clientName, inputText, files);
+      const result = await startValidationJob(clientName, inputText, files);
       if (result) {
-        // Navigate to the new dossier
-        setLocation(`/box3-validator/${result.dossier.id}`);
+        // Navigate immediately to the new dossier - progress will be shown there
+        setLocation(`/box3-validator/${result.dossierId}`);
       }
     },
-    [validate, setLocation]
+    [startValidationJob, setLocation]
   );
 
   // Check for active jobs when loading a dossier

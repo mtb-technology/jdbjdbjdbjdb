@@ -1025,6 +1025,24 @@ export class Box3ExtractionPipeline {
       });
     }
 
+    // Check 5: Duplicate Detection (same name + same amount across categories)
+    const duplicates = this.detectDuplicateAssets(blueprint, years);
+    for (const dup of duplicates) {
+      checks.push({
+        check_type: 'duplicate_asset',
+        year: dup.year,
+        passed: false,
+        severity: 'warning',
+        message: `Mogelijke dubbele entry: "${dup.description}" (€${dup.amount}) gevonden in ${dup.categories.join(' en ')}`,
+        details: {
+          field: 'duplicate_detection',
+          description: dup.description,
+          amount: dup.amount,
+          categories: dup.categories,
+        },
+      });
+    }
+
     // Calculate summary
     const passed = checks.filter(c => c.passed).length;
     const warnings = checks.filter(c => !c.passed && c.severity === 'warning').length;
@@ -1095,6 +1113,82 @@ export class Box3ExtractionPipeline {
       return field.amount ?? field.value ?? 0;
     }
     return 0;
+  }
+
+  /**
+   * Detect potential duplicate assets across categories.
+   * Duplicates are identified by similar description AND same amount for a given year.
+   * This catches cases where e.g. BinckBank is extracted as both bank_savings and investments.
+   */
+  private detectDuplicateAssets(
+    blueprint: Box3Blueprint,
+    years: string[]
+  ): Array<{ year: string; description: string; amount: number; categories: string[] }> {
+    const duplicates: Array<{ year: string; description: string; amount: number; categories: string[] }> = [];
+
+    for (const year of years) {
+      // Build a map of all assets: key = normalized description + amount, value = categories found
+      const assetMap = new Map<string, { description: string; amount: number; categories: string[] }>();
+
+      // Helper to normalize description for matching
+      const normalize = (desc: string): string => {
+        return (desc || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '') // Remove special chars
+          .replace(/rekening|spaar|savings|account/g, ''); // Remove common suffixes
+      };
+
+      // Helper to add asset to map
+      const addAsset = (description: string, amount: number, category: string) => {
+        if (amount <= 0) return; // Skip zero/negative amounts
+
+        const key = `${normalize(description)}_${amount}`;
+        const existing = assetMap.get(key);
+
+        if (existing) {
+          if (!existing.categories.includes(category)) {
+            existing.categories.push(category);
+          }
+        } else {
+          assetMap.set(key, { description, amount, categories: [category] });
+        }
+      };
+
+      // Collect all bank_savings
+      for (const bank of blueprint.assets.bank_savings || []) {
+        const desc = bank.description || bank.bank_name || 'Onbekend';
+        const amount = this.getAmount(bank.yearly_data?.[year]?.value_jan_1);
+        addAsset(desc, amount, 'bank_savings');
+      }
+
+      // Collect all investments
+      for (const inv of blueprint.assets.investments || []) {
+        const desc = inv.description || inv.institution || 'Onbekend';
+        const amount = this.getAmount(inv.yearly_data?.[year]?.value_jan_1);
+        addAsset(desc, amount, 'investments');
+      }
+
+      // Collect all other_assets
+      for (const oa of blueprint.assets.other_assets || []) {
+        const desc = oa.description || oa.type || 'Onbekend';
+        const amount = this.getAmount(oa.yearly_data?.[year]?.value_jan_1);
+        addAsset(desc, amount, 'other_assets');
+      }
+
+      // Find entries that appear in multiple categories
+      Array.from(assetMap.values()).forEach((entry) => {
+        if (entry.categories.length > 1) {
+          duplicates.push({
+            year,
+            description: entry.description,
+            amount: entry.amount,
+            categories: entry.categories,
+          });
+        }
+      });
+    }
+
+    return duplicates;
   }
 
   private calculateYearTotals(blueprint: Box3Blueprint): void {

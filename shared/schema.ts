@@ -223,9 +223,10 @@ export const sources = pgTable("sources", {
  */
 export const jobs = pgTable("jobs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  type: text("type").notNull(), // "report_generation"
+  type: text("type").notNull(), // "report_generation", "box3_revalidation"
   status: text("status").notNull().default("queued"), // queued, processing, completed, failed
   reportId: varchar("report_id").references(() => reports.id),
+  box3DossierId: varchar("box3_dossier_id"), // For box3 jobs - no FK to allow flexibility
   progress: text("progress"), // JSON object with current stage and progress info
   result: json("result"), // Final result when completed
   error: text("error"), // Error message if failed

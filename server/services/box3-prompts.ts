@@ -267,7 +267,16 @@ KRITIEKE REGELS:
 4. Rente staat vaak apart: "Creditrente", "Ontvangen rente", "Spaarrente"
 5. IBAN formaat: NL + 2 cijfers + 4 letters (bank) + 10 cijfers
 6. ownership_percentage is ALTIJD 100! De aangifte toont het volledige saldo.
-   Bij gezamenlijke rekeningen: is_joint_account = true, owner_id = "joint"`;
+   Bij gezamenlijke rekeningen: is_joint_account = true, owner_id = "joint"
+
+EXCLUSIES - Deze NIET als bank_savings extraheren (worden apart geëxtraheerd):
+- BinckBank, DEGIRO, Saxo Bank, Lynx → Dit zijn BELEGGINGSREKENINGEN (investments)
+- Premiedepot, Premie depot verzekeringen → Dit zijn OVERIGE BEZITTINGEN (other_assets)
+- Kapitaalverzekering, Lijfrente → Dit zijn OVERIGE BEZITTINGEN (other_assets)
+- VvE reserve → Dit is een OVERIGE BEZITTING (other_assets)
+
+Als een rekening in de checklist staat met bovenstaande namen, NEGEER deze hier.
+Ze worden in een aparte extractie-stap verwerkt om dubbeltellingen te voorkomen.`;
 
 // =============================================================================
 // STAGE 3b: INVESTMENT EXTRACTION PROMPT
@@ -331,7 +340,18 @@ KRITIEKE REGELS:
 1. Waarde per 1 JANUARI telt voor Box 3
 2. Dividend is onderdeel van "werkelijk rendement"
 3. Gerealiseerde winst ook onderdeel van werkelijk rendement
-4. Let op cryptovaluta - valt ook onder beleggingen`;
+4. Let op cryptovaluta - valt ook onder beleggingen
+
+INCLUSIES - Deze ALTIJD als investments extraheren (ook als ze in aangifte onder "bankrekeningen" staan):
+- BinckBank (nu Saxo) → beleggingsrekening, GEEN spaarrekening
+- DEGIRO → beleggingsrekening
+- Saxo Bank → beleggingsrekening
+- Lynx → beleggingsrekening
+- Flatex → beleggingsrekening
+- Interactive Brokers → beleggingsrekening
+
+LET OP: De Belastingdienst groepeert soms beleggingsrekeningen onder "Bank- en spaarrekeningen".
+Extraheer ze hier als investments, NIET als bank_savings!`;
 
 // =============================================================================
 // STAGE 3c: REAL ESTATE EXTRACTION PROMPT
@@ -498,7 +518,16 @@ KRITIEKE REGELS:
 1. Schulden verlagen de Box 3 grondslag
 2. Betaalde rente is onderdeel van "werkelijk rendement" (negatief)
 3. Studieschuld telt NIET mee voor Box 3 (uitzondering)
-4. Contant geld alleen als >€560`;
+4. Contant geld alleen als >€560
+
+INCLUSIES - Deze ALTIJD als other_assets extraheren (ook als ze in aangifte onder "bankrekeningen" staan):
+- Premiedepot, Premie depot verzekeringen → type: "premiedepot"
+- Kapitaalverzekering → type: "capital_insurance"
+- Lijfrentesparen → type: "capital_insurance"
+- VvE reserve/bijdrage → type: "vve_share"
+
+LET OP: De Belastingdienst groepeert premiedepots soms onder "Bank- en spaarrekeningen".
+Extraheer ze hier als other_assets, NIET als bank_savings!`;
 
 // =============================================================================
 // HELPER FUNCTION: Build prompt with checklist
