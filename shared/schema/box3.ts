@@ -263,12 +263,19 @@ export interface Box3OtherAsset {
   borrower_name?: string; // Voor uitgeleend geld
   country?: string; // NL of buitenland
 
+  // Voor uitgeleend geld / vorderingen - KRITIEK voor werkelijk rendement
+  agreed_interest_rate?: number; // Afgesproken rentepercentage (bijv. 4.0 = 4%)
+  loan_start_date?: string; // Startdatum lening (YYYY-MM-DD)
+  loan_end_date?: string; // Einddatum lening indien bekend
+  is_family_loan?: boolean; // Lening aan familie (zoon, dochter, etc.)
+
   yearly_data: Record<string, {
     value_jan_1?: Box3DataPoint;
     value_dec_31?: Box3DataPoint;
     income_received?: Box3DataPoint;
     premium_paid?: Box3DataPoint; // Voor verzekeringen
-    interest_received?: Box3DataPoint; // Voor uitgeleend geld
+    interest_received?: Box3DataPoint; // Voor uitgeleend geld - werkelijk ontvangen rente
+    expected_interest?: Box3DataPoint; // Verwachte rente obv afgesproken percentage
   }>;
 }
 
@@ -369,6 +376,7 @@ export interface Box3CalculatedTotals {
     bank_interest: number;
     investment_gain: number;
     dividends: number;
+    other_assets_income: number; // Interest from hypotheekvordering, loans, claims, etc.
     rental_income_net: number;
     debt_interest_paid: number;
     total: number;
@@ -423,6 +431,7 @@ export interface Box3AuditCheck {
     | 'studieschuld_exclusion'
     | 'eigen_woning_exclusion'
     | 'final_assessment_only'
+    | 'green_investment_exemption' // Groene vrijstelling moet handmatig worden toegepast
     | 'anomaly_detected';
   passed: boolean;
   message: string;
@@ -515,6 +524,119 @@ export const DOCUMENT_AUTHORITY_RANKING: Record<string, number> = {
   'client_estimate': 20,
   'overig': 10,
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEMANTIC DEDUPLICATION TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Asset Fingerprint - Used for semantic deduplication
+ *
+ * Fiscale regels:
+ * - Volledige IBAN is primaire sleutel (niet alleen laatste 4 cijfers)
+ * - Eigendomspercentage MOET matchen voor samenvoeging
+ * - Peildatum MOET 1 januari zijn
+ * - Bij twijfel: NIET samenvoegen
+ */
+export interface Box3AssetFingerprint {
+  // Primaire identifiers (exact match vereist)
+  iban_full?: string;              // Volledige IBAN (primaire sleutel voor bank/belegging)
+  cadastral_id?: string;           // Kadastraal nummer (primaire sleutel voor vastgoed)
+  address_normalized?: string;     // Genormaliseerd adres (fallback voor vastgoed)
+
+  // Secundaire identifiers
+  institution_normalized: string;  // "ING", "RABO", "DEGIRO", etc.
+  account_last4?: string;          // Laatste 4 cijfers (voor fuzzy matching)
+  postcode?: string;               // Postcode (voor vastgoed)
+
+  // Eigendom (KRITIEK - verschillende percentages = NIET samenvoegen)
+  ownership_percentage: number;
+
+  // Waardes per jaar (voor vergelijking)
+  amounts_by_year: Record<string, number>;  // { "2023": 45000, "2024": 48000 }
+
+  // Categorie
+  category: 'bank_savings' | 'investments' | 'real_estate' | 'other_assets' | 'debts';
+  asset_type?: string;             // Subtype binnen categorie
+
+  // Hash voor snelle vergelijking
+  fingerprint_hash: string;        // MD5/SHA van primaire identifiers
+}
+
+/**
+ * Deduplication Match Result
+ */
+export interface Box3DeduplicationMatch {
+  asset_a_id: string;
+  asset_b_id: string;
+  match_level: 'exact' | 'high' | 'possible' | 'uncertain';
+  match_score: number;             // 0-100
+  matched_on: string[];            // ["iban_full", "ownership_percentage"]
+  conflicts: string[];             // ["amount differs by 5%"]
+  recommendation: 'merge' | 'review' | 'keep_separate';
+  merged_into?: string;            // ID van het resultaat na merge
+}
+
+/**
+ * Deduplication Stage Result
+ */
+export interface Box3DeduplicationResult {
+  original_count: {
+    bank_savings: number;
+    investments: number;
+    real_estate: number;
+    other_assets: number;
+    debts: number;
+  };
+  deduplicated_count: {
+    bank_savings: number;
+    investments: number;
+    real_estate: number;
+    other_assets: number;
+    debts: number;
+  };
+  matches_found: Box3DeduplicationMatch[];
+  items_merged: number;
+  items_flagged_for_review: number;
+  ownership_conflicts: Array<{
+    asset_ids: string[];
+    percentages: number[];
+    message: string;
+  }>;
+}
+
+/**
+ * Ground Truth Validation Result (Soft Constraint)
+ *
+ * Fiscale opmerking: De aangifte is NIET altijd correct.
+ * Dit is een validatie NA extractie, geen constraint TIJDENS extractie.
+ */
+export interface Box3GroundTruthValidation {
+  year: string;
+  aangifte_total: number;
+  extracted_total: number;
+  difference: number;
+  difference_percentage: number;
+
+  // Tolerantie: Belastingdienst accepteert afwijkingen tot €5.000 of 1%
+  within_tolerance: boolean;
+  tolerance_used: number;
+
+  // Afwijkingsanalyse
+  possible_causes: Array<{
+    cause: 'missing_asset' | 'duplicate_asset' | 'wrong_value' | 'category_mismatch' | 'unknown';
+    description: string;
+    suggested_action: string;
+  }>;
+
+  // Review flags
+  requires_human_review: boolean;
+  review_reason?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXTRACTED CLAIMS & DOCUMENT EXTRACTION
+// ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * Extracted Claim - What a document claims about a field
@@ -620,7 +742,7 @@ export interface Box3SourceDocumentEntry {
   file_id: string;
   filename: string;
   detected_type: 'aangifte_ib' | 'aanslag_definitief' | 'aanslag_voorlopig' |
-    'jaaropgave_bank' | 'woz_beschikking' | 'email_body' | 'overig';
+    'jaaropgave_bank' | 'effectenoverzicht' | 'woz_beschikking' | 'email_body' | 'overig';
   detected_tax_year: number | null;
   for_person?: string | null; // person id (taxpayer/partner) or null = both/unknown
   is_readable: boolean;
@@ -716,6 +838,7 @@ export const box3YearSummarySchema = z.object({
       bank_interest: z.number(),
       investment_gain: z.number(),
       dividends: z.number(),
+      other_assets_income: z.number().optional().default(0), // Interest from hypotheekvordering, loans, etc.
       rental_income_net: z.number(),
       debt_interest_paid: z.number(),
       total: z.number(),
@@ -732,7 +855,7 @@ export const box3SourceDocumentEntrySchema = z.object({
   file_id: z.string(),
   filename: z.string(),
   detected_type: z.enum(['aangifte_ib', 'aanslag_definitief', 'aanslag_voorlopig',
-    'jaaropgave_bank', 'woz_beschikking', 'email_body', 'overig']),
+    'jaaropgave_bank', 'effectenoverzicht', 'woz_beschikking', 'email_body', 'overig']),
   detected_tax_year: z.number().nullable(),
   for_person: z.string().nullable().optional(),
   is_readable: z.boolean(),
@@ -933,8 +1056,9 @@ export interface Box3ValidationCheck {
     | 'lijfrente_exclusion'     // Lijfrente should be Box 1
     | 'studieschuld_exclusion'  // Study loan not deductible
     | 'eigen_woning_exclusion'  // Primary residence is Box 1
-    | 'final_assessment_only'   // Claim only against definitieve aanslag
-    | 'anomaly_detected';       // LLM-detected anomaly
+    | 'final_assessment_only'       // Claim only against definitieve aanslag
+    | 'green_investment_exemption'  // Groene vrijstelling moet handmatig worden toegepast
+    | 'anomaly_detected';           // LLM-detected anomaly
   year?: string;
   passed: boolean;
   severity: 'info' | 'warning' | 'error';
@@ -961,6 +1085,10 @@ export interface Box3ValidationCheck {
     // For missing asset identification
     missing_descriptions?: string[];
     checklist_descriptions?: string[];
+    // For green investment exemption warning
+    descriptions?: string;
+    total_green_amount?: number;
+    accounts?: { description: string; amount: number }[];
   };
 }
 

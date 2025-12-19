@@ -527,8 +527,11 @@ Je MOET alle rekeningen uit de checklist vinden! Als een rekening ontbreekt, mel
 ### Eigendom
 - owner_id: "tp_01" (belastingplichtige) of "fp_01" (partner) of "joint" (gezamenlijk)
 - is_joint_account: true als "en/of" in naam rekeninghouder staat
-- ownership_percentage: ALTIJD 100 - het VOLLEDIGE saldo wordt opgegeven in de aangifte
-  (De verdeling tussen partners gebeurt via allocatie, niet via ownership!)
+- ownership_percentage: Percentage eigendom van de fiscale eenheid (huishouden)
+  * 100 = rekening volledig van dit huishouden
+  * 50 = rekening gedeeld met iemand BUITEN het huishouden (bijv. broer/zus)
+  * Let op: Bij fiscaal partnerschap hoort het VOLLEDIGE saldo in de aangifte -
+    verdeling tussen partners is allocatie, geen ownership wijziging!
 
 ### Bijzonder
 - is_green_investment: true als het een groene spaarrekening is (ASN, Triodos groen)
@@ -545,7 +548,7 @@ Je MOET alle rekeningen uit de checklist vinden! Als een rekening ontbreekt, mel
       "account_masked": "NL91INGB****1234",
       "country": "NL",
       "is_joint_account": false,
-      "ownership_percentage": 100,  // Altijd 100! Volledige saldo in aangifte
+      "ownership_percentage": 100,  // 100 = volledig eigendom huishouden, 50 = gedeeld buiten huishouden
       "is_green_investment": false,
       "yearly_data": {
         "2023": {
@@ -569,8 +572,8 @@ KRITIEKE REGELS:
 3. Zoek naar: "Saldo per 1-1", "Openingssaldo", "Stand per 1 januari"
 4. Rente staat vaak apart: "Creditrente", "Ontvangen rente", "Spaarrente"
 5. IBAN formaat: NL + 2 cijfers + 4 letters (bank) + 10 cijfers
-6. ownership_percentage is ALTIJD 100! De aangifte toont het volledige saldo.
-   Bij gezamenlijke rekeningen: is_joint_account = true, owner_id = "joint"
+6. ownership_percentage = 100 bij volledig eigendom huishouden, lager bij externe mede-eigenaren
+   Bij gezamenlijke rekeningen BINNEN huishouden: is_joint_account = true, owner_id = "joint", ownership = 100
 7. BinckBank, DEGIRO etc. met alleen een saldo (geen beleggingsdetails) → extraheer als bankrekening
 8. Premiedepot, kapitaalverzekering → extraheer als bankrekening (tenzij apart vermeld in aangifte)`;
 
@@ -600,8 +603,9 @@ OPDRACHT: Extraheer ALLE beleggingsrekeningen uit de documenten.
 
 ### Eigendom
 - owner_id: "tp_01" of "fp_01" of "joint"
-- ownership_percentage: ALTIJD 100! Volledige waarde in aangifte
-  (Verdeling tussen partners is allocatie, niet ownership)
+- ownership_percentage: Percentage eigendom van de fiscale eenheid (huishouden)
+  * 100 = volledig eigendom huishouden
+  * 50 = gedeeld met iemand BUITEN het huishouden
 
 ## OUTPUT FORMAT:
 {
@@ -745,7 +749,7 @@ OPDRACHT: Extraheer ALLE overige bezittingen en schulden.
 - capital_insurance: Kapitaalverzekering
 - vve_share: VvE reserve
 - claims: Vorderingen op derden
-- loaned_money: Uitgeleend geld
+- loaned_money: Uitgeleend geld (hypotheek aan familie, familielening, etc.)
 - cash: Contant geld (>€560)
 - periodic_benefits: Periodieke uitkeringen
 - crypto: Cryptovaluta (als apart, niet bij beleggingen)
@@ -759,11 +763,39 @@ OPDRACHT: Extraheer ALLE overige bezittingen en schulden.
 - tax_debt: Belastingschuld
 - other: Overige schulden
 
+## KRITIEK: VOOR LENINGEN/VORDERINGEN (type: loaned_money of claims)
+Bij uitgeleend geld of vorderingen is het ESSENTIEEL om te extraheren:
+1. agreed_interest_rate: Het AFGESPROKEN rentepercentage (bijv. 4.0 voor 4%)
+2. interest_received: De WERKELIJK ONTVANGEN rente in het jaar
+3. borrower_name: Aan wie is het geld uitgeleend (naam zoon, dochter, etc.)
+4. is_family_loan: true als het een familielening betreft
+
+Dit is KRITIEK voor de Box 3 bezwaarberekening omdat:
+- Forfaitair rendement (6.04% in 2024) vaak HOGER is dan werkelijk rendement
+- Het verschil = de belastingschade voor de cliënt
+
 ## OUTPUT FORMAT:
 {
   "other_assets": [
     {
       "id": "oa_1",
+      "owner_id": "tp_01",
+      "description": "Vordering hypotheek aan zoon (W.H. Vonck)",
+      "type": "loaned_money",
+      "country": "NL",
+      "borrower_name": "W.H. Vonck (zoon)",
+      "is_family_loan": true,
+      "agreed_interest_rate": 4.0,
+      "loan_start_date": "2020-01-01",
+      "yearly_data": {
+        "2024": {
+          "value_jan_1": { "amount": 600000, "source_doc_id": "doc_1", "confidence": 0.95 },
+          "interest_received": { "amount": 24000, "source_doc_id": "doc_1", "confidence": 0.90 }
+        }
+      }
+    },
+    {
+      "id": "oa_2",
       "owner_id": "tp_01",
       "description": "Premiedepot Aegon",
       "type": "premiedepot",
@@ -793,11 +825,11 @@ OPDRACHT: Extraheer ALLE overige bezittingen en schulden.
     }
   ],
   "extraction_notes": {
-    "other_assets_found": 1,
+    "other_assets_found": 2,
     "debts_found": 1,
-    "expected_from_checklist": 2,
+    "expected_from_checklist": 3,
     "missing": [],
-    "warnings": []
+    "warnings": ["Rentepercentage voor oa_1 geschat op basis van beschrijving"]
   }
 }
 
@@ -806,7 +838,9 @@ KRITIEKE REGELS:
 2. Betaalde rente is onderdeel van "werkelijk rendement" (negatief)
 3. Studieschuld telt NIET mee voor Box 3 (uitzondering)
 4. Contant geld alleen als >€560
-5. Premiedepot/kapitaalverzekering die in aangifte onder "bankrekeningen" staat → NIET hier extraheren`;
+5. Premiedepot/kapitaalverzekering die in aangifte onder "bankrekeningen" staat → NIET hier extraheren
+6. Voor leningen/vorderingen: ALTIJD proberen rentepercentage en ontvangen rente te extraheren
+7. Als rentepercentage niet expliciet vermeld, zoek naar aanwijzingen in de tekst (bijv. "4% rente", "tegen 3,5%", etc.)`;
 
 // =============================================================================
 // HELPER FUNCTION: Build prompt with checklist

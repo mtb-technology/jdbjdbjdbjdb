@@ -381,6 +381,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
         const totalActualReturn = (actualReturn?.bank_interest || 0) +
                                   (actualReturn?.dividends || 0) +
                                   (actualReturn?.investment_gain || 0) +
+                                  (actualReturn?.other_assets_income || 0) +
                                   (actualReturn?.rental_income_net || 0);
         // If actual return is exactly 0 on significant assets, likely missing data
         return totalActualReturn === 0;
@@ -1544,10 +1545,12 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 const bankCount = blueprint.assets?.bank_savings?.length || 0;
                                 const invCount = blueprint.assets?.investments?.length || 0;
                                 const reCount = blueprint.assets?.real_estate?.length || 0;
+                                const otherCount = blueprint.assets?.other_assets?.length || 0;
                                 const bankInterest = actualReturn?.bank_interest || 0;
                                 const dividends = actualReturn?.dividends || 0;
                                 const realizedGains = actualReturn?.investment_gain || 0;
                                 const rentalNet = actualReturn?.rental_income_net || 0;
+                                const otherAssetsIncome = actualReturn?.other_assets_income || 0;
 
                                 // Calculate estimated bank interest for this year
                                 let yearEstimatedInterest = 0;
@@ -1589,7 +1592,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 </div>
 
                                 {/* Actual return breakdown - always show to clarify what's missing */}
-                                {(bankCount > 0 || invCount > 0 || reCount > 0) && (
+                                {(bankCount > 0 || invCount > 0 || reCount > 0 || otherCount > 0) && (
                                     <div className="ml-4 text-xs space-y-0.5">
                                       {/* Bank interest - show even if 0 when we have banks */}
                                       {bankCount > 0 && (
@@ -1636,6 +1639,17 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                           </span>
                                         </div>
                                       )}
+                                      {/* Other assets income (hypotheekvordering rente, etc.) - show when we have other assets */}
+                                      {otherCount > 0 && (
+                                        <div className="flex justify-between">
+                                          <span className={otherAssetsIncome === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            └ Rente overige bezittingen {otherAssetsIncome === 0 && <span className="text-amber-500">(ontbreekt)</span>}
+                                          </span>
+                                          <span className={otherAssetsIncome === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            {formatCurrency(otherAssetsIncome)}
+                                          </span>
+                                        </div>
+                                      )}
                                     </div>
                                 )}
 
@@ -1658,6 +1672,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 const dividends = actualReturn?.dividends || 0;
                                 const realizedGains = actualReturn?.investment_gain || 0;
                                 const rentalNet = actualReturn?.rental_income_net || 0;
+                                const otherIncome = actualReturn?.other_assets_income || 0;
                                 const totalAssets = calc.total_assets_jan_1 || 0;
 
                                 // Calculate expected minimum return (0.5% is conservative)
@@ -1686,6 +1701,12 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 const reCount = blueprint.assets?.real_estate?.length || 0;
                                 if (reCount > 0 && rentalNet === 0) {
                                   missingItems.push('huurinkomsten');
+                                }
+
+                                // If we have other assets (hypotheekvordering, etc.) but no interest/income
+                                const otherCount = blueprint.assets?.other_assets?.length || 0;
+                                if (otherCount > 0 && otherIncome === 0) {
+                                  missingItems.push('rente overige bezittingen');
                                 }
 
                                 // Show warning if there are known missing items OR if return seems too low
@@ -2760,10 +2781,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                               {/* Other Assets section */}
                               {yearOtherAssets.length > 0 && (() => {
                                 let totalValue = 0;
+                                let totalInterestReceived = 0;
                                 yearOtherAssets.forEach(asset => {
                                   const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
                                   const amount = getValueJan1(yearData);
                                   if (typeof amount === 'number') totalValue += amount;
+                                  // Sum up interest received for loans/claims
+                                  const interestReceived = getFieldValue(yearData?.interest_received);
+                                  if (typeof interestReceived === 'number') totalInterestReceived += interestReceived;
                                 });
 
                                 const typeLabels: Record<string, string> = {
@@ -2778,6 +2803,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                   crypto: 'Cryptovaluta',
                                   other: 'Overig',
                                 };
+
+                                // Check if any assets are loans/claims (need extra columns)
+                                const hasLoans = yearOtherAssets.some(a =>
+                                  a.type === 'loaned_money' || a.type === 'claims'
+                                );
 
                                 return (
                                   <Card>
@@ -2800,17 +2830,39 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                             <th className="text-left px-4 py-2 font-medium">Type</th>
                                             <th className="text-left px-4 py-2 font-medium">Land</th>
                                             <th className="text-right px-4 py-2 font-medium">1 jan {selectedYear}</th>
+                                            {hasLoans && (
+                                              <>
+                                                <th className="text-right px-4 py-2 font-medium">Rente %</th>
+                                                <th className="text-right px-4 py-2 font-medium">Ontvangen rente</th>
+                                              </>
+                                            )}
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y">
                                           {yearOtherAssets.map((asset, idx) => {
                                             const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
                                             const amount = getValueJan1(yearData);
+                                            const isLoan = asset.type === 'loaned_money' || asset.type === 'claims';
+
+                                            // Get loan-specific fields (cast to any for new fields not yet in type)
+                                            const assetAny = asset as any;
+                                            const agreedRate = assetAny.agreed_interest_rate;
+                                            const interestReceived = getFieldValue(yearData?.interest_received);
+                                            const borrowerName = assetAny.borrower_name;
+                                            const isFamilyLoan = assetAny.is_family_loan;
 
                                             return (
                                               <tr key={asset.id || idx} className="hover:bg-muted/30">
                                                 <td className="px-4 py-3">
-                                                  <span className="font-medium">{asset.description}</span>
+                                                  <div>
+                                                    <span className="font-medium">{asset.description}</span>
+                                                    {borrowerName && (
+                                                      <div className="text-xs text-muted-foreground">
+                                                        Aan: {borrowerName}
+                                                        {isFamilyLoan && <span className="ml-1 text-blue-500">(familie)</span>}
+                                                      </div>
+                                                    )}
+                                                  </div>
                                                 </td>
                                                 <td className="px-4 py-3">
                                                   <Badge variant="outline" className="text-xs">{typeLabels[asset.type] || asset.type}</Badge>
@@ -2819,6 +2871,24 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                                 <td className="px-4 py-3 text-right font-semibold">
                                                   {amount != null ? formatCurrency(amount) : '—'}
                                                 </td>
+                                                {hasLoans && (
+                                                  <>
+                                                    <td className="px-4 py-3 text-right">
+                                                      {isLoan && agreedRate != null ? (
+                                                        <span className="text-blue-600 font-medium">{agreedRate}%</span>
+                                                      ) : isLoan ? (
+                                                        <span className="text-orange-500 text-xs">onbekend</span>
+                                                      ) : '—'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                      {isLoan && interestReceived != null ? (
+                                                        <span className="text-green-600 font-medium">{formatCurrency(interestReceived)}</span>
+                                                      ) : isLoan ? (
+                                                        <span className="text-orange-500 text-xs">onbekend</span>
+                                                      ) : '—'}
+                                                    </td>
+                                                  </>
+                                                )}
                                               </tr>
                                             );
                                           })}
@@ -2827,6 +2897,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                           <tr className="font-semibold">
                                             <td className="px-4 py-2" colSpan={3}>Subtotaal</td>
                                             <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
+                                            {hasLoans && (
+                                              <>
+                                                <td className="px-4 py-2"></td>
+                                                <td className="px-4 py-2 text-right text-green-600">
+                                                  {totalInterestReceived > 0 ? formatCurrency(totalInterestReceived) : '—'}
+                                                </td>
+                                              </>
+                                            )}
                                           </tr>
                                         </tfoot>
                                       </table>

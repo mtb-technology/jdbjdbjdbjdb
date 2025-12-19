@@ -1,19 +1,21 @@
 /**
  * Box3 Extraction Pipeline - Multi-Stage Architecture
  *
- * A robust 5-stage pipeline for extracting Box 3 tax data from Dutch documents.
+ * A robust 6-stage pipeline for extracting Box 3 tax data from Dutch documents.
  *
  * Stages:
  * 1. Classification - Classify each document type and extract metadata
  * 2. Tax Authority - Extract official Belastingdienst data + asset checklist
- * 3. Asset Extraction - Deep extraction per category (parallel)
- * 4. Merge & Reconcile - Combine all extractions, resolve conflicts
- * 5. Validation - Verify totals against official numbers
+ * 3. Asset Extraction - Deep extraction per category (sequential with exclusion)
+ * 4a. Merge & Reconcile - Combine all extractions, resolve conflicts
+ * 4b. Semantic Deduplication - 4-step waterfall deduplication (NEW)
+ * 5. Validation - Verify totals against official numbers (soft constraint)
  */
 
 import { AIModelFactory } from "./ai-models/ai-model-factory";
 import { logger } from "./logger";
 import { extractPdfTextFromBase64, hasUsableText, type PdfExtractionResult } from "./pdf-text-extractor";
+import { runSemanticDeduplication, detectCrossCategoryDuplicates } from "./box3-deduplication";
 import {
   CLASSIFICATION_PROMPT,
   TAX_AUTHORITY_PROMPT,
@@ -133,12 +135,14 @@ export class Box3ExtractionPipeline {
   private readonly CONCURRENCY = 3;
 
   // Default model config - BASE (without thinking level, set per-task)
+  // IMPORTANT: useGrounding: false - we extract from documents, not web search
   private readonly MODEL_CONFIG_BASE = {
     model: 'gemini-3-flash-preview',
     provider: 'google' as const,
     temperature: 0.0,
     topP: 0.95,
     topK: 40,
+    useGrounding: false,  // Document extraction, not web search
   };
 
   // EXTRACTION config: Low thinking = more output tokens for large JSON
@@ -147,6 +151,7 @@ export class Box3ExtractionPipeline {
     ...this.MODEL_CONFIG_BASE,
     thinkingLevel: 'low' as const,
     maxOutputTokens: 65536,  // Max output for large extractions
+    useGrounding: false,    // Explicitly disable - extracting from docs
   };
 
   // REASONING config: High thinking for validation/anomaly detection
@@ -154,7 +159,22 @@ export class Box3ExtractionPipeline {
   private readonly REASONING_CONFIG = {
     ...this.MODEL_CONFIG_BASE,
     thinkingLevel: 'high' as const,
-    maxOutputTokens: 8192,  // Smaller output, more thinking
+    maxOutputTokens: 16384,  // Increased to avoid token limit issues
+    useGrounding: false,    // No web search needed for anomaly detection
+  };
+
+  // COMPLEX_EXTRACTION config: Pro model for ambiguous/complex categories
+  // Stage 3d (Other Assets) has many subtypes (loans, insurance, claims, crypto, etc.)
+  // Pro model is "smarter" and requires less thinking tokens for complex decisions
+  private readonly COMPLEX_EXTRACTION_CONFIG = {
+    model: 'gemini-3-pro-preview',
+    provider: 'google' as const,
+    temperature: 0.0,
+    topP: 0.95,
+    topK: 40,
+    thinkingLevel: 'low' as const,  // Pro needs less thinking for same quality
+    maxOutputTokens: 32768,
+    useGrounding: false,
   };
 
   // Batch threshold: split extraction if more than this many items
@@ -174,6 +194,12 @@ export class Box3ExtractionPipeline {
 
   // Feature flag for using new sub-stage extraction (can be toggled for A/B testing)
   private readonly USE_SUBSTAGE_EXTRACTION = true;
+
+  // Feature flag for parallel asset extraction (Stage 3)
+  // When true: 3a/3b/3c/3d run in parallel, rely on Stage 4b dedup to clean up
+  // When false: Sequential with exclusion context (safer, slower)
+  // Trade-off: ~80s faster vs slightly higher chance of duplicates needing review
+  private readonly USE_PARALLEL_ASSET_EXTRACTION = true;
 
   // Legacy config reference (for backwards compatibility)
   private readonly MODEL_CONFIG = this.MODEL_CONFIG_BASE;
@@ -250,6 +276,57 @@ export class Box3ExtractionPipeline {
     });
 
     // =========================================================================
+    // CLASSIFICATION WARNINGS - Alert on failed/low-confidence classifications
+    // =========================================================================
+    for (let i = 0; i < classificationResults.length; i++) {
+      const result = classificationResults[i];
+      const doc = documents[i];
+      const preparedDoc = preparedDocs[i];
+      const hasText = !!preparedDoc?.extractedText && preparedDoc.extractedText.length > 100;
+
+      // Case 1: Classification completely failed (fallback to "overig" with 0.1 confidence)
+      if (result.detected_type === 'overig' && result.confidence <= 0.1) {
+        const reason = hasText
+          ? 'Document kon niet worden herkend ondanks aanwezige tekst'
+          : 'Document bevat geen leesbare tekst (gescand?) en kon niet via vision worden herkend';
+        errors.push(`⚠️ CLASSIFICATIE MISLUKT: ${doc?.filename || `document ${i + 1}`} - ${reason}`);
+        logger.warn('box3-pipeline', `Classification failed for ${doc?.filename}`, {
+          hasText,
+          confidence: result.confidence,
+          notes: result.notes,
+        });
+      }
+      // Case 2: Low confidence classification (might be wrong)
+      else if (result.confidence < 0.5 && result.detected_type !== 'overig') {
+        errors.push(`⚠️ LAGE CONFIDENCE: ${doc?.filename || `document ${i + 1}`} - Herkend als "${result.detected_type}" maar confidence is slechts ${Math.round(result.confidence * 100)}%`);
+      }
+      // Case 3: Scanned document without text that was classified via vision (info only)
+      else if (!hasText && result.detected_type !== 'overig') {
+        logger.info('box3-pipeline', `Vision-only classification succeeded for ${doc?.filename}`, {
+          detectedType: result.detected_type,
+          confidence: result.confidence,
+        });
+      }
+    }
+
+    // Check if any important document types are missing based on filename hints
+    const classifiedTypes = new Set(classificationResults.map(r => r.detected_type));
+    const filenames = documents.map(d => d.filename.toLowerCase());
+
+    // Filename suggests aangifte but not classified as such
+    for (let i = 0; i < documents.length; i++) {
+      const filename = filenames[i];
+      const classified = classificationResults[i].detected_type;
+
+      if ((filename.includes('aangifte') || filename.includes('ib_')) && classified !== 'aangifte_ib') {
+        errors.push(`⚠️ MOGELIJK VERKEERD GECLASSIFICEERD: ${documents[i].filename} lijkt een aangifte te zijn maar is herkend als "${classified}"`);
+      }
+      if ((filename.includes('aanslag') || filename.includes('definitie')) && !['aanslag_definitief', 'aanslag_voorlopig'].includes(classified)) {
+        errors.push(`⚠️ MOGELIJK VERKEERD GECLASSIFICEERD: ${documents[i].filename} lijkt een aanslag te zijn maar is herkend als "${classified}"`);
+      }
+    }
+
+    // =========================================================================
     // STAGE 2: Tax Authority Data Extraction
     // =========================================================================
     this.reportProgress({
@@ -296,91 +373,151 @@ export class Box3ExtractionPipeline {
     });
 
     // =========================================================================
-    // STAGE 3: Asset Category Extraction (SEQUENTIAL with exclusion IDs)
-    // Ground Truth First: Each stage passes extracted IDs to next stage
-    // Order: Bank → Investment → Real Estate → Other
+    // STAGE 3: Asset Category Extraction
+    // Two modes controlled by USE_PARALLEL_ASSET_EXTRACTION:
+    // - PARALLEL: All 4 categories extract simultaneously, Stage 4b dedup handles overlaps
+    // - SEQUENTIAL: Each stage passes exclusion context to next (safer, slower)
     // =========================================================================
-    this.reportProgress({
-      step: 'assets',
-      stepNumber: 3,
-      totalSteps,
-      message: 'Vermogensbestanddelen extraheren (sequentieel met exclusie)...'
-    });
-
     const stage3Start = Date.now();
+    let bankResult: Box3BankExtractionResult | null = null;
+    let investmentResult: Box3InvestmentExtractionResult | null = null;
+    let realEstateResult: Box3RealEstateExtractionResult | null = null;
+    let otherResult: Box3OtherAssetsExtractionResult | null = null;
 
-    // Build exclusion context that accumulates as we extract
-    const exclusionContext: ExclusionContext = {
-      extractedDescriptions: [],
-      extractedAccountNumbers: [],
-      extractedAddresses: [],
-    };
+    if (this.USE_PARALLEL_ASSET_EXTRACTION) {
+      // =====================================================================
+      // PARALLEL MODE: All 4 extractions run simultaneously
+      // Stage 4b deduplication will handle any overlapping extractions
+      // ~80 seconds faster for typical cases
+      // =====================================================================
+      this.reportProgress({
+        step: 'assets',
+        stepNumber: 3,
+        totalSteps,
+        message: 'Vermogensbestanddelen extraheren (parallel - 4 categorieën tegelijk)...'
+      });
 
-    // 3a: Bank accounts FIRST (highest priority for bank-like items)
-    this.reportProgress({
-      step: 'assets',
-      stepNumber: 3,
-      totalSteps,
-      message: 'Bankrekeningen extraheren (1/4)...',
-      subProgress: { current: 1, total: 4, item: 'bank_savings' },
-    });
-    const bankResult = await this.extractBankAccounts(preparedDocs, assetReferences, debugPrompts, debugResponses, exclusionContext);
+      logger.info('box3-pipeline', 'Stage 3: Running all asset extractions in PARALLEL');
 
-    // Add extracted bank accounts to exclusion list
-    if (bankResult?.bank_savings) {
-      for (const bank of bankResult.bank_savings) {
-        if (bank.description) exclusionContext.extractedDescriptions.push(bank.description);
-        if (bank.account_masked) exclusionContext.extractedAccountNumbers.push(bank.account_masked);
-        if (bank.bank_name) exclusionContext.extractedDescriptions.push(bank.bank_name);
+      // Empty exclusion context - each extractor works independently
+      const emptyExclusion: ExclusionContext = {
+        extractedDescriptions: [],
+        extractedAccountNumbers: [],
+        extractedAddresses: [],
+      };
+
+      const [bankRaw, investmentRaw, realEstateRaw, otherRaw] = await Promise.allSettled([
+        this.extractBankAccounts(preparedDocs, assetReferences, debugPrompts, debugResponses, emptyExclusion),
+        this.extractInvestments(preparedDocs, assetReferences, debugPrompts, debugResponses, emptyExclusion),
+        this.extractRealEstate(preparedDocs, assetReferences, debugPrompts, debugResponses, emptyExclusion),
+        this.extractOtherAssets(preparedDocs, assetReferences, debugPrompts, debugResponses, emptyExclusion),
+      ]);
+
+      bankResult = bankRaw.status === 'fulfilled' ? bankRaw.value : null;
+      investmentResult = investmentRaw.status === 'fulfilled' ? investmentRaw.value : null;
+      realEstateResult = realEstateRaw.status === 'fulfilled' ? realEstateRaw.value : null;
+      otherResult = otherRaw.status === 'fulfilled' ? otherRaw.value : null;
+
+      // Log any failures
+      if (bankRaw.status === 'rejected') logger.error('box3-pipeline', 'Stage 3a (bank) failed', { error: bankRaw.reason?.message });
+      if (investmentRaw.status === 'rejected') logger.error('box3-pipeline', 'Stage 3b (investment) failed', { error: investmentRaw.reason?.message });
+      if (realEstateRaw.status === 'rejected') logger.error('box3-pipeline', 'Stage 3c (real estate) failed', { error: realEstateRaw.reason?.message });
+      if (otherRaw.status === 'rejected') logger.error('box3-pipeline', 'Stage 3d (other) failed', { error: otherRaw.reason?.message });
+
+      logger.info('box3-pipeline', 'Stage 3: All parallel extractions complete', {
+        bankCount: bankResult?.bank_savings?.length ?? 0,
+        investmentCount: investmentResult?.investments?.length ?? 0,
+        realEstateCount: realEstateResult?.real_estate?.length ?? 0,
+        otherCount: otherResult?.other_assets?.length ?? 0,
+      });
+
+    } else {
+      // =====================================================================
+      // SEQUENTIAL MODE: Each stage passes exclusion context to next
+      // Prevents duplicates at extraction time (more reliable, slower)
+      // =====================================================================
+      this.reportProgress({
+        step: 'assets',
+        stepNumber: 3,
+        totalSteps,
+        message: 'Vermogensbestanddelen extraheren (sequentieel met exclusie)...'
+      });
+
+      logger.info('box3-pipeline', 'Stage 3: Running asset extractions SEQUENTIALLY with exclusion');
+
+      // Build exclusion context that accumulates as we extract
+      const exclusionContext: ExclusionContext = {
+        extractedDescriptions: [],
+        extractedAccountNumbers: [],
+        extractedAddresses: [],
+      };
+
+      // 3a: Bank accounts FIRST (highest priority for bank-like items)
+      this.reportProgress({
+        step: 'assets',
+        stepNumber: 3,
+        totalSteps,
+        message: 'Bankrekeningen extraheren (1/4)...',
+        subProgress: { current: 1, total: 4, item: 'bank_savings' },
+      });
+      bankResult = await this.extractBankAccounts(preparedDocs, assetReferences, debugPrompts, debugResponses, exclusionContext);
+
+      // Add extracted bank accounts to exclusion list
+      if (bankResult?.bank_savings) {
+        for (const bank of bankResult.bank_savings) {
+          if (bank.description) exclusionContext.extractedDescriptions.push(bank.description);
+          if (bank.account_masked) exclusionContext.extractedAccountNumbers.push(bank.account_masked);
+          if (bank.bank_name) exclusionContext.extractedDescriptions.push(bank.bank_name);
+        }
       }
-    }
 
-    // 3b: Investments SECOND
-    this.reportProgress({
-      step: 'assets',
-      stepNumber: 3,
-      totalSteps,
-      message: 'Beleggingen extraheren (2/4)...',
-      subProgress: { current: 2, total: 4, item: 'investments' },
-    });
-    const investmentResult = await this.extractInvestments(preparedDocs, assetReferences, debugPrompts, debugResponses, exclusionContext);
+      // 3b: Investments SECOND
+      this.reportProgress({
+        step: 'assets',
+        stepNumber: 3,
+        totalSteps,
+        message: 'Beleggingen extraheren (2/4)...',
+        subProgress: { current: 2, total: 4, item: 'investments' },
+      });
+      investmentResult = await this.extractInvestments(preparedDocs, assetReferences, debugPrompts, debugResponses, exclusionContext);
 
-    // Add extracted investments to exclusion list
-    if (investmentResult?.investments) {
-      for (const inv of investmentResult.investments) {
-        if (inv.description) exclusionContext.extractedDescriptions.push(inv.description);
-        if (inv.account_masked) exclusionContext.extractedAccountNumbers.push(inv.account_masked);
-        if (inv.institution) exclusionContext.extractedDescriptions.push(inv.institution);
+      // Add extracted investments to exclusion list
+      if (investmentResult?.investments) {
+        for (const inv of investmentResult.investments) {
+          if (inv.description) exclusionContext.extractedDescriptions.push(inv.description);
+          if (inv.account_masked) exclusionContext.extractedAccountNumbers.push(inv.account_masked);
+          if (inv.institution) exclusionContext.extractedDescriptions.push(inv.institution);
+        }
       }
-    }
 
-    // 3c: Real Estate THIRD
-    this.reportProgress({
-      step: 'assets',
-      stepNumber: 3,
-      totalSteps,
-      message: 'Onroerend goed extraheren (3/4)...',
-      subProgress: { current: 3, total: 4, item: 'real_estate' },
-    });
-    const realEstateResult = await this.extractRealEstate(preparedDocs, assetReferences, debugPrompts, debugResponses, exclusionContext);
+      // 3c: Real Estate THIRD
+      this.reportProgress({
+        step: 'assets',
+        stepNumber: 3,
+        totalSteps,
+        message: 'Onroerend goed extraheren (3/4)...',
+        subProgress: { current: 3, total: 4, item: 'real_estate' },
+      });
+      realEstateResult = await this.extractRealEstate(preparedDocs, assetReferences, debugPrompts, debugResponses, exclusionContext);
 
-    // Add extracted real estate to exclusion list
-    if (realEstateResult?.real_estate) {
-      for (const re of realEstateResult.real_estate) {
-        if (re.description) exclusionContext.extractedDescriptions.push(re.description);
-        if (re.address) exclusionContext.extractedAddresses.push(re.address);
+      // Add extracted real estate to exclusion list
+      if (realEstateResult?.real_estate) {
+        for (const re of realEstateResult.real_estate) {
+          if (re.description) exclusionContext.extractedDescriptions.push(re.description);
+          if (re.address) exclusionContext.extractedAddresses.push(re.address);
+        }
       }
-    }
 
-    // 3d: Other Assets LAST (catches everything else)
-    this.reportProgress({
-      step: 'assets',
-      stepNumber: 3,
-      totalSteps,
-      message: 'Overige bezittingen extraheren (4/4)...',
-      subProgress: { current: 4, total: 4, item: 'other_assets' },
-    });
-    const otherResult = await this.extractOtherAssets(preparedDocs, assetReferences, debugPrompts, debugResponses, exclusionContext);
+      // 3d: Other Assets LAST (catches everything else)
+      this.reportProgress({
+        step: 'assets',
+        stepNumber: 3,
+        totalSteps,
+        message: 'Overige bezittingen extraheren (4/4)...',
+        subProgress: { current: 4, total: 4, item: 'other_assets' },
+      });
+      otherResult = await this.extractOtherAssets(preparedDocs, assetReferences, debugPrompts, debugResponses, exclusionContext);
+    }
 
     stageTimes['assets'] = Date.now() - stage3Start;
 
@@ -408,7 +545,7 @@ export class Box3ExtractionPipeline {
     });
 
     const stage4Start = Date.now();
-    const blueprint = this.mergeResults(
+    let blueprint = this.mergeResults(
       sourceDocRegistry,
       taxAuthorityResult,
       bankResult,
@@ -419,7 +556,48 @@ export class Box3ExtractionPipeline {
     stageTimes['merge'] = Date.now() - stage4Start;
 
     // =========================================================================
-    // STAGE 5: Validation
+    // STAGE 4b: Semantic Deduplication (NEW)
+    // =========================================================================
+    this.reportProgress({
+      step: 'merge',
+      stepNumber: 4,
+      totalSteps,
+      message: 'Semantische deduplicatie uitvoeren...',
+      subProgress: { current: 2, total: 2, item: 'deduplication' },
+    });
+
+    const stage4bStart = Date.now();
+    const years = Object.keys(blueprint.tax_authority_data);
+
+    // Run semantic deduplication (4-step waterfall)
+    const { blueprint: deduplicatedBlueprint, result: dedupResult } = runSemanticDeduplication(blueprint, years);
+    blueprint = deduplicatedBlueprint;
+
+    // Also detect cross-category duplicates (bank vs investment)
+    const crossCategoryMatches = detectCrossCategoryDuplicates(blueprint, years);
+
+    if (dedupResult.items_merged > 0 || crossCategoryMatches.length > 0) {
+      logger.info('box3-pipeline', 'Stage 4b: Deduplication complete', {
+        items_merged: dedupResult.items_merged,
+        items_flagged: dedupResult.items_flagged_for_review,
+        cross_category_matches: crossCategoryMatches.length,
+        ownership_conflicts: dedupResult.ownership_conflicts.length,
+      });
+    }
+
+    // Add deduplication warnings to errors list
+    for (const conflict of dedupResult.ownership_conflicts) {
+      errors.push(`[Dedup] Eigendomspercentage conflict: ${conflict.message}`);
+    }
+
+    for (const match of crossCategoryMatches) {
+      errors.push(`[Dedup] Cross-category duplicaat: ${match.asset_a_id} en ${match.asset_b_id} (${match.conflicts.join(', ')})`);
+    }
+
+    stageTimes['deduplication'] = Date.now() - stage4bStart;
+
+    // =========================================================================
+    // STAGE 5: Validation (Soft Constraint - never stops extraction)
     // =========================================================================
     this.reportProgress({
       step: 'validation',
@@ -434,7 +612,7 @@ export class Box3ExtractionPipeline {
     // Stage 5b: Reconciliation - If significant discrepancy, try to find missing items
     const assetTotalCheck = validation.checks.find(c => c.check_type === 'asset_total' && !c.passed);
     const assetCountCheck = validation.checks.find(c => c.check_type === 'asset_count' && !c.passed);
-    const hasSignificantDiscrepancy = assetTotalCheck && (assetTotalCheck.details?.difference || 0) > 1000;
+    const hasSignificantDiscrepancy = assetTotalCheck && (assetTotalCheck.details?.difference || 0) > 1; // €1 tolerantie
     const hasMissingAssets = assetCountCheck && !assetCountCheck.passed;
 
     if (hasSignificantDiscrepancy || hasMissingAssets) {
@@ -654,23 +832,37 @@ export class Box3ExtractionPipeline {
     // Build prompt with document content
     const docContent = doc.extractedText
       ? `## DOCUMENT TEKST:\n\`\`\`\n${doc.extractedText.substring(0, 10000)}\n\`\`\``
-      : `## DOCUMENT: ${doc.filename}\n(Zie bijgevoegde afbeelding/PDF)`;
+      : `## DOCUMENT: ${doc.filename}\n(Zie bijgevoegde afbeelding/PDF - alleen eerste pagina's voor classificatie)`;
 
     const prompt = `${CLASSIFICATION_PROMPT}\n\n${docContent}\n\nAnalyseer dit document en geef de JSON classificatie.`;
     debugPrompts[promptKey] = prompt;
 
-    // Prepare vision attachment if needed
-    const visionAttachments = !doc.extractedText ? [{
-      mimeType: doc.mimeType,
-      data: doc.fileData,
-      filename: doc.filename,
-    }] : undefined;
+    // Prepare vision attachment if needed (with filename hint for better classification)
+    let visionAttachments: Array<{ mimeType: string; data: string; filename: string }> | undefined;
+
+    if (!doc.extractedText) {
+      // For scanned documents, add filename context to help classification
+      const filenameHint = this.getFilenameClassificationHint(doc.filename);
+
+      visionAttachments = [{
+        mimeType: doc.mimeType,
+        data: doc.fileData,
+        filename: doc.filename,
+      }];
+
+      // Log that we're using vision for this document
+      logger.info('box3-pipeline', `Using vision for classification of ${doc.filename}`, {
+        mimeType: doc.mimeType,
+        filenameHint,
+        dataSize: Math.round(doc.fileData.length / 1024) + 'KB',
+      });
+    }
 
     try {
       const result = await this.factory.callModel(
         {
           ...this.EXTRACTION_CONFIG,
-          maxOutputTokens: 4096, // Small output for classification
+          maxOutputTokens: 16384, // Increased to avoid token limit issues
         },
         prompt,
         visionAttachments ? { visionAttachments } : undefined
@@ -692,6 +884,24 @@ export class Box3ExtractionPipeline {
       }
     } catch (err: any) {
       logger.error('box3-pipeline', `Classification failed for ${doc.filename}`, { error: err.message });
+
+      // If vision classification failed, try filename-based fallback
+      const fallbackType = this.getFilenameClassificationHint(doc.filename);
+      if (fallbackType && fallbackType !== 'overig') {
+        logger.warn('box3-pipeline', `Using filename-based fallback classification for ${doc.filename}`, {
+          fallbackType,
+          originalError: err.message,
+        });
+        return {
+          document_id: doc.id,
+          detected_type: fallbackType,
+          detected_tax_years: this.extractYearsFromFilename(doc.filename),
+          detected_persons: [],
+          asset_hints: { bank_accounts: [], properties: [], investments: [] },
+          confidence: 0.3, // Low confidence for filename-based
+          notes: `Classificatie via AI mislukt, fallback op bestandsnaam: "${doc.filename}"`,
+        };
+      }
     }
 
     // Return fallback classification
@@ -704,6 +914,46 @@ export class Box3ExtractionPipeline {
       confidence: 0.1,
       notes: 'Classificatie mislukt',
     };
+  }
+
+  /**
+   * Extract document type hint from filename
+   */
+  private getFilenameClassificationHint(filename: string): Box3ClassificationResult['detected_type'] | null {
+    const lower = filename.toLowerCase();
+
+    if (lower.includes('aangifte') || lower.includes('ib_') || lower.includes('inkomstenbelasting')) {
+      return 'aangifte_ib';
+    }
+    if (lower.includes('definitief') || lower.includes('definitieve_aanslag')) {
+      return 'aanslag_definitief';
+    }
+    if (lower.includes('voorlopig') || lower.includes('voorlopige_aanslag')) {
+      return 'aanslag_voorlopig';
+    }
+    if (lower.includes('jaaroverzicht') || lower.includes('jaaropgave') || lower.includes('bank')) {
+      return 'jaaropgave_bank';
+    }
+    if (lower.includes('effecten') || lower.includes('belegging') || lower.includes('depot')) {
+      return 'effectenoverzicht';
+    }
+    if (lower.includes('woz') || lower.includes('onroerend')) {
+      return 'woz_beschikking';
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract years from filename (e.g., "aangifte_2024.pdf" -> [2024])
+   */
+  private extractYearsFromFilename(filename: string): number[] {
+    const yearMatches = filename.match(/20[12][0-9]/g);
+    if (yearMatches) {
+      // Return unique years as numbers
+      return Array.from(new Set(yearMatches)).map(y => parseInt(y, 10));
+    }
+    return [];
   }
 
   // ===========================================================================
@@ -753,27 +1003,50 @@ export class Box3ExtractionPipeline {
     const visionOptions = visionAttachments.length > 0 ? { visionAttachments } : undefined;
 
     // =========================================================================
-    // STAGE 2a: Fiscal Entity Extraction (persons only)
+    // STAGE 2a/2b/2c: Run in PARALLEL (no dependencies between them)
+    // Each extracts different aspects from the same documents
     // =========================================================================
-    logger.info('box3-pipeline', 'Stage 2a: Extracting fiscal entity (persons)...');
+    logger.info('box3-pipeline', 'Stage 2: Running 2a/2b/2c in parallel...');
 
     const personsPrompt = `${TAX_AUTHORITY_PERSONS_PROMPT}\n\n## DOCUMENTEN:\n${docSections.join('\n\n')}\n\nExtraheer nu ALLEEN de fiscale entiteit.`;
-    debugPrompts['tax_authority_2a_persons'] = personsPrompt;
+    const totalsPrompt = `${TAX_AUTHORITY_TOTALS_PROMPT}\n\n## DOCUMENTEN:\n${docSections.join('\n\n')}\n\nExtraheer nu ALLEEN de officiële Box 3 cijfers.`;
+    const checklistPrompt = `${TAX_AUTHORITY_CHECKLIST_PROMPT}\n\n## DOCUMENTEN:\n${docSections.join('\n\n')}\n\nMaak nu een inventarisatie van alle vermogensbestanddelen.`;
 
+    debugPrompts['tax_authority_2a_persons'] = personsPrompt;
+    debugPrompts['tax_authority_2b_totals'] = totalsPrompt;
+    debugPrompts['tax_authority_2c_checklist'] = checklistPrompt;
+
+    // Run all three extractions in parallel
+    const [personsResultRaw, totalsResultRaw, checklistResultRaw] = await Promise.allSettled([
+      // 2a: Fiscal Entity (persons)
+      this.factory.callModel(
+        { ...this.EXTRACTION_CONFIG, maxOutputTokens: 16384 },
+        personsPrompt,
+        visionOptions
+      ),
+      // 2b: Official Totals
+      this.factory.callModel(
+        { ...this.EXTRACTION_CONFIG, maxOutputTokens: 16384 },
+        totalsPrompt,
+        visionOptions
+      ),
+      // 2c: Asset Checklist
+      this.factory.callModel(
+        { ...this.EXTRACTION_CONFIG, maxOutputTokens: 16384 },
+        checklistPrompt,
+        visionOptions
+      ),
+    ]);
+
+    // Process 2a: Fiscal Entity
     let fiscalEntity: Box3FiscalEntity = {
       taxpayer: { id: 'tp_01', name: null, bsn_masked: null, date_of_birth: null },
       fiscal_partner: { has_partner: false },
     };
 
-    try {
-      const personsResult = await this.factory.callModel(
-        { ...this.EXTRACTION_CONFIG, maxOutputTokens: 4096 },
-        personsPrompt,
-        visionOptions
-      );
-      debugResponses['tax_authority_2a_persons'] = personsResult.content;
-
-      const personsJson = this.parseJSON(personsResult.content);
+    if (personsResultRaw.status === 'fulfilled') {
+      debugResponses['tax_authority_2a_persons'] = personsResultRaw.value.content;
+      const personsJson = this.parseJSON(personsResultRaw.value.content);
       if (personsJson?.fiscal_entity) {
         fiscalEntity = personsJson.fiscal_entity;
         logger.info('box3-pipeline', 'Stage 2a complete: Fiscal entity extracted', {
@@ -781,29 +1054,16 @@ export class Box3ExtractionPipeline {
           taxpayerName: fiscalEntity.taxpayer?.name,
         });
       }
-    } catch (err: any) {
-      logger.error('box3-pipeline', 'Stage 2a failed', { error: err.message });
+    } else {
+      logger.error('box3-pipeline', 'Stage 2a failed', { error: personsResultRaw.reason?.message });
     }
 
-    // =========================================================================
-    // STAGE 2b: Official Totals Extraction (numbers only)
-    // =========================================================================
-    logger.info('box3-pipeline', 'Stage 2b: Extracting official totals...');
-
-    const totalsPrompt = `${TAX_AUTHORITY_TOTALS_PROMPT}\n\n## DOCUMENTEN:\n${docSections.join('\n\n')}\n\nExtraheer nu ALLEEN de officiële Box 3 cijfers.`;
-    debugPrompts['tax_authority_2b_totals'] = totalsPrompt;
-
+    // Process 2b: Official Totals
     let taxAuthorityData: Record<string, Box3TaxAuthorityYearData> = {};
 
-    try {
-      const totalsResult = await this.factory.callModel(
-        { ...this.EXTRACTION_CONFIG, maxOutputTokens: 8192 },
-        totalsPrompt,
-        visionOptions
-      );
-      debugResponses['tax_authority_2b_totals'] = totalsResult.content;
-
-      const totalsJson = this.parseJSON(totalsResult.content);
+    if (totalsResultRaw.status === 'fulfilled') {
+      debugResponses['tax_authority_2b_totals'] = totalsResultRaw.value.content;
+      const totalsJson = this.parseJSON(totalsResultRaw.value.content);
       if (totalsJson?.tax_authority_data) {
         taxAuthorityData = this.normalizeTaxAuthorityData(totalsJson.tax_authority_data);
 
@@ -817,18 +1077,11 @@ export class Box3ExtractionPipeline {
           });
         }
       }
-    } catch (err: any) {
-      logger.error('box3-pipeline', 'Stage 2b failed', { error: err.message });
+    } else {
+      logger.error('box3-pipeline', 'Stage 2b failed', { error: totalsResultRaw.reason?.message });
     }
 
-    // =========================================================================
-    // STAGE 2c: Asset Checklist Extraction (inventory only)
-    // =========================================================================
-    logger.info('box3-pipeline', 'Stage 2c: Extracting asset checklist...');
-
-    const checklistPrompt = `${TAX_AUTHORITY_CHECKLIST_PROMPT}\n\n## DOCUMENTEN:\n${docSections.join('\n\n')}\n\nMaak nu een inventarisatie van alle vermogensbestanddelen.`;
-    debugPrompts['tax_authority_2c_checklist'] = checklistPrompt;
-
+    // Process 2c: Asset Checklist
     let assetReferences: Box3AssetReferences = {
       bank_count: 0,
       bank_descriptions: [],
@@ -840,15 +1093,9 @@ export class Box3ExtractionPipeline {
       other_descriptions: [],
     };
 
-    try {
-      const checklistResult = await this.factory.callModel(
-        { ...this.EXTRACTION_CONFIG, maxOutputTokens: 8192 },
-        checklistPrompt,
-        visionOptions
-      );
-      debugResponses['tax_authority_2c_checklist'] = checklistResult.content;
-
-      const checklistJson = this.parseJSON(checklistResult.content);
+    if (checklistResultRaw.status === 'fulfilled') {
+      debugResponses['tax_authority_2c_checklist'] = checklistResultRaw.value.content;
+      const checklistJson = this.parseJSON(checklistResultRaw.value.content);
       if (checklistJson?.asset_references) {
         assetReferences = {
           bank_count: checklistJson.asset_references.bank_count || 0,
@@ -869,9 +1116,11 @@ export class Box3ExtractionPipeline {
           hasGreenInvestments: checklistJson.extraction_notes?.has_green_investments,
         });
       }
-    } catch (err: any) {
-      logger.error('box3-pipeline', 'Stage 2c failed', { error: err.message });
+    } else {
+      logger.error('box3-pipeline', 'Stage 2c failed', { error: checklistResultRaw.reason?.message });
     }
+
+    logger.info('box3-pipeline', 'Stage 2: All parallel sub-stages complete');
 
     // Combine all sub-stage results
     return {
@@ -913,7 +1162,7 @@ export class Box3ExtractionPipeline {
       const result = await this.factory.callModel(
         {
           ...this.EXTRACTION_CONFIG,
-          maxOutputTokens: 16384,
+          maxOutputTokens: 32768,
         },
         prompt,
         visionAttachments.length > 0 ? { visionAttachments } : undefined
@@ -1154,7 +1403,7 @@ export class Box3ExtractionPipeline {
       const result = await this.factory.callModel(
         {
           ...this.EXTRACTION_CONFIG,
-          maxOutputTokens: 32768, // Larger output for complex investment portfolios
+          maxOutputTokens: 65535, // Max output for complex investment portfolios
         },
         fullPrompt,
         visionAttachments.length > 0 ? { visionAttachments } : undefined
@@ -1232,7 +1481,7 @@ export class Box3ExtractionPipeline {
       const result = await this.factory.callModel(
         {
           ...this.EXTRACTION_CONFIG,
-          maxOutputTokens: 16384, // Real estate typically has fewer items
+          maxOutputTokens: 32768, // Increased for safety margin
         },
         fullPrompt,
         visionAttachments.length > 0 ? { visionAttachments } : undefined
@@ -1315,11 +1564,10 @@ export class Box3ExtractionPipeline {
       }));
 
     try {
+      // Use Pro model for Other Assets - complex category with many subtypes
+      // Pro requires fewer thinking tokens for ambiguous data (loans, insurance, claims, etc.)
       const result = await this.factory.callModel(
-        {
-          ...this.EXTRACTION_CONFIG,
-          maxOutputTokens: 16384, // Other assets + debts
-        },
+        this.COMPLEX_EXTRACTION_CONFIG,
         fullPrompt,
         visionAttachments.length > 0 ? { visionAttachments } : undefined
       );
@@ -1335,6 +1583,14 @@ export class Box3ExtractionPipeline {
             description: oa.description || '',
             type: oa.type || 'other',
             country: oa.country || 'NL',
+            // New fields for loans/claims - CRITICAL for actual return calculation
+            borrower_name: oa.borrower_name,
+            is_family_loan: oa.is_family_loan,
+            agreed_interest_rate: oa.agreed_interest_rate,
+            loan_start_date: oa.loan_start_date,
+            loan_end_date: oa.loan_end_date,
+            // Insurance fields
+            insurance_policy_number: oa.insurance_policy_number,
             yearly_data: oa.yearly_data || {},
           })),
           debts: (json.debts || []).map((debt: any, i: number) => ({
@@ -1837,25 +2093,67 @@ export class Box3ExtractionPipeline {
       const taxData = blueprint.tax_authority_data[year];
       if (!taxData?.household_totals) continue;
 
-      // Check 1: Asset Total Comparison
+      // Check 1: Asset Total Comparison (Soft Constraint)
+      // Fiscale tolerantie: Belastingdienst accepteert afwijkingen tot €5.000 of 1% (welke hoger is)
       const authorityTotal = taxData.household_totals.total_assets_gross || 0;
       const extractedTotal = this.sumAllAssets(blueprint, year);
       const difference = Math.abs(authorityTotal - extractedTotal);
+      const differencePercentage = authorityTotal > 0 ? (difference / authorityTotal) * 100 : 0;
+
+      // Tolerance: max(€5.000, 1% of total)
+      const toleranceAmount = Math.max(5000, authorityTotal * 0.01);
+      const withinTolerance = difference <= toleranceAmount;
+
+      // Determine severity based on difference magnitude
+      // - Within tolerance = info (green)
+      // - Within 5% = warning (yellow) - needs review but acceptable
+      // - Above 5% = warning (yellow) - requires human review
+      // - Above 20% = error (red) - likely data issue
+      let severity: 'info' | 'warning' | 'error' = 'info';
+      let requiresHumanReview = false;
+
+      if (!withinTolerance) {
+        if (differencePercentage > 20) {
+          severity = 'error';
+          requiresHumanReview = true;
+        } else if (differencePercentage > 5) {
+          severity = 'warning';
+          requiresHumanReview = true;
+        } else {
+          severity = 'warning';
+        }
+      }
+
+      // Analyze possible causes for discrepancy
+      const possibleCauses: string[] = [];
+      if (extractedTotal > authorityTotal) {
+        possibleCauses.push('Mogelijk duplicaten in extractie');
+        possibleCauses.push('Asset mogelijk dubbel gecategoriseerd');
+      } else if (extractedTotal < authorityTotal) {
+        possibleCauses.push('Mogelijk ontbrekende assets');
+        possibleCauses.push('Document mogelijk niet geüpload of niet leesbaar');
+      }
 
       checks.push({
         check_type: 'asset_total',
         year,
-        passed: difference <= 1000,
-        severity: difference > 5000 ? 'error' : difference > 1000 ? 'warning' : 'info',
-        message: difference <= 1000
-          ? `${year}: Totalen komen overeen (verschil €${difference.toFixed(0)})`
-          : `${year}: Verschil €${difference.toFixed(0)} tussen aangifte (€${authorityTotal}) en extractie (€${extractedTotal.toFixed(0)})`,
+        passed: withinTolerance,
+        severity,
+        message: withinTolerance
+          ? `${year}: Totalen binnen tolerantie (verschil €${difference.toFixed(0)}, ${differencePercentage.toFixed(1)}%)`
+          : `${year}: Verschil €${difference.toFixed(0)} (${differencePercentage.toFixed(1)}%) tussen aangifte (€${authorityTotal.toLocaleString('nl-NL')}) en extractie (€${extractedTotal.toLocaleString('nl-NL')})${requiresHumanReview ? ' - REVIEW VEREIST' : ''}`,
         details: {
           expected: authorityTotal,
           actual: extractedTotal,
           difference,
           field: 'total_assets',
-        },
+          // Extended details for soft constraint analysis
+          difference_percentage: differencePercentage,
+          tolerance_used: toleranceAmount,
+          within_tolerance: withinTolerance,
+          requires_human_review: requiresHumanReview,
+          possible_causes: possibleCauses,
+        } as any,
       });
     }
 
@@ -2067,7 +2365,53 @@ export class Box3ExtractionPipeline {
       }
     }
 
-    // Check 10: Final Assessment Check (Claim only possible against definitieve aanslag)
+    // Check 10: Groene Vrijstelling Waarschuwing
+    // Als er groene beleggingen zijn, waarschuwen dat de vrijstelling handmatig moet worden toegepast
+    const greenInvestments: { description: string; year: string; amount: number }[] = [];
+
+    for (const bank of blueprint.assets.bank_savings) {
+      if (bank.is_green_investment) {
+        for (const [year, data] of Object.entries(bank.yearly_data)) {
+          const value = this.getAmount(data.value_jan_1);
+          if (value > 0) {
+            greenInvestments.push({ description: bank.description || bank.bank_name || 'Groene rekening', year, amount: value });
+          }
+        }
+      }
+    }
+
+    if (greenInvestments.length > 0) {
+      // Group by year
+      const byYear = greenInvestments.reduce((acc, gi) => {
+        if (!acc[gi.year]) acc[gi.year] = [];
+        acc[gi.year].push(gi);
+        return acc;
+      }, {} as Record<string, typeof greenInvestments>);
+
+      for (const [year, items] of Object.entries(byYear)) {
+        const totalGreen = items.reduce((sum, i) => sum + i.amount, 0);
+        const descriptions = items.map(i => i.description).join(', ');
+
+        // Groene vrijstelling bedragen per jaar (indicatief - verandert jaarlijks!)
+        // 2023: €65.072 per persoon, 2024: €71.251 per persoon
+        checks.push({
+          check_type: 'green_investment_exemption',
+          year,
+          passed: true, // Dit is een info-waarschuwing, geen fout
+          severity: 'warning',
+          message: `${year}: Groene belegging(en) gevonden (€${totalGreen.toLocaleString('nl-NL')}) - let op: groene vrijstelling (ca. €65.000-€71.000 p.p.) moet handmatig worden toegepast! Regelgeving verschilt per jaar.`,
+          details: {
+            field: 'green_investment_exemption',
+            descriptions,
+            total_green_amount: totalGreen,
+            accounts: items.map(i => ({ description: i.description, amount: i.amount })),
+            suggestion: 'Controleer actuele groene vrijstelling voor dit belastingjaar en pas toe bij Box 3 berekening',
+          },
+        });
+      }
+    }
+
+    // Check 11: Final Assessment Check (Claim only possible against definitieve aanslag)
     for (const year of years) {
       const taxData = blueprint.tax_authority_data[year];
       const isFinal = (taxData as any)?.is_final_assessment;
@@ -2099,6 +2443,88 @@ export class Box3ExtractionPipeline {
           details: {
             field: 'is_final_assessment',
             is_final: isFinal,
+          },
+        });
+      }
+    }
+
+    // Check 12: Peildatum Validation (CRITICAL - Box 3 uses only 1 January values)
+    // Fiscale regel: Box 3 belasting wordt berekend over vermogen per 1 januari
+    for (const bank of blueprint.assets.bank_savings) {
+      for (const [year, data] of Object.entries(bank.yearly_data)) {
+        const jan1Value = data.value_jan_1;
+        const dec31Value = data.value_dec_31;
+
+        // Check if we have a 1 January value
+        if (!jan1Value && dec31Value) {
+          checks.push({
+            check_type: 'missing_data',
+            year,
+            passed: false,
+            severity: 'warning',
+            message: `${bank.description || bank.bank_name}: Alleen 31-12 waarde gevonden (€${this.getAmount(dec31Value).toLocaleString('nl-NL')}), geen 1-1 waarde. Box 3 gebruikt 1 januari!`,
+            details: {
+              field: `bank_savings.${bank.id}.value_jan_1`,
+              suggestion: 'Controleer of 31-12 waarde bruikbaar is als benadering voor 1-1 volgend jaar',
+            },
+          });
+        }
+      }
+    }
+
+    // Check 13: Ownership Percentage Inconsistency Detection
+    // Fiscale regel: Verschillende percentages voor zelfde asset = mogelijke fout of en/of rekening
+    const ownershipGroups: Map<string, { ids: string[]; percentages: number[]; descriptions: string[] }> = new Map();
+
+    // Group assets by normalized identifier (IBAN last 4 + bank)
+    for (const bank of blueprint.assets.bank_savings) {
+      const key = `${bank.bank_name?.toLowerCase() || 'unknown'}-${bank.account_masked?.slice(-4) || 'xxxx'}`;
+      if (!ownershipGroups.has(key)) {
+        ownershipGroups.set(key, { ids: [], percentages: [], descriptions: [] });
+      }
+      const group = ownershipGroups.get(key)!;
+      group.ids.push(bank.id);
+      group.percentages.push(bank.ownership_percentage);
+      group.descriptions.push(bank.description || bank.bank_name || 'Onbekend');
+    }
+
+    // Check for inconsistent ownership within groups
+    ownershipGroups.forEach((group, key) => {
+      if (group.ids.length > 1) {
+        const uniquePercentages = Array.from(new Set(group.percentages));
+        if (uniquePercentages.length > 1) {
+          checks.push({
+            check_type: 'duplicate_asset',
+            passed: false,
+            severity: 'warning',
+            message: `Eigendomspercentage inconsistentie: "${group.descriptions[0]}" heeft ${uniquePercentages.join('% en ')}% - mogelijke en/of rekening of extractiefout`,
+            details: {
+              field: 'ownership_percentage',
+              description: group.descriptions.join(', '),
+              categories: group.ids,
+              suggestion: 'Controleer of dit dezelfde rekening is met verschillende eigenaars, of een extractiefout',
+            } as any,
+          });
+        }
+      }
+    });
+
+    // Check 14: Joint Account with 100% Ownership Warning
+    // Fiscale regel: Bij en/of rekening met fiscaal partner is ownership_percentage 100% correct,
+    // maar we moeten waarschuwen dat verdeling via allocatie moet gebeuren
+    for (const bank of blueprint.assets.bank_savings) {
+      if (bank.is_joint_account && bank.ownership_percentage === 100 && bank.owner_id === 'joint') {
+        // This is actually correct - just an info message
+        // Suppress this check as it creates noise
+      } else if (bank.is_joint_account && bank.ownership_percentage !== 100 && bank.owner_id !== 'joint') {
+        checks.push({
+          check_type: 'missing_data',
+          passed: false,
+          severity: 'warning',
+          message: `${bank.description || bank.bank_name}: Gezamenlijke rekening met ${bank.ownership_percentage}% eigendom - controleer of dit extern gedeeld eigendom is of fiscaal partnerschap`,
+          details: {
+            field: `bank_savings.${bank.id}.ownership`,
+            suggestion: 'Bij fiscaal partnerschap: ownership = 100%, owner_id = "joint". Bij extern gedeeld: ownership = werkelijk %',
           },
         });
       }
@@ -2211,10 +2637,24 @@ export class Box3ExtractionPipeline {
 
       if (json?.anomalies && Array.isArray(json.anomalies)) {
         for (const anomaly of json.anomalies) {
+          // Map LLM severity to our severity levels
+          // "info" = informational (e.g., "rente is marktconform" = positive observation)
+          // "warning" = needs review
+          // "error" = likely incorrect
+          let severity: 'info' | 'warning' | 'error' = 'warning';
+          if (anomaly.severity === 'error') {
+            severity = 'error';
+          } else if (anomaly.severity === 'info') {
+            severity = 'info';
+          }
+
+          // For info-level anomalies, mark as passed (it's an observation, not a problem)
+          const passed = severity === 'info';
+
           anomalyChecks.push({
             check_type: 'anomaly_detected',
-            passed: false,
-            severity: anomaly.severity === 'error' ? 'error' : 'warning',
+            passed,
+            severity,
             message: anomaly.message || 'Onbekende anomalie',
             details: {
               field: anomaly.asset_id || 'general',
@@ -2811,6 +3251,19 @@ Geef een LEGE array als je niets kunt vinden.`;
         }
       }
 
+      // Other assets income - CRITICAL: includes interest from loans/claims (hypotheekvordering, etc.)
+      // This was missing and caused incorrect actual return calculations!
+      let totalOtherAssetsIncome = 0;
+      for (const oa of blueprint.assets?.other_assets || []) {
+        const yearData = oa.yearly_data?.[year];
+        if (yearData) {
+          // Interest received from loans (hypotheekvordering aan zoon, etc.)
+          totalOtherAssetsIncome += this.getAmount(yearData.interest_received);
+          // Other income (periodieke uitkeringen, etc.)
+          totalOtherAssetsIncome += this.getAmount(yearData.income_received);
+        }
+      }
+
       // Rental income - full household amount
       for (const re of blueprint.assets?.real_estate || []) {
         const yearData = re.yearly_data?.[year];
@@ -2832,7 +3285,7 @@ Geef een LEGE array als je niets kunt vinden.`;
         }
       }
 
-      const actualReturnTotal = totalBankInterest + totalDividends + totalInvestmentGain + totalRentalIncomeNet - totalDebtInterestPaid;
+      const actualReturnTotal = totalBankInterest + totalDividends + totalInvestmentGain + totalOtherAssetsIncome + totalRentalIncomeNet - totalDebtInterestPaid;
 
       // Get deemed return from tax authority
       const deemedReturn = taxData.household_totals?.deemed_return || 0;
@@ -2944,6 +3397,7 @@ Geef een LEGE array als je niets kunt vinden.`;
           bank_interest: Math.round(totalBankInterest * 100) / 100,
           investment_gain: Math.round(totalInvestmentGain * 100) / 100,
           dividends: Math.round(totalDividends * 100) / 100,
+          other_assets_income: Math.round(totalOtherAssetsIncome * 100) / 100, // NEW: includes interest from hypotheekvordering, etc.
           rental_income_net: Math.round(totalRentalIncomeNet * 100) / 100,
           debt_interest_paid: Math.round(totalDebtInterestPaid * 100) / 100,
           total: Math.round(actualReturnTotal * 100) / 100,

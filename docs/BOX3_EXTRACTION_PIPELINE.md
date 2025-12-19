@@ -1,13 +1,22 @@
 # Box 3 Document Extraction Pipeline
 
 > **Status**: Production
+> **Versie**: 2.0 (6-stage architecture)
+> **Laatst bijgewerkt**: December 2025
 > **Doel**: Automatisch Nederlandse belastingdocumenten verwerken voor Box 3 bezwaarprocedures
 
 ---
 
 ## 1. High-Level Overzicht
 
-De Box 3 extraction pipeline is een **5-stage LLM-powered systeem** dat Nederlandse belastingdocumenten verwerkt om financiele data te extraheren voor Box 3 (vermogensrendementsheffing) bezwaar-dossiers.
+De Box 3 extraction pipeline is een **6-stage LLM-powered systeem** dat Nederlandse belastingdocumenten verwerkt om financiele data te extraheren voor Box 3 (vermogensrendementsheffing) bezwaar-dossiers.
+
+### Architectuurprincipes
+
+1. **Ground Truth First** - Belastingdienst-totalen als referentie, niet als harde constraint
+2. **Semantic Deduplication** - 4-staps waterval voorkomt duplicaten
+3. **Audit Trail** - Elke waarde traceerbaar naar brondocument
+4. **Fiscaal Correct** - Ingebouwde checks voor peildatum, eigendomspercentage, uitsluitingen
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -28,11 +37,11 @@ De Box 3 extraction pipeline is een **5-stage LLM-powered systeem** dat Nederlan
 │  box3-v2-routes.ts → box3-extraction-pipeline.ts                    │
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────────┐ │
-│  │  PIPELINE (5 Stages)                                           │ │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────┐ │ │
-│  │  │ Stage 1  │→│ Stage 2  │→│ Stage 3  │→│ Stage 4  │→│Stage 5│ │ │
-│  │  │Classific.│ │TaxAuthori│ │ Assets   │ │  Merge   │ │Valid. │ │ │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └───────┘ │ │
+│  │  PIPELINE (6 Stages)                                           │ │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────┐ │ │
+│  │  │Stage 1 │→│Stage 2 │→│Stage 3 │→│Stage 4 │→│Stage 4b│→│St.5│ │ │
+│  │  │Classif.│ │TaxAuth │ │Assets  │ │ Merge  │ │ Dedup  │ │Val.│ │ │
+│  │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────┘ │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 └─────────────────┬───────────────────────────────────────────────────┘
                   │
@@ -51,17 +60,18 @@ De Box 3 extraction pipeline is een **5-stage LLM-powered systeem** dat Nederlan
 
 | Bestand | Doel |
 |---------|------|
-| [server/services/box3-extraction-pipeline.ts](../server/services/box3-extraction-pipeline.ts) | **Hoofdlogica** - 5-stage orchestratie |
+| [server/services/box3-extraction-pipeline.ts](../server/services/box3-extraction-pipeline.ts) | **Hoofdlogica** - 6-stage orchestratie |
+| [server/services/box3-deduplication.ts](../server/services/box3-deduplication.ts) | **NIEUW** - Semantic fingerprinting & 4-staps dedup |
 | [server/services/box3-prompts.ts](../server/services/box3-prompts.ts) | Alle LLM prompts per stage |
 | [server/services/box3-merge-engine.ts](../server/services/box3-merge-engine.ts) | Incrementele merge bij aanvullingen |
 | [server/routes/box3-v2-routes.ts](../server/routes/box3-v2-routes.ts) | REST API endpoints |
-| [shared/schema/box3.ts](../shared/schema/box3.ts) | Database schema + TypeScript types |
+| [shared/schema/box3.ts](../shared/schema/box3.ts) | Database schema + TypeScript types (incl. fingerprint types) |
 | [client/src/hooks/useBox3Validation.ts](../client/src/hooks/useBox3Validation.ts) | Frontend orchestratie hook |
 | [client/src/constants/box3.constants.ts](../client/src/constants/box3.constants.ts) | Forfaitaire rendementen, tarieven |
 
 ---
 
-## 3. De 5 Pipeline Stages
+## 3. De 6 Pipeline Stages
 
 ### Stage 1: Document Classification
 
@@ -214,6 +224,66 @@ De Box 3 extraction pipeline is een **5-stage LLM-powered systeem** dat Nederlan
 
 ---
 
+### Stage 4b: Semantic Deduplication (NIEUW)
+
+**Doel**: Duplicaten detecteren en samenvoegen op basis van semantische gelijkheid.
+
+**Waarom nodig?** Dezelfde bankrekening kan in meerdere documenten voorkomen met licht verschillende beschrijvingen ("ING Spaarrekening" vs "ING Bank Sparen"). String-matching mist deze duplicaten.
+
+**4-Staps Waterval**:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  STAP 1: EXACT MATCH                                                │
+│  Criteria: Identieke IBAN + identiek eigendomspercentage           │
+│  Actie: ✅ Automatisch samenvoegen                                  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │ Niet exact?
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STAP 2: HIGH PROBABILITY                                           │
+│  Criteria: Zelfde instelling + laatste 4 cijfers + bedrag <1%      │
+│  Actie: ✅ Samenvoegen met logging                                  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │ Niet high?
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STAP 3: POSSIBLE MATCH                                             │
+│  Criteria: Zelfde instelling + partial identifier match            │
+│  Actie: ⚠️ Flag voor menselijke review                              │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │ Niet possible?
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STAP 4: UNCERTAIN                                                  │
+│  Criteria: Enige overlap maar niet genoeg                          │
+│  Actie: ❌ NOOIT automatisch samenvoegen                            │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Fiscale regels ingebouwd**:
+- **Volledige IBAN** is primaire sleutel (niet alleen laatste 4 cijfers)
+- **Eigendomspercentage MOET matchen** - 50% vs 100% = NOOIT samenvoegen
+- **Bij twijfel: NIET samenvoegen** - beter een duplicaat dan een gemiste asset
+
+**Fingerprint structuur**:
+```typescript
+interface Box3AssetFingerprint {
+  iban_full?: string;              // Volledige IBAN (primaire sleutel)
+  institution_normalized: string;   // "ING", "RABO", "ABNAMRO"
+  account_last4?: string;          // Laatste 4 cijfers
+  ownership_percentage: number;     // KRITIEK voor samenvoeging
+  amounts_by_year: Record<string, number>;
+  fingerprint_hash: string;        // MD5 voor snelle vergelijking
+}
+```
+
+**Cross-category detectie**: Detecteert ook duplicaten tussen categorieën (bijv. zelfde rekening in bank_savings én investments).
+
+**Code locatie**: [server/services/box3-deduplication.ts](../server/services/box3-deduplication.ts)
+
+---
+
 ### Stage 5: Validation & Anomaly Detection
 
 **Doel**: Kwaliteitscontrole en indicatieve berekening.
@@ -224,12 +294,26 @@ Deterministische checks zonder LLM:
 
 | Check | Beschrijving |
 |-------|--------------|
-| `asset_totals_match` | Som assets ≈ Belastingdienst totaal |
+| `asset_totals_match` | Som assets ≈ Belastingdienst totaal (tolerantie: max €5.000 of 1%) |
 | `asset_counts_match` | Aantal assets ≈ checklist uit Stage 2 |
 | `interest_plausibility` | Rente niet > 10% van vermogen |
 | `missing_required_docs` | Definitieve aanslag aanwezig? |
 | `duplicate_detection` | Geen dubbele rekeningnummers |
 | `fiscal_exclusions` | KEW/lijfrente/studieschuld correct uitgesloten |
+| `green_investment_exemption` | **NIEUW** - Waarschuwt bij groene beleggingen (handmatige vrijstelling) |
+| `peildatum_warning` | **NIEUW** - Waarschuwt als alleen 31-12 waarde gevonden (moet 1 jan zijn) |
+| `ownership_inconsistency` | **NIEUW** - Detecteert verschillende % voor zelfde rekening |
+| `joint_account_validation` | **NIEUW** - Valideert is_joint_account + owner_id combinatie |
+
+**Ground Truth Tolerantie** (conform fiscale praktijk):
+```
+Tolerantie = max(€5.000, 1% van totaal)
+
+Afwijking < tolerantie     → ✅ Info (groen)
+Afwijking 1-5%             → ⚠️ Warning (geel)
+Afwijking 5-20%            → ⚠️ Warning + "REVIEW VEREIST"
+Afwijking > 20%            → ❌ Error (rood) - vermoedelijk data-issue
+```
 
 **5b: Indicatieve Berekening**
 
@@ -534,10 +618,14 @@ const { debugInfo } = useBox3Validation();
 
 | Probleem | Oorzaak | Oplossing |
 |----------|---------|-----------|
-| Dubbele assets | Exclusion context niet doorgegeven | Check Stage 3 sequentie |
+| Dubbele assets | Exclusion context niet doorgegeven | Stage 4b dedup vangt dit nu op |
+| Cross-category duplicaat | Bijv. ING in bank én investments | Stage 4b detecteert dit automatisch |
 | Lage confidence | Slechte PDF kwaliteit | Vraag klant om originele digitale docs |
 | Missing tax data | Geen aangifte/aanslag geüpload | Stage 2 kan niet runnen |
 | Merge conflicts | Zelfde asset, andere waarden | Review in UI, kies juiste bron |
+| Ownership mismatch | 50% vs 100% voor zelfde rekening | Stage 4b flagged dit voor review |
+| Peildatum fout | Alleen 31-12 waarde gevonden | Stage 5 waarschuwt, vraag 1-jan waarde |
+| Groene belegging | Vrijstelling niet automatisch | Stage 5 waarschuwt, handmatig toepassen |
 
 ---
 
@@ -632,6 +720,54 @@ Gebruik realistische test documenten:
 - Definitieve aanslag IB (PDF)
 - Effectenoverzicht (PDF)
 - WOZ beschikking (PDF)
+
+---
+
+## Toekomstige Verbeteringen
+
+### Model Upgrade naar Pro voor Kritieke Stages
+
+**Status**: Genoteerd voor evaluatie bij aanhoudende extractie-issues
+
+Als we problemen blijven zien met extractie-kwaliteit, overweeg Pro modellen voor kritieke stages:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  HYBRIDE MODEL STRATEGIE (OPTIONEEL)                    │
+│                                                         │
+│  Stage 1 (Classification):     Flash  ← Simpel, snel   │
+│  Stage 2 (Tax Authority):      PRO    ← Kritiek!       │
+│  Stage 3a-d (Asset Extraction): Flash ← Volume         │
+│  Stage 4b (Deduplication):     CODE   ← Deterministic  │
+│  Stage 5 (Validation):         CODE   ← Fiscale regels │
+│  Stage 5c (Anomaly):           PRO    ← Reasoning      │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Waarom Pro voor Stage 2?**
+- Tax Authority data is de "ground truth" voor validatie
+- Fouten hier propageren door de hele pipeline
+- Bedragen en aantallen moeten 100% correct zijn
+
+**Waarom Pro voor Stage 5c (Anomaly)?**
+- Vereist reasoning over complexe fiscale situaties
+- o3-mini of gemini-2.5-pro hebben betere reasoning capabilities
+
+**Impact:**
+- Hogere kosten per extractie (~3-5x voor Pro stages)
+- Langere doorlooptijd (~2x voor Pro stages)
+- Verwachte kwaliteitsverbetering: 85% → 95%+ accuracy
+
+**Implementatie:**
+Wijzig `EXTRACTION_CONFIG` in `box3-extraction-pipeline.ts`:
+```typescript
+// Stage 2: Tax Authority - gebruik Pro
+const TAX_AUTHORITY_CONFIG = {
+  model: 'gemini-2.5-pro',  // Was: gemini-2.5-flash
+  thinkingLevel: 'medium',
+  maxOutputTokens: 16384,
+};
+```
 
 ---
 
