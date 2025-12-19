@@ -13,20 +13,20 @@ import { z } from "zod";
 
 export const automailUserSchema = z.object({
   id: z.number(),
-  type: z.literal("user"),
-  firstName: z.string(),
-  lastName: z.string(),
+  type: z.literal("user").optional(),
+  firstName: z.string().default(""),
+  lastName: z.string().default(""),
   photoUrl: z.string().optional(),
-  email: z.string().email(),
+  email: z.string().optional().default(""),
 }).passthrough();
 
 export const automailCustomerSchema = z.object({
   id: z.number(),
   type: z.literal("customer").optional(),
-  firstName: z.string(),
-  lastName: z.string(),
+  firstName: z.string().nullable().optional().transform(val => val ?? ""),
+  lastName: z.string().nullable().optional().transform(val => val ?? ""),
   photoUrl: z.string().optional(),
-  email: z.string().email(),
+  email: z.string().nullable().optional().transform(val => val ?? ""),
   phone: z.string().optional().nullable(),
   company: z.string().optional().nullable(),
 }).passthrough();
@@ -98,7 +98,7 @@ export const automailCustomerWaitingSinceSchema = z.object({
 export const automailWebhookPayloadSchema = z.object({
   // Core identifiers
   id: z.number(),
-  number: z.number(),
+  number: z.number().optional().default(0),
   externalId: z.string().optional().nullable(),
 
   // Conversation metadata
@@ -107,13 +107,13 @@ export const automailWebhookPayloadSchema = z.object({
   folderId: z.number().optional(),
   status: z.string().optional(),
   state: z.string().optional(),
-  subject: z.string(),
+  subject: z.string().optional().default(""),
   preview: z.string().optional(),
   mailboxId: z.number().optional(),
   language: z.string().optional(),
 
-  // People
-  customer: automailCustomerSchema,
+  // People - customer can be missing in some event types
+  customer: automailCustomerSchema.optional(),
   assignee: automailUserSchema.optional().nullable(),
   createdBy: automailUserSchema.optional().nullable(),
   closedBy: z.unknown().optional().nullable(),

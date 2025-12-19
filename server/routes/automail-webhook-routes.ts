@@ -99,14 +99,27 @@ export function registerAutomailWebhookRoutes(app: Express): void {
     "/api/webhooks/automail",
     // TODO: Re-enable authentication: validateAutomailApiKey,
     asyncHandler(async (req: Request, res: Response) => {
-      // Log incoming webhook event
-      const eventType = req.headers['x-freescout-event'] as string || 'unknown';
-      logger.info('automail-webhook', 'Received event', { eventType });
+      // Log incoming webhook event with full payload for debugging
+      const eventType = req.headers['x-automail-event'] as string || 'unknown';
+      logger.info('automail-webhook', 'Received event', {
+        eventType,
+        payloadKeys: Object.keys(req.body || {}),
+        hasCustomer: !!req.body?.customer,
+        hasEmbedded: !!req.body?._embedded,
+      });
+
+      // Log raw payload for debugging (truncated)
+      logger.debug('automail-webhook', 'Raw payload', {
+        payload: JSON.stringify(req.body).slice(0, 2000),
+      });
 
       // Validate payload structure
       const validationResult = automailWebhookPayloadSchema.safeParse(req.body);
       if (!validationResult.success) {
-        logger.error('automail-webhook', 'Validation failed', { errors: validationResult.error.errors });
+        logger.error('automail-webhook', 'Validation failed', {
+          errors: validationResult.error.errors,
+          receivedFields: Object.keys(req.body || {}),
+        });
         throw ServerError.validation(
           'Invalid webhook payload',
           'Ongeldig webhook formaat'
@@ -115,8 +128,10 @@ export function registerAutomailWebhookRoutes(app: Express): void {
 
       const payload = validationResult.data;
 
-      // Extract client name from customer
-      const clientName = `${payload.customer.firstName} ${payload.customer.lastName}`.trim();
+      // Extract client name from customer (with fallbacks)
+      const customerFirstName = payload.customer?.firstName || "";
+      const customerLastName = payload.customer?.lastName || "";
+      const clientName = `${customerFirstName} ${customerLastName}`.trim() || "Onbekende klant";
 
       // Extract Lead ID from custom fields (if present)
       const leadIdField = payload.customFields?.find(f => f.name === 'Lead id');
@@ -210,8 +225,8 @@ export function registerAutomailWebhookRoutes(app: Express): void {
             conversationId: payload.id,
             conversationNumber: payload.number,
             subject: payload.subject,
-            customerEmail: payload.customer.email,
-            customerPhone: payload.customer.phone || null,
+            customerEmail: payload.customer?.email || null,
+            customerPhone: payload.customer?.phone || null,
             leadId,
             receivedAt: new Date().toISOString(),
           },
