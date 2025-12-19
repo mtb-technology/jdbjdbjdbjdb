@@ -1293,7 +1293,9 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
                   {/* Total Refund - Hero number */}
                   <div className="flex items-baseline gap-2">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wide">Teruggave</span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                      {hasMissingDocs ? 'Max. teruggave' : 'Teruggave'}
+                    </span>
                     <CopyableCurrency
                       value={totalRefund}
                       className={`text-2xl font-bold tracking-tight ${totalRefund > 0 ? 'text-green-600' : 'text-muted-foreground'}`}
@@ -1324,16 +1326,6 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     </>
                   )}
 
-                  {/* Missing docs - pushed right */}
-                  {allMissingItems.length > 0 && (
-                    <>
-                      <div className="flex-1" />
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-amber-50 text-amber-700 text-sm font-medium">
-                        <FileText className="h-3.5 w-3.5" />
-                        {allMissingItems.length} documenten nodig
-                      </div>
-                    </>
-                  )}
                 </div>
 
                 {/* Calculation Breakdown - Collapsible */}
@@ -1742,21 +1734,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         <div className="pb-4 border-b mb-4 space-y-3">
                           {/* Main row */}
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <h3 className="text-lg font-semibold">Detail: {selectedYear}</h3>
-                              {(() => {
-                                const yearMissing = blueprint.year_summaries?.[selectedYear]?.missing_items || [];
-                                const yearHasMissing = yearMissing.length > 0;
-                                if (yearHasMissing) {
-                                  return <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300">Docs nodig</Badge>;
-                                }
-                                return (
-                                  <Badge variant={refund > 0 ? "default" : "secondary"} className={refund > 0 ? "bg-green-600" : ""}>
-                                    {refund > 0 ? 'Kansrijk' : 'Niet kansrijk'}
-                                  </Badge>
-                                );
-                              })()}
-                            </div>
+                            <h3 className="text-lg font-semibold">Detail: {selectedYear}</h3>
                             <div className="text-right">
                               {(() => {
                                 // Check if actual return is unknown (missing income data)

@@ -86,9 +86,11 @@ Zoek naar deze velden in Box 3 sectie:
 ### Asset Referenties (voor completeness check)
 Tel en beschrijf ALLE vermogensbestanddelen die in de aangifte staan:
 - Hoeveel bankrekeningen? Welke banken?
-- Hoeveel beleggingsrekeningen?
+  INCLUSIEF: premiedepots, kapitaalverzekeringen, en beleggingsrekeningen met alleen een saldo (geen aandelen/fondsen detail)
+  Bijvoorbeeld: "Binck €1.050" zonder portefeuille detail = bankrekening, "Premiedepot Aegon" = bankrekening
+- Hoeveel beleggingsrekeningen MET portefeuille/aandelen details?
 - Hoeveel onroerende zaken? (kijk naar "Woningen en andere onroerende zaken" totaal)
-- Overige bezittingen?
+- Overige bezittingen? (alleen zaken die NIET onder bovenstaande vallen)
 
 ### Totaalbedragen per categorie (BELANGRIJK!)
 Zoek in Box 3 sectie naar deze subtotalen:
@@ -156,26 +158,27 @@ Dit kan een vakantiewoning, verhuurpand, grond, of buitenlands vastgoed zijn.
     }
   },
   "asset_references": {
-    "bank_count": 5,
+    "bank_count": 7,
     "bank_descriptions": [
       "ING Betaalrekening ****1234",
       "ING Spaarrekening ****5678",
       "Rabobank Spaarrekening ****9012",
       "ABN AMRO Spaarrekening ****3456",
-      "ASN Groenrekening ****7890"
+      "ASN Groenrekening ****7890",
+      "Premiedepot pensioenverzekering",
+      "Binck saldo (geen portefeuille details)"
     ],
     "investment_count": 1,
     "investment_descriptions": [
-      "DEGIRO Beleggingsrekening"
+      "DEGIRO Beleggingsrekening (met portefeuille details)"
     ],
     "real_estate_count": 1,
     "real_estate_descriptions": [
       "Vakantiewoning 2142GD Cruquius"
     ],
-    "other_assets_count": 2,
+    "other_assets_count": 1,
     "other_descriptions": [
-      "Premiedepot pensioenverzekering",
-      "Kapitaalverzekering"
+      "Kapitaalverzekering eigen woning"
     ]
   },
   "category_totals": {
