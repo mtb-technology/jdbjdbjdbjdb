@@ -64,17 +64,14 @@ export const Box3NewCase = memo(function Box3NewCase({
             if (isImage && file.size > 1024 * 1024) {
               try {
                 const compressedFile = await imageCompression(file, compressionOptions);
-                const originalSize = (file.size / 1024 / 1024).toFixed(1);
-                const newSize = (compressedFile.size / 1024 / 1024).toFixed(1);
-                console.log(`📸 Compressed ${file.name}: ${originalSize}MB → ${newSize}MB`);
                 return {
                   file: compressedFile,
                   name: file.name,
                   originalSize: file.size,
                   compressed: true,
                 };
-              } catch (err) {
-                console.warn(`Failed to compress ${file.name}:`, err);
+              } catch {
+                // Compression failed, use original file
                 return { file, name: file.name };
               }
             }

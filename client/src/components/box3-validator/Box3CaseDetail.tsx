@@ -5,7 +5,7 @@
  * Uses the new Blueprint data model with source tracking.
  */
 
-import { memo, useState, useCallback, useRef } from "react";
+import { memo, useState, useCallback, useRef, useMemo } from "react";
 import imageCompression from "browser-image-compression";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,21 +52,27 @@ import { useToast } from "@/hooks/use-toast";
 import {
   RawOutputPanel,
   Box3AttachmentsPanel,
+  Box3ActionCards,
 } from "@/components/box3-validator";
 
 // Types
 import type { Box3Blueprint, Box3Dossier } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
 import type { Box3DossierFull } from "@/hooks/useBox3Sessions";
-import type { DebugInfo } from "@/hooks/useBox3Validation";
+import type { DebugInfo, PipelineProgress } from "@/hooks/useBox3Validation";
 
 interface Box3CaseDetailProps {
   dossierFull: Box3DossierFull;
   isRevalidating: boolean;
   isAddingDocs: boolean;
   debugInfo?: DebugInfo | null;
+  pipelineProgress?: PipelineProgress | null;
+  /** Active job ID if background revalidation is running */
+  activeJobId?: string | null;
   onBack: () => void;
   onRevalidate: () => void;
+  /** Cancel active revalidation job */
+  onCancelRevalidation?: () => void;
   onAddDocuments: (files: PendingFile[]) => Promise<void>;
 }
 
@@ -275,8 +281,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   isRevalidating,
   isAddingDocs,
   debugInfo,
+  pipelineProgress,
+  activeJobId,
   onBack,
   onRevalidate,
+  onCancelRevalidation,
   onAddDocuments,
 }: Box3CaseDetailProps) {
   const { toast } = useToast();
@@ -315,6 +324,93 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   const hasFiscalPartner = blueprint?.fiscal_entity?.fiscal_partner?.has_partner || false;
   const validationFlags = blueprint?.validation_flags || [];
   const sourceDocsRegistry = blueprint?.source_documents_registry || [];
+
+  // Compute sidebar data (next step, missing items, profitability)
+  const sidebarData = useMemo(() => {
+    if (!blueprint) {
+      return {
+        nextStep: { action: 'Valideren', description: 'Valideer de documenten om te starten' },
+        allMissingItems: [],
+        isProfitable: false,
+        totalRefund: 0,
+      };
+    }
+
+    const yearSummaries = blueprint.year_summaries || {};
+    const years = Object.keys(yearSummaries).sort();
+    const hasPartner = blueprint.fiscal_entity?.fiscal_partner?.has_partner || false;
+
+    // Overall totals
+    const totalRefund = years.reduce((sum, year) => {
+      const refund = yearSummaries[year]?.calculated_totals?.indicative_refund;
+      return sum + (typeof refund === 'number' ? refund : 0);
+    }, 0);
+    const profitableYears = years.filter(y => yearSummaries[y]?.calculated_totals?.is_profitable);
+    const incompleteYears = years.filter(y => yearSummaries[y]?.status === 'incomplete');
+    const isProfitable = totalRefund > 0 || profitableYears.length > 0;
+    const isComplete = incompleteYears.length === 0 && years.length > 0;
+
+    // Collect ALL missing items across all years
+    const allMissingItems: { year: string; description: string }[] = [];
+    years.forEach(year => {
+      const missing = yearSummaries[year]?.missing_items || [];
+      missing.forEach((item: string | { description: string }) => {
+        const description = typeof item === 'string' ? item : item.description;
+        allMissingItems.push({ year, description });
+      });
+    });
+
+    // Additional check: even if no missing_items from pipeline, check if actual return data is missing
+    // This catches cases where assets exist but return data (interest/dividend/gains) is 0
+    const hasMissingReturnData = years.some(year => {
+      const actualReturn = yearSummaries[year]?.calculated_totals?.actual_return;
+      const totalAssets = yearSummaries[year]?.calculated_totals?.total_assets_jan_1 || 0;
+
+      // If we have significant assets but no actual return data, something is missing
+      if (totalAssets > 10000) {
+        const totalActualReturn = (actualReturn?.bank_interest || 0) +
+                                  (actualReturn?.dividends || 0) +
+                                  (actualReturn?.investment_gain || 0) +
+                                  (actualReturn?.rental_income_net || 0);
+        // If actual return is exactly 0 on significant assets, likely missing data
+        return totalActualReturn === 0;
+      }
+      return false;
+    });
+
+    // Determine next step
+    let nextStep = { action: '', description: '' };
+
+    if (allMissingItems.length > 0 || hasMissingReturnData) {
+      const itemCount = allMissingItems.length || (hasMissingReturnData ? 1 : 0);
+      nextStep = {
+        action: 'Documenten opvragen',
+        description: hasMissingReturnData && allMissingItems.length === 0
+          ? 'Jaaroverzichten nodig om werkelijk rendement te bepalen (rente, dividend, koerswinst)'
+          : `${itemCount} document(en) nodig om volledig te kunnen beoordelen`,
+      };
+    } else if (isProfitable) {
+      const numBezwaren = hasPartner ? 2 : 1;
+      nextStep = {
+        action: 'Bezwaar indienen',
+        description: hasPartner
+          ? `${numBezwaren} bezwaarschriften opstellen (per aanslag)`
+          : 'Bezwaarschrift opstellen',
+      };
+    } else if (!isComplete) {
+      nextStep = {
+        action: 'Aanvullende info nodig',
+        description: 'Wacht op meer gegevens van de klant',
+      };
+    } else {
+      nextStep = {
+        action: 'Afsluiten',
+        description: 'Geen teruggave mogelijk op basis van huidige gegevens',
+      };
+    }
+
+    return { nextStep, allMissingItems, isProfitable, totalRefund, hasMissingReturnData };
+  }, [blueprint]);
 
   // File handling with compression
   const compressionOptions = {
@@ -409,7 +505,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
     mimeType === 'application/pdf';
 
   return (
-    <div className="space-y-6">
+    <>
+      {/* Modals - outside the grid */}
       {/* Document Preview Modal */}
       <Dialog open={previewDocIndex !== null} onOpenChange={(open) => !open && setPreviewDocIndex(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
@@ -566,82 +663,152 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
         </DialogContent>
       </Dialog>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Terug naar overzicht
-          </Button>
-        </div>
-      </div>
+      {/* Main content */}
+      <div className="space-y-4">
+        {/* Minimal Back Button */}
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Terug naar overzicht
+        </button>
 
-      {/* Dossier Info Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-3">
-                <User className="h-5 w-5 text-muted-foreground" />
-                {dossier.clientName || "Onbekende klant"}
-                {dossier.dossierNummer && (
-                  <span className="text-sm font-normal text-muted-foreground">
-                    #{dossier.dossierNummer}
-                  </span>
-                )}
-              </CardTitle>
-              <CardDescription className="flex items-center gap-2 mt-1">
-                <Badge className={getStatusColor(dossier.status)}>
-                  {getStatusLabel(dossier.status)}
-                </Badge>
-                {taxYears.length > 0 && (
-                  <Badge variant="outline">
-                    <Calendar className="h-3 w-3 mr-1" />
-                    {taxYears.length === 1
-                      ? taxYears[0]
-                      : `${taxYears[0]}-${taxYears[taxYears.length - 1]}`}
-                  </Badge>
-                )}
-                {hasFiscalPartner && (
-                  <Badge variant="outline">
-                    <Users className="h-3 w-3 mr-1" />
-                    Fiscaal partner
-                  </Badge>
-                )}
-                {blueprintVersion > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    Blueprint v{blueprintVersion}
-                  </span>
-                )}
-              </CardDescription>
+        {/* Modern Header Card */}
+        <div className="bg-white rounded-xl border p-5">
+          <div className="flex items-start justify-between">
+            {/* Left: Client info */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
+                  <User className="h-5 w-5 text-slate-600" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold text-foreground">
+                    {dossier.clientName || "Onbekende klant"}
+                  </h1>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <Badge className={getStatusColor(dossier.status)} variant="secondary">
+                      {getStatusLabel(dossier.status)}
+                    </Badge>
+                    {taxYears.length > 0 && (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {taxYears.length === 1
+                          ? taxYears[0]
+                          : `${taxYears[0]}-${taxYears[taxYears.length - 1]}`}
+                      </span>
+                    )}
+                    {hasFiscalPartner && (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Users className="h-3 w-3" />
+                        Fiscaal partner
+                      </span>
+                    )}
+                    {blueprintVersion > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        v{blueprintVersion}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="flex gap-2">
+
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2">
               <Button
                 onClick={() => setShowAddDocs(!showAddDocs)}
                 variant="outline"
                 size="sm"
                 disabled={isAddingDocs}
+                className="h-9"
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="h-4 w-4 mr-1.5" />
                 Document toevoegen
               </Button>
               <Button
                 onClick={onRevalidate}
-                variant="default"
                 size="sm"
                 disabled={isRevalidating || isAddingDocs}
+                className="h-9"
               >
-                {isRevalidating ? (
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                )}
+                <RefreshCw className={`h-4 w-4 mr-1.5 ${isRevalidating ? 'animate-spin' : ''}`} />
                 Opnieuw valideren
               </Button>
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
+
+          {/* Pipeline Progress Indicator */}
+          {isRevalidating && pipelineProgress && (
+            <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-lg">
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="w-12 h-12 rounded-full border-4 border-blue-200 flex items-center justify-center">
+                    <RefreshCw className="h-5 w-5 text-blue-600 animate-spin" />
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 bg-blue-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {pipelineProgress.step}
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold text-blue-900">
+                      Stap {pipelineProgress.step} van {pipelineProgress.totalSteps}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                        {pipelineProgress.phase}
+                      </span>
+                      {activeJobId && onCancelRevalidation && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={onCancelRevalidation}
+                        >
+                          Annuleren
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-sm text-blue-800">{pipelineProgress.message}</p>
+                  {activeJobId && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      Achtergrondverwerking - je kan de browser sluiten
+                    </p>
+                  )}
+                  <div className="mt-2 h-2 bg-blue-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-600 transition-all duration-500 ease-out"
+                      style={{ width: `${(pipelineProgress.step / pipelineProgress.totalSteps) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                {[1, 2, 3, 4, 5].map((step) => (
+                  <div
+                    key={step}
+                    className={`flex-1 text-center text-xs py-1 rounded ${
+                      step < pipelineProgress.step
+                        ? 'bg-blue-600 text-white'
+                        : step === pipelineProgress.step
+                          ? 'bg-blue-400 text-white animate-pulse'
+                          : 'bg-blue-100 text-blue-400'
+                    }`}
+                  >
+                    {step === 1 && 'Classificatie'}
+                    {step === 2 && 'Aangifte'}
+                    {step === 3 && 'Vermogen'}
+                    {step === 4 && 'Combineren'}
+                    {step === 5 && 'Validatie'}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Add Documents Section */}
           {showAddDocs && (
             <div className="mb-4 p-4 border rounded-lg bg-muted/30 space-y-3">
@@ -915,8 +1082,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
       {/* Year-First Navigation Structure */}
       {blueprint && (
@@ -1091,40 +1257,40 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             const StatusIcon = hasMissingDocs ? AlertTriangle : isProfitable ? CheckCircle2 : Info;
 
             return (
-              <div className="space-y-4">
-                {/* Compact Summary Bar - Always visible */}
-                <div className="flex items-center gap-4 p-4 bg-white rounded-xl border">
-                  {/* Status Badge */}
-                  <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${statusColor}`}>
-                    <StatusIcon className="h-5 w-5" />
-                    <span className="font-semibold">{statusLabel}</span>
-                    <span className="text-xs opacity-75">({profitableYears.length}/{years.length})</span>
+              <div className="space-y-3">
+                {/* Modern Summary Bar */}
+                <div className="flex flex-wrap items-center gap-3 p-3 bg-white rounded-lg border shadow-sm">
+                  {/* Status Pill */}
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm font-medium ${statusColor}`}>
+                    <StatusIcon className="h-4 w-4" />
+                    {statusLabel}
+                    <span className="text-xs opacity-70">({profitableYears.length}/{years.length})</span>
                   </div>
 
-                  {/* Divider */}
-                  <div className="h-8 w-px bg-gray-200" />
+                  <div className="h-6 w-px bg-border" />
 
-                  {/* Total indicative refund */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Indicatieve teruggave:</span>
+                  {/* Total Refund - Hero number */}
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs text-muted-foreground uppercase tracking-wide">Teruggave</span>
                     <CopyableCurrency
                       value={totalRefund}
-                      className={`text-xl font-bold ${totalRefund > 0 ? 'text-green-600' : 'text-gray-400'}`}
+                      className={`text-2xl font-bold tracking-tight ${totalRefund > 0 ? 'text-green-600' : 'text-muted-foreground'}`}
                     />
                   </div>
 
-                  {/* Per person (compact) - only if partner */}
+                  {/* Per person split */}
                   {hasPartner && personSummaries.length > 1 && (
                     <>
-                      <div className="h-8 w-px bg-gray-200" />
-                      <div className="flex items-center gap-4">
-                        {personSummaries.map((person) => (
-                          <div key={person.id} className="flex items-center gap-2">
-                            <User className={`h-4 w-4 ${person.isProfitable ? 'text-green-500' : 'text-gray-400'}`} />
-                            <span className="text-sm text-muted-foreground">{person.name.split(' ')[0]}:</span>
+                      <div className="h-6 w-px bg-border" />
+                      <div className="flex items-center gap-3 text-sm">
+                        {personSummaries.map((person, idx) => (
+                          <div key={person.id} className="flex items-center gap-1.5">
+                            <span className="text-xs text-muted-foreground">
+                              {idx === 0 ? 'T.' : 'E.'}:
+                            </span>
                             <CopyableCurrency
                               value={person.totalIndicativeRefund}
-                              className={`font-semibold ${person.isProfitable ? 'text-green-600' : 'text-gray-400'}`}
+                              className={`font-semibold ${person.isProfitable ? 'text-green-600' : 'text-muted-foreground'}`}
                             />
                           </div>
                         ))}
@@ -1132,13 +1298,13 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     </>
                   )}
 
-                  {/* Missing docs alert */}
+                  {/* Missing docs - pushed right */}
                   {allMissingItems.length > 0 && (
                     <>
                       <div className="flex-1" />
-                      <div className="flex items-center gap-2 text-amber-600">
-                        <FileText className="h-4 w-4" />
-                        <span className="text-sm font-medium">{allMissingItems.length} documenten nodig</span>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-amber-50 text-amber-700 text-sm font-medium">
+                        <FileText className="h-3.5 w-3.5" />
+                        {allMissingItems.length} documenten nodig
                       </div>
                     </>
                   )}
@@ -1283,6 +1449,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 // Check what's missing
                                 const bankInterest = actualReturn?.bank_interest || 0;
                                 const dividends = actualReturn?.dividends || 0;
+                                const realizedGains = actualReturn?.investment_gain || 0;
+                                const rentalNet = actualReturn?.rental_income_net || 0;
                                 const totalAssets = calc.total_assets_jan_1 || 0;
 
                                 // Calculate expected minimum return (0.5% is conservative)
@@ -1298,10 +1466,19 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                   missingItems.push('bankrente');
                                 }
 
-                                // If we have investments but no dividends
+                                // If we have investments but no dividends or realized gains
                                 const invCount = blueprint.assets?.investments?.length || 0;
                                 if (invCount > 0 && dividends === 0) {
                                   missingItems.push('dividend');
+                                }
+                                if (invCount > 0 && realizedGains === 0) {
+                                  missingItems.push('koerswinst');
+                                }
+
+                                // If we have real estate but no rental income
+                                const reCount = blueprint.assets?.real_estate?.length || 0;
+                                if (reCount > 0 && rentalNet === 0) {
+                                  missingItems.push('huurinkomsten');
                                 }
 
                                 // Show warning if there are known missing items OR if return seems too low
@@ -1370,68 +1547,24 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   </details>
                 )}
 
-                {/* Next Action Card - Shows what's needed */}
-                {allMissingItems.length > 0 && (
-                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-lg bg-amber-100">
-                        <AlertTriangle className="h-5 w-5 text-amber-600" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-amber-800 mb-1">Actie vereist: documenten opvragen</h3>
-                        <p className="text-sm text-amber-700 mb-3">
-                          Om te bepalen of deze zaak kansrijk is, hebben we het werkelijke rendement nodig.
-                        </p>
-                        <div className="space-y-2">
-                          {/* Group by year */}
-                          {years.map(year => {
-                            const yearMissing = blueprint.year_summaries?.[year]?.missing_items || [];
-                            if (yearMissing.length === 0) return null;
-                            return (
-                              <div key={year} className="bg-white rounded-lg p-3 border border-amber-200">
-                                <p className="text-xs font-medium text-amber-800 mb-2">{year}</p>
-                                <ul className="space-y-1">
-                                  {yearMissing.map((item, idx) => (
-                                    <li key={idx} className="flex items-center gap-2 text-sm text-amber-900">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                                      {typeof item === 'string' ? item : item.description}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-3 flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-amber-300 text-amber-700 hover:bg-amber-100"
-                            onClick={() => setShowAddDocs(true)}
-                          >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Document toevoegen
-                          </Button>
-                          <Button
-                            variant="default"
-                            size="sm"
-                            className="bg-amber-600 hover:bg-amber-700"
-                            onClick={handleGenerateEmail}
-                            disabled={isGeneratingEmail}
-                          >
-                            <Mail className="h-3 w-3 mr-1" />
-                            {isGeneratingEmail ? 'Bezig...' : 'Genereer opvolg-email'}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {/* Action Cards: Next Best Action + Email */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Box3ActionCards
+                    dossier={dossier}
+                    nextStep={sidebarData.nextStep}
+                    missingItems={sidebarData.allMissingItems}
+                    isProfitable={sidebarData.isProfitable}
+                    totalRefund={sidebarData.totalRefund}
+                    hasMissingReturnData={sidebarData.hasMissingReturnData}
+                    onGenerateEmail={handleGenerateEmail}
+                    isGeneratingEmail={isGeneratingEmail}
+                    generatedEmail={generatedEmail}
+                  />
+                </div>
 
-                {/* Integrated Year Detail Card */}
-                <div className="bg-white rounded-xl border overflow-hidden">
-                  {/* Year Tabs - Integrated header */}
-                  <div className="flex items-stretch border-b bg-gray-50">
+                {/* Year Tabs - Minimal horizontal tabs */}
+                <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                  <div className="flex border-b">
                     {years.map(year => {
                       const summary = blueprint.year_summaries?.[year];
                       const refund = summary?.calculated_totals?.indicative_refund || 0;
@@ -1443,53 +1576,40 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         <button
                           key={year}
                           onClick={() => setSelectedYear(year)}
-                          className={`flex-1 px-6 py-4 transition-all relative ${
+                          className={`flex-1 px-4 py-3 text-center transition-all relative ${
                             isSelected
                               ? 'bg-white'
-                              : 'hover:bg-gray-100'
+                              : 'bg-muted/30 hover:bg-muted/50'
                           }`}
                         >
-                          {/* Active indicator */}
+                          {/* Active indicator line */}
                           {isSelected && (
                             <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${
-                              yearProfitable ? 'bg-green-500' : yearIncomplete ? 'bg-amber-500' : 'bg-gray-400'
+                              yearProfitable ? 'bg-green-500' : yearIncomplete ? 'bg-amber-400' : 'bg-gray-300'
                             }`} />
                           )}
 
-                          <div className="flex items-center justify-center gap-2">
+                          <div className="flex items-center justify-center gap-1.5">
                             {yearIncomplete && (
-                              <AlertTriangle className={`h-4 w-4 ${isSelected ? 'text-amber-500' : 'text-amber-400'}`} />
+                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
                             )}
-                            {yearProfitable && !yearIncomplete && (
-                              <CheckCircle2 className={`h-4 w-4 ${isSelected ? 'text-green-500' : 'text-green-400'}`} />
-                            )}
-                            {!yearProfitable && !yearIncomplete && (
-                              <Info className={`h-4 w-4 ${isSelected ? 'text-gray-500' : 'text-gray-400'}`} />
-                            )}
-                            <span className={`font-bold ${isSelected ? 'text-gray-900' : 'text-gray-500'}`}>
+                            <span className={`font-semibold text-sm ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>
                               {year}
                             </span>
                           </div>
-                          <p className={`text-xs mt-1 ${
-                            yearProfitable && !yearIncomplete
-                              ? 'text-green-600'
-                              : yearIncomplete
-                                ? 'text-amber-600'
-                                : 'text-gray-400'
+                          <p className={`text-xs mt-0.5 ${
+                            yearIncomplete
+                              ? 'text-amber-600'
+                              : yearProfitable
+                                ? 'text-green-600'
+                                : 'text-muted-foreground'
                           }`}>
-                            {yearProfitable && !yearIncomplete
-                              ? `+${formatCurrency(refund)}`
-                              : yearIncomplete
-                                ? 'Onvolledig'
-                                : '€ 0,00'
-                            }
+                            {yearIncomplete ? 'Onvolledig' : formatCurrency(refund)}
                           </p>
                         </button>
                       );
                     })}
                   </div>
-
-                  {/* Year Detail Content - moved to YEAR DETAIL card below */}
                 </div>
               </div>
             );
@@ -2495,20 +2615,21 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
         </div>
       )}
 
-      {/* No Blueprint State */}
-      {!blueprint && (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <p className="text-muted-foreground">
-              Geen blueprint beschikbaar voor dit dossier.
-            </p>
-            <Button onClick={onRevalidate} className="mt-4" disabled={isRevalidating}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Nu valideren
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+        {/* No Blueprint State */}
+        {!blueprint && (
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <p className="text-muted-foreground">
+                Geen blueprint beschikbaar voor dit dossier.
+              </p>
+              <Button onClick={onRevalidate} className="mt-4" disabled={isRevalidating}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Nu valideren
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </>
   );
 });

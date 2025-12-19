@@ -7,7 +7,7 @@
  * - New case view: Create new validation (creates dossier + blueprint)
  */
 
-import { useState, useCallback, memo, useEffect, useMemo } from "react";
+import { useState, useCallback, memo, useEffect, useMemo, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { AppHeader } from "@/components/app-header";
@@ -70,10 +70,15 @@ const Box3Validator = memo(function Box3Validator() {
     blueprint,
     currentDossierId,
     debugInfo,
+    pipelineProgress,
+    activeJobId,
+    activeJob,
     validate,
-    revalidate,
+    startRevalidationJob,
+    cancelRevalidationJob,
     loadFromDossier,
     handleReset,
+    checkForActiveJob,
   } = useBox3Validation({
     refetchSessions,
   });
@@ -139,20 +144,42 @@ const Box3Validator = memo(function Box3Validator() {
     [validate, setLocation]
   );
 
-  // Revalidate handler for detail view
+  // Check for active jobs when loading a dossier
+  useEffect(() => {
+    if (selectedDossier?.dossier.id) {
+      checkForActiveJob(selectedDossier.dossier.id);
+    }
+  }, [selectedDossier?.dossier.id, checkForActiveJob]);
+
+  // Track previous activeJobId to detect job completion
+  const prevActiveJobIdRef = useRef<string | null>(null);
+
+  // Reload dossier when job completes (transitions from having a job to no job)
+  useEffect(() => {
+    const hadJob = prevActiveJobIdRef.current !== null;
+    const hasNoJobNow = activeJobId === null;
+
+    // Update ref for next render
+    prevActiveJobIdRef.current = activeJobId;
+
+    // Only reload if we HAD a job and now we don't (job just completed)
+    if (hadJob && hasNoJobNow && selectedDossier?.dossier.id && !isValidating) {
+      const reloadDossier = async () => {
+        const updatedDossier = await loadSession(selectedDossier.dossier.id);
+        if (updatedDossier) {
+          setSelectedDossier(updatedDossier);
+          loadFromDossier(updatedDossier);
+        }
+      };
+      reloadDossier();
+    }
+  }, [activeJobId, selectedDossier?.dossier.id, isValidating, loadSession, loadFromDossier]);
+
+  // Revalidate handler for detail view (now uses job-based flow)
   const handleRevalidate = useCallback(async () => {
     if (!selectedDossier) return;
-
-    const newBlueprint = await revalidate(selectedDossier.dossier.id);
-    if (newBlueprint) {
-      // Reload the dossier to get updated data
-      const updatedDossier = await loadSession(selectedDossier.dossier.id);
-      if (updatedDossier) {
-        setSelectedDossier(updatedDossier);
-        loadFromDossier(updatedDossier);
-      }
-    }
-  }, [selectedDossier, revalidate, loadSession, loadFromDossier]);
+    await startRevalidationJob(selectedDossier.dossier.id);
+  }, [selectedDossier, startRevalidationJob]);
 
   // Add documents handler
   const handleAddDocuments = useCallback(
@@ -203,8 +230,11 @@ const Box3Validator = memo(function Box3Validator() {
             isRevalidating={isValidating}
             isAddingDocs={isAddingDocs}
             debugInfo={debugInfo}
+            pipelineProgress={pipelineProgress}
+            activeJobId={activeJobId}
             onBack={handleBackToList}
             onRevalidate={handleRevalidate}
+            onCancelRevalidation={cancelRevalidationJob}
             onAddDocuments={handleAddDocuments}
           />
         )}
