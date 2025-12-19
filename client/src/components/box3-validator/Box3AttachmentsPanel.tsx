@@ -32,6 +32,10 @@ import {
   RotateCw,
   X,
   Maximize2,
+  Lock,
+  AlertTriangle,
+  CheckCircle,
+  FileQuestion,
 } from "lucide-react";
 
 // Type for Box3 attachment (matches server storage structure)
@@ -40,6 +44,10 @@ interface Box3Attachment {
   mimeType: string;
   fileSize: number;
   fileData: string; // base64 encoded
+  // Extraction status fields (new)
+  extractedText?: string | null;
+  extractionStatus?: 'success' | 'low_yield' | 'failed' | 'password_protected' | null;
+  extractionCharCount?: number | null;
 }
 
 // Type for AI analysis per file
@@ -224,6 +232,46 @@ function getTypeBadge(mimeType: string, filename: string) {
     );
   }
   return null;
+}
+
+/**
+ * Get extraction status badge
+ */
+function getExtractionStatusBadge(status: Box3Attachment['extractionStatus'], charCount?: number | null) {
+  if (!status) return null;
+
+  switch (status) {
+    case 'success':
+      return (
+        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          {charCount ? `${charCount.toLocaleString()} tekens` : 'Gelezen'}
+        </Badge>
+      );
+    case 'low_yield':
+      return (
+        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          Weinig tekst ({charCount || 0})
+        </Badge>
+      );
+    case 'password_protected':
+      return (
+        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+          <Lock className="h-3 w-3 mr-1" />
+          Beveiligd
+        </Badge>
+      );
+    case 'failed':
+      return (
+        <Badge variant="outline" className="bg-gray-50 text-gray-500 border-gray-200">
+          <FileQuestion className="h-3 w-3 mr-1" />
+          Niet leesbaar
+        </Badge>
+      );
+    default:
+      return null;
+  }
 }
 
 /**
@@ -510,12 +558,17 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
                   <>
                     {/* Fallback when no AI analysis */}
                     <p className="font-medium text-sm">{attachment.filename}</p>
-                    <p className="text-xs text-muted-foreground">{formatFileSize(attachment.fileSize)}</p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{formatFileSize(attachment.fileSize)}</span>
+                      {attachment.extractionStatus && getExtractionStatusBadge(attachment.extractionStatus, attachment.extractionCharCount)}
+                    </div>
                   </>
                 )}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+              {/* Show extraction status badge on the right */}
+              {analyse && attachment.extractionStatus && getExtractionStatusBadge(attachment.extractionStatus, attachment.extractionCharCount)}
               {isPDF && (
                 <Button size="sm" variant="ghost" onClick={handleView} title="Bekijk PDF">
                   <Eye className="h-4 w-4" />
@@ -565,6 +618,51 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
               </div>
             )}
 
+            {/* Extraction Status Warning */}
+            {attachment.extractionStatus === 'password_protected' && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm">
+                <div className="flex items-center gap-2 text-red-800 mb-2">
+                  <Lock className="h-4 w-4" />
+                  <strong>Beveiligde PDF</strong>
+                </div>
+                <p className="text-red-700">
+                  Dit PDF bestand is met een wachtwoord beveiligd en kan niet worden gelezen.
+                  De AI kon dit document niet analyseren. Vraag de klant om een onbeveiligde versie.
+                </p>
+              </div>
+            )}
+
+            {attachment.extractionStatus === 'failed' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+                <div className="flex items-center gap-2 text-amber-800 mb-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  <strong>Tekst niet leesbaar</strong>
+                </div>
+                <p className="text-amber-700">
+                  De tekst in dit PDF bestand kon niet worden geëxtraheerd. Het bestand is mogelijk
+                  een gescande afbeelding. De AI heeft geprobeerd het visueel te analyseren.
+                </p>
+              </div>
+            )}
+
+            {/* Raw Extracted Text (collapsible) */}
+            {attachment.extractedText && attachment.extractedText.length > 0 && (
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Bekijk geëxtraheerde tekst ({attachment.extractionCharCount?.toLocaleString() || attachment.extractedText.length} tekens)
+                    <ChevronRight className="h-4 w-4 ml-auto" />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <pre className="mt-2 p-3 bg-muted rounded-lg text-xs font-mono whitespace-pre-wrap max-h-64 overflow-auto">
+                    {attachment.extractedText}
+                  </pre>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+
             {/* File Preview */}
             {isImage ? (
               <div className="flex flex-col items-center gap-2">
@@ -605,7 +703,7 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
               </div>
             ) : isPDF ? (
               <div className="space-y-3">
-                {!analyse && (
+                {!analyse && !attachment.extractionStatus && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
                     <p className="text-amber-800 mb-2">
                       <strong>PDF Document</strong>

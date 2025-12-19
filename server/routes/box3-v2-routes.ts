@@ -23,6 +23,7 @@ import { storage } from "../storage";
 import { logger } from "../services/logger";
 import { Box3ExtractionPipeline, type PipelineDocument } from "../services/box3-extraction-pipeline";
 import { Box3MergeEngine } from "../services/box3-merge-engine";
+import { extractPdfText, hasUsableText } from "../services/pdf-text-extractor";
 import type { Box3Blueprint, Box3DocumentClassification } from "@shared/schema";
 import { BOX3_CONSTANTS } from "@shared/constants";
 
@@ -163,17 +164,11 @@ box3V2Router.post(
     const pipelineDocs: PipelineDocument[] = [];
 
     for (const file of files) {
-      const doc = await storage.createBox3Document({
-        dossierId: dossier.id,
-        filename: file.originalname,
-        mimeType: file.mimetype,
-        fileSize: file.size,
-        fileData: file.buffer.toString('base64'),
-        uploadedVia: 'intake',
-      });
-
-      // Extract text from PDFs for pipeline
+      // Extract text from PDFs for pipeline AND storage
       let extractedText: string | undefined;
+      let extractionStatus: 'success' | 'low_yield' | 'failed' | 'password_protected' = 'failed';
+      let extractionCharCount = 0;
+
       const ext = file.originalname.toLowerCase().split('.').pop();
       const isPDF = file.mimetype === 'application/pdf' ||
                     (file.mimetype === 'application/octet-stream' && ext === 'pdf');
@@ -182,16 +177,59 @@ box3V2Router.post(
 
       if (isPDF) {
         try {
-          const PDFParseClass = await getPdfParse();
-          const parser = new PDFParseClass({ data: file.buffer });
-          const result = await parser.getText();
-          extractedText = result.text || "";
-        } catch {
-          // Vision will handle it
+          const result = await extractPdfText(file.buffer, file.originalname);
+          extractionCharCount = result.charCount;
+
+          if (hasUsableText(result, 200)) {
+            extractedText = result.text;
+            extractionStatus = 'success';
+            logger.info('box3-v2', `✅ Text extracted from ${file.originalname}`, {
+              charCount: result.charCount,
+              avgCharsPerPage: result.avgCharsPerPage,
+            });
+          } else if (result.charCount > 0) {
+            extractedText = result.text;
+            extractionStatus = 'low_yield';
+            logger.warn('box3-v2', `⚠️ Low text yield from ${file.originalname}, will use vision`, {
+              charCount: result.charCount,
+              avgCharsPerPage: result.avgCharsPerPage,
+            });
+          } else {
+            // No text at all - likely scanned or password protected
+            extractionStatus = 'failed';
+            logger.warn('box3-v2', `⚠️ No text from ${file.originalname}, will use vision`, {
+              error: result.error || 'No text content',
+            });
+          }
+        } catch (err: any) {
+          // Check for password-protected PDF error
+          const errorMsg = err.message?.toLowerCase() || '';
+          if (errorMsg.includes('password') || errorMsg.includes('encrypted')) {
+            extractionStatus = 'password_protected';
+            logger.error('box3-v2', `🔒 Password-protected PDF: ${file.originalname}`, { error: err.message });
+          } else {
+            extractionStatus = 'failed';
+            logger.error('box3-v2', `❌ PDF extraction failed for ${file.originalname}`, { error: err.message });
+          }
         }
       } else if (isTXT) {
         extractedText = file.buffer.toString('utf-8');
+        extractionCharCount = extractedText.length;
+        extractionStatus = 'success';
       }
+
+      // Store document WITH extraction results
+      const doc = await storage.createBox3Document({
+        dossierId: dossier.id,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        fileData: file.buffer.toString('base64'),
+        uploadedVia: 'intake',
+        extractedText: extractedText || null,
+        extractionStatus,
+        extractionCharCount,
+      });
 
       pipelineDocs.push({
         id: doc.id,
@@ -368,6 +406,10 @@ box3V2Router.get(
       uploadedVia: d.uploadedVia,
       classification: d.classification,
       extractionSummary: d.extractionSummary,
+      // New: extraction status fields
+      extractedText: d.extractedText,
+      extractionStatus: d.extractionStatus,
+      extractionCharCount: d.extractionCharCount,
     }));
 
     res.json(createApiSuccessResponse({
@@ -475,18 +517,11 @@ box3V2Router.post(
     const pipelineDocs: PipelineDocument[] = [];
 
     for (const file of files) {
-      const doc = await storage.createBox3Document({
-        dossierId: id,
-        filename: file.originalname,
-        mimeType: file.mimetype,
-        fileSize: file.size,
-        fileData: file.buffer.toString('base64'),
-        uploadedVia: 'aanvulling',
-      });
-      newDocs.push({ id: doc.id, filename: doc.filename });
-
-      // Prepare for extraction
+      // Extract text from PDFs for pipeline AND storage
       let extractedText: string | undefined;
+      let extractionStatus: 'success' | 'low_yield' | 'failed' | 'password_protected' = 'failed';
+      let extractionCharCount = 0;
+
       const ext = file.originalname.toLowerCase().split('.').pop();
       const isPDF = file.mimetype === 'application/pdf' ||
                     (file.mimetype === 'application/octet-stream' && ext === 'pdf');
@@ -495,16 +530,45 @@ box3V2Router.post(
 
       if (isPDF) {
         try {
-          const PDFParseClass = await getPdfParse();
-          const parser = new PDFParseClass({ data: file.buffer });
-          const result = await parser.getText();
-          extractedText = result.text || "";
-        } catch {
-          // Vision will handle it
+          const result = await extractPdfText(file.buffer, file.originalname);
+          extractionCharCount = result.charCount;
+
+          if (hasUsableText(result, 200)) {
+            extractedText = result.text;
+            extractionStatus = 'success';
+          } else if (result.charCount > 0) {
+            extractedText = result.text;
+            extractionStatus = 'low_yield';
+          } else {
+            extractionStatus = 'failed';
+          }
+        } catch (err: any) {
+          const errorMsg = err.message?.toLowerCase() || '';
+          if (errorMsg.includes('password') || errorMsg.includes('encrypted')) {
+            extractionStatus = 'password_protected';
+          } else {
+            extractionStatus = 'failed';
+          }
         }
       } else if (isTXT) {
         extractedText = file.buffer.toString('utf-8');
+        extractionCharCount = extractedText.length;
+        extractionStatus = 'success';
       }
+
+      // Store document WITH extraction results
+      const doc = await storage.createBox3Document({
+        dossierId: id,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        fileData: file.buffer.toString('base64'),
+        uploadedVia: 'aanvulling',
+        extractedText: extractedText || null,
+        extractionStatus,
+        extractionCharCount,
+      });
+      newDocs.push({ id: doc.id, filename: doc.filename });
 
       pipelineDocs.push({
         id: doc.id,
@@ -1253,75 +1317,104 @@ box3V2Router.post(
     let body = '';
 
     if (determinedType === 'request_docs') {
-      subject = `Box 3 bezwaar ${yearRange} - aanvullende documenten nodig`;
+      subject = `Box 3 ${yearRange} - goed nieuws over mogelijke teruggave`;
 
-      // Group missing items by year
+      // Group missing items by year for bullet list
       const missingByYear: Record<string, string[]> = {};
       allMissingItems.forEach(item => {
         if (!missingByYear[item.year]) missingByYear[item.year] = [];
         missingByYear[item.year].push(item.description);
       });
 
+      // Build bullet list of missing docs (cleaner format)
       const missingListHtml = Object.entries(missingByYear)
-        .map(([year, items]) => `<p><strong>${year}:</strong></p><ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`)
+        .map(([year, items]) => {
+          const bullets = items.map(i => `<li>${i}</li>`).join('');
+          return years.length > 1 ? `<p><strong>${year}:</strong></p><ul>${bullets}</ul>` : `<ul>${bullets}</ul>`;
+        })
         .join('');
 
-      // Calculate costs - round to whole euros for email
-      const costPerYear = 249;
+      // Calculate costs - use constant from BOX3_CONSTANTS
+      const costPerYear = BOX3_CONSTANTS.COST_PER_YEAR;
       const totalCost = years.length * costPerYear;
       const displayRefund = hasUnknownInterest ? totalEstimatedRefund : totalIndicativeRefund;
       const displayRefundRounded = Math.round(displayRefund);
       const netRefund = displayRefundRounded - totalCost;
-
-      // Build the positive outlook section with tax paid context
       const totalTaxPaidRounded = Math.round(totalTaxPaid);
-      const taxPaidText = totalTaxPaidRounded > 0
-        ? `U heeft in ${yearRange} <strong>€${totalTaxPaidRounded},-</strong> Box 3 belasting betaald. `
-        : '';
 
-      const refundSection = displayRefundRounded > 0
-        ? `<p><strong>Goed nieuws:</strong> ${taxPaidText}Afhankelijk van uw werkelijke rendement kunt u tot <strong>€${displayRefundRounded},-</strong> terugkrijgen.</p>`
-        : '';
+      // Get the appropriate tax rate label for display
+      const primaryYear = years[0];
+      const taxRatePercent = Math.round((BOX3_CONSTANTS.TAX_RATES[primaryYear] || 0.31) * 100);
 
-      const costSection = years.length === 1
-        ? `<p>Wij kunnen het bezwaar volledig voor u verzorgen. De kosten hiervoor bedragen <strong>€${costPerYear},-</strong> per belastingjaar${netRefund > 0 ? `, wat netto <strong>€${netRefund},-</strong> oplevert` : ''}.</p>`
-        : `<p>Wij kunnen de bezwaren volledig voor u verzorgen. De kosten hiervoor bedragen <strong>€${costPerYear},-</strong> per belastingjaar (totaal €${totalCost},- voor ${years.length} jaar)${netRefund > 0 ? `, wat netto <strong>€${netRefund},-</strong> oplevert` : ''}.</p>`;
-
+      // Build the email with new structure
       body = `<p>Beste ${firstName},</p>
 
-<p>Bedankt voor uw aanmelding voor het Box 3 bezwaar over ${yearRange}.</p>
+<h3>Resultaat van onze controle</h3>
 
-${refundSection}
+<p>Goed nieuws! Wij hebben uw aangifte inkomstenbelasting ${yearRange} gecontroleerd en zien een mogelijkheid voor teruggave van Box 3 belasting.</p>
 
-<p>Om de exacte teruggave te kunnen berekenen, hebben wij nog de volgende documenten nodig:</p>
+<p>${totalTaxPaidRounded > 0 ? `U heeft <strong>€${totalTaxPaidRounded},-</strong> Box 3 belasting betaald. ` : ''}De <strong>Hoge Raad</strong> heeft bepaald dat u niet meer belasting hoeft te betalen dan uw <strong>werkelijk behaalde rendement</strong>. Dit betekent dat als uw daadwerkelijke rente en dividend lager was dan wat de Belastingdienst veronderstelde, u recht heeft op teruggave.</p>
+
+${displayRefundRounded > 0 ? `<p>Op basis van onze eerste analyse schatten wij uw teruggave op <strong>€${displayRefundRounded},-</strong>. Let op: de definitieve teruggaaf hangt af van uw daadwerkelijk rendement.</p>` : ''}
+
+<refund_visual></refund_visual>
+
+<h3>Benodigde documenten</h3>
+
+<p>Om de exacte teruggave te berekenen hebben wij nog de volgende jaaropgaven nodig:</p>
 
 ${missingListHtml}
 
-${displayRefundRounded > 0 ? costSection : ''}
+<h3>Onze service</h3>
 
-<p>U kunt de documenten eenvoudig uploaden via uw persoonlijke dossier of als bijlage bij een reply op deze email sturen.</p>
+<ul>
+<li><strong>Service:</strong> Opstellen en indienen van het officiële verzoek tot toepassing werkelijk rendement</li>
+<li><strong>Kosten:</strong> €${costPerYear},- per belastingjaar${years.length > 1 ? ` (totaal €${totalCost},- voor ${years.length} jaren)` : ''}</li>
+${netRefund > 0 ? `<li><strong>Geschat netto voordeel:</strong> €${netRefund},- (teruggave minus kosten)</li>` : ''}
+</ul>
 
-<p>Heeft u vragen? Neem gerust contact met ons op.</p>
+<p><em>Het netto voordeel kan variëren op basis van het vastgestelde werkelijk rendement.</em></p>
+
+<h3>Hoe gaan wij te werk?</h3>
+
+<ol>
+<li>Na akkoord en aanlevering van de jaaropgaven maken wij het dossier definitief</li>
+<li>U ontvangt een factuur van €${costPerYear},-${years.length > 1 ? ` per jaar` : ''}</li>
+<li>Na betaling dienen wij het formele verzoek in bij de Belastingdienst</li>
+</ol>
+
+<p>U kunt de documenten eenvoudig als bijlage bij een reply op deze email sturen of uploaden via uw persoonlijke dossier.</p>
+
+<p><strong>Wilt u doorgaan?</strong> Stuur ons de gevraagde jaaropgaven en wij zetten de factuur voor u klaar.</p>
 
 <p>Met vriendelijke groet,</p>`;
 
     } else if (determinedType === 'not_profitable') {
-      subject = `Box 3 bezwaar ${yearRange} - onze beoordeling`;
+      subject = `Box 3 ${yearRange} - onze beoordeling`;
 
-      const refundText = totalIndicativeRefund > 0
-        ? `De indicatieve teruggave bedraagt €${totalIndicativeRefund.toFixed(2)}.`
-        : 'Op basis van de gegevens is er geen teruggave te verwachten.';
+      const costPerYearNotProfitable = BOX3_CONSTANTS.COST_PER_YEAR;
+      const totalTaxPaidRoundedNotProfitable = Math.round(totalTaxPaid);
+      const indicativeRefundRounded = Math.round(totalIndicativeRefund);
 
       body = `<p>Beste ${firstName},</p>
 
-<p>Wij hebben uw Box 3 gegevens over ${yearRange} beoordeeld.</p>
+<h3>Resultaat van onze controle</h3>
 
-<p><strong>Conclusie:</strong> Bezwaar maken is in uw situatie helaas niet rendabel.</p>
+<p>Wij hebben uw aangifte inkomstenbelasting ${yearRange} gecontroleerd op mogelijkheden voor teruggave van Box 3 belasting.</p>
 
-<p>${refundText} De kosten voor het indienen van een bezwaarschrift bedragen €${BOX3_CONSTANTS.MINIMUM_PROFITABLE_AMOUNT},-. Omdat de mogelijke teruggave lager is dan deze kosten, raden wij af om bezwaar te maken.</p>
+${totalTaxPaidRoundedNotProfitable > 0 ? `<p>U heeft <strong>€${totalTaxPaidRoundedNotProfitable},-</strong> Box 3 belasting betaald.</p>` : ''}
 
-<p><strong>Waarom geen voordeel?</strong></p>
-<p>Het Box 3 bezwaar is gebaseerd op het verschil tussen uw werkelijke rendement en het forfaitaire rendement dat de Belastingdienst hanteert. In uw geval ligt uw werkelijke rendement niet significant lager dan het forfaitaire rendement.</p>
+<h3>Onze conclusie</h3>
+
+<p>Helaas is een verzoek tot toepassing werkelijk rendement in uw situatie <strong>niet rendabel</strong>.</p>
+
+${indicativeRefundRounded > 0
+  ? `<p>De mogelijke teruggave bedraagt circa <strong>€${indicativeRefundRounded},-</strong>. De kosten voor het indienen van een verzoek bedragen €${costPerYearNotProfitable},- per jaar. Omdat de teruggave lager is dan de kosten, raden wij af om door te gaan.</p>`
+  : `<p>Op basis van de gegevens is er geen teruggave te verwachten. Uw werkelijke rendement ligt niet lager dan het forfaitaire rendement dat de Belastingdienst heeft gehanteerd.</p>`}
+
+<h3>Waarom geen voordeel?</h3>
+
+<p>Het verzoek werkelijk rendement is gebaseerd op het verschil tussen uw <strong>daadwerkelijke rente en dividend</strong> en het <strong>forfaitaire rendement</strong> dat de Belastingdienst hanteert. In uw geval ligt uw werkelijke rendement niet significant lager dan het forfaitaire rendement.</p>
 
 <p>Mocht uw situatie in de toekomst veranderen (bijvoorbeeld door lagere rendementen op spaargeld), dan kunt u altijd opnieuw contact met ons opnemen.</p>
 
@@ -1330,22 +1423,47 @@ ${displayRefundRounded > 0 ? costSection : ''}
 <p>Met vriendelijke groet,</p>`;
 
     } else { // profitable
-      subject = `Box 3 bezwaar ${yearRange} - goed nieuws!`;
+      subject = `Box 3 ${yearRange} - uw teruggave is berekend`;
+
+      // Calculate values for profitable email
+      const costPerYear = BOX3_CONSTANTS.COST_PER_YEAR;
+      const totalCost = years.length * costPerYear;
+      const netRefundProfitable = Math.round(totalIndicativeRefund) - totalCost;
+      const totalTaxPaidRoundedProfitable = Math.round(totalTaxPaid);
 
       body = `<p>Beste ${firstName},</p>
 
-<p>Goed nieuws! Wij hebben uw Box 3 gegevens over ${yearRange} beoordeeld en bezwaar maken is in uw situatie <strong>wél voordelig</strong>.</p>
+<h3>Resultaat van onze controle</h3>
 
-<p><strong>Indicatieve teruggave: €${totalIndicativeRefund.toFixed(2)}</strong></p>
+<p>Goed nieuws! Wij hebben uw aangifte inkomstenbelasting ${yearRange} gecontroleerd en de berekening is compleet.</p>
 
-<p>Dit bedrag is gebaseerd op het verschil tussen uw werkelijke rendement en het forfaitaire rendement dat de Belastingdienst heeft gehanteerd. De daadwerkelijke teruggave kan afwijken afhankelijk van de definitieve beoordeling door de Belastingdienst.</p>
+<p>${totalTaxPaidRoundedProfitable > 0 ? `U heeft <strong>€${totalTaxPaidRoundedProfitable},-</strong> Box 3 belasting betaald. ` : ''}De <strong>Hoge Raad</strong> heeft bepaald dat u niet meer belasting hoeft te betalen dan uw <strong>werkelijk behaalde rendement</strong>. Uw werkelijke rendement was lager dan wat de Belastingdienst veronderstelde.</p>
 
-<p><strong>Hoe nu verder?</strong></p>
-<p>Als u wilt dat wij het bezwaarschrift voor u opstellen en indienen, dan kunt u dat via deze link bevestigen. De kosten hiervoor bedragen €${BOX3_CONSTANTS.MINIMUM_PROFITABLE_AMOUNT},-.</p>
+<refund_visual></refund_visual>
 
-<p>Na uw bevestiging stellen wij het bezwaarschrift op en dienen dit namens u in bij de Belastingdienst.</p>
+<h3>Uw teruggave</h3>
 
-<p>Heeft u vragen? Neem gerust contact met ons op.</p>
+<p><strong>Berekende teruggave: €${Math.round(totalIndicativeRefund)},-</strong></p>
+
+<p>Dit bedrag is gebaseerd op het verschil tussen uw werkelijke rendement en het forfaitaire rendement dat de Belastingdienst heeft gehanteerd.</p>
+
+<h3>Onze service</h3>
+
+<ul>
+<li><strong>Service:</strong> Opstellen en indienen van het officiële verzoek tot toepassing werkelijk rendement</li>
+<li><strong>Kosten:</strong> €${costPerYear},- per belastingjaar${years.length > 1 ? ` (totaal €${totalCost},- voor ${years.length} jaren)` : ''}</li>
+<li><strong>Netto voordeel:</strong> €${netRefundProfitable},- (teruggave minus kosten)</li>
+</ul>
+
+<h3>Hoe gaan wij te werk?</h3>
+
+<ol>
+<li>U geeft akkoord om door te gaan</li>
+<li>U ontvangt een factuur van €${costPerYear},-${years.length > 1 ? ` per jaar` : ''}</li>
+<li>Na betaling dienen wij het formele verzoek in bij de Belastingdienst</li>
+</ol>
+
+<p><strong>Wilt u doorgaan?</strong> Reageer op deze email met uw akkoord en wij zetten de factuur voor u klaar.</p>
 
 <p>Met vriendelijke groet,</p>`;
     }

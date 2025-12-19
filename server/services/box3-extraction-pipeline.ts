@@ -254,6 +254,11 @@ export class Box3ExtractionPipeline {
     if (bankResult?.extraction_notes.missing.length) {
       errors.push(`Ontbrekende bankrekeningen: ${bankResult.extraction_notes.missing.join(', ')}`);
     }
+    if (bankResult?.extraction_notes.warnings?.length) {
+      for (const warning of bankResult.extraction_notes.warnings) {
+        errors.push(warning);
+      }
+    }
     if (realEstateResult?.extraction_notes.missing.length) {
       errors.push(`Ontbrekende onroerende zaken: ${realEstateResult.extraction_notes.missing.join(', ')}`);
     }
@@ -581,28 +586,69 @@ export class Box3ExtractionPipeline {
     debugPrompts: Record<string, string>,
     debugResponses: Record<string, string>
   ): Promise<Box3BankExtractionResult | null> {
+    // Try extraction, with vision retry if text-based extraction fails
+    const result = await this.tryBankExtraction(documents, checklist, debugPrompts, debugResponses, false);
+
+    // If we found 0 accounts but expected some, retry with forced vision
+    if (result && result.bank_savings.length === 0 && checklist.bank_count > 0) {
+      logger.warn('box3-pipeline', 'Bank extraction found 0 accounts, retrying with vision...', {
+        expectedCount: checklist.bank_count,
+      });
+
+      const retryResult = await this.tryBankExtraction(documents, checklist, debugPrompts, debugResponses, true);
+      if (retryResult && retryResult.bank_savings.length > 0) {
+        logger.info('box3-pipeline', `Vision retry found ${retryResult.bank_savings.length} accounts`);
+        return retryResult;
+      }
+
+      // Both attempts failed, return original result with warning
+      result.extraction_notes.warnings.push(
+        `Geen bankrekeningen gevonden na 2 pogingen (text + vision). Controleer de documenten handmatig.`
+      );
+    }
+
+    return result;
+  }
+
+  private async tryBankExtraction(
+    documents: PipelineDocument[],
+    checklist: Box3AssetReferences,
+    debugPrompts: Record<string, string>,
+    debugResponses: Record<string, string>,
+    forceVision: boolean
+  ): Promise<Box3BankExtractionResult | null> {
     const prompt = buildBankExtractionPrompt({
       bank_count: checklist.bank_count,
       bank_descriptions: checklist.bank_descriptions,
     });
 
+    const debugKey = forceVision ? 'bank_extraction_vision_retry' : 'bank_extraction';
+
+    // If forceVision, ignore extracted text and use vision for all PDFs
     const docSections = documents.map((doc, i) => {
-      if (doc.extractedText) {
+      if (!forceVision && doc.extractedText) {
         return `### Document ${i + 1}: ${doc.filename}\n\`\`\`\n${doc.extractedText}\n\`\`\``;
       }
       return `### Document ${i + 1}: ${doc.filename}\n(Zie bijgevoegde afbeelding/PDF)`;
     });
 
     const fullPrompt = `${prompt}\n\n## DOCUMENTEN:\n${docSections.join('\n\n')}\n\nExtraheer nu ALLE bankrekeningen.`;
-    debugPrompts['bank_extraction'] = fullPrompt;
+    debugPrompts[debugKey] = fullPrompt;
 
-    const visionAttachments = documents
-      .filter(doc => !doc.extractedText)
-      .map(doc => ({
-        mimeType: doc.mimeType,
-        data: doc.fileData,
-        filename: doc.filename,
-      }));
+    // If forceVision, include ALL documents as vision attachments
+    const visionAttachments = forceVision
+      ? documents.map(doc => ({
+          mimeType: doc.mimeType,
+          data: doc.fileData,
+          filename: doc.filename,
+        }))
+      : documents
+          .filter(doc => !doc.extractedText)
+          .map(doc => ({
+            mimeType: doc.mimeType,
+            data: doc.fileData,
+            filename: doc.filename,
+          }));
 
     try {
       const result = await this.factory.callModel(
@@ -614,33 +660,63 @@ export class Box3ExtractionPipeline {
         visionAttachments.length > 0 ? { visionAttachments } : undefined
       );
 
-      debugResponses['bank_extraction'] = result.content;
+      debugResponses[debugKey] = result.content;
       const json = this.parseJSON(result.content);
 
       if (json) {
+        const bankSavings = (json.bank_savings || []).map((bank: any, i: number) => ({
+          id: bank.id || `bank_${i + 1}`,
+          owner_id: bank.owner_id || 'tp_01',
+          description: bank.description || '',
+          account_masked: bank.account_masked,
+          bank_name: bank.bank_name,
+          country: bank.country || 'NL',
+          is_joint_account: bank.is_joint_account || false,
+          ownership_percentage: bank.ownership_percentage || 100,
+          is_green_investment: bank.is_green_investment || false,
+          yearly_data: bank.yearly_data || {},
+        }));
+
+        const foundCount = bankSavings.length;
+        const expectedCount = checklist.bank_count;
+        const warnings: string[] = json.extraction_notes?.warnings || [];
+
+        // Log warning if we found significantly fewer than expected
+        if (expectedCount > 0 && foundCount < expectedCount) {
+          const missingCount = expectedCount - foundCount;
+          logger.warn('box3-pipeline', `Bank extraction found ${foundCount}/${expectedCount} accounts (${missingCount} missing)`, {
+            expected: expectedCount,
+            found: foundCount,
+            expectedDescriptions: checklist.bank_descriptions,
+            responseLength: result.content.length,
+            usedVision: forceVision,
+          });
+
+          // Add warning to extraction notes
+          if (foundCount === 0) {
+            warnings.push(`Geen bankrekeningen geëxtraheerd terwijl ${expectedCount} verwacht.`);
+          } else {
+            warnings.push(`${missingCount} van ${expectedCount} bankrekeningen niet gevonden.`);
+          }
+        }
+
         return {
-          bank_savings: (json.bank_savings || []).map((bank: any, i: number) => ({
-            id: bank.id || `bank_${i + 1}`,
-            owner_id: bank.owner_id || 'tp_01',
-            description: bank.description || '',
-            account_masked: bank.account_masked,
-            bank_name: bank.bank_name,
-            country: bank.country || 'NL',
-            is_joint_account: bank.is_joint_account || false,
-            ownership_percentage: bank.ownership_percentage || 100,
-            is_green_investment: bank.is_green_investment || false,
-            yearly_data: bank.yearly_data || {},
-          })),
-          extraction_notes: json.extraction_notes || {
-            total_found: json.bank_savings?.length || 0,
-            expected_from_checklist: checklist.bank_count,
+          bank_savings: bankSavings,
+          extraction_notes: json.extraction_notes ? {
+            ...json.extraction_notes,
+            total_found: foundCount,
+            expected_from_checklist: expectedCount,
+            warnings,
+          } : {
+            total_found: foundCount,
+            expected_from_checklist: expectedCount,
             missing: [],
-            warnings: [],
+            warnings,
           },
         };
       }
     } catch (err: any) {
-      logger.error('box3-pipeline', 'Bank extraction failed', { error: err.message });
+      logger.error('box3-pipeline', 'Bank extraction failed', { error: err.message, usedVision: forceVision });
     }
 
     return null;

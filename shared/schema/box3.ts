@@ -67,6 +67,11 @@ export const box3Documents = pgTable("box3_documents", {
   uploadedAt: timestamp("uploaded_at").defaultNow(),
   uploadedVia: text("uploaded_via"), // "intake" | "aanvulling" | "hervalidatie"
 
+  // Text extraction results
+  extractedText: text("extracted_text"), // Raw text from PDF parsing
+  extractionStatus: text("extraction_status"), // "success" | "low_yield" | "failed" | "password_protected"
+  extractionCharCount: integer("extraction_char_count"), // Number of chars extracted
+
   // AI classificatie (JSON voor flexibiliteit)
   classification: jsonb("classification").$type<Box3DocumentClassification>(),
   extractionSummary: text("extraction_summary"),

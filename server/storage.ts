@@ -986,6 +986,9 @@ export class DatabaseStorage implements IStorage {
       fileSize: box3Documents.fileSize,
       uploadedAt: box3Documents.uploadedAt,
       uploadedVia: box3Documents.uploadedVia,
+      extractedText: box3Documents.extractedText,
+      extractionStatus: box3Documents.extractionStatus,
+      extractionCharCount: box3Documents.extractionCharCount,
       classification: box3Documents.classification,
       extractionSummary: box3Documents.extractionSummary,
       extractedValues: box3Documents.extractedValues,
@@ -1093,16 +1096,26 @@ export async function initializeDossierSequence() {
   sequenceSyncChecked = false;
 
   try {
+    // First, ensure the sequence exists
+    await db.execute(sql`
+      CREATE SEQUENCE IF NOT EXISTS dossier_number_seq START WITH 1
+    `);
+
     // Get current max to log it
     const maxResult = await db.execute(sql`SELECT COALESCE(MAX(dossier_number), 0) as max_num FROM reports`);
     const maxRows = maxResult as any;
     const currentMax = maxRows?.rows?.[0]?.max_num ?? maxRows?.[0]?.max_num ?? 0;
 
     // Set sequence to current max (nextval will return max+1)
-    await db.execute(sql`
-      SELECT setval('dossier_number_seq', ${currentMax})
-    `);
-    logger.info('storage', `Dossier sequence initialized: set to ${currentMax} (next will be ${currentMax + 1})`);
+    // Only set if currentMax > 0 to avoid resetting to 0
+    if (currentMax > 0) {
+      await db.execute(sql`
+        SELECT setval('dossier_number_seq', ${currentMax})
+      `);
+      logger.info('storage', `Dossier sequence initialized: set to ${currentMax} (next will be ${currentMax + 1})`);
+    } else {
+      logger.info('storage', 'Dossier sequence created (no existing reports)');
+    }
     sequenceSyncChecked = true;
   } catch (error) {
     logger.error('storage', 'Failed to initialize dossier sequence', {}, error instanceof Error ? error : undefined);
