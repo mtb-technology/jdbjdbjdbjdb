@@ -15,7 +15,9 @@ import { getLatestConceptText } from "@shared/constants";
 import { summarizeFeedback } from "../utils/feedback-summarizer";
 import { notifyStageComplete, notifyExpressModeComplete, notifyJobFailed, isSlackEnabled } from "./slack-notifier";
 import { logger } from "./logger";
-import type { Job, DossierData, BouwplanData, StageId, PromptConfig } from "@shared/schema";
+import { Box3ExtractionPipeline, type PipelineDocument } from "./box3-extraction-pipeline";
+import { getPdfParse } from "./pdf-text-extractor";
+import type { Job, DossierData, BouwplanData, StageId, PromptConfig, Box3DocumentClassification } from "@shared/schema";
 import type {
   ConceptReportVersions,
   StageResults,
@@ -24,7 +26,7 @@ import type {
 } from "@shared/types/report-data";
 
 // Job types
-export type JobType = "single_stage" | "express_mode" | "generation";
+export type JobType = "single_stage" | "express_mode" | "generation" | "box3_revalidation";
 
 // Progress structure stored in jobs.progress JSON
 export interface JobProgress {
@@ -54,6 +56,11 @@ export interface ExpressModeJobConfig {
   stages?: string[];
   reportDepth?: "concise" | "balanced" | "comprehensive";
   reportLanguage?: "nl" | "en";
+}
+
+// Box3 revalidation job config (dossierId stored in reportId field)
+export interface Box3RevalidationJobConfig {
+  // No additional config needed - dossier ID is in reportId
 }
 
 class JobProcessor {
@@ -169,6 +176,9 @@ class JobProcessor {
           break;
         case "express_mode":
           await this.processExpressMode(job, config as ExpressModeJobConfig);
+          break;
+        case "box3_revalidation":
+          await this.processBox3Revalidation(job);
           break;
         default:
           throw new Error(`Unknown job type: ${job.type}`);
@@ -750,6 +760,233 @@ class JobProcessor {
         jobDuration
       );
     }
+  }
+
+  /**
+   * Process Box3 Revalidation job
+   * Extracts data from documents and creates a new blueprint version.
+   */
+  private async processBox3Revalidation(job: Job): Promise<void> {
+    // For Box3 jobs, reportId contains the dossier ID
+    const dossierId = job.reportId!;
+
+    // Update progress - starting
+    await this.updateBox3Progress(job.id, 0, 5, 'Dossier laden...', 'loading');
+
+    // Get dossier
+    const dossier = await storage.getBox3Dossier(dossierId);
+    if (!dossier) {
+      throw new Error('Dossier niet gevonden');
+    }
+
+    // Get all documents
+    const documents = await storage.getBox3DocumentsForDossier(dossierId);
+    if (documents.length === 0) {
+      throw new Error('Geen documenten om te valideren');
+    }
+
+    logger.info(job.id, 'Box3 revalidation started', {
+      dossierId,
+      documentCount: documents.length
+    });
+
+    // Update progress - preparing documents
+    await this.updateBox3Progress(job.id, 1, 5, `Documenten voorbereiden (${documents.length} stuks)...`, 'preparation');
+
+    // Prepare documents for pipeline
+    const pipelineDocs: PipelineDocument[] = [];
+    for (const doc of documents) {
+      let extractedText: string | undefined;
+      const ext = doc.filename.toLowerCase().split('.').pop();
+      const isPDF = doc.mimeType === 'application/pdf' ||
+                    (doc.mimeType === 'application/octet-stream' && ext === 'pdf');
+      const isTXT = doc.mimeType === 'text/plain' ||
+                    (doc.mimeType === 'application/octet-stream' && ext === 'txt');
+
+      if (isPDF) {
+        try {
+          const PDFParseClass = await getPdfParse();
+          const buffer = Buffer.from(doc.fileData, 'base64');
+          const parser = new PDFParseClass({ data: buffer });
+          const result = await parser.getText();
+          extractedText = result.text || "";
+        } catch {
+          // Vision will handle it
+        }
+      } else if (isTXT) {
+        extractedText = Buffer.from(doc.fileData, 'base64').toString('utf-8');
+      }
+
+      pipelineDocs.push({
+        id: doc.id,
+        filename: doc.filename,
+        mimeType: doc.mimeType,
+        fileData: doc.fileData,
+        extractedText,
+      });
+    }
+
+    // Check if cancelled before pipeline
+    if (await this.isJobCancelled(job.id)) {
+      logger.info(job.id, 'Box3 job cancelled before pipeline');
+      return;
+    }
+
+    // Run extraction pipeline with progress updates
+    const pipeline = new Box3ExtractionPipeline((progress) => {
+      // Map pipeline steps to job progress
+      this.updateBox3Progress(
+        job.id,
+        progress.stepNumber,
+        progress.totalSteps,
+        progress.message,
+        progress.step
+      );
+    });
+
+    const pipelineResult = await pipeline.run(pipelineDocs, dossier.intakeText || null);
+    const blueprint = pipelineResult.blueprint;
+
+    // Check if cancelled after pipeline
+    if (await this.isJobCancelled(job.id)) {
+      logger.info(job.id, 'Box3 job cancelled after pipeline');
+      return;
+    }
+
+    // Log pipeline errors (non-fatal)
+    if (pipelineResult.errors.length > 0) {
+      logger.warn(job.id, 'Box3 pipeline had non-fatal errors', {
+        errorCount: pipelineResult.errors.length,
+        errors: pipelineResult.errors
+      });
+    }
+
+    // Update progress - saving
+    await this.updateBox3Progress(job.id, 5, 5, 'Blueprint opslaan...', 'saving');
+
+    // Get current version and increment
+    const currentBlueprint = await storage.getLatestBox3Blueprint(dossierId);
+    const newVersion = (currentBlueprint?.version || 0) + 1;
+
+    // Store new blueprint
+    await storage.createBox3Blueprint({
+      dossierId,
+      version: newVersion,
+      blueprint,
+      createdBy: 'pipeline',
+    });
+
+    // Extract tax years from blueprint
+    const taxYears = this.extractTaxYearsFromBlueprint(blueprint);
+    const hasFiscalPartner = blueprint.fiscal_entity?.fiscal_partner?.has_partner || false;
+
+    // Update dossier
+    await storage.updateBox3Dossier(dossierId, {
+      taxYears: taxYears.length > 0 ? taxYears : null,
+      hasFiscalPartner,
+    });
+
+    // Update document classifications (batched)
+    if (blueprint.source_documents_registry) {
+      const updates: Array<{
+        id: string;
+        data: {
+          classification: Box3DocumentClassification;
+          extractionSummary: string | null
+        }
+      }> = [];
+
+      for (let i = 0; i < blueprint.source_documents_registry.length; i++) {
+        const regEntry = blueprint.source_documents_registry[i];
+        const matchingDoc = documents[i];
+
+        if (matchingDoc) {
+          updates.push({
+            id: matchingDoc.id,
+            data: {
+              classification: {
+                document_type: this.mapDetectedTypeToClassification(regEntry.detected_type),
+                tax_years: regEntry.detected_tax_year ? [String(regEntry.detected_tax_year)] : [],
+                for_person: null,
+                confidence: regEntry.is_readable ? 'high' : 'low',
+              },
+              extractionSummary: regEntry.notes || null,
+            },
+          });
+        }
+      }
+
+      if (updates.length > 0) {
+        await storage.updateBox3DocumentsBatch(updates);
+      }
+    }
+
+    logger.info(job.id, `Box3 Blueprint v${newVersion} created`, { dossierId });
+
+    // Complete the job
+    await storage.completeJob(job.id, {
+      success: true,
+      blueprintVersion: newVersion,
+      taxYears,
+      documentCount: documents.length,
+      pipelineErrors: pipelineResult.errors,
+    });
+  }
+
+  /**
+   * Helper to update Box3 job progress
+   */
+  private async updateBox3Progress(
+    jobId: string,
+    step: number,
+    totalSteps: number,
+    message: string,
+    phase: string
+  ): Promise<void> {
+    await storage.updateJobProgress(jobId, {
+      currentStage: phase,
+      percentage: Math.round((step / totalSteps) * 100),
+      message,
+      stages: [{
+        stageId: phase,
+        status: step >= totalSteps ? "completed" : "processing",
+        percentage: Math.round((step / totalSteps) * 100)
+      }],
+    });
+  }
+
+  /**
+   * Extract tax years from blueprint
+   */
+  private extractTaxYearsFromBlueprint(blueprint: any): string[] {
+    const years = new Set<string>();
+    if (blueprint?.year_summaries) {
+      Object.keys(blueprint.year_summaries).forEach(year => years.add(year));
+    }
+    if (blueprint?.source_documents_registry) {
+      blueprint.source_documents_registry.forEach((doc: any) => {
+        if (doc.detected_tax_year) {
+          years.add(String(doc.detected_tax_year));
+        }
+      });
+    }
+    return Array.from(years).sort();
+  }
+
+  /**
+   * Map detected document type to classification
+   */
+  private mapDetectedTypeToClassification(detectedType: string): Box3DocumentClassification['document_type'] {
+    const mapping: Record<string, Box3DocumentClassification['document_type']> = {
+      'aangifte_ib': 'aangifte_ib',
+      'aanslag_definitief': 'definitieve_aanslag',
+      'aanslag_voorlopig': 'voorlopige_aanslag',
+      'jaaropgave_bank': 'jaaroverzicht_bank',
+      'woz_beschikking': 'woz_beschikking',
+      'email_body': 'overig',
+      'overig': 'overig',
+    };
+    return mapping[detectedType] || 'overig';
   }
 
   /**
