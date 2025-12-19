@@ -416,7 +416,41 @@ export class Box3ExtractionPipeline {
     });
 
     const stage5Start = Date.now();
-    const validation = this.validateExtraction(blueprint, assetReferences);
+    let validation = this.validateExtraction(blueprint, assetReferences);
+
+    // Stage 5b: Reconciliation - If significant discrepancy, try to find missing items
+    const assetTotalCheck = validation.checks.find(c => c.check_type === 'asset_total' && !c.passed);
+    const assetCountCheck = validation.checks.find(c => c.check_type === 'asset_count' && !c.passed);
+    const hasSignificantDiscrepancy = assetTotalCheck && (assetTotalCheck.details?.difference || 0) > 1000;
+    const hasMissingAssets = assetCountCheck && !assetCountCheck.passed;
+
+    if (hasSignificantDiscrepancy || hasMissingAssets) {
+      this.reportProgress({
+        step: 'validation',
+        stepNumber: 5,
+        totalSteps,
+        message: 'Discrepantie gevonden - reconciliatie uitvoeren...',
+        subProgress: { current: 1, total: 3, item: 'reconciliation' },
+      });
+
+      const reconciliationResult = await this.reconcileDiscrepancy(
+        blueprint,
+        assetReferences,
+        preparedDocs,
+        validation,
+        debugPrompts,
+        debugResponses
+      );
+
+      if (reconciliationResult.itemsAdded > 0) {
+        logger.info('box3-pipeline', `Reconciliation added ${reconciliationResult.itemsAdded} items`, {
+          addedItems: reconciliationResult.addedDescriptions,
+        });
+
+        // Re-validate after reconciliation
+        validation = this.validateExtraction(blueprint, assetReferences);
+      }
+    }
 
     // Stage 5c: LLM-assisted anomaly detection (runs in parallel with rule-based checks conceptually)
     // Uses REASONING_CONFIG for high-quality analysis
@@ -425,7 +459,7 @@ export class Box3ExtractionPipeline {
       stepNumber: 5,
       totalSteps,
       message: 'LLM anomalie detectie uitvoeren...',
-      subProgress: { current: 2, total: 2, item: 'anomaly_detection' },
+      subProgress: { current: 2, total: 3, item: 'anomaly_detection' },
     });
 
     const anomalyChecks = await this.detectAnomaliesWithLLM(blueprint, debugPrompts, debugResponses);
@@ -477,6 +511,9 @@ export class Box3ExtractionPipeline {
         expected: check.details.expected,
         actual: check.details.actual,
         difference: check.details.difference,
+        field: check.details.field,
+        missing_descriptions: check.details.missing_descriptions,
+        checklist_descriptions: check.details.checklist_descriptions,
       } : undefined,
     }));
 
@@ -1804,22 +1841,40 @@ export class Box3ExtractionPipeline {
       });
     }
 
-    // Check 2: Bank Account Count
+    // Check 2: Bank Account Count with missing identification
     const extractedBankCount = blueprint.assets.bank_savings.length;
     const expectedBankCount = assetReferences.bank_count;
 
     if (expectedBankCount > 0) {
+      // Try to identify which bank accounts from the checklist are missing
+      const missingBanks = this.identifyMissingBankAccounts(
+        assetReferences.bank_descriptions,
+        blueprint.assets.bank_savings
+      );
+
+      const missingCount = expectedBankCount - extractedBankCount;
+      let message = extractedBankCount >= expectedBankCount
+        ? `Alle ${expectedBankCount} bankrekeningen gevonden`
+        : `${missingCount} van ${expectedBankCount} bankrekeningen niet gevonden`;
+
+      // Add missing bank descriptions to message if identified
+      if (missingBanks.length > 0 && missingCount > 0) {
+        const missingList = missingBanks.slice(0, 3).join(', ');
+        const moreCount = missingBanks.length > 3 ? ` (+${missingBanks.length - 3} meer)` : '';
+        message += `. Mogelijk ontbrekend: ${missingList}${moreCount}`;
+      }
+
       checks.push({
         check_type: 'asset_count',
         passed: extractedBankCount >= expectedBankCount,
         severity: extractedBankCount < expectedBankCount ? 'warning' : 'info',
-        message: extractedBankCount >= expectedBankCount
-          ? `Alle ${expectedBankCount} bankrekeningen gevonden`
-          : `${expectedBankCount - extractedBankCount} van ${expectedBankCount} bankrekeningen niet gevonden`,
+        message,
         details: {
           expected: expectedBankCount,
           actual: extractedBankCount,
           field: 'bank_count',
+          missing_descriptions: missingBanks,
+          checklist_descriptions: assetReferences.bank_descriptions,
         },
       });
     }
@@ -2164,6 +2219,319 @@ export class Box3ExtractionPipeline {
   }
 
   // ===========================================================================
+  // STAGE 5b: RECONCILIATION - Find missing items when discrepancy detected
+  // ===========================================================================
+
+  /**
+   * When validation detects a significant discrepancy between aangifte totals
+   * and extracted totals, this method attempts to identify and extract the
+   * missing items using a high-thinking model.
+   */
+  private async reconcileDiscrepancy(
+    blueprint: Box3Blueprint,
+    assetReferences: Box3AssetReferences,
+    documents: PipelineDocument[],
+    validation: Box3ValidationResult,
+    debugPrompts: Record<string, string>,
+    debugResponses: Record<string, string>
+  ): Promise<{ itemsAdded: number; addedDescriptions: string[] }> {
+    const result = { itemsAdded: 0, addedDescriptions: [] as string[] };
+
+    try {
+      logger.info('box3-pipeline', 'Stage 5b: Starting reconciliation...');
+
+      // Build context about the discrepancy
+      const years = Object.keys(blueprint.tax_authority_data);
+      const discrepancyInfo: Record<string, { expected: number; extracted: number; difference: number }> = {};
+
+      for (const year of years) {
+        const taxData = blueprint.tax_authority_data[year];
+        if (!taxData?.household_totals) continue;
+
+        const expected = taxData.household_totals.total_assets_gross || 0;
+        const extracted = this.sumAllAssets(blueprint, year);
+        const difference = expected - extracted;
+
+        if (Math.abs(difference) > 500) {
+          discrepancyInfo[year] = { expected, extracted, difference };
+        }
+      }
+
+      // Build list of already extracted items to exclude
+      const extractedItems = {
+        bank_accounts: blueprint.assets.bank_savings.map(b => ({
+          description: (b.description || b.bank_name) ?? null,
+          account: b.account_masked ?? null,
+          values: Object.fromEntries(
+            Object.entries(b.yearly_data).map(([y, d]) => [y, this.getAmount(d.value_jan_1)])
+          ) as Record<string, number>,
+        })),
+        investments: blueprint.assets.investments.map(i => ({
+          description: (i.description || i.institution) ?? null,
+          values: Object.fromEntries(
+            Object.entries(i.yearly_data).map(([y, d]) => [y, this.getAmount(d.value_jan_1)])
+          ) as Record<string, number>,
+        })),
+        other_assets: blueprint.assets.other_assets.map(o => ({
+          description: o.description ?? null,
+          type: o.type,
+          values: Object.fromEntries(
+            Object.entries(o.yearly_data).map(([y, d]) => [y, this.getAmount(d.value_jan_1)])
+          ) as Record<string, number>,
+        })),
+      };
+
+      // Build the reconciliation prompt
+      const prompt = this.buildReconciliationPrompt(
+        discrepancyInfo,
+        assetReferences,
+        extractedItems
+      );
+
+      debugPrompts['reconciliation'] = prompt;
+
+      // Prepare document sections for context
+      const docSections = documents.slice(0, 5).map((doc, i) => {
+        if (doc.extractedText) {
+          return `### Document ${i + 1}: ${doc.filename}\n\`\`\`\n${doc.extractedText.slice(0, 8000)}\n\`\`\``;
+        }
+        return `### Document ${i + 1}: ${doc.filename}\n(Bijgevoegde afbeelding/PDF)`;
+      });
+
+      const fullPrompt = `${prompt}\n\n## BRON DOCUMENTEN:\n${docSections.join('\n\n')}`;
+
+      // Use high-thinking model for reconciliation (text-only, no images needed - we have the extracted text)
+      const aiResult = await this.factory.callModel(
+        {
+          ...this.REASONING_CONFIG,
+          temperature: 0.1, // Low temperature for precise extraction
+        },
+        fullPrompt
+      );
+
+      debugResponses['reconciliation'] = aiResult.content;
+      const json = this.parseJSON(aiResult.content);
+
+      if (json?.missing_items && Array.isArray(json.missing_items)) {
+        for (const item of json.missing_items) {
+          const added = this.addMissingItemToBlueprint(blueprint, item, years);
+          if (added) {
+            result.itemsAdded++;
+            result.addedDescriptions.push(item.description || item.type || 'Unknown item');
+          }
+        }
+
+        logger.info('box3-pipeline', 'Stage 5b complete: Reconciliation finished', {
+          itemsFound: json.missing_items.length,
+          itemsAdded: result.itemsAdded,
+          confidence: json.confidence,
+        });
+      }
+    } catch (err: any) {
+      logger.error('box3-pipeline', 'Stage 5b failed: Reconciliation error', {
+        error: err.message,
+      });
+      // Don't fail the pipeline if reconciliation fails
+    }
+
+    return result;
+  }
+
+  /**
+   * Build the reconciliation prompt that asks the LLM to find missing items.
+   */
+  private buildReconciliationPrompt(
+    discrepancyInfo: Record<string, { expected: number; extracted: number; difference: number }>,
+    assetReferences: Box3AssetReferences,
+    extractedItems: {
+      bank_accounts: Array<{ description: string | null; account: string | null; values: Record<string, number> }>;
+      investments: Array<{ description: string | null; values: Record<string, number> }>;
+      other_assets: Array<{ description: string | null; type: string; values: Record<string, number> }>;
+    }
+  ): string {
+    return `# RECONCILIATIE: Vind Ontbrekende Vermogensbestanddelen
+
+## PROBLEEM
+Er is een significante discrepantie tussen de aangifte totalen en wat we hebben geëxtraheerd:
+
+${Object.entries(discrepancyInfo).map(([year, info]) =>
+  `### Jaar ${year}:
+- Aangifte totaal: €${info.expected.toLocaleString('nl-NL')}
+- Geëxtraheerd totaal: €${info.extracted.toLocaleString('nl-NL')}
+- **Verschil: €${info.difference.toLocaleString('nl-NL')}** ${info.difference > 0 ? '(we missen iets)' : '(we hebben te veel)'}`
+).join('\n\n')}
+
+## CHECKLIST UIT AANGIFTE
+De aangifte vermeldt de volgende vermogensbestanddelen:
+
+**Bankrekeningen (${assetReferences.bank_count} verwacht):**
+${assetReferences.bank_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
+
+**Beleggingen (${assetReferences.investment_count} verwacht):**
+${assetReferences.investment_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n') || '(geen)'}
+
+**Overige bezittingen (${assetReferences.other_assets_count} verwacht):**
+${assetReferences.other_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n') || '(geen)'}
+
+## REEDS GEËXTRAHEERD
+We hebben al de volgende items geëxtraheerd:
+
+**Bankrekeningen (${extractedItems.bank_accounts.length} gevonden):**
+${extractedItems.bank_accounts.map(b => `- ${b.description} ${b.account || ''}`).join('\n')}
+
+**Beleggingen (${extractedItems.investments.length} gevonden):**
+${extractedItems.investments.map(i => `- ${i.description}`).join('\n') || '(geen)'}
+
+**Overige bezittingen (${extractedItems.other_assets.length} gevonden):**
+${extractedItems.other_assets.map(o => `- ${o.description} (${o.type})`).join('\n') || '(geen)'}
+
+## OPDRACHT
+Analyseer de brondocumenten en identificeer welke vermogensbestanddelen ONTBREKEN.
+
+Let specifiek op:
+1. **Premiedepots** - vaak apart vermeld in de aangifte onder "Overige bezittingen"
+2. **Kapitaalverzekeringen** - kunnen makkelijk over het hoofd worden gezien
+3. **VvE reserves** - aandeel in Vereniging van Eigenaren
+4. **Pensioenrekeningen** - niet Box 1 lijfrente, maar Box 3 premiedepots
+5. **Bankrekeningen met €0 saldo** die wel in de checklist staan
+
+## OUTPUT FORMAT (alleen JSON):
+{
+  "analysis": "Korte analyse van wat er mist en waarom",
+  "missing_items": [
+    {
+      "category": "other_assets",
+      "type": "premiedepot",
+      "description": "Pensioenrekening Tijmenhupkens1",
+      "owner_id": "tp_01",
+      "yearly_data": {
+        "2022": { "value_jan_1": 14862 }
+      },
+      "confidence": 0.95,
+      "source_snippet": "Premiedepots € 14.862"
+    }
+  ],
+  "confidence": 0.9,
+  "notes": "Eventuele opmerkingen"
+}
+
+KRITIEK: Extraheer ALLEEN items die:
+1. In de checklist of documenten staan maar niet geëxtraheerd zijn
+2. Het verschil (deels) kunnen verklaren
+3. Duidelijk in de brondocumenten staan
+
+Geef een LEGE array als je niets kunt vinden.`;
+  }
+
+  /**
+   * Add a missing item to the blueprint based on reconciliation results.
+   */
+  private addMissingItemToBlueprint(
+    blueprint: Box3Blueprint,
+    item: {
+      category: 'other_assets' | 'bank_savings' | 'investments';
+      type?: string;
+      description: string;
+      owner_id?: string;
+      yearly_data: Record<string, { value_jan_1: number }>;
+      confidence?: number;
+      source_snippet?: string;
+    },
+    years: string[]
+  ): boolean {
+    if (!item.description || !item.yearly_data) {
+      return false;
+    }
+
+    // Check if item already exists (avoid duplicates)
+    const normalizedDesc = (item.description || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    if (item.category === 'bank_savings') {
+      const exists = blueprint.assets.bank_savings.some(b =>
+        (b.description || b.bank_name || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(normalizedDesc.slice(0, 10))
+      );
+      if (exists) return false;
+
+      const newId = `bs_reconciled_${blueprint.assets.bank_savings.length + 1}`;
+      blueprint.assets.bank_savings.push({
+        id: newId,
+        owner_id: item.owner_id || 'tp_01',
+        description: item.description,
+        bank_name: item.description,
+        account_masked: undefined,
+        country: 'NL',
+        is_joint_account: false,
+        ownership_percentage: 100,
+        is_green_investment: false,
+        yearly_data: Object.fromEntries(
+          Object.entries(item.yearly_data).map(([year, data]) => [
+            year,
+            {
+              value_jan_1: { amount: data.value_jan_1, source_doc_id: 'reconciliation', confidence: item.confidence || 0.8 },
+            },
+          ])
+        ),
+      });
+      return true;
+    }
+
+    if (item.category === 'investments') {
+      const exists = blueprint.assets.investments.some(i =>
+        (i.description || i.institution || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(normalizedDesc.slice(0, 10))
+      );
+      if (exists) return false;
+
+      const newId = `inv_reconciled_${blueprint.assets.investments.length + 1}`;
+      blueprint.assets.investments.push({
+        id: newId,
+        owner_id: item.owner_id || 'tp_01',
+        description: item.description,
+        institution: item.description,
+        account_masked: undefined,
+        type: (item.type as any) || 'other',
+        country: 'NL',
+        ownership_percentage: 100,
+        yearly_data: Object.fromEntries(
+          Object.entries(item.yearly_data).map(([year, data]) => [
+            year,
+            {
+              value_jan_1: { amount: data.value_jan_1, source_doc_id: 'reconciliation', confidence: item.confidence || 0.8 },
+            },
+          ])
+        ),
+      });
+      return true;
+    }
+
+    if (item.category === 'other_assets') {
+      const exists = blueprint.assets.other_assets.some(o =>
+        (o.description || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(normalizedDesc.slice(0, 10))
+      );
+      if (exists) return false;
+
+      const newId = `oa_reconciled_${blueprint.assets.other_assets.length + 1}`;
+      blueprint.assets.other_assets.push({
+        id: newId,
+        owner_id: item.owner_id || 'tp_01',
+        description: item.description,
+        type: (item.type as any) || 'other',
+        country: 'NL',
+        yearly_data: Object.fromEntries(
+          Object.entries(item.yearly_data).map(([year, data]) => [
+            year,
+            {
+              value_jan_1: { amount: data.value_jan_1, source_doc_id: 'reconciliation', confidence: item.confidence || 0.8 },
+            },
+          ])
+        ),
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  // ===========================================================================
   // HELPER METHODS
   // ===========================================================================
 
@@ -2216,6 +2584,97 @@ export class Box3ExtractionPipeline {
       return field.amount ?? field.value ?? 0;
     }
     return 0;
+  }
+
+  /**
+   * Identify which bank accounts from the checklist are not found in extracted assets.
+   * Uses fuzzy matching on bank name, account number patterns, and description.
+   */
+  private identifyMissingBankAccounts(
+    checklistDescriptions: string[],
+    extractedBanks: Box3BankSavingsAsset[]
+  ): string[] {
+    if (!checklistDescriptions || checklistDescriptions.length === 0) {
+      return [];
+    }
+
+    const missing: string[] = [];
+
+    // Normalize helper for fuzzy matching
+    const normalize = (s: string): string => {
+      return (s || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .replace(/rekening|spaar|savings|account|betaal/g, '');
+    };
+
+    // Extract last 4 digits pattern from string (e.g., "****1234" or "NL12INGB0001234567")
+    const extractLast4 = (s: string): string | null => {
+      // Match ****XXXX pattern
+      const starMatch = s.match(/\*{2,}(\d{4})/);
+      if (starMatch) return starMatch[1];
+
+      // Match IBAN last 4 digits
+      const ibanMatch = s.match(/[A-Z]{2}\d{2}[A-Z]{4}(\d{10})/);
+      if (ibanMatch) return ibanMatch[1].slice(-4);
+
+      // Match any 4-digit sequence at end
+      const endMatch = s.match(/(\d{4})$/);
+      if (endMatch) return endMatch[1];
+
+      return null;
+    };
+
+    // Extract bank name from description
+    const extractBankName = (s: string): string | null => {
+      const normalized = s.toLowerCase();
+      const banks = ['ing', 'rabobank', 'rabo', 'abn', 'abnamro', 'sns', 'asn', 'triodos', 'knab', 'bunq', 'revolut', 'n26'];
+      for (const bank of banks) {
+        if (normalized.includes(bank)) return bank;
+      }
+      return null;
+    };
+
+    for (const checklistItem of checklistDescriptions) {
+      const normalizedChecklist = normalize(checklistItem);
+      const checklistLast4 = extractLast4(checklistItem);
+      const checklistBank = extractBankName(checklistItem);
+
+      let found = false;
+
+      for (const bank of extractedBanks) {
+        // Match by last 4 digits of account
+        if (checklistLast4 && bank.account_masked) {
+          const bankLast4 = extractLast4(bank.account_masked);
+          if (bankLast4 === checklistLast4) {
+            found = true;
+            break;
+          }
+        }
+
+        // Match by bank name + normalized description
+        const bankNameMatch = checklistBank && bank.bank_name?.toLowerCase().includes(checklistBank);
+        const descriptionMatch = normalize(bank.description || '').includes(normalizedChecklist.slice(0, 6)) ||
+                                 normalizedChecklist.includes(normalize(bank.description || '').slice(0, 6));
+
+        if (bankNameMatch && descriptionMatch) {
+          found = true;
+          break;
+        }
+
+        // Fuzzy match on full normalized strings
+        if (normalizedChecklist.length > 4 && normalize(bank.description || bank.bank_name || '').includes(normalizedChecklist.slice(0, 8))) {
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        missing.push(checklistItem);
+      }
+    }
+
+    return missing;
   }
 
   /**

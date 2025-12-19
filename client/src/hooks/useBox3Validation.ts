@@ -152,7 +152,7 @@ export function useBox3Validation({
       if (job?.status === "completed" || job?.status === "failed") {
         return false;
       }
-      return 3000; // Poll every 3 seconds
+      return 10000; // Poll every 10 seconds (job takes ~2-3 min)
     },
     staleTime: 1000,
   });

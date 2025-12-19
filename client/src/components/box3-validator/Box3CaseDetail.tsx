@@ -1799,116 +1799,29 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             );
           })()}
 
-          {/* Audit Trail - Validation checks with checkmarks */}
-          {blueprint.audit_checks && blueprint.audit_checks.length > 0 && (
-            <Card className="border-gray-200 bg-gray-50">
-              <CardHeader className="pb-3 pt-4">
-                <CardTitle className="text-base font-bold flex items-center gap-2 text-gray-700">
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  Validatie ({blueprint.audit_checks.filter(c => c.passed).length}/{blueprint.audit_checks.length} checks geslaagd)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 pb-4">
-                <TooltipProvider delayDuration={300}>
-                  <div className="space-y-2">
-                    {blueprint.audit_checks.map((check, idx) => {
-                      // Build tooltip content from details
-                      const hasDetails = check.details && (
-                        check.details.expected !== undefined ||
-                        check.details.actual !== undefined ||
-                        check.details.difference !== undefined
-                      );
+          {/* Audit Trail - Validation checks grouped by type */}
+          {((blueprint.audit_checks && blueprint.audit_checks.length > 0) || validationFlags.length > 0) && (() => {
+            const auditChecks = blueprint.audit_checks || [];
+            const passedCount = auditChecks.filter(c => c.passed).length;
+            const totalChecks = auditChecks.length;
 
-                      const tooltipContent = hasDetails ? (
-                        <div className="space-y-1 text-xs">
-                          <div className="font-medium text-gray-200 mb-1">
-                            {check.check_type === 'asset_total' && 'Vermogenstotaal controle'}
-                            {check.check_type === 'asset_count' && 'Aantal assets controle'}
-                            {check.check_type === 'interest_plausibility' && 'Rente plausibiliteit'}
-                            {check.check_type === 'missing_data' && 'Ontbrekende data'}
-                            {check.check_type === 'duplicate_asset' && 'Duplicaat detectie'}
-                            {check.check_type === 'discrepancy' && 'Afwijking gedetecteerd'}
-                          </div>
-                          {check.details?.expected !== undefined && (
-                            <div className="flex justify-between gap-4">
-                              <span className="text-gray-400">Verwacht:</span>
-                              <span className="font-mono">
-                                {typeof check.details.expected === 'number'
-                                  ? check.check_type === 'asset_count'
-                                    ? check.details.expected
-                                    : `€${check.details.expected.toLocaleString('nl-NL')}`
-                                  : check.details.expected}
-                              </span>
-                            </div>
-                          )}
-                          {check.details?.actual !== undefined && (
-                            <div className="flex justify-between gap-4">
-                              <span className="text-gray-400">Gevonden:</span>
-                              <span className="font-mono">
-                                {typeof check.details.actual === 'number'
-                                  ? check.check_type === 'asset_count'
-                                    ? check.details.actual
-                                    : `€${check.details.actual.toLocaleString('nl-NL')}`
-                                  : check.details.actual}
-                              </span>
-                            </div>
-                          )}
-                          {check.details?.difference !== undefined && check.details.difference !== 0 && (
-                            <div className="flex justify-between gap-4 pt-1 border-t border-gray-600">
-                              <span className="text-gray-400">Verschil:</span>
-                              <span className={`font-mono ${check.details.difference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                                €{Math.abs(check.details.difference).toLocaleString('nl-NL')}
-                              </span>
-                            </div>
-                          )}
-                          {check.year && (
-                            <div className="text-gray-500 text-[10px] mt-1">
-                              Belastingjaar {check.year}
-                            </div>
-                          )}
-                        </div>
-                      ) : null;
+            // Filter out validation flags that are already shown in audit_checks (by message)
+            const auditMessages = new Set(auditChecks.map(c => c.message));
+            const uniqueFlags = validationFlags.filter(f => !auditMessages.has(f.message));
 
-                      return (
-                        <Tooltip key={check.id || idx}>
-                          <TooltipTrigger asChild>
-                            <div
-                              className={`flex items-center gap-3 p-2 rounded-lg cursor-default transition-colors ${
-                                check.passed
-                                  ? 'bg-green-50 border border-green-200 hover:bg-green-100'
-                                  : 'bg-yellow-50 border border-yellow-200 hover:bg-yellow-100'
-                              }`}
-                            >
-                              {check.passed ? (
-                                <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                              ) : (
-                                <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
-                              )}
-                              <span className={`text-sm ${check.passed ? 'text-green-800' : 'text-yellow-800'}`}>
-                                {check.message}
-                              </span>
-                              {hasDetails && (
-                                <Info className="h-3.5 w-3.5 text-gray-400 ml-auto shrink-0" />
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          {tooltipContent && (
-                            <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 max-w-xs">
-                              {tooltipContent}
-                            </TooltipContent>
-                          )}
-                        </Tooltip>
-                      );
-                    })}
-                  </div>
-                </TooltipProvider>
-              </CardContent>
-            </Card>
-          )}
+            // Categorize audit checks
+            const totalenChecks = auditChecks.filter(c =>
+              c.check_type === 'asset_total' || c.message.includes('Totalen komen overeen')
+            );
+            const belastingChecks = auditChecks.filter(c =>
+              c.message.includes('Box 3 belasting gevonden')
+            );
+            // Warnings: failed audit checks + unique validation flags
+            const warningChecks = auditChecks.filter(c => !c.passed &&
+              !totalenChecks.includes(c) && !belastingChecks.includes(c)
+            );
 
-          {/* Aandachtspunten - After hero, with blocks and human-readable labels */}
-          {validationFlags.length > 0 && (() => {
-            // Map technical flag types to human-readable labels
+            // Helper for flag labels
             const getFlagLabel = (type: string | undefined): string => {
               if (!type) return 'Onbekend';
               const labels: Record<string, string> = {
@@ -1922,34 +1835,173 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
               return labels[type] || type.replace(/_/g, ' ');
             };
 
+            // Render a single check item
+            const renderCheckItem = (check: typeof auditChecks[0], idx: number) => {
+              const hasDetails = check.details && (
+                check.details.expected !== undefined ||
+                check.details.actual !== undefined ||
+                check.details.difference !== undefined ||
+                (check.details.missing_descriptions && check.details.missing_descriptions.length > 0)
+              );
+
+              const tooltipContent = hasDetails ? (
+                <div className="space-y-1 text-xs">
+                  <div className="font-medium text-gray-200 mb-1">
+                    {check.check_type === 'asset_total' && 'Vermogenstotaal controle'}
+                    {check.check_type === 'asset_count' && 'Aantal assets controle'}
+                    {check.check_type === 'interest_plausibility' && 'Rente plausibiliteit'}
+                    {check.check_type === 'missing_data' && 'Ontbrekende data'}
+                    {check.check_type === 'duplicate_asset' && 'Duplicaat detectie'}
+                    {check.check_type === 'discrepancy' && 'Afwijking gedetecteerd'}
+                  </div>
+                  {check.details?.expected !== undefined && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-400">Verwacht:</span>
+                      <span className="font-mono">
+                        {typeof check.details.expected === 'number'
+                          ? check.check_type === 'asset_count'
+                            ? check.details.expected
+                            : `€${check.details.expected.toLocaleString('nl-NL')}`
+                          : check.details.expected}
+                      </span>
+                    </div>
+                  )}
+                  {check.details?.actual !== undefined && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-400">Gevonden:</span>
+                      <span className="font-mono">
+                        {typeof check.details.actual === 'number'
+                          ? check.check_type === 'asset_count'
+                            ? check.details.actual
+                            : `€${check.details.actual.toLocaleString('nl-NL')}`
+                          : check.details.actual}
+                      </span>
+                    </div>
+                  )}
+                  {check.details?.difference !== undefined && check.details.difference !== 0 && (
+                    <div className="flex justify-between gap-4 pt-1 border-t border-gray-600">
+                      <span className="text-gray-400">Verschil:</span>
+                      <span className={`font-mono ${check.details.difference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+                        €{Math.abs(check.details.difference).toLocaleString('nl-NL')}
+                      </span>
+                    </div>
+                  )}
+                  {check.details?.missing_descriptions && check.details.missing_descriptions.length > 0 && (
+                    <div className="pt-1 border-t border-gray-600 mt-1">
+                      <span className="text-gray-400 block mb-1">Mogelijk ontbrekend:</span>
+                      <ul className="text-yellow-300 text-[11px] space-y-0.5 pl-2">
+                        {check.details.missing_descriptions.slice(0, 5).map((desc, i) => (
+                          <li key={i} className="truncate">• {desc}</li>
+                        ))}
+                        {check.details.missing_descriptions.length > 5 && (
+                          <li className="text-gray-500">...en {check.details.missing_descriptions.length - 5} meer</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                  {check.year && (
+                    <div className="text-gray-500 text-[10px] mt-1">
+                      Belastingjaar {check.year}
+                    </div>
+                  )}
+                </div>
+              ) : null;
+
+              return (
+                <Tooltip key={check.id || idx}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={`flex items-center gap-3 p-2 rounded-lg cursor-default transition-colors ${
+                        check.passed
+                          ? 'bg-green-50 border border-green-200 hover:bg-green-100'
+                          : 'bg-yellow-50 border border-yellow-200 hover:bg-yellow-100'
+                      }`}
+                    >
+                      {check.passed ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
+                      )}
+                      <span className={`text-sm ${check.passed ? 'text-green-800' : 'text-yellow-800'}`}>
+                        {check.message}
+                      </span>
+                      {hasDetails && (
+                        <Info className="h-3.5 w-3.5 text-gray-400 ml-auto shrink-0" />
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  {tooltipContent && (
+                    <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 max-w-xs">
+                      {tooltipContent}
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              );
+            };
+
+            const totalWarnings = warningChecks.length + uniqueFlags.length;
+
             return (
-              <Card className="border-yellow-300 bg-yellow-50">
+              <Card className="border-gray-200 bg-gray-50">
                 <CardHeader className="pb-3 pt-4">
-                  <CardTitle className="text-base font-bold flex items-center gap-2 text-yellow-800">
-                    <Info className="h-5 w-5" />
-                    Let op ({validationFlags.length})
+                  <CardTitle className="text-base font-bold flex items-center gap-2 text-gray-700">
+                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    Validatie ({passedCount}/{totalChecks} checks geslaagd)
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0 pb-4">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {validationFlags.map((flag, idx) => (
-                      <div
-                        key={flag.id || idx}
-                        className="p-3 bg-white rounded-lg border border-yellow-200"
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="text-xs font-semibold bg-yellow-200 text-yellow-800 px-1.5 py-0.5 rounded shrink-0">
-                            {getFlagLabel(flag.type)}
-                          </span>
-                          <p className="text-sm text-yellow-900">{flag.message}</p>
+                  <TooltipProvider delayDuration={300}>
+                    <div className="space-y-4">
+                      {/* Totalen section */}
+                      {totalenChecks.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Totalen</h4>
+                          <div className="space-y-1.5">
+                            {totalenChecks.map((check, idx) => renderCheckItem(check, idx))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      )}
+
+                      {/* Belastingdata section */}
+                      {belastingChecks.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Belastingdata</h4>
+                          <div className="space-y-1.5">
+                            {belastingChecks.map((check, idx) => renderCheckItem(check, idx))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Aandachtspunten section */}
+                      {totalWarnings > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-yellow-700 uppercase tracking-wide mb-2">
+                            Aandachtspunten ({totalWarnings})
+                          </h4>
+                          <div className="space-y-1.5">
+                            {warningChecks.map((check, idx) => renderCheckItem(check, idx))}
+                            {uniqueFlags.map((flag, idx) => (
+                              <div
+                                key={`flag-${flag.id || idx}`}
+                                className="flex items-center gap-3 p-2 rounded-lg cursor-default transition-colors bg-yellow-50 border border-yellow-200 hover:bg-yellow-100"
+                              >
+                                <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
+                                <span className="text-xs font-semibold bg-yellow-200 text-yellow-800 px-1.5 py-0.5 rounded shrink-0">
+                                  {getFlagLabel(flag.type)}
+                                </span>
+                                <span className="text-sm text-yellow-800">{flag.message}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </TooltipProvider>
                 </CardContent>
               </Card>
             );
           })()}
+
 
           {/* YEAR DETAIL: Shows when a year is selected */}
           {availableYears.length > 0 && selectedYear && (

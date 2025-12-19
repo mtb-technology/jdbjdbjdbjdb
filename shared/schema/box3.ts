@@ -431,6 +431,10 @@ export interface Box3AuditCheck {
     expected?: number;
     actual?: number;
     difference?: number;
+    field?: string;
+    // For missing asset identification
+    missing_descriptions?: string[];
+    checklist_descriptions?: string[];
   };
 }
 
@@ -954,6 +958,9 @@ export interface Box3ValidationCheck {
     // For anomaly detection
     anomaly_type?: string;
     confidence?: number;
+    // For missing asset identification
+    missing_descriptions?: string[];
+    checklist_descriptions?: string[];
   };
 }
 
