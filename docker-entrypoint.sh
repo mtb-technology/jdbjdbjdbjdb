@@ -5,9 +5,10 @@ echo "🔧 Configuring nginx for port $PORT..."
 
 # Generate nginx config with correct PORT
 cat > /etc/nginx/conf.d/default.conf <<EOF
-# Rate limiting zone: 10 requests per day per IP for login attempts
+# Rate limiting zone: 1 request per minute per IP for login attempts
+# (nginx only supports r/s and r/m, not r/d)
 # 10m = 10MB shared memory (~160,000 IPs)
-limit_req_zone \$binary_remote_addr zone=login_limit:10m rate=10r/d;
+limit_req_zone \$binary_remote_addr zone=login_limit:10m rate=1r/m;
 
 server {
     listen $PORT;
@@ -93,7 +94,7 @@ server {
 
     # Proxy to Node.js application
     location / {
-        # Rate limit: 10 attempts per day, no burst allowed
+        # Rate limit: 1 request per minute, no burst allowed
         limit_req zone=login_limit nodelay;
         limit_req_status 429;
 
