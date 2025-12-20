@@ -1203,22 +1203,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 // Always calculate, even if no per_person data
                 // Default allocation: 50% if partner, 100% if single
                 const defaultAllocation = hasPartner ? 50 : 100;
-                const tpAlloc = yearTax?.allocation_percentage || defaultAllocation;
-
-                // Get partner allocation to normalize (ensure sum = 100%)
-                const fpId = partner?.id || 'fp_01';
-                const fpAlloc = taxAuthData[year]?.per_person?.[fpId]?.allocation_percentage || defaultAllocation;
-                const totalAlloc = tpAlloc + fpAlloc;
-
-                // Normalize allocation so per-person refunds sum to total
-                const normalizedAllocation = totalAlloc > 0 ? (tpAlloc / totalAlloc) * 100 : defaultAllocation;
-                const personRefund = totalRefund * (normalizedAllocation / 100);
+                const allocation = yearTax?.allocation_percentage || defaultAllocation;
+                const personRefund = totalRefund * (allocation / 100);
 
                 tpSummary.totalTaxAssessed += yearTax?.tax_assessed || 0;
                 tpSummary.totalIndicativeRefund += personRefund;
                 tpSummary.yearBreakdown[year] = {
                   taxAssessed: yearTax?.tax_assessed || 0,
-                  allocation: normalizedAllocation,
+                  allocation: allocation,
                   refund: personRefund,
                 };
               });
@@ -1245,22 +1237,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
                 // Always calculate, even if no per_person data
                 // Default allocation for partner: 50%
-                const fpAlloc = yearTax?.allocation_percentage || 50;
-
-                // Get taxpayer allocation to normalize (ensure sum = 100%)
-                const tpId = taxpayer?.id || 'tp_01';
-                const tpAlloc = taxAuthData[year]?.per_person?.[tpId]?.allocation_percentage || 50;
-                const totalAlloc = tpAlloc + fpAlloc;
-
-                // Normalize allocation so per-person refunds sum to total
-                const normalizedAllocation = totalAlloc > 0 ? (fpAlloc / totalAlloc) * 100 : 50;
-                const personRefund = totalRefund * (normalizedAllocation / 100);
+                const allocation = yearTax?.allocation_percentage || 50;
+                const personRefund = totalRefund * (allocation / 100);
 
                 fpSummary.totalTaxAssessed += yearTax?.tax_assessed || 0;
                 fpSummary.totalIndicativeRefund += personRefund;
                 fpSummary.yearBreakdown[year] = {
                   taxAssessed: yearTax?.tax_assessed || 0,
-                  allocation: normalizedAllocation,
+                  allocation: allocation,
                   refund: personRefund,
                 };
               });
@@ -2718,9 +2702,15 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           const realEstate = blueprint.assets?.real_estate || [];
                           const otherAssets = blueprint.assets?.other_assets || [];
 
+                          const matchesPerson = (asset: { owner_id?: string }) => {
+                            if (!selectedPersonId) return true;
+                            if (asset.owner_id === 'joint') return true;
+                            return asset.owner_id === selectedPersonId;
+                          };
+
                           // Filter by year AND person
-                          const yearRealEstate = realEstate.filter(a => a.yearly_data?.[selectedYear] && matchesSelectedPerson(a.owner_id));
-                          const yearOtherAssets = otherAssets.filter(a => a.yearly_data?.[selectedYear] && matchesSelectedPerson(a.owner_id));
+                          const yearRealEstate = realEstate.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+                          const yearOtherAssets = otherAssets.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
 
                           let selectedPersonName = 'dit huishouden';
                           if (selectedPersonId) {
@@ -2976,8 +2966,16 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         {(() => {
                           const debts = blueprint.debts || [];
 
+                          // Filter debts that have data for this year AND match selected person (if any)
+                          // owner_id is "tp_01", "fp_01", or "joint"
+                          const matchesPerson = (debt: { owner_id?: string }) => {
+                            if (!selectedPersonId) return true; // Household view shows all
+                            if (debt.owner_id === 'joint') return true; // Joint debts show for both
+                            return debt.owner_id === selectedPersonId;
+                          };
+
                           // Filter by year AND person
-                          const yearDebts = debts.filter(d => d.yearly_data?.[selectedYear] && matchesSelectedPerson(d.owner_id));
+                          const yearDebts = debts.filter(d => d.yearly_data?.[selectedYear] && matchesPerson(d));
 
                           // Get selected person name for display
                           let selectedPersonName = 'dit huishouden';
