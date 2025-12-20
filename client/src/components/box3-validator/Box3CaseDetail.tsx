@@ -329,11 +329,44 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   // Per-person view: null = household view, string = specific person id
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
 
+  // Helper: Check if an asset's owner_id matches the selected person
+  // Handles ID mismatches where AI generates tp_02/fp_02 instead of tp_01/fp_01
+  const matchesSelectedPerson = useCallback((ownerIdRaw?: string): boolean => {
+    if (!selectedPersonId) return true; // Household view shows all
+    if (!ownerIdRaw) return true; // No owner = show for all
+    if (ownerIdRaw === 'joint') return true; // Joint assets show for both
+
+    const ownerId = ownerIdRaw.toLowerCase();
+    const tpId = blueprint?.fiscal_entity?.taxpayer?.id?.toLowerCase();
+    const fpId = blueprint?.fiscal_entity?.fiscal_partner?.id?.toLowerCase();
+    const selectedId = selectedPersonId.toLowerCase();
+
+    // Direct match
+    if (ownerId === selectedId) return true;
+
+    // Fuzzy match: if selectedPerson is taxpayer, accept any tp_XX
+    if (selectedId === tpId || selectedId === 'tp_01') {
+      if (ownerId.startsWith('tp_')) return true;
+    }
+    // Fuzzy match: if selectedPerson is partner, accept any fp_XX
+    if (selectedId === fpId || selectedId === 'fp_01') {
+      if (ownerId.startsWith('fp_')) return true;
+    }
+
+    return false;
+  }, [selectedPersonId, blueprint?.fiscal_entity?.taxpayer?.id, blueprint?.fiscal_entity?.fiscal_partner?.id]);
+
   // Extract data from blueprint
   const taxYears = dossier.taxYears || [];
   const hasFiscalPartner = blueprint?.fiscal_entity?.fiscal_partner?.has_partner || false;
   const validationFlags = blueprint?.validation_flags || [];
   const sourceDocsRegistry = blueprint?.source_documents_registry || [];
+
+  // Available years from blueprint (component-level for use in Year Tabs)
+  const years = useMemo(() => {
+    if (!blueprint?.year_summaries) return [];
+    return Object.keys(blueprint.year_summaries).sort();
+  }, [blueprint?.year_summaries]);
 
   // Compute sidebar data (next step, missing items, profitability)
   const sidebarData = useMemo(() => {
@@ -1795,55 +1828,6 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   />
                 </div>
 
-                {/* Year Tabs - Minimal horizontal tabs */}
-                <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-                  <div className="flex border-b">
-                    {years.map(year => {
-                      const summary = blueprint.year_summaries?.[year];
-                      const refund = summary?.calculated_totals?.indicative_refund || 0;
-                      const yearProfitable = summary?.calculated_totals?.is_profitable || refund > 0;
-                      const yearIncomplete = summary?.status === 'incomplete';
-                      const isSelected = selectedYear === year;
-
-                      return (
-                        <button
-                          key={year}
-                          onClick={() => setSelectedYear(year)}
-                          className={`flex-1 px-4 py-3 text-center transition-all relative ${
-                            isSelected
-                              ? 'bg-white'
-                              : 'bg-muted/30 hover:bg-muted/50'
-                          }`}
-                        >
-                          {/* Active indicator line */}
-                          {isSelected && (
-                            <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${
-                              yearProfitable ? 'bg-green-500' : yearIncomplete ? 'bg-amber-400' : 'bg-gray-300'
-                            }`} />
-                          )}
-
-                          <div className="flex items-center justify-center gap-1.5">
-                            {yearIncomplete && (
-                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                            )}
-                            <span className={`font-semibold text-sm ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>
-                              {year}
-                            </span>
-                          </div>
-                          <p className={`text-xs mt-0.5 ${
-                            yearIncomplete
-                              ? 'text-amber-600'
-                              : yearProfitable
-                                ? 'text-green-600'
-                                : 'text-muted-foreground'
-                          }`}>
-                            {yearIncomplete ? 'Docs nodig' : formatCurrency(refund)}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
             );
           })()}
@@ -2053,8 +2037,58 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
 
           {/* YEAR DETAIL: Shows when a year is selected */}
-          {availableYears.length > 0 && selectedYear && (
+          {availableYears.length > 0 && (
             <Card>
+              {/* Year Tabs as Card Header */}
+              <div className="flex border-b">
+                {years.map(year => {
+                  const summary = blueprint.year_summaries?.[year];
+                  const refund = summary?.calculated_totals?.indicative_refund || 0;
+                  const yearProfitable = summary?.calculated_totals?.is_profitable || refund > 0;
+                  const yearIncomplete = summary?.status === 'incomplete';
+                  const isSelected = selectedYear === year;
+
+                  return (
+                    <button
+                      key={year}
+                      onClick={() => setSelectedYear(year)}
+                      className={`flex-1 px-4 py-3 text-center transition-all relative ${
+                        isSelected
+                          ? 'bg-white'
+                          : 'bg-muted/30 hover:bg-muted/50'
+                      }`}
+                    >
+                      {/* Active indicator line */}
+                      {isSelected && (
+                        <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${
+                          yearProfitable ? 'bg-green-500' : yearIncomplete ? 'bg-amber-400' : 'bg-gray-300'
+                        }`} />
+                      )}
+
+                      <div className="flex items-center justify-center gap-1.5">
+                        {yearIncomplete && (
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                        )}
+                        <span className={`font-semibold text-sm ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {year}
+                        </span>
+                      </div>
+                      <p className={`text-xs mt-0.5 ${
+                        yearIncomplete
+                          ? 'text-amber-600'
+                          : yearProfitable
+                            ? 'text-green-600'
+                            : 'text-muted-foreground'
+                      }`}>
+                        {yearIncomplete ? 'Docs nodig' : formatCurrency(refund)}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Year Content */}
+              {selectedYear && (
               <CardContent className="pt-6">
                 {/* YEAR DETAIL VIEW */}
                 {selectedYear && blueprint.year_summaries?.[selectedYear] && (
@@ -2159,12 +2193,24 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                                 <p className="text-xs font-medium text-blue-800 mb-2">Verdeling per persoon ({selectedYear})</p>
                                 <div className="grid grid-cols-2 gap-4">
-                                  {Object.entries(perPerson).map(([personId, personData]) => {
+                                  {Object.entries(perPerson).map(([personId, personData], index) => {
+                                    // Try to match personId to fiscal_entity to get the name
                                     let personName = personId;
-                                    if (personId === blueprint.fiscal_entity?.taxpayer?.id) {
-                                      personName = blueprint.fiscal_entity.taxpayer.name || 'Belastingplichtige';
-                                    } else if (personId === blueprint.fiscal_entity?.fiscal_partner?.id) {
-                                      personName = blueprint.fiscal_entity.fiscal_partner.name || 'Fiscaal Partner';
+                                    const tpId = blueprint.fiscal_entity?.taxpayer?.id;
+                                    const fpId = blueprint.fiscal_entity?.fiscal_partner?.id;
+
+                                    if (personId === tpId || personId === 'tp_01') {
+                                      personName = blueprint.fiscal_entity?.taxpayer?.name || 'Belastingplichtige';
+                                    } else if (personId === fpId || personId === 'fp_01') {
+                                      personName = blueprint.fiscal_entity?.fiscal_partner?.name || 'Fiscaal Partner';
+                                    } else if (personId.startsWith('tp_') || personId.startsWith('fp_')) {
+                                      // Fallback: if ID looks like tp_XX or fp_XX but doesn't match,
+                                      // use position to determine (first = taxpayer, second = partner)
+                                      if (index === 0) {
+                                        personName = blueprint.fiscal_entity?.taxpayer?.name || 'Belastingplichtige';
+                                      } else {
+                                        personName = blueprint.fiscal_entity?.fiscal_partner?.name || 'Fiscaal Partner';
+                                      }
                                     }
 
                                     return (
@@ -2317,13 +2363,23 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                       <div className="mt-4 pt-3 border-t">
                                         <h5 className="text-sm font-medium mb-2">Per persoon</h5>
                                         <div className="grid gap-2">
-                                          {Object.entries(taxData.per_person).map(([personId, personData]) => {
+                                          {Object.entries(taxData.per_person).map(([personId, personData], index) => {
                                             // Try to get person name
                                             let personName = personId;
-                                            if (personId === blueprint.fiscal_entity?.taxpayer?.id) {
-                                              personName = blueprint.fiscal_entity.taxpayer.name || 'Belastingplichtige';
-                                            } else if (personId === blueprint.fiscal_entity?.fiscal_partner?.id) {
-                                              personName = blueprint.fiscal_entity.fiscal_partner.name || 'Fiscaal Partner';
+                                            const tpId = blueprint.fiscal_entity?.taxpayer?.id;
+                                            const fpId = blueprint.fiscal_entity?.fiscal_partner?.id;
+
+                                            if (personId === tpId || personId === 'tp_01') {
+                                              personName = blueprint.fiscal_entity?.taxpayer?.name || 'Belastingplichtige';
+                                            } else if (personId === fpId || personId === 'fp_01') {
+                                              personName = blueprint.fiscal_entity?.fiscal_partner?.name || 'Fiscaal Partner';
+                                            } else if (personId.startsWith('tp_') || personId.startsWith('fp_')) {
+                                              // Fallback: use position (first = taxpayer, second = partner)
+                                              if (index === 0) {
+                                                personName = blueprint.fiscal_entity?.taxpayer?.name || 'Belastingplichtige';
+                                              } else {
+                                                personName = blueprint.fiscal_entity?.fiscal_partner?.name || 'Fiscaal Partner';
+                                              }
                                             }
 
                                             const allocation = personData.allocation_percentage;
@@ -2373,14 +2429,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         {(() => {
                           const bankSavings = blueprint.assets?.bank_savings || [];
 
-                          const matchesPerson = (asset: { owner_id?: string }) => {
-                            if (!selectedPersonId) return true;
-                            if (asset.owner_id === 'joint') return true;
-                            return asset.owner_id === selectedPersonId;
-                          };
-
                           // Filter by year AND person - show accounts that have data for this year
-                          const yearBankSavings = bankSavings.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+                          const yearBankSavings = bankSavings.filter(a => a.yearly_data?.[selectedYear] && matchesSelectedPerson(a.owner_id));
 
                           let selectedPersonName = 'dit huishouden';
                           if (selectedPersonId) {
@@ -2534,14 +2584,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         {(() => {
                           const investments = blueprint.assets?.investments || [];
 
-                          const matchesPerson = (asset: { owner_id?: string }) => {
-                            if (!selectedPersonId) return true;
-                            if (asset.owner_id === 'joint') return true;
-                            return asset.owner_id === selectedPersonId;
-                          };
-
                           // Filter by year AND person
-                          const yearInvestments = investments.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+                          const yearInvestments = investments.filter(a => a.yearly_data?.[selectedYear] && matchesSelectedPerson(a.owner_id));
 
                           let selectedPersonName = 'dit huishouden';
                           if (selectedPersonId) {
@@ -3040,6 +3084,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 )}
 
               </CardContent>
+              )}
             </Card>
           )}
 
