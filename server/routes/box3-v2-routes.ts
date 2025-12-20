@@ -800,6 +800,98 @@ box3V2Router.post(
 );
 
 /**
+ * Start validation job for new dossier using V2 Pipeline (background processing)
+ * POST /api/box3-v2/validate-v2-job
+ *
+ * Creates a new dossier, stores documents, and starts a background job with V2 pipeline.
+ * Returns dossier ID and job ID immediately - client navigates to dossier
+ * and can poll for progress.
+ */
+box3V2Router.post(
+  "/validate-v2-job",
+  (req: Request, res: Response, next: NextFunction) => {
+    upload.array('files', 10)(req, res, (err: any) => {
+      if (err) {
+        return res.status(400).json(createApiErrorResponse(
+          'VALIDATION_ERROR',
+          ERROR_CODES.VALIDATION_FAILED,
+          err.message || 'Bestand upload mislukt',
+          err.message
+        ));
+      }
+      next();
+    });
+  },
+  asyncHandler(async (req: Request, res: Response) => {
+    const { inputText, clientName, clientEmail } = req.body;
+
+    if (!clientName || clientName.trim().length === 0) {
+      throw ServerError.validation("clientName is required", "Klantnaam is verplicht");
+    }
+
+    const files = req.files as Express.Multer.File[] || [];
+
+    if (files.length === 0) {
+      throw ServerError.validation("No files", "Upload minimaal één document");
+    }
+
+    logger.info('box3-v2', `Creating dossier with V2 job for ${clientName}`, { fileCount: files.length });
+
+    // Create dossier first (status: intake, will be updated when job completes)
+    const dossier = await storage.createBox3Dossier({
+      clientName: clientName.trim(),
+      clientEmail: clientEmail?.trim() || null,
+      intakeText: inputText?.trim() || null,
+      status: 'intake',
+    });
+
+    logger.info('box3-v2', 'Dossier created', { dossierId: dossier.id });
+
+    // Store documents
+    for (const file of files) {
+      await storage.createBox3Document({
+        dossierId: dossier.id,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        fileData: file.buffer.toString('base64'),
+        uploadedVia: 'intake',
+      });
+    }
+
+    logger.info('box3-v2', 'Documents stored', { dossierId: dossier.id, count: files.length });
+
+    // Create validation job with V2 pipeline type
+    const job = await storage.createJob({
+      type: 'box3_validation_v2',
+      status: 'queued',
+      box3DossierId: dossier.id,
+      result: {},
+    });
+
+    logger.info('box3-v2', 'V2 Validation job created', {
+      jobId: job.id,
+      dossierId: dossier.id,
+      documentCount: files.length,
+      pipelineVersion: 'v2'
+    });
+
+    res.json(createApiSuccessResponse({
+      dossier: {
+        id: dossier.id,
+        clientName: dossier.clientName,
+        status: dossier.status,
+        createdAt: dossier.createdAt,
+      },
+      jobId: job.id,
+      status: 'queued',
+      pipelineVersion: 'v2',
+      message: 'Dossier aangemaakt, V2 validatie gestart'
+    }));
+  })
+);
+
+/**
  * Start revalidation job (background processing) - V1 Pipeline
  * POST /api/box3-v2/dossiers/:id/revalidate-job
  *
@@ -961,7 +1053,8 @@ box3V2Router.get(
     const box3Job = activeJobs.find(j =>
       j.type === 'box3_revalidation' ||
       j.type === 'box3_revalidation_v2' ||
-      j.type === 'box3_validation'
+      j.type === 'box3_validation' ||
+      j.type === 'box3_validation_v2'
     );
 
     if (!box3Job) {
@@ -983,7 +1076,7 @@ box3V2Router.get(
     }
 
     // Determine pipeline version from job type
-    const pipelineVersion = box3Job.type === 'box3_revalidation_v2' ? 'v2' : 'v1';
+    const pipelineVersion = (box3Job.type === 'box3_revalidation_v2' || box3Job.type === 'box3_validation_v2') ? 'v2' : 'v1';
 
     res.json(createApiSuccessResponse({
       hasActiveJob: true,

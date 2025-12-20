@@ -198,9 +198,10 @@ export function useBox3Validation({
     if (!activeJob || jobCompletedRef.current) return;
 
     // Update pipeline progress from job
-    // Detect V2 jobs by checking the currentStage (V2 uses: manifest, enrichment, validation)
+    // Detect V2 jobs by checking the currentStage (V2 uses: loading, manifest, enrichment, validation, preparing)
     if (activeJob.progress) {
-      const isV2Job = ['manifest', 'enrichment', 'validation'].includes(activeJob.progress.currentStage);
+      const v2Stages = ['loading', 'preparing', 'manifest', 'enrichment', 'validation'];
+      const isV2Job = v2Stages.includes(activeJob.progress.currentStage);
       const totalSteps = isV2Job ? 3 : 5;
       setPipelineProgress({
         step: Math.round((activeJob.progress.percentage / 100) * totalSteps),
@@ -276,8 +277,9 @@ export function useBox3Validation({
         setActiveJobId(data.job.id);
         setIsValidating(true);
         if (data.job.progress) {
-          // Detect V2 jobs by checking the currentStage
-          const isV2Job = ['manifest', 'enrichment', 'validation'].includes(data.job.progress.currentStage);
+          // Detect V2 jobs by checking the currentStage (V2 uses: loading, preparing, manifest, enrichment, validation)
+          const v2Stages = ['loading', 'preparing', 'manifest', 'enrichment', 'validation'];
+          const isV2Job = v2Stages.includes(data.job.progress.currentStage);
           const totalSteps = isV2Job ? 3 : 5;
           setPipelineProgress({
             step: Math.round((data.job.progress.percentage / 100) * totalSteps),
@@ -396,8 +398,15 @@ export function useBox3Validation({
       return null;
     }
 
+    // Determine pipeline version and endpoint
+    const isV2 = pipelineVersion === 'v2';
+    const totalSteps = isV2 ? 3 : 5;
+    const endpoint = isV2
+      ? "/api/box3-validator/validate-v2-job"
+      : "/api/box3-validator/validate-job";
+
     setIsValidating(true);
-    setPipelineProgress({ step: 0, totalSteps: 5, message: 'Dossier aanmaken...', phase: 'starting' });
+    setPipelineProgress({ step: 0, totalSteps, message: `Dossier aanmaken (Pipeline ${isV2 ? 'V2' : 'V1'})...`, phase: 'starting' });
 
     try {
       const formData = new FormData();
@@ -408,7 +417,7 @@ export function useBox3Validation({
         formData.append("files", pf.file, pf.name);
       }
 
-      const response = await fetch("/api/box3-validator/validate-job", {
+      const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
@@ -431,7 +440,7 @@ export function useBox3Validation({
       setActiveJobId(data.jobId);
 
       toast({
-        title: "Validatie gestart",
+        title: `Validatie gestart (Pipeline ${isV2 ? 'V2' : 'V1'})`,
         description: "Je kan de browser sluiten, de verwerking gaat door.",
       });
 
@@ -453,7 +462,7 @@ export function useBox3Validation({
       });
       return null;
     }
-  }, [toast]);
+  }, [toast, pipelineVersion]);
 
   // Cancel active revalidation job
   const cancelRevalidationJob = useCallback(async (): Promise<boolean> => {

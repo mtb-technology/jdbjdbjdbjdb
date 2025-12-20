@@ -45,6 +45,7 @@ import type {
   Box3CalculatedTotals,
   Box3ValidationFlag,
 } from '@shared/schema/box3';
+import { BOX3_CONSTANTS } from '@shared/constants';
 
 // =============================================================================
 // TYPES
@@ -193,20 +194,25 @@ export class Box3PipelineV2 {
       }
 
       // =========================================================================
-      // STAGE 2: Enrichment (optional - only if source documents exist)
+      // STAGE 2: Enrichment (optional - if source documents OR email context exist)
       // =========================================================================
       const sourceDocs = classifiedDocs.filter(
         (d) => d.docType !== 'aangifte_ib' && d.docType !== 'definitieve_aanslag' && d.docType !== 'voorlopige_aanslag'
       );
 
       let enrichedManifest: Box3EnrichedManifest | undefined;
+      const hasEmailContext = emailText && emailText.trim().length > 0;
 
-      if (sourceDocs.length > 0) {
+      if (sourceDocs.length > 0 || hasEmailContext) {
+        const contextSources: string[] = [];
+        if (sourceDocs.length > 0) contextSources.push(`${sourceDocs.length} brondocumenten`);
+        if (hasEmailContext) contextSources.push('klant email/context');
+
         this.reportProgress({
           stage: 'enrichment',
           stageNumber: 2,
           totalStages: 3,
-          message: `Werkelijk rendement extraheren uit ${sourceDocs.length} brondocumenten...`,
+          message: `Werkelijk rendement extraheren uit ${contextSources.join(' en ')}...`,
           percentage: 50,
         });
 
@@ -217,7 +223,8 @@ export class Box3PipelineV2 {
             doc_id: d.id,
             doc_type: d.docType || 'overig',
             content: d.extractedText || '',
-          }))
+          })),
+          emailText
         );
 
         if (enrichmentPrompt) {
@@ -229,7 +236,7 @@ export class Box3PipelineV2 {
         }
         stageTimes['enrichment'] = Date.now() - stage2Start;
       } else {
-        warnings.push('Geen brondocumenten (jaaroverzichten) gevonden. Alleen aangifte data beschikbaar.');
+        warnings.push('Geen brondocumenten (jaaroverzichten) of klant context gevonden. Alleen aangifte data beschikbaar.');
       }
 
       // =========================================================================
@@ -417,6 +424,27 @@ export class Box3PipelineV2 {
   // RESPONSE PARSING
   // ===========================================================================
 
+  /**
+   * Attempt to repair common JSON errors from LLM responses
+   */
+  private repairJson(jsonStr: string): string {
+    let repaired = jsonStr;
+
+    // Remove trailing commas before } or ]
+    repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+
+    // Fix missing commas between properties (newline between "value" and "key":)
+    repaired = repaired.replace(/("[^"]*")\s*\n\s*("[^"]*"\s*:)/g, '$1,\n$2');
+
+    // Fix missing commas between array elements
+    repaired = repaired.replace(/(\})\s*\n\s*(\{)/g, '$1,\n$2');
+
+    // Remove any control characters except newlines and tabs
+    repaired = repaired.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+
+    return repaired;
+  }
+
   private parseManifestResponse(response: string): Box3Manifest {
     try {
       // Extract JSON from response
@@ -425,8 +453,33 @@ export class Box3PipelineV2 {
         throw new Error('No JSON found in manifest response');
       }
 
-      const jsonStr = jsonMatch[1] || jsonMatch[0];
-      const parsed = JSON.parse(jsonStr);
+      let jsonStr = jsonMatch[1] || jsonMatch[0];
+
+      // First try parsing as-is
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (firstError) {
+        // Try repairing common JSON issues
+        logger.warn('box3-pipeline-v2', 'Initial JSON parse failed, attempting repair', {
+          error: (firstError as Error).message
+        });
+        jsonStr = this.repairJson(jsonStr);
+        try {
+          parsed = JSON.parse(jsonStr);
+          logger.info('box3-pipeline-v2', 'JSON repair successful');
+        } catch (repairError) {
+          // Log a portion of the problematic JSON for debugging
+          const errorPos = parseInt((firstError as Error).message.match(/position (\d+)/)?.[1] || '0');
+          const context = jsonStr.substring(Math.max(0, errorPos - 100), errorPos + 100);
+          logger.error('box3-pipeline-v2', 'JSON repair failed', {
+            originalError: (firstError as Error).message,
+            repairError: (repairError as Error).message,
+            contextAroundError: context
+          });
+          throw firstError; // Re-throw original error
+        }
+      }
 
       // Validate required fields
       if (!parsed.fiscal_entity || !parsed.asset_items) {
@@ -564,10 +617,21 @@ export class Box3PipelineV2 {
       return sum + (yearData?.value_jan_1 || 0);
     }, 0);
 
-    const invTotal = manifest.asset_items.investments.reduce((sum, item) => {
+    // For investments: separate green and non-green
+    // The aangifte shows category_totals.investments EXCLUDING green investments
+    // Green investments are reported separately in green_investments.total_value
+    let invTotalNonGreen = 0;
+    let invTotalGreen = 0;
+    for (const item of manifest.asset_items.investments) {
       const yearData = Object.values(item.yearly_values)[0];
-      return sum + (yearData?.value_jan_1 || 0);
-    }, 0);
+      const value = yearData?.value_jan_1 || 0;
+      if (item.is_green_investment) {
+        invTotalGreen += value;
+      } else {
+        invTotalNonGreen += value;
+      }
+    }
+    const invTotal = invTotalNonGreen + invTotalGreen;
 
     const otherTotal = manifest.asset_items.other_assets.reduce((sum, item) => {
       const yearData = Object.values(item.yearly_values)[0];
@@ -579,8 +643,16 @@ export class Box3PipelineV2 {
       return sum + (yearData?.value_jan_1 || 0);
     }, 0);
 
+    // Expected investments: from category_totals (excludes green) + green_investments.total_value
+    // The LLM should extract:
+    // - category_totals.investments = regular investments only (excl. green)
+    // - green_investments.total_value = green investments
+    // And place all in investments array with is_green_investment flag
+    const expectedGreen = manifest.green_investments?.total_value || 0;
+    const expectedInvTotal = expected.investments + expectedGreen;
+
     const extractedTotal = bankTotal + invTotal + otherTotal;
-    const expectedTotal = expected.bank_savings + expected.investments + expected.other_assets;
+    const expectedTotal = expected.bank_savings + expectedInvTotal + expected.other_assets;
 
     const totalDifference = extractedTotal - expectedTotal;
     const percentageDifference = expectedTotal > 0 ? (totalDifference / expectedTotal) * 100 : 0;
@@ -588,9 +660,69 @@ export class Box3PipelineV2 {
     const warnings: string[] = [];
     const errors: string[] = [];
 
-    if (Math.abs(percentageDifference) > 1) {
-      warnings.push(`Totaal verschil: ${totalDifference.toFixed(0)} (${percentageDifference.toFixed(1)}%)`);
+    // Per-category validation with detailed messages
+    const categoryResults = {
+      bank_savings: {
+        expected_count: manifest.asset_items.bank_savings.length,
+        extracted_count: manifest.asset_items.bank_savings.length,
+        expected_total: expected.bank_savings,
+        extracted_total: bankTotal,
+        difference: bankTotal - expected.bank_savings,
+        is_match: Math.abs(bankTotal - expected.bank_savings) < 1,
+      },
+      investments: {
+        expected_count: manifest.asset_items.investments.length,
+        extracted_count: manifest.asset_items.investments.length,
+        // Show expected as including green for correct comparison
+        expected_total: expectedInvTotal,
+        extracted_total: invTotal,
+        difference: invTotal - expectedInvTotal,
+        is_match: Math.abs(invTotal - expectedInvTotal) < 1,
+      },
+      other_assets: {
+        expected_count: manifest.asset_items.other_assets.length,
+        extracted_count: manifest.asset_items.other_assets.length,
+        expected_total: expected.other_assets,
+        extracted_total: otherTotal,
+        difference: otherTotal - expected.other_assets,
+        is_match: Math.abs(otherTotal - expected.other_assets) < 1,
+      },
+      debts: {
+        expected_count: manifest.debt_items.length,
+        extracted_count: manifest.debt_items.length,
+        expected_total: expected.debts,
+        extracted_total: debtTotal,
+        difference: debtTotal - expected.debts,
+        is_match: Math.abs(debtTotal - expected.debts) < 1,
+      },
+    };
+
+    // Generate specific warnings per category
+    if (!categoryResults.bank_savings.is_match) {
+      const diff = categoryResults.bank_savings.difference;
+      const pct = expected.bank_savings > 0 ? ((diff / expected.bank_savings) * 100).toFixed(1) : '0';
+      warnings.push(`Bank/sparen: €${Math.abs(diff).toLocaleString('nl-NL')} verschil (${pct}%)`);
     }
+    if (!categoryResults.investments.is_match) {
+      const diff = categoryResults.investments.difference;
+      const pct = expectedInvTotal > 0 ? ((diff / expectedInvTotal) * 100).toFixed(1) : '0';
+      warnings.push(`Beleggingen: €${Math.abs(diff).toLocaleString('nl-NL')} verschil (${pct}%)`);
+      // Add note about green investments if relevant
+      if (expectedGreen > 0) {
+        warnings.push(`  (incl. groene beleggingen: verwacht €${expectedGreen.toLocaleString('nl-NL')}, gevonden €${invTotalGreen.toLocaleString('nl-NL')})`);
+      }
+    }
+    if (!categoryResults.other_assets.is_match) {
+      const diff = categoryResults.other_assets.difference;
+      const pct = expected.other_assets > 0 ? ((diff / expected.other_assets) * 100).toFixed(1) : '0';
+      warnings.push(`Overige bezittingen: €${Math.abs(diff).toLocaleString('nl-NL')} verschil (${pct}%)`);
+    }
+    if (!categoryResults.debts.is_match) {
+      const diff = categoryResults.debts.difference;
+      const pct = expected.debts > 0 ? ((diff / expected.debts) * 100).toFixed(1) : '0';
+      warnings.push(`Schulden: €${Math.abs(diff).toLocaleString('nl-NL')} verschil (${pct}%)`);
+    }
+
     if (Math.abs(percentageDifference) > 5) {
       errors.push(`Significant totaal verschil: ${percentageDifference.toFixed(1)}%`);
     }
@@ -599,40 +731,7 @@ export class Box3PipelineV2 {
       is_valid: Math.abs(percentageDifference) <= 1,
       total_difference: totalDifference,
       percentage_difference: percentageDifference,
-      per_category: {
-        bank_savings: {
-          expected_count: manifest.asset_items.bank_savings.length,
-          extracted_count: manifest.asset_items.bank_savings.length,
-          expected_total: expected.bank_savings,
-          extracted_total: bankTotal,
-          difference: bankTotal - expected.bank_savings,
-          is_match: Math.abs(bankTotal - expected.bank_savings) < 1,
-        },
-        investments: {
-          expected_count: manifest.asset_items.investments.length,
-          extracted_count: manifest.asset_items.investments.length,
-          expected_total: expected.investments,
-          extracted_total: invTotal,
-          difference: invTotal - expected.investments,
-          is_match: Math.abs(invTotal - expected.investments) < 1,
-        },
-        other_assets: {
-          expected_count: manifest.asset_items.other_assets.length,
-          extracted_count: manifest.asset_items.other_assets.length,
-          expected_total: expected.other_assets,
-          extracted_total: otherTotal,
-          difference: otherTotal - expected.other_assets,
-          is_match: Math.abs(otherTotal - expected.other_assets) < 1,
-        },
-        debts: {
-          expected_count: manifest.debt_items.length,
-          extracted_count: manifest.debt_items.length,
-          expected_total: expected.debts,
-          extracted_total: debtTotal,
-          difference: debtTotal - expected.debts,
-          is_match: Math.abs(debtTotal - expected.debts) < 1,
-        },
-      },
+      per_category: categoryResults,
       warnings,
       errors,
     };
@@ -676,10 +775,13 @@ export class Box3PipelineV2 {
     const totalActualReturn = bankInterest + dividends + otherIncome - costsPaid;
     const forfaitairRendement = manifest.tax_authority[year]?.forfaitair_rendement || 0;
     const difference = totalActualReturn - forfaitairRendement;
+    const box3TaxPaid = manifest.tax_authority[year]?.belasting_box3 || 0;
 
-    // Box 3 tax rate is ~31% in 2022
-    const taxRate = 0.31;
-    const indicativeRefund = difference < 0 ? Math.abs(difference) * taxRate : 0;
+    // Use correct tax rate for the year from shared constants
+    const taxRate = BOX3_CONSTANTS.TAX_RATES[year] || 0.31;
+    // Calculate theoretical refund, but cap at actually paid tax (can't get back more than paid)
+    const theoreticalRefund = difference < 0 ? Math.abs(difference) * taxRate : 0;
+    const indicativeRefund = Math.min(theoreticalRefund, box3TaxPaid);
 
     return {
       tax_year: year,
@@ -899,27 +1001,40 @@ export class Box3PipelineV2 {
                          manifest.category_totals.real_estate +
                          manifest.category_totals.other_assets;
 
-      // Calculate actual returns from enrichment data if available
+      // Calculate actual returns from enrichment data, with estimates where missing
       let bankInterest = 0;
+      let bankInterestEstimated = 0;
       let dividends = 0;
       let otherIncome = 0;
       let debtInterest = 0;
 
-      // Sum up enrichment data
+      // Get savings rate for this year for estimates
+      const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[taxYear] || 0.001;
+
+      // Sum up enrichment data for bank savings, estimate if missing
       for (const item of manifest.asset_items.bank_savings) {
         if (item.enrichment?.interest_received) {
           bankInterest += item.enrichment.interest_received;
+        } else {
+          // Estimate based on balance × average savings rate for the year
+          const yearData = item.yearly_values[taxYear];
+          const balance = yearData?.value_jan_1 || 0;
+          if (balance > 0) {
+            bankInterestEstimated += balance * savingsRate;
+          }
         }
       }
       for (const item of manifest.asset_items.investments) {
         if (item.enrichment?.dividends_received) {
           dividends += item.enrichment.dividends_received;
         }
+        // Note: we don't estimate dividends - too variable
       }
       for (const item of manifest.asset_items.other_assets) {
         if (item.enrichment?.interest_received) {
           otherIncome += item.enrichment.interest_received;
         }
+        // Note: we don't estimate other income - too variable
       }
       for (const item of manifest.debt_items) {
         if (item.interest_paid) {
@@ -927,15 +1042,38 @@ export class Box3PipelineV2 {
         }
       }
 
-      const totalActualReturn = bankInterest + dividends + otherIncome - debtInterest;
+      // Use actual + estimated bank interest for total
+      const totalBankInterest = bankInterest + bankInterestEstimated;
+      const totalActualReturn = totalBankInterest + dividends + otherIncome - debtInterest;
       const deemedReturn = taxAuthData?.forfaitair_rendement || 0;
       const difference = totalActualReturn - deemedReturn;
-      const indicativeRefund = difference < 0 ? Math.abs(difference) * 0.36 : 0;
+      const box3TaxPaid = taxAuthData?.belasting_box3 || 0;
+      // Use correct tax rate for the year from shared constants
+      const taxRate = BOX3_CONSTANTS.TAX_RATES[taxYear] || 0.31;
+      // Calculate theoretical refund, but cap at actually paid tax (can't get back more than paid)
+      const theoreticalRefund = difference < 0 ? Math.abs(difference) * taxRate : 0;
+      const indicativeRefund = Math.min(theoreticalRefund, box3TaxPaid);
+
+      // Debug logging for refund cap
+      logger.info('box3-pipeline-v2', 'Refund calculation', {
+        taxYear,
+        deemedReturn,
+        totalActualReturn,
+        difference,
+        taxRate,
+        theoreticalRefund,
+        box3TaxPaid,
+        indicativeRefund,
+        bankInterestActual: bankInterest,
+        bankInterestEstimated,
+        totalBankInterest,
+        taxAuthData: taxAuthData ? { belasting_box3: taxAuthData.belasting_box3, forfaitair_rendement: taxAuthData.forfaitair_rendement } : null
+      });
 
       const calculatedTotals: Box3CalculatedTotals = {
         total_assets_jan_1: totalAssets,
         actual_return: {
-          bank_interest: bankInterest,
+          bank_interest: totalBankInterest, // Includes estimated if no enrichment data
           investment_gain: 0, // Not calculated in V2
           dividends,
           other_assets_income: otherIncome,

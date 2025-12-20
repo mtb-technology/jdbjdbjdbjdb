@@ -77,7 +77,15 @@ Extraheer BEIDE als aparte items in hun respectievelijke categorie.
 - Onder "Beleggingen" met fondsnaam (bijv. "huurwoningen nl fonds") → investments
 
 ### Groene beleggingen
-Items met "Is het een groene belegging? Ja" → is_green_investment: true
+BELANGRIJK: In de aangifte staan groene beleggingen APART onder "Groene beleggingen" met vrijstelling.
+- Extraheer deze WEL als item in de investments array met is_green_investment: true
+- De category_totals.investments in de aangifte is EXCLUSIEF groene beleggingen
+- Zet de waarde ook in green_investments.total_value
+
+Voorbeeld: "credit linked beheer groenwoningen fonds €39.550" met "Is het een groene belegging? Ja"
+→ Voeg toe aan investments met is_green_investment: true
+→ category_totals.investments blijft het getal uit de aangifte (excl. groen)
+→ green_investments.total_value = 39550
 
 ### Vorderingen / Uitgeleend geld
 - "familie hypotheek Rick otto €60.000" → other_assets, asset_type: "loaned_money"
@@ -132,6 +140,18 @@ Items met "Is het een groene belegging? Ja" → is_green_investment: true
           "2022": { "value_jan_1": 112343 }
         },
         "is_green_investment": false
+      },
+      {
+        "manifest_id": "inv_green_1",
+        "description_from_aangifte": "credit linked beheer groenwoningen fonds",
+        "category": "investments",
+        "owner_id": "joint",
+        "ownership_percentage": 100,
+        "institution": "credit linked beheer",
+        "yearly_values": {
+          "2022": { "value_jan_1": 39550 }
+        },
+        "is_green_investment": true
       }
     ],
     "real_estate": [],
@@ -196,9 +216,13 @@ Items met "Is het een groene belegging? Ja" → is_green_investment: true
 
 Na extractie, controleer:
 1. Som bank_savings items == category_totals.bank_savings
-2. Som investments items == category_totals.investments
-3. Som other_assets items == category_totals.other_assets
-4. Som debt_items == category_totals.debts
+2. Som investments items (EXCL. groene) == category_totals.investments
+3. Som investments items met is_green_investment == green_investments.total_value
+4. Som other_assets items == category_totals.other_assets
+5. Som debt_items == category_totals.debts
+
+BELANGRIJK: category_totals.investments uit de aangifte bevat GEEN groene beleggingen!
+Die staan apart in de aangifte en moeten in green_investments.total_value.
 
 Als de sommen niet kloppen, heb je items gemist. Controleer opnieuw.
 
@@ -369,7 +393,8 @@ Extraheer het volledige Box 3 manifest uit bovenstaande aangifte(n).`;
  */
 export function buildEnrichmentPrompt(
   manifest: any,
-  sourceDocuments: Array<{ doc_id: string; doc_type: string; content: string }>
+  sourceDocuments: Array<{ doc_id: string; doc_type: string; content: string }>,
+  emailText?: string | null
 ): string {
   // Filter out aangifte documents - we only need source docs for enrichment
   const enrichmentDocs = sourceDocuments.filter(
@@ -377,8 +402,10 @@ export function buildEnrichmentPrompt(
       d.doc_type !== 'aangifte_ib' && d.doc_type !== 'definitieve_aanslag' && d.doc_type !== 'voorlopige_aanslag'
   );
 
-  if (enrichmentDocs.length === 0) {
-    // No source documents to enrich with - return early
+  const hasEmailContext = emailText && emailText.trim().length > 0;
+
+  if (enrichmentDocs.length === 0 && !hasEmailContext) {
+    // No source documents or email context to enrich with - return early
     return '';
   }
 
@@ -416,6 +443,32 @@ export function buildEnrichmentPrompt(
     })),
   };
 
+  // Build email context section if available
+  const emailSection = emailText
+    ? `
+
+## KLANT EMAIL / CONTEXT:
+
+De klant heeft de volgende informatie verstrekt via email of intake:
+
+---
+${emailText}
+---
+
+BELANGRIJK: Gebruik deze context om:
+- Rente op uitgeleend geld (bijv. familieleningen, hypotheek aan kinderen) te bepalen
+- Ontbrekende informatie over bezittingen te vinden
+- Context te krijgen over de aard van bepaalde items
+`
+    : '';
+
+  // Build the documents section (may be empty if only email context)
+  const documentsSection = documentText
+    ? `## BRONDOCUMENTEN:
+
+${documentText}`
+    : '## BRONDOCUMENTEN:\n\nGeen brondocumenten beschikbaar.';
+
   return `${ENRICHMENT_PROMPT}
 
 ## MANIFEST ITEMS OM TE MATCHEN:
@@ -423,12 +476,10 @@ export function buildEnrichmentPrompt(
 \`\`\`json
 ${JSON.stringify(manifestSummary, null, 2)}
 \`\`\`
+${emailSection}
+${documentsSection}
 
-## BRONDOCUMENTEN:
-
-${documentText}
-
-Zoek per manifest item de aanvullende informatie in de brondocumenten.`;
+Zoek per manifest item de aanvullende informatie in ${documentText && hasEmailContext ? 'de brondocumenten en de klant email/context' : documentText ? 'de brondocumenten' : 'de klant email/context'}.`;
 }
 
 // =============================================================================

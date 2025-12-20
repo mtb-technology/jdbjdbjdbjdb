@@ -27,7 +27,7 @@ import type {
 } from "@shared/types/report-data";
 
 // Job types
-export type JobType = "single_stage" | "express_mode" | "generation" | "box3_validation" | "box3_revalidation" | "box3_revalidation_v2";
+export type JobType = "single_stage" | "express_mode" | "generation" | "box3_validation" | "box3_revalidation" | "box3_revalidation_v2" | "box3_validation_v2";
 
 // Progress structure stored in jobs.progress JSON
 export interface JobProgress {
@@ -184,7 +184,8 @@ class JobProcessor {
           await this.processBox3Revalidation(job);
           break;
         case "box3_revalidation_v2":
-          // Pipeline V2: Aangifte-First architecture
+        case "box3_validation_v2":
+          // Pipeline V2: Aangifte-First architecture (both new validation and revalidation)
           await this.processBox3RevalidationV2(job);
           break;
         default:
