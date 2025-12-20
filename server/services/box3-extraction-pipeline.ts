@@ -3436,31 +3436,32 @@ Geef een LEGE array als je niets kunt vinden.`;
           return sum + (perPerson[id]?.allocation_percentage || 0);
         }, 0);
 
-        // Try to calculate correct allocation from taxable_base if available
-        const totalTaxableBase = personIds.reduce((sum, id) => {
-          return sum + (perPerson[id]?.taxable_base || 0);
-        }, 0);
+        // ALWAYS enforce allocation sums to 100%
+        if (Math.abs(totalAllocation - 100) > 1) {
+          // Try to calculate correct allocation from taxable_base if available
+          const totalTaxableBase = personIds.reduce((sum, id) => {
+            return sum + (perPerson[id]?.taxable_base || 0);
+          }, 0);
 
-        if (totalTaxableBase > 0) {
-          // Calculate allocation based on actual taxable_base distribution
-          personIds.forEach(id => {
-            if (perPerson[id]) {
-              const personTaxableBase = perPerson[id].taxable_base || 0;
-              const calculatedAllocation = Math.round((personTaxableBase / totalTaxableBase) * 10000) / 100;
-              if (Math.abs(calculatedAllocation - (perPerson[id].allocation_percentage || 0)) > 1) {
+          if (totalTaxableBase > 0) {
+            // Calculate allocation based on actual taxable_base distribution
+            personIds.forEach(id => {
+              if (perPerson[id]) {
+                const personTaxableBase = perPerson[id].taxable_base || 0;
+                const calculatedAllocation = Math.round((personTaxableBase / totalTaxableBase) * 10000) / 100;
                 console.log(`[Box3Pipeline] Year ${year}: Correcting allocation for ${id} from ${perPerson[id].allocation_percentage}% to ${calculatedAllocation}% based on taxable_base`);
+                perPerson[id].allocation_percentage = calculatedAllocation;
               }
-              perPerson[id].allocation_percentage = calculatedAllocation;
-            }
-          });
-        } else if (Math.abs(totalAllocation - 100) > 1) {
-          // No taxable_base data, fall back to 50/50 if allocation doesn't sum to 100%
-          console.warn(`[Box3Pipeline] Year ${year}: allocation_percentage sum is ${totalAllocation}%, expected 100%. No taxable_base available, fixing to 50/50.`);
-          personIds.forEach(id => {
-            if (perPerson[id]) {
-              perPerson[id].allocation_percentage = 50;
-            }
-          });
+            });
+          } else {
+            // No taxable_base data, fall back to 50/50
+            console.warn(`[Box3Pipeline] Year ${year}: allocation_percentage sum is ${totalAllocation}%, expected 100%. No taxable_base available, fixing to 50/50.`);
+            personIds.forEach(id => {
+              if (perPerson[id]) {
+                perPerson[id].allocation_percentage = 50;
+              }
+            });
+          }
         }
       } else if (personIds.length === 1) {
         // Single person should have 100%
