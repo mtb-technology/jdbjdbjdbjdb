@@ -808,35 +808,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 <Plus className="h-4 w-4 mr-1.5" />
                 Document toevoegen
               </Button>
-              {/* Pipeline Version Toggle */}
-              {onPipelineVersionChange && (
-                <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
-                  <button
-                    onClick={() => onPipelineVersionChange('v1')}
-                    disabled={isRevalidating}
-                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all ${
-                      pipelineVersion === 'v1'
-                        ? 'bg-white dark:bg-slate-700 text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    } ${isRevalidating ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <Zap className="h-3 w-3" />
-                    V1
-                  </button>
-                  <button
-                    onClick={() => onPipelineVersionChange('v2')}
-                    disabled={isRevalidating}
-                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all ${
-                      pipelineVersion === 'v2'
-                        ? 'bg-white dark:bg-slate-700 text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    } ${isRevalidating ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <FlaskConical className="h-3 w-3" />
-                    V2
-                  </button>
-                </div>
-              )}
+              {/* Pipeline Version Toggle - Hidden, V2 is now default */}
               <Button
                 onClick={onRevalidate}
                 size="sm"

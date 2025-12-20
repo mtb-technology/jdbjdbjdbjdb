@@ -885,9 +885,10 @@ export class Box3PipelineV2 {
       owner_id: item.owner_id,
       description: item.description_from_aangifte,
       type: mapOtherAssetType(item.asset_type),
-      borrower_name: item.loan_details?.borrower_name,
+      // Prefer enrichment data (from email/docs) over manifest loan_details
+      borrower_name: item.enrichment?.borrower_name || item.loan_details?.borrower_name,
       is_family_loan: item.loan_details?.is_family_loan,
-      agreed_interest_rate: item.loan_details?.interest_rate,
+      agreed_interest_rate: item.enrichment?.agreed_interest_rate || item.loan_details?.interest_rate,
       yearly_data: Object.fromEntries(
         Object.entries(item.yearly_values).map(([y, data]) => [
           y,

@@ -267,7 +267,14 @@ Per manifest item, zoek in brondocumenten:
 - capital_gains_realized: Gerealiseerde koerswinst (optioneel)
 
 ### Voor vorderingen (uitgeleend geld):
-- interest_received: Ontvangen rente op de lening
+- agreed_interest_rate: Afgesproken rentepercentage (bijv. 3.5 voor 3,5%)
+- interest_received: Ontvangen rente op de lening over het jaar
+- borrower_name: Naam van de lener (kind, familielid, etc.)
+
+BELANGRIJK voor vorderingen: Zoek in de klant email naar informatie over:
+- Rentepercentage (bijv. "3,5% per jaar", "tegen 3.5%pj")
+- Maandelijkse/jaarlijkse rente (bijv. "€1750 per maand", "€21000 per jaar")
+- Naam van de lener (bijv. "hypotheek aan mijn zoon", "lening aan WH Vonck")
 
 ### Voor schulden:
 - interest_paid: Betaalde rente (indien niet Box 1)
@@ -329,6 +336,16 @@ Ontvangen rente: €12,50
       "manifest_id": "bank_15",
       "enrichment": null,
       "note": "Geen jaaroverzicht gevonden voor Credit Linked Beheer deposito"
+    },
+    {
+      "manifest_id": "other_1",
+      "enrichment": {
+        "matched_source_doc_id": "email_context",
+        "match_confidence": 0.95,
+        "agreed_interest_rate": 3.5,
+        "interest_received": 21000,
+        "borrower_name": "WH Vonck"
+      }
     }
   ],
   "unmatched_source_docs": [

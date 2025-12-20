@@ -136,28 +136,13 @@ export function useBox3Validation({
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const jobCompletedRef = useRef(false);
 
-  // Pipeline version toggle - persisted to localStorage
-  const [pipelineVersion, setPipelineVersionState] = useState<PipelineVersion>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(PIPELINE_VERSION_KEY);
-      if (stored === 'v1' || stored === 'v2') return stored;
-    }
-    return 'v1'; // Default to V1 (stable)
-  });
+  // Pipeline version - V2 is now the default and only option
+  const [pipelineVersion, setPipelineVersionState] = useState<PipelineVersion>('v2');
 
-  // Persist pipeline version to localStorage
+  // Pipeline version setter (V2 is now default, kept for compatibility)
   const setPipelineVersion = useCallback((version: PipelineVersion) => {
     setPipelineVersionState(version);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(PIPELINE_VERSION_KEY, version);
-    }
-    toast({
-      title: `Pipeline ${version.toUpperCase()} geselecteerd`,
-      description: version === 'v2'
-        ? 'Aangifte-First architectuur (experimenteel)'
-        : 'Multi-stage extractie (stabiel)',
-    });
-  }, [toast]);
+  }, []);
 
   // Poll for job status when we have an active job
   const { data: jobData } = useQuery({

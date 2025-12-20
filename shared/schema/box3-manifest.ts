@@ -119,6 +119,10 @@ export interface ManifestEnrichment {
   // Additional identifiers found
   full_iban?: string;
   full_address?: string;
+
+  // Loan-specific enrichment (for loaned_money / vorderingen)
+  agreed_interest_rate?: number; // Percentage, e.g., 3.5 for 3,5%
+  borrower_name?: string; // Name of the borrower (e.g., "WH Vonck")
 }
 
 // =============================================================================
