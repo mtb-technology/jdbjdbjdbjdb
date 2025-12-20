@@ -1321,6 +1321,16 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             const isProfitable = netRefund > 0 || profitableYears.length > 0;
             const isComplete = incompleteYears.length === 0 && years.length > 0;
 
+            // Recalculate per-person refunds based on the displayed total (estimated or actual)
+            // This ensures the per-person split matches what's shown in the header
+            const displayedTotal = hasUnknownInterest ? estimatedRefund : totalRefund;
+            personSummaries.forEach(person => {
+              // Sum up allocations across years and recalculate based on displayed total
+              const totalAllocation = Object.values(person.yearBreakdown).reduce((sum, yb) => sum + yb.allocation, 0);
+              const avgAllocation = years.length > 0 ? totalAllocation / years.length : 0;
+              person.totalIndicativeRefund = displayedTotal * (avgAllocation / 100);
+            });
+
             // Collect ALL missing items across all years
             const allMissingItems: { year: string; description: string }[] = [];
             years.forEach(year => {
