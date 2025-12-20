@@ -586,7 +586,11 @@ KRITIEKE REGELS:
 6. ownership_percentage = 100 bij volledig eigendom huishouden, lager bij externe mede-eigenaren
    Bij gezamenlijke rekeningen BINNEN huishouden: is_joint_account = true, owner_id = "joint", ownership = 100
 7. BinckBank, DEGIRO etc. met alleen een saldo (geen beleggingsdetails) → extraheer als bankrekening
-8. Premiedepot, kapitaalverzekering → extraheer als bankrekening (tenzij apart vermeld in aangifte)`;
+8. Premiedepot, kapitaalverzekering → extraheer als bankrekening (tenzij apart vermeld in aangifte)
+9. BELANGRIJK: Items ZONDER rekeningnummer (bijv. "GEEN NUMMER") zijn OOK geldig!
+   - Fondsaanbieders (Credit Linked Beheer) melden vaak deposito's zonder IBAN
+   - Als item in checklist staat met "GEEN NUMMER" → extraheer met account_masked: "GEENNUMMER"
+10. Credit Linked Beheer ZONDER fondsnaam = bankrekening/deposito (niet investment!)`;
 
 // =============================================================================
 // STAGE 3b: INVESTMENT EXTRACTION PROMPT
@@ -932,4 +936,134 @@ VIND AL DEZE ITEMS!`
     .replace('{OTHER_CHECKLIST}', checklistText)
     .replace('{TAXPAYER_NAME}', fiscalEntity?.taxpayerName || 'belastingplichtige')
     .replace('{PARTNER_NAME}', fiscalEntity?.partnerName || 'partner');
+}
+
+// =============================================================================
+// STAGE 4a: SMART CLASSIFICATION & DEDUPLICATION PROMPT
+// =============================================================================
+
+/**
+ * This prompt runs AFTER all extraction stages and BEFORE final merge.
+ * It receives ALL extracted items from bank, investment, and other_assets stages
+ * and must:
+ * 1. Identify duplicates across categories
+ * 2. Assign each item to the correct category
+ * 3. Remove duplicates, keeping only one instance
+ */
+export const SMART_CLASSIFICATION_PROMPT = `Je bent een senior fiscalist die Box 3 vermogensbestanddelen dedupliceert.
+
+## JOUW TAAK
+Je krijgt geëxtraheerde items uit verschillende extractie-stages. Deze stages werkten onafhankelijk,
+waardoor DEZELFDE items soms in MEERDERE categorieën kunnen staan.
+
+Jouw taak is ALLEEN:
+1. IDENTIFICEER echte duplicaten (zelfde item in meerdere categorieën)
+2. VERWIJDER duplicaten - elk item mag maar in ÉÉN categorie staan
+3. BEHOUD de originele categorie waar mogelijk
+
+## KRITIEKE REGEL: AANGIFTE IS GROUND TRUTH
+
+De items komen uit de AANGIFTE van de belastingplichtige. De aangifte bepaalt de categorie:
+- Items uit "from_bank_extraction" ZIJN bankrekeningen (want zo staat het in de aangifte)
+- Items uit "from_investment_extraction" ZIJN beleggingen (want zo staat het in de aangifte)
+- Items uit "from_other_extraction" ZIJN overige bezittingen (want zo staat het in de aangifte)
+
+JE MAG ITEMS NIET HERCLASSIFICEREN tenzij ze DUBBEL staan!
+
+## DUPLICAAT HERKENNING
+
+Twee items zijn HETZELFDE als:
+1. Zelfde bedrag (binnen 1% marge) EN zelfde/vergelijkbare beschrijving
+2. OF: Zelfde IBAN/rekeningnummer
+
+Bij duplicaten: behoud het item in de categorie waar het in de aangifte staat.
+
+## NIET-DUPLICATEN (LAAT STAAN!)
+
+BinckBank/DEGIRO met VERSCHILLENDE bedragen in bank en investment:
+- Bank: "BinckBank €34.627" = gelddeel (cash saldo)
+- Investment: "BinckBank €111.280" = effectendeel (portefeuille)
+Dit zijn TWEE APARTE items, GEEN duplicaat! Beide behouden.
+
+## WAT JE MOET DOEN
+
+1. Zoek items met ZELFDE bedrag in meerdere categorieën
+2. Als zelfde bedrag + zelfde beschrijving → duplicaat → verwijder uit verkeerde categorie
+3. Als VERSCHILLENDE bedragen → GEEN duplicaat → beide behouden
+
+## INPUT FORMAT
+{
+  "from_bank_extraction": [...],      // Items gevonden door bank extraction
+  "from_investment_extraction": [...], // Items gevonden door investment extraction
+  "from_other_extraction": [...]       // Items gevonden door other assets extraction
+}
+
+## OUTPUT FORMAT (alleen JSON)
+{
+  "bank_savings": [
+    // ALLE items uit from_bank_extraction (behoud originele id)
+    // MINUS items die duplicaat zijn van een investment/other item
+  ],
+  "investments": [
+    // ALLE items uit from_investment_extraction (behoud originele id)
+    // MINUS items die duplicaat zijn van een bank/other item
+  ],
+  "other_assets": [
+    // ALLE items uit from_other_extraction (behoud originele id)
+    // MINUS items die duplicaat zijn van een bank/investment item
+  ],
+  "removed_duplicates": [
+    {
+      "removed_id": "inv_14",
+      "kept_id": "oa_1",
+      "reason": "Zelfde bedrag €60.000 en beschrijving 'Vordering Rick' - behouden in originele categorie"
+    }
+  ],
+  "reclassifications": []  // LEEG - we herclassificeren NIET meer
+}
+
+GEEF ALLEEN VALIDE JSON TERUG.`;
+
+/**
+ * Build the smart classification prompt with actual extracted data
+ */
+export function buildSmartClassificationPrompt(
+  bankItems: any[],
+  investmentItems: any[],
+  otherItems: any[]
+): string {
+  const inputData = {
+    from_bank_extraction: bankItems.map(b => ({
+      id: b.id,
+      description: b.description || b.bank_name,
+      bank_name: b.bank_name,
+      account_masked: b.account_masked,
+      amount_2022: b.yearly_data?.['2022']?.value_jan_1?.amount || b.yearly_data?.['2022']?.value_jan_1 || 0,
+      amount_2023: b.yearly_data?.['2023']?.value_jan_1?.amount || b.yearly_data?.['2023']?.value_jan_1 || 0,
+    })),
+    from_investment_extraction: investmentItems.map(i => ({
+      id: i.id,
+      description: i.description || i.institution,
+      institution: i.institution,
+      type: i.type,
+      amount_2022: i.yearly_data?.['2022']?.value_jan_1?.amount || i.yearly_data?.['2022']?.value_jan_1 || 0,
+      amount_2023: i.yearly_data?.['2023']?.value_jan_1?.amount || i.yearly_data?.['2023']?.value_jan_1 || 0,
+    })),
+    from_other_extraction: otherItems.map(o => ({
+      id: o.id,
+      description: o.description,
+      type: o.type,
+      amount_2022: o.yearly_data?.['2022']?.value_jan_1?.amount || o.yearly_data?.['2022']?.value_jan_1 || 0,
+      amount_2023: o.yearly_data?.['2023']?.value_jan_1?.amount || o.yearly_data?.['2023']?.value_jan_1 || 0,
+    })),
+  };
+
+  return `${SMART_CLASSIFICATION_PROMPT}
+
+## TE CLASSIFICEREN ITEMS:
+\`\`\`json
+${JSON.stringify(inputData, null, 2)}
+\`\`\`
+
+Analyseer deze items, identificeer duplicaten, en geef de definitieve classificatie terug.`;
 }

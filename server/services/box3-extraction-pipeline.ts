@@ -15,7 +15,7 @@
 import { AIModelFactory } from "./ai-models/ai-model-factory";
 import { logger } from "./logger";
 import { extractPdfTextFromBase64, hasUsableText, type PdfExtractionResult } from "./pdf-text-extractor";
-import { runSemanticDeduplication, detectCrossCategoryDuplicates } from "./box3-deduplication";
+import { runSemanticDeduplication, detectCrossCategoryDuplicates, resolveCrossCategoryDuplicates } from "./box3-deduplication";
 import {
   CLASSIFICATION_PROMPT,
   TAX_AUTHORITY_PROMPT,
@@ -27,6 +27,7 @@ import {
   buildInvestmentExtractionPrompt,
   buildRealEstateExtractionPrompt,
   buildOtherAssetsExtractionPrompt,
+  buildSmartClassificationPrompt,
 } from "./box3-prompts";
 import { BOX3_CONSTANTS } from "@shared/constants";
 import type {
@@ -159,7 +160,7 @@ export class Box3ExtractionPipeline {
   private readonly REASONING_CONFIG = {
     ...this.MODEL_CONFIG_BASE,
     thinkingLevel: 'high' as const,
-    maxOutputTokens: 16384,  // Increased to avoid token limit issues
+    maxOutputTokens: 32768,  // Increased to avoid token limit issues with high thinking
     useGrounding: false,    // No web search needed for anomaly detection
   };
 
@@ -535,13 +536,65 @@ export class Box3ExtractionPipeline {
     }
 
     // =========================================================================
+    // STAGE 4a: Smart Classification & Deduplication (LLM-based)
+    // =========================================================================
+    // This stage runs BEFORE merge to fix classification errors and remove duplicates
+    // using Pro model for better reasoning about ambiguous items
+    this.reportProgress({
+      step: 'merge',
+      stepNumber: 4,
+      totalSteps,
+      message: 'Slimme classificatie en deduplicatie uitvoeren...',
+      subProgress: { current: 1, total: 3, item: 'smart_classification' },
+    });
+
+    const stage4aStart = Date.now();
+    const classificationResult = await this.runSmartClassification(
+      bankResult?.bank_savings || [],
+      investmentResult?.investments || [],
+      otherResult?.other_assets || [],
+      debugPrompts,
+      debugResponses
+    );
+
+    // Apply classification results if successful
+    if (classificationResult) {
+      // Update extraction results with classified data
+      if (bankResult) {
+        bankResult.bank_savings = classificationResult.bank_savings;
+      }
+      if (investmentResult) {
+        investmentResult.investments = classificationResult.investments;
+      }
+      if (otherResult) {
+        otherResult.other_assets = classificationResult.other_assets;
+      }
+
+      // Log what was changed
+      if (classificationResult.removed_duplicates.length > 0) {
+        logger.info('box3-pipeline', `Stage 4a: Removed ${classificationResult.removed_duplicates.length} duplicates`);
+        for (const dup of classificationResult.removed_duplicates) {
+          logger.info('box3-pipeline', `  - ${dup.removed_id} → kept ${dup.kept_id}: ${dup.reason}`);
+        }
+      }
+      if (classificationResult.reclassifications.length > 0) {
+        logger.info('box3-pipeline', `Stage 4a: Reclassified ${classificationResult.reclassifications.length} items`);
+        for (const r of classificationResult.reclassifications) {
+          logger.info('box3-pipeline', `  - ${r.id}: ${r.from} → ${r.to}: ${r.reason}`);
+        }
+      }
+    }
+    stageTimes['smart_classification'] = Date.now() - stage4aStart;
+
+    // =========================================================================
     // STAGE 4: Merge & Reconcile
     // =========================================================================
     this.reportProgress({
       step: 'merge',
       stepNumber: 4,
       totalSteps,
-      message: 'Gegevens samenvoegen en conflicten oplossen...'
+      message: 'Gegevens samenvoegen en conflicten oplossen...',
+      subProgress: { current: 2, total: 3, item: 'merge' },
     });
 
     const stage4Start = Date.now();
@@ -573,16 +626,27 @@ export class Box3ExtractionPipeline {
     const { blueprint: deduplicatedBlueprint, result: dedupResult } = runSemanticDeduplication(blueprint, years);
     blueprint = deduplicatedBlueprint;
 
-    // Also detect cross-category duplicates (bank vs investment)
+    // RESOLVE cross-category duplicates (vorderingen, gelddelen, same-amount items)
+    // This actually removes duplicates from the wrong category instead of just warning
+    const { blueprint: resolvedBlueprint, resolved: crossResolved } = resolveCrossCategoryDuplicates(blueprint, years);
+    blueprint = resolvedBlueprint;
+
+    // Also detect any remaining cross-category duplicates (for warning)
     const crossCategoryMatches = detectCrossCategoryDuplicates(blueprint, years);
 
-    if (dedupResult.items_merged > 0 || crossCategoryMatches.length > 0) {
+    if (dedupResult.items_merged > 0 || crossCategoryMatches.length > 0 || crossResolved.length > 0) {
       logger.info('box3-pipeline', 'Stage 4b: Deduplication complete', {
         items_merged: dedupResult.items_merged,
         items_flagged: dedupResult.items_flagged_for_review,
-        cross_category_matches: crossCategoryMatches.length,
+        cross_category_resolved: crossResolved.length,
+        cross_category_remaining: crossCategoryMatches.length,
         ownership_conflicts: dedupResult.ownership_conflicts.length,
       });
+    }
+
+    // Log what was resolved
+    for (const r of crossResolved) {
+      logger.info('box3-pipeline', `Cross-category resolved: ${r.id} moved from ${r.removedFrom} to ${r.keptIn} - ${r.reason}`);
     }
 
     // Add deduplication warnings to errors list
@@ -590,6 +654,7 @@ export class Box3ExtractionPipeline {
       errors.push(`[Dedup] Eigendomspercentage conflict: ${conflict.message}`);
     }
 
+    // Only warn about remaining unresolved cross-category duplicates
     for (const match of crossCategoryMatches) {
       errors.push(`[Dedup] Cross-category duplicaat: ${match.asset_a_id} en ${match.asset_b_id} (${match.conflicts.join(', ')})`);
     }
@@ -1620,6 +1685,194 @@ export class Box3ExtractionPipeline {
   }
 
   // ===========================================================================
+  // STAGE 4a: SMART CLASSIFICATION & DEDUPLICATION
+  // ===========================================================================
+
+  /**
+   * Smart classification using Pro model to:
+   * 1. Identify duplicates across categories (bank/investment/other)
+   * 2. Assign each item to the correct category based on fiscal rules
+   * 3. Remove duplicates, keeping only one instance in the right category
+   */
+  private async runSmartClassification(
+    bankItems: Box3BankSavingsAsset[],
+    investmentItems: Box3InvestmentAsset[],
+    otherItems: Box3OtherAsset[],
+    debugPrompts: Record<string, string>,
+    debugResponses: Record<string, string>
+  ): Promise<{
+    bank_savings: Box3BankSavingsAsset[];
+    investments: Box3InvestmentAsset[];
+    other_assets: Box3OtherAsset[];
+    removed_duplicates: Array<{ removed_id: string; kept_id: string; reason: string }>;
+    reclassifications: Array<{ id: string; from: string; to: string; reason: string }>;
+  } | null> {
+    // Skip if no items to classify
+    const totalItems = bankItems.length + investmentItems.length + otherItems.length;
+    if (totalItems === 0) {
+      return null;
+    }
+
+    logger.info('box3-pipeline', 'Stage 4a: Running smart classification', {
+      bank_count: bankItems.length,
+      investment_count: investmentItems.length,
+      other_count: otherItems.length,
+    });
+
+    const prompt = buildSmartClassificationPrompt(bankItems, investmentItems, otherItems);
+    debugPrompts['smart_classification'] = prompt;
+
+    try {
+      // Use Pro model for better reasoning on ambiguous items
+      const result = await this.factory.callModel(
+        {
+          model: 'gemini-3-pro-preview',
+          provider: 'google' as const,
+          temperature: 0.0,
+          topP: 0.95,
+          topK: 40,
+          thinkingLevel: 'low' as const,
+          maxOutputTokens: 65536,
+        },
+        prompt
+      );
+
+      debugResponses['smart_classification'] = result.content;
+      const json = this.parseJSON(result.content);
+
+      if (!json) {
+        logger.error('box3-pipeline', 'Smart classification failed to parse JSON');
+        return null;
+      }
+
+      // Build ID -> original item maps for preservation of full data
+      const bankById = new Map(bankItems.map(b => [b.id, b]));
+      const invById = new Map(investmentItems.map(i => [i.id, i]));
+      const otherById = new Map(otherItems.map(o => [o.id, o]));
+
+      // Collect IDs that should be in each category (from LLM response)
+      const classifiedBankIds = new Set<string>((json.bank_savings || []).map((b: any) => b.id as string));
+      const classifiedInvIds = new Set<string>((json.investments || []).map((i: any) => i.id as string));
+      const classifiedOtherIds = new Set<string>((json.other_assets || []).map((o: any) => o.id as string));
+
+      // Build final arrays using original full items
+      const finalBankSavings: Box3BankSavingsAsset[] = [];
+      const finalInvestments: Box3InvestmentAsset[] = [];
+      const finalOtherAssets: Box3OtherAsset[] = [];
+
+      // Add items from classified bank_savings
+      classifiedBankIds.forEach(id => {
+        if (bankById.has(id)) {
+          finalBankSavings.push(bankById.get(id)!);
+        } else if (invById.has(id)) {
+          // Item was reclassified from investments to bank
+          const inv = invById.get(id)!;
+          finalBankSavings.push({
+            id: inv.id,
+            owner_id: inv.owner_id,
+            description: inv.description || '',
+            bank_name: inv.institution || '',
+            account_masked: inv.account_masked,
+            country: inv.country || 'NL',
+            ownership_percentage: inv.ownership_percentage || 100,
+            is_joint_account: false,
+            is_green_investment: false,
+            yearly_data: inv.yearly_data as any,
+          });
+        } else if (otherById.has(id)) {
+          // Item was reclassified from other to bank
+          const other = otherById.get(id)!;
+          finalBankSavings.push({
+            id: other.id,
+            owner_id: other.owner_id,
+            description: other.description || '',
+            bank_name: '',
+            country: other.country || 'NL',
+            ownership_percentage: 100,
+            is_joint_account: false,
+            is_green_investment: false,
+            yearly_data: other.yearly_data as any,
+          });
+        }
+      });
+
+      // Add items from classified investments
+      classifiedInvIds.forEach(id => {
+        if (invById.has(id)) {
+          finalInvestments.push(invById.get(id)!);
+        } else if (bankById.has(id)) {
+          // Item was reclassified from bank to investments
+          const bank = bankById.get(id)!;
+          finalInvestments.push({
+            id: bank.id,
+            owner_id: bank.owner_id,
+            description: bank.description || bank.bank_name || '',
+            institution: bank.bank_name || '',
+            account_masked: bank.account_masked,
+            country: bank.country || 'NL',
+            type: 'funds',
+            ownership_percentage: bank.ownership_percentage || 100,
+            yearly_data: bank.yearly_data as any,
+          });
+        } else if (otherById.has(id)) {
+          // Item was reclassified from other to investments
+          const other = otherById.get(id)!;
+          finalInvestments.push({
+            id: other.id,
+            owner_id: other.owner_id,
+            description: other.description || '',
+            institution: '',
+            country: other.country || 'NL',
+            type: 'other',
+            ownership_percentage: 100,
+            yearly_data: other.yearly_data as any,
+          });
+        }
+      });
+
+      // Add items from classified other_assets
+      classifiedOtherIds.forEach(id => {
+        if (otherById.has(id)) {
+          finalOtherAssets.push(otherById.get(id)!);
+        } else if (bankById.has(id)) {
+          // Item was reclassified from bank to other
+          const bank = bankById.get(id)!;
+          finalOtherAssets.push({
+            id: bank.id,
+            owner_id: bank.owner_id,
+            description: bank.description || bank.bank_name || '',
+            type: 'other',
+            country: bank.country || 'NL',
+            yearly_data: bank.yearly_data as any,
+          });
+        } else if (invById.has(id)) {
+          // Item was reclassified from investments to other
+          const inv = invById.get(id)!;
+          finalOtherAssets.push({
+            id: inv.id,
+            owner_id: inv.owner_id,
+            description: inv.description || inv.institution || '',
+            type: 'loaned_money',
+            country: inv.country || 'NL',
+            yearly_data: inv.yearly_data as any,
+          });
+        }
+      });
+
+      return {
+        bank_savings: finalBankSavings,
+        investments: finalInvestments,
+        other_assets: finalOtherAssets,
+        removed_duplicates: json.removed_duplicates || [],
+        reclassifications: json.reclassifications || [],
+      };
+    } catch (err: any) {
+      logger.error('box3-pipeline', 'Smart classification failed', { error: err.message });
+      return null;
+    }
+  }
+
+  // ===========================================================================
   // STAGE 4: MERGE & RECONCILE
   // ===========================================================================
 
@@ -2628,6 +2881,7 @@ export class Box3ExtractionPipeline {
       const result = await this.factory.callModel(
         {
           ...this.REASONING_CONFIG, // High thinking for better analysis
+          maxOutputTokens: 65536,   // Increase to handle large portfolios
         },
         prompt
       );

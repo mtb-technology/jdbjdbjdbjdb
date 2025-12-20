@@ -630,7 +630,119 @@ export function runSemanticDeduplication(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Detect potential duplicates ACROSS categories
+ * Resolve cross-category duplicates by removing TRUE duplicates only.
+ *
+ * GROUND TRUTH PRINCIPLE: The aangifte determines the category.
+ * If something is listed under "Bankrekeningen" in the aangifte, it IS a bank account.
+ * We do NOT reclassify - we only remove items that appear in MULTIPLE categories
+ * with the SAME amount AND description.
+ *
+ * Returns modified blueprint with true duplicates removed.
+ */
+export function resolveCrossCategoryDuplicates(
+  blueprint: Box3Blueprint,
+  years: string[]
+): { blueprint: Box3Blueprint; resolved: Array<{ id: string; keptIn: string; removedFrom: string; reason: string }> } {
+  const resolved: Array<{ id: string; keptIn: string; removedFrom: string; reason: string }> = [];
+
+  const invToRemove = new Set<string>();
+
+  // Helper: get amount for year
+  const getAmount = (asset: any, year: string): number => {
+    const data = asset.yearly_data?.[year];
+    if (!data) return 0;
+    const val = data.value_jan_1?.amount ?? data.value_jan_1 ?? data.woz_value?.amount ?? data.woz_value ?? 0;
+    return typeof val === 'number' ? val : 0;
+  };
+
+  // Helper: amounts match within 1%
+  const amountsMatch = (a: any, b: any): boolean => {
+    for (const year of years) {
+      const amtA = getAmount(a, year);
+      const amtB = getAmount(b, year);
+      if (amtA > 0 && amtB > 0) {
+        const diff = Math.abs(amtA - amtB) / Math.max(amtA, amtB, 1);
+        if (diff <= 0.01) return true;
+      }
+    }
+    return false;
+  };
+
+  // Helper: descriptions match (normalized comparison)
+  const descriptionsMatch = (desc1: string, desc2: string): boolean => {
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const n1 = normalize(desc1 || '');
+    const n2 = normalize(desc2 || '');
+    // Check if one contains the other or they're very similar
+    return n1.includes(n2) || n2.includes(n1) || n1 === n2;
+  };
+
+  // ONLY remove TRUE duplicates: same amount AND same/similar description in multiple categories
+  // Priority: other_assets > bank_savings > investments (keep in the more specific category)
+
+  // Check investments against other_assets
+  for (const inv of blueprint.assets.investments) {
+    for (const other of blueprint.assets.other_assets) {
+      if (amountsMatch(inv, other) && descriptionsMatch(inv.description || '', other.description || '')) {
+        // True duplicate - remove from investments, keep in other_assets (aangifte ground truth)
+        invToRemove.add(inv.id);
+        resolved.push({
+          id: inv.id,
+          keptIn: 'other_assets',
+          removedFrom: 'investments',
+          reason: `Duplicaat: "${inv.description}" staat in zowel investments als other_assets met zelfde bedrag`,
+        });
+        break;
+      }
+    }
+  }
+
+  // Check investments against bank_savings (only if same amount AND same description)
+  for (const inv of blueprint.assets.investments) {
+    if (invToRemove.has(inv.id)) continue;
+
+    for (const bank of blueprint.assets.bank_savings) {
+      const invDesc = inv.description || inv.institution || '';
+      const bankDesc = bank.description || bank.bank_name || '';
+
+      if (amountsMatch(inv, bank) && descriptionsMatch(invDesc, bankDesc)) {
+        // True duplicate - remove from investments, keep in bank (aangifte ground truth)
+        invToRemove.add(inv.id);
+        resolved.push({
+          id: inv.id,
+          keptIn: 'bank_savings',
+          removedFrom: 'investments',
+          reason: `Duplicaat: "${invDesc}" staat in zowel investments als bank_savings met zelfde bedrag`,
+        });
+        break;
+      }
+    }
+  }
+
+  // NOTE: We do NOT remove items from bank_savings or other_assets
+  // Those categories are ground truth from the aangifte
+  // We only remove from investments when a true duplicate exists elsewhere
+
+  // Apply removals
+  const newBlueprint: Box3Blueprint = {
+    ...blueprint,
+    assets: {
+      ...blueprint.assets,
+      investments: blueprint.assets.investments.filter(i => !invToRemove.has(i.id)),
+    },
+  };
+
+  if (resolved.length > 0) {
+    logger.info('box3-dedup', `Resolved ${resolved.length} cross-category duplicates (ground truth approach)`, {
+      removed_from_inv: invToRemove.size,
+    });
+  }
+
+  return { blueprint: newBlueprint, resolved };
+}
+
+/**
+ * Detect potential duplicates ACROSS categories (for reporting only)
  * E.g., same item in bank_savings AND investments, or investments AND other_assets
  *
  * This is separate because cross-category duplicates are more complex
