@@ -3425,6 +3425,52 @@ Geef een LEGE array als je niets kunt vinden.`;
 
       const householdTotals = yearData.household_totals || {};
 
+      // Validate and fix allocation_percentage in per_person
+      // The allocation should be based on taxable_base (grondslag) per person, NOT a random split
+      const perPerson = yearData.per_person || {};
+      const personIds = Object.keys(perPerson);
+
+      if (personIds.length >= 2) {
+        // Calculate sum of allocation percentages
+        const totalAllocation = personIds.reduce((sum, id) => {
+          return sum + (perPerson[id]?.allocation_percentage || 0);
+        }, 0);
+
+        // Try to calculate correct allocation from taxable_base if available
+        const totalTaxableBase = personIds.reduce((sum, id) => {
+          return sum + (perPerson[id]?.taxable_base || 0);
+        }, 0);
+
+        if (totalTaxableBase > 0) {
+          // Calculate allocation based on actual taxable_base distribution
+          personIds.forEach(id => {
+            if (perPerson[id]) {
+              const personTaxableBase = perPerson[id].taxable_base || 0;
+              const calculatedAllocation = Math.round((personTaxableBase / totalTaxableBase) * 10000) / 100;
+              if (Math.abs(calculatedAllocation - (perPerson[id].allocation_percentage || 0)) > 1) {
+                console.log(`[Box3Pipeline] Year ${year}: Correcting allocation for ${id} from ${perPerson[id].allocation_percentage}% to ${calculatedAllocation}% based on taxable_base`);
+              }
+              perPerson[id].allocation_percentage = calculatedAllocation;
+            }
+          });
+        } else if (Math.abs(totalAllocation - 100) > 1) {
+          // No taxable_base data, fall back to 50/50 if allocation doesn't sum to 100%
+          console.warn(`[Box3Pipeline] Year ${year}: allocation_percentage sum is ${totalAllocation}%, expected 100%. No taxable_base available, fixing to 50/50.`);
+          personIds.forEach(id => {
+            if (perPerson[id]) {
+              perPerson[id].allocation_percentage = 50;
+            }
+          });
+        }
+      } else if (personIds.length === 1) {
+        // Single person should have 100%
+        const personId = personIds[0];
+        if (perPerson[personId] && perPerson[personId].allocation_percentage !== 100) {
+          console.warn(`[Box3Pipeline] Year ${year}: single person allocation is ${perPerson[personId].allocation_percentage}%, fixing to 100%.`);
+          perPerson[personId].allocation_percentage = 100;
+        }
+      }
+
       result[year] = {
         source_doc_id: yearData.source_doc_id || `doc_${year}`,
         document_type: yearData.document_type || 'aangifte',
@@ -3438,7 +3484,7 @@ Geef een LEGE array als je niets kunt vinden.`;
           deemed_return: getValue(householdTotals.deemed_return),
           total_tax_assessed: getValue(householdTotals.total_tax_assessed),
         },
-        per_person: yearData.per_person || {},
+        per_person: perPerson,
       };
     }
 

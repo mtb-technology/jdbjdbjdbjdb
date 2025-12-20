@@ -531,8 +531,12 @@ Je MOET alle rekeningen uit de checklist vinden! Als een rekening ontbreekt, mel
 - value_dec_31: Saldo per 31 december (indien beschikbaar)
 - interest_received: Ontvangen rente over het jaar
 
-### Eigendom
-- owner_id: "tp_01" (belastingplichtige) of "fp_01" (partner) of "joint" (gezamenlijk)
+### Eigendom - KRITIEK: Bepaal eigenaar uit document!
+- owner_id: BEPAAL UIT DE TENAAMSTELLING in het document:
+  * Als naam belastingplichtige ({TAXPAYER_NAME}) in tenaamstelling → "tp_01"
+  * Als naam partner ({PARTNER_NAME}) in tenaamstelling → "fp_01"
+  * Als BEIDE namen of "en/of" in tenaamstelling → "joint"
+  * Zoek naar: "Ten name van:", "Rekeninghouder:", naam bovenaan jaaroverzicht
 - is_joint_account: true als "en/of" in naam rekeninghouder staat
 - ownership_percentage: Percentage eigendom van de fiscale eenheid (huishouden)
   * 100 = rekening volledig van dit huishouden
@@ -608,8 +612,12 @@ OPDRACHT: Extraheer ALLE beleggingsrekeningen uit de documenten.
 - realized_gains: Gerealiseerde winst (verkopen - aankopen)
 - transaction_costs: Transactiekosten
 
-### Eigendom
-- owner_id: "tp_01" of "fp_01" of "joint"
+### Eigendom - KRITIEK: Bepaal eigenaar uit document!
+- owner_id: BEPAAL UIT DE TENAAMSTELLING in het document:
+  * Als naam belastingplichtige ({TAXPAYER_NAME}) in tenaamstelling → "tp_01"
+  * Als naam partner ({PARTNER_NAME}) in tenaamstelling → "fp_01"
+  * Als BEIDE namen of "en/of" in tenaamstelling → "joint"
+  * Zoek naar: "Ten name van:", "Rekeninghouder:", naam bovenaan jaaroverzicht
 - ownership_percentage: Percentage eigendom van de fiscale eenheid (huishouden)
   * 100 = volledig eigendom huishouden
   * 50 = gedeeld met iemand BUITEN het huishouden
@@ -695,9 +703,14 @@ Voorbeelden:
 - property_tax: OZB/gemeentelijke heffingen
 - insurance: Opstalverzekering
 
-### Eigendom
-- owner_id: "tp_01" of "fp_01" of "joint"
-- ownership_percentage: Percentage eigendom
+### Eigendom - KRITIEK: Bepaal eigenaar uit document!
+- owner_id: BEPAAL UIT KADASTER/EIGENDOMSBEWIJS:
+  * Als naam belastingplichtige ({TAXPAYER_NAME}) als eigenaar → "tp_01"
+  * Als naam partner ({PARTNER_NAME}) als eigenaar → "fp_01"
+  * Als BEIDE namen of gemeenschappelijk eigendom → "joint"
+- ownership_percentage: Percentage eigendom (uit kadaster)
+  * 100 = volledig eigendom
+  * 50 = half eigendom (bijv. bij scheiding of erfenis)
 
 ## OUTPUT FORMAT:
 {
@@ -856,7 +869,7 @@ KRITIEKE REGELS:
 export function buildBankExtractionPrompt(checklist: {
   bank_count: number;
   bank_descriptions: string[];
-}): string {
+}, fiscalEntity?: { taxpayerName?: string; partnerName?: string }): string {
   const checklistText = checklist.bank_descriptions.length > 0
     ? `De aangifte vermeldt ${checklist.bank_count} bankrekening(en):
 ${checklist.bank_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
@@ -864,13 +877,16 @@ ${checklist.bank_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 VIND AL DEZE REKENINGEN!`
     : 'Geen specifieke checklist beschikbaar. Extraheer alle bankrekeningen die je vindt.';
 
-  return BANK_EXTRACTION_PROMPT.replace('{BANK_CHECKLIST}', checklistText);
+  return BANK_EXTRACTION_PROMPT
+    .replace('{BANK_CHECKLIST}', checklistText)
+    .replace('{TAXPAYER_NAME}', fiscalEntity?.taxpayerName || 'belastingplichtige')
+    .replace('{PARTNER_NAME}', fiscalEntity?.partnerName || 'partner');
 }
 
 export function buildInvestmentExtractionPrompt(checklist: {
   investment_count: number;
   investment_descriptions: string[];
-}): string {
+}, fiscalEntity?: { taxpayerName?: string; partnerName?: string }): string {
   const checklistText = checklist.investment_descriptions.length > 0
     ? `De aangifte vermeldt ${checklist.investment_count} beleggingsrekening(en):
 ${checklist.investment_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
@@ -878,13 +894,16 @@ ${checklist.investment_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 VIND AL DEZE REKENINGEN!`
     : 'Geen specifieke checklist beschikbaar. Extraheer alle beleggingen die je vindt.';
 
-  return INVESTMENT_EXTRACTION_PROMPT.replace('{INVESTMENT_CHECKLIST}', checklistText);
+  return INVESTMENT_EXTRACTION_PROMPT
+    .replace('{INVESTMENT_CHECKLIST}', checklistText)
+    .replace('{TAXPAYER_NAME}', fiscalEntity?.taxpayerName || 'belastingplichtige')
+    .replace('{PARTNER_NAME}', fiscalEntity?.partnerName || 'partner');
 }
 
 export function buildRealEstateExtractionPrompt(checklist: {
   real_estate_count: number;
   real_estate_descriptions: string[];
-}): string {
+}, fiscalEntity?: { taxpayerName?: string; partnerName?: string }): string {
   const checklistText = checklist.real_estate_descriptions.length > 0
     ? `De aangifte vermeldt ${checklist.real_estate_count} onroerende za(a)k(en) in Box 3:
 ${checklist.real_estate_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
@@ -892,13 +911,16 @@ ${checklist.real_estate_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 VIND AL DEZE PANDEN! Let op: eigen woning (Box 1) niet meetellen.`
     : 'Geen specifieke checklist beschikbaar. Extraheer alle Box 3 onroerende zaken die je vindt.';
 
-  return REAL_ESTATE_EXTRACTION_PROMPT.replace('{REAL_ESTATE_CHECKLIST}', checklistText);
+  return REAL_ESTATE_EXTRACTION_PROMPT
+    .replace('{REAL_ESTATE_CHECKLIST}', checklistText)
+    .replace('{TAXPAYER_NAME}', fiscalEntity?.taxpayerName || 'belastingplichtige')
+    .replace('{PARTNER_NAME}', fiscalEntity?.partnerName || 'partner');
 }
 
 export function buildOtherAssetsExtractionPrompt(checklist: {
   other_assets_count: number;
   other_descriptions: string[];
-}): string {
+}, fiscalEntity?: { taxpayerName?: string; partnerName?: string }): string {
   const checklistText = checklist.other_descriptions.length > 0
     ? `De aangifte vermeldt ${checklist.other_assets_count} overige bezitting(en)/schuld(en):
 ${checklist.other_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
@@ -906,5 +928,8 @@ ${checklist.other_descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 VIND AL DEZE ITEMS!`
     : 'Geen specifieke checklist beschikbaar. Extraheer alle overige bezittingen en schulden die je vindt.';
 
-  return OTHER_ASSETS_EXTRACTION_PROMPT.replace('{OTHER_CHECKLIST}', checklistText);
+  return OTHER_ASSETS_EXTRACTION_PROMPT
+    .replace('{OTHER_CHECKLIST}', checklistText)
+    .replace('{TAXPAYER_NAME}', fiscalEntity?.taxpayerName || 'belastingplichtige')
+    .replace('{PARTNER_NAME}', fiscalEntity?.partnerName || 'partner');
 }
