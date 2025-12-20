@@ -39,6 +39,8 @@ import {
   Download,
   Copy,
   Check,
+  FlaskConical,
+  Zap,
 } from "lucide-react";
 import {
   Dialog,
@@ -65,7 +67,7 @@ import {
 import type { Box3Blueprint, Box3Dossier } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
 import type { Box3DossierFull } from "@/hooks/useBox3Sessions";
-import type { DebugInfo, PipelineProgress } from "@/hooks/useBox3Validation";
+import type { DebugInfo, PipelineProgress, PipelineVersion } from "@/hooks/useBox3Validation";
 
 // Constants
 import { BOX3_CONSTANTS } from "@shared/constants";
@@ -78,6 +80,10 @@ interface Box3CaseDetailProps {
   pipelineProgress?: PipelineProgress | null;
   /** Active job ID if background revalidation is running */
   activeJobId?: string | null;
+  /** Current pipeline version */
+  pipelineVersion?: PipelineVersion;
+  /** Callback to change pipeline version */
+  onPipelineVersionChange?: (version: PipelineVersion) => void;
   onBack: () => void;
   onRevalidate: () => void;
   /** Cancel active revalidation job */
@@ -292,6 +298,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   debugInfo,
   pipelineProgress,
   activeJobId,
+  pipelineVersion = 'v1',
+  onPipelineVersionChange,
   onBack,
   onRevalidate,
   onCancelRevalidation,
@@ -800,6 +808,35 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 <Plus className="h-4 w-4 mr-1.5" />
                 Document toevoegen
               </Button>
+              {/* Pipeline Version Toggle */}
+              {onPipelineVersionChange && (
+                <div className="flex items-center gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+                  <button
+                    onClick={() => onPipelineVersionChange('v1')}
+                    disabled={isRevalidating}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all ${
+                      pipelineVersion === 'v1'
+                        ? 'bg-white dark:bg-slate-700 text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    } ${isRevalidating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <Zap className="h-3 w-3" />
+                    V1
+                  </button>
+                  <button
+                    onClick={() => onPipelineVersionChange('v2')}
+                    disabled={isRevalidating}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all ${
+                      pipelineVersion === 'v2'
+                        ? 'bg-white dark:bg-slate-700 text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    } ${isRevalidating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <FlaskConical className="h-3 w-3" />
+                    V2
+                  </button>
+                </div>
+              )}
               <Button
                 onClick={onRevalidate}
                 size="sm"
@@ -860,24 +897,50 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 </div>
               </div>
               <div className="mt-3 flex gap-2">
-                {[1, 2, 3, 4, 5].map((step) => (
-                  <div
-                    key={step}
-                    className={`flex-1 text-center text-xs py-1 rounded ${
-                      step < pipelineProgress.step
-                        ? 'bg-blue-600 text-white'
-                        : step === pipelineProgress.step
-                          ? 'bg-blue-400 text-white animate-pulse'
-                          : 'bg-blue-100 text-blue-400'
-                    }`}
-                  >
-                    {step === 1 && 'Classificatie'}
-                    {step === 2 && 'Aangifte'}
-                    {step === 3 && 'Vermogen'}
-                    {step === 4 && 'Combineren'}
-                    {step === 5 && 'Validatie'}
-                  </div>
-                ))}
+                {/* Dynamic stages based on pipeline version (V1: 5 stages, V2: 3 stages) */}
+                {pipelineProgress.totalSteps === 3 ? (
+                  // Pipeline V2: 3 stages
+                  <>
+                    {[1, 2, 3].map((step) => (
+                      <div
+                        key={step}
+                        className={`flex-1 text-center text-xs py-1 rounded ${
+                          step < pipelineProgress.step
+                            ? 'bg-blue-600 text-white'
+                            : step === pipelineProgress.step
+                              ? 'bg-blue-400 text-white animate-pulse'
+                              : 'bg-blue-100 text-blue-400'
+                        }`}
+                      >
+                        {step === 1 && 'Manifest'}
+                        {step === 2 && 'Enrichment'}
+                        {step === 3 && 'Validatie'}
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  // Pipeline V1: 5 stages
+                  <>
+                    {[1, 2, 3, 4, 5].map((step) => (
+                      <div
+                        key={step}
+                        className={`flex-1 text-center text-xs py-1 rounded ${
+                          step < pipelineProgress.step
+                            ? 'bg-blue-600 text-white'
+                            : step === pipelineProgress.step
+                              ? 'bg-blue-400 text-white animate-pulse'
+                              : 'bg-blue-100 text-blue-400'
+                        }`}
+                      >
+                        {step === 1 && 'Classificatie'}
+                        {step === 2 && 'Aangifte'}
+                        {step === 3 && 'Vermogen'}
+                        {step === 4 && 'Combineren'}
+                        {step === 5 && 'Validatie'}
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
           )}

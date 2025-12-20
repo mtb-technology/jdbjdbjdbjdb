@@ -5,6 +5,7 @@
  * Uses the new V2 Blueprint data model.
  *
  * Supports both SSE (deprecated) and job-based revalidation.
+ * Supports Pipeline V1 (multi-stage) and V2 (aangifte-first) via feature toggle.
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -15,6 +16,12 @@ import type { Box3Blueprint } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
 import type { Box3DossierFull } from "./useBox3Sessions";
 import { BOX3_CONSTANTS } from "@shared/constants";
+
+// Pipeline version type
+export type PipelineVersion = 'v1' | 'v2';
+
+// LocalStorage key for pipeline version preference
+const PIPELINE_VERSION_KEY = 'box3_pipeline_version';
 
 // Debug info from API response
 interface DebugInfo {
@@ -66,6 +73,8 @@ interface ValidationState {
   // Job-based revalidation state
   activeJobId: string | null;
   activeJob: Box3Job | null;
+  // Pipeline version toggle
+  pipelineVersion: PipelineVersion;
 }
 
 interface UseBox3ValidationProps {
@@ -105,6 +114,8 @@ interface UseBox3ValidationReturn extends ValidationState {
   pipelineProgress: PipelineProgress | null;
   /** Check for and resume any active job for a dossier */
   checkForActiveJob: (dossierId: string) => Promise<void>;
+  /** Toggle between pipeline V1 and V2 */
+  setPipelineVersion: (version: PipelineVersion) => void;
 }
 
 export function useBox3Validation({
@@ -124,6 +135,29 @@ export function useBox3Validation({
   // Job-based revalidation state
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const jobCompletedRef = useRef(false);
+
+  // Pipeline version toggle - persisted to localStorage
+  const [pipelineVersion, setPipelineVersionState] = useState<PipelineVersion>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(PIPELINE_VERSION_KEY);
+      if (stored === 'v1' || stored === 'v2') return stored;
+    }
+    return 'v1'; // Default to V1 (stable)
+  });
+
+  // Persist pipeline version to localStorage
+  const setPipelineVersion = useCallback((version: PipelineVersion) => {
+    setPipelineVersionState(version);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(PIPELINE_VERSION_KEY, version);
+    }
+    toast({
+      title: `Pipeline ${version.toUpperCase()} geselecteerd`,
+      description: version === 'v2'
+        ? 'Aangifte-First architectuur (experimenteel)'
+        : 'Multi-stage extractie (stabiel)',
+    });
+  }, [toast]);
 
   // Poll for job status when we have an active job
   const { data: jobData } = useQuery({
@@ -164,10 +198,13 @@ export function useBox3Validation({
     if (!activeJob || jobCompletedRef.current) return;
 
     // Update pipeline progress from job
+    // Detect V2 jobs by checking the currentStage (V2 uses: manifest, enrichment, validation)
     if (activeJob.progress) {
+      const isV2Job = ['manifest', 'enrichment', 'validation'].includes(activeJob.progress.currentStage);
+      const totalSteps = isV2Job ? 3 : 5;
       setPipelineProgress({
-        step: Math.round((activeJob.progress.percentage / 100) * 5),
-        totalSteps: 5,
+        step: Math.round((activeJob.progress.percentage / 100) * totalSteps),
+        totalSteps,
         message: activeJob.progress.message,
         phase: activeJob.progress.currentStage,
       });
@@ -239,9 +276,12 @@ export function useBox3Validation({
         setActiveJobId(data.job.id);
         setIsValidating(true);
         if (data.job.progress) {
+          // Detect V2 jobs by checking the currentStage
+          const isV2Job = ['manifest', 'enrichment', 'validation'].includes(data.job.progress.currentStage);
+          const totalSteps = isV2Job ? 3 : 5;
           setPipelineProgress({
-            step: Math.round((data.job.progress.percentage / 100) * 5),
-            totalSteps: 5,
+            step: Math.round((data.job.progress.percentage / 100) * totalSteps),
+            totalSteps,
             message: data.job.progress.message,
             phase: data.job.progress.currentStage,
           });
@@ -252,7 +292,7 @@ export function useBox3Validation({
     }
   }, []);
 
-  // Start background revalidation job
+  // Start background revalidation job - works for both V1 and V2
   const startRevalidationJob = useCallback(async (dossierId: string): Promise<string | null> => {
     if (!dossierId) {
       toast({
@@ -263,11 +303,23 @@ export function useBox3Validation({
       return null;
     }
 
+    // Both V1 and V2 use background jobs now
+    const isV2 = pipelineVersion === 'v2';
+    const totalSteps = isV2 ? 3 : 5;
+    const endpoint = isV2
+      ? `/api/box3-validator/dossiers/${dossierId}/revalidate-v2-job`
+      : `/api/box3-validator/dossiers/${dossierId}/revalidate-job`;
+
     setIsValidating(true);
-    setPipelineProgress({ step: 0, totalSteps: 5, message: 'Job starten...', phase: 'starting' });
+    setPipelineProgress({
+      step: 0,
+      totalSteps,
+      message: `Job starten (Pipeline ${isV2 ? 'V2' : 'V1'})...`,
+      phase: 'starting'
+    });
 
     try {
-      const response = await apiRequest("POST", `/api/box3-validator/dossiers/${dossierId}/revalidate-job`);
+      const response = await apiRequest("POST", endpoint);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -282,11 +334,11 @@ export function useBox3Validation({
       if (data.existing) {
         toast({
           title: "Actieve job gevonden",
-          description: "Er loopt al een revalidatie voor dit dossier.",
+          description: `Er loopt al een revalidatie voor dit dossier (${data.pipelineVersion || 'V1'}).`,
         });
       } else {
         toast({
-          title: "Revalidatie gestart",
+          title: `Revalidatie gestart (Pipeline ${isV2 ? 'V2' : 'V1'})`,
           description: "Je kan de browser sluiten, de verwerking gaat door.",
         });
       }
@@ -304,7 +356,7 @@ export function useBox3Validation({
       });
       return null;
     }
-  }, [toast]);
+  }, [toast, pipelineVersion]);
 
   // Start background validation job for new dossier
   const startValidationJob = useCallback(async (
@@ -488,9 +540,14 @@ export function useBox3Validation({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), BOX3_CONSTANTS.AI_TIMEOUT_MS);
 
+      // Use V2 endpoint if pipeline version is v2
+      const endpoint = pipelineVersion === 'v2'
+        ? "/api/box3-validator/validate-v2"
+        : "/api/box3-validator/validate";
+
       let response;
       try {
-        response = await fetch("/api/box3-validator/validate", {
+        response = await fetch(endpoint, {
           method: "POST",
           body: formData,
           signal: controller.signal,
@@ -559,8 +616,82 @@ export function useBox3Validation({
     }
   };
 
-  // Revalidate existing dossier using SSE for real-time progress
+  // Revalidate using Pipeline V2 (synchronous, no SSE)
+  const revalidateV2 = async (dossierId: string): Promise<Box3Blueprint | null> => {
+    if (!dossierId) {
+      toast({
+        title: "Geen dossier",
+        description: "Laad eerst een dossier om opnieuw te valideren.",
+        variant: "destructive",
+      });
+      return null;
+    }
+
+    setIsValidating(true);
+    setPipelineProgress({ step: 1, totalSteps: 3, message: 'Pipeline V2 starten...', phase: 'manifest' });
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), BOX3_CONSTANTS.AI_TIMEOUT_MS);
+
+      const response = await fetch(`/api/box3-validator/dossiers/${dossierId}/revalidate-v2`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const result = data.success ? data.data : data;
+
+      // Update state
+      setBlueprint(result.blueprint);
+      setBlueprintVersion(result.blueprintVersion || 1);
+      setTaxYears(result.dossier?.taxYears || []);
+      setPipelineProgress(null);
+
+      toast({
+        title: "Opnieuw gevalideerd (V2)",
+        description: `Blueprint v${result.blueprintVersion} aangemaakt in ${Math.round(result.timing?.total_ms / 1000)}s.`,
+      });
+
+      refetchSessions();
+      return result.blueprint;
+    } catch (error: unknown) {
+      let message = "Kon dossier niet opnieuw valideren.";
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          message = "Verzoek duurde te lang (timeout).";
+        } else {
+          message = error.message;
+        }
+      }
+      toast({
+        title: "Hervalidatie mislukt",
+        description: message,
+        variant: "destructive",
+      });
+      return null;
+    } finally {
+      setIsValidating(false);
+      setPipelineProgress(null);
+    }
+  };
+
+  // Revalidate existing dossier using SSE for real-time progress (V1)
   const revalidate = async (dossierId: string): Promise<Box3Blueprint | null> => {
+    // If V2 is selected, use the V2 revalidate
+    if (pipelineVersion === 'v2') {
+      return revalidateV2(dossierId);
+    }
+
     if (!dossierId) {
       toast({
         title: "Geen dossier",
@@ -728,6 +859,7 @@ export function useBox3Validation({
     pipelineProgress,
     activeJobId,
     activeJob,
+    pipelineVersion,
     validate,
     startValidationJob,
     revalidate,
@@ -738,6 +870,7 @@ export function useBox3Validation({
     handleReset,
     loadFromDossier,
     checkForActiveJob,
+    setPipelineVersion,
   };
 }
 

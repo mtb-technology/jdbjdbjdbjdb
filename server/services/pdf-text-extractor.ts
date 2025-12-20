@@ -29,14 +29,24 @@ export async function getPdfParse() {
 
 async function getPdfjs() {
   if (!pdfjsLib) {
-    // pdfjs-dist needs to be imported dynamically
-    const pdfjs = await import('pdfjs-dist');
+    // Use the legacy build for Node.js - it doesn't require canvas/DOMMatrix
+    // The standard build requires browser APIs (DOMMatrix, canvas) that don't exist in Node
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     pdfjsLib = pdfjs;
 
-    // Disable worker for server-side use (no DOM/Worker available)
-    // @ts-ignore - GlobalWorkerOptions exists but types may vary
+    // For Node.js: disable worker entirely by using isEvalSupported: false in getDocument
+    // We'll configure this per-call instead of globally
+    // But we still need to set workerSrc to avoid the error
+    // @ts-ignore
     if (pdfjsLib.GlobalWorkerOptions) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+      // Point to the worker file - Node.js will use a fake worker internally
+      try {
+        const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
+      } catch {
+        // If require.resolve fails, try a different approach
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
+      }
     }
   }
   return pdfjsLib;
@@ -79,6 +89,10 @@ export async function extractPdfText(
       disableFontFace: true,
       // Important: don't fail on missing fonts
       standardFontDataUrl: undefined,
+      // Disable worker for Node.js environment
+      isEvalSupported: false,
+      // @ts-ignore - disableWorker exists in pdfjs
+      disableWorker: true,
     });
 
     const pdf = await loadingTask.promise;

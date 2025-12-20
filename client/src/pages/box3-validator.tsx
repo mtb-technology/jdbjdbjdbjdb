@@ -14,7 +14,7 @@ import { AppHeader } from "@/components/app-header";
 
 // Hooks
 import { useBox3Sessions, type Box3DossierFull } from "@/hooks/useBox3Sessions";
-import { useBox3Validation } from "@/hooks/useBox3Validation";
+import { useBox3Validation, type PipelineVersion } from "@/hooks/useBox3Validation";
 
 // Components
 import {
@@ -73,12 +73,14 @@ const Box3Validator = memo(function Box3Validator() {
     pipelineProgress,
     activeJobId,
     activeJob,
+    pipelineVersion,
     startValidationJob,
     startRevalidationJob,
     cancelRevalidationJob,
     loadFromDossier,
     handleReset,
     checkForActiveJob,
+    setPipelineVersion,
   } = useBox3Validation({
     refetchSessions,
   });
@@ -232,6 +234,8 @@ const Box3Validator = memo(function Box3Validator() {
             debugInfo={debugInfo}
             pipelineProgress={pipelineProgress}
             activeJobId={activeJobId}
+            pipelineVersion={pipelineVersion}
+            onPipelineVersionChange={setPipelineVersion}
             onBack={handleBackToList}
             onRevalidate={handleRevalidate}
             onCancelRevalidation={cancelRevalidationJob}
@@ -254,6 +258,8 @@ const Box3Validator = memo(function Box3Validator() {
         {viewMode === "new" && (
           <Box3NewCase
             isValidating={isValidating}
+            pipelineVersion={pipelineVersion}
+            onPipelineVersionChange={setPipelineVersion}
             onBack={handleBackToList}
             onValidate={handleValidate}
           />

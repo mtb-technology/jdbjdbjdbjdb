@@ -16,6 +16,7 @@ import { summarizeFeedback } from "../utils/feedback-summarizer";
 import { notifyStageComplete, notifyExpressModeComplete, notifyJobFailed, isSlackEnabled } from "./slack-notifier";
 import { logger } from "./logger";
 import { Box3ExtractionPipeline, type PipelineDocument } from "./box3-extraction-pipeline";
+import { Box3PipelineV2, type PipelineV2Document } from "./box3-pipeline-v2";
 import { getPdfParse } from "./pdf-text-extractor";
 import type { Job, DossierData, BouwplanData, StageId, PromptConfig, Box3DocumentClassification } from "@shared/schema";
 import type {
@@ -26,7 +27,7 @@ import type {
 } from "@shared/types/report-data";
 
 // Job types
-export type JobType = "single_stage" | "express_mode" | "generation" | "box3_validation" | "box3_revalidation";
+export type JobType = "single_stage" | "express_mode" | "generation" | "box3_validation" | "box3_revalidation" | "box3_revalidation_v2";
 
 // Progress structure stored in jobs.progress JSON
 export interface JobProgress {
@@ -181,6 +182,10 @@ class JobProcessor {
         case "box3_revalidation":
           // Both use the same processing logic - extract from documents and create blueprint
           await this.processBox3Revalidation(job);
+          break;
+        case "box3_revalidation_v2":
+          // Pipeline V2: Aangifte-First architecture
+          await this.processBox3RevalidationV2(job);
           break;
         default:
           throw new Error(`Unknown job type: ${job.type}`);
@@ -942,6 +947,142 @@ class JobProcessor {
       taxYears,
       documentCount: documents.length,
       pipelineErrors: pipelineResult.errors,
+    });
+  }
+
+  /**
+   * Process Box3 Revalidation V2 job (Aangifte-First Pipeline)
+   * Uses the new 3-stage pipeline architecture.
+   */
+  private async processBox3RevalidationV2(job: Job): Promise<void> {
+    const dossierId = job.box3DossierId!;
+
+    // Update progress - starting
+    await this.updateBox3Progress(job.id, 0, 3, 'Dossier laden...', 'loading');
+
+    // Get dossier
+    const dossier = await storage.getBox3Dossier(dossierId);
+    if (!dossier) {
+      throw new Error('Dossier niet gevonden');
+    }
+
+    // Get all documents
+    const documents = await storage.getBox3DocumentsForDossier(dossierId);
+    if (documents.length === 0) {
+      throw new Error('Geen documenten om te valideren');
+    }
+
+    logger.info(job.id, 'Box3 revalidation V2 started', {
+      dossierId,
+      documentCount: documents.length
+    });
+
+    // Update progress - preparing documents
+    await this.updateBox3Progress(job.id, 1, 3, `Manifest extractie (${documents.length} documenten)...`, 'manifest');
+
+    // Prepare documents for Pipeline V2
+    const pipelineDocs: PipelineV2Document[] = documents.map(doc => ({
+      id: doc.id,
+      filename: doc.filename,
+      mimeType: doc.mimeType,
+      fileData: doc.fileData,
+      extractedText: doc.extractedText || undefined,
+      docType: doc.classification?.document_type,
+    }));
+
+    // Check if cancelled before pipeline
+    if (await this.isJobCancelled(job.id)) {
+      logger.info(job.id, 'Box3 V2 job cancelled before pipeline');
+      return;
+    }
+
+    // Run Pipeline V2 with progress updates
+    const pipeline = new Box3PipelineV2((progress) => {
+      // Map pipeline stages to job progress
+      // V2 has 3 stages: manifest, enrichment, validation
+      const stageMap: Record<string, number> = {
+        manifest: 1,
+        enrichment: 2,
+        validation: 3,
+      };
+      const step = stageMap[progress.stage] || 1;
+      this.updateBox3Progress(
+        job.id,
+        step,
+        3,
+        progress.message,
+        progress.stage
+      );
+    });
+
+    let pipelineResult;
+    try {
+      pipelineResult = await pipeline.run(pipelineDocs, dossier.intakeText || null);
+    } catch (pipelineError: any) {
+      logger.error(job.id, 'Pipeline V2 failed', { error: pipelineError.message });
+      throw new Error(`Pipeline V2 mislukt: ${pipelineError.message}`);
+    }
+
+    if (!pipelineResult.success) {
+      throw new Error(`Pipeline V2 mislukt: ${pipelineResult.errors.join(', ')}`);
+    }
+
+    const blueprint = pipelineResult.blueprint;
+
+    // Check if cancelled after pipeline
+    if (await this.isJobCancelled(job.id)) {
+      logger.info(job.id, 'Box3 V2 job cancelled after pipeline');
+      return;
+    }
+
+    // Log warnings (non-fatal)
+    if (pipelineResult.warnings.length > 0) {
+      logger.warn(job.id, 'Pipeline V2 had warnings', {
+        warningCount: pipelineResult.warnings.length,
+        warnings: pipelineResult.warnings
+      });
+    }
+
+    // Update progress - saving
+    await this.updateBox3Progress(job.id, 3, 3, 'Blueprint opslaan...', 'saving');
+
+    // Get current version and increment
+    const currentBlueprint = await storage.getLatestBox3Blueprint(dossierId);
+    const newVersion = (currentBlueprint?.version || 0) + 1;
+
+    // Store new blueprint
+    await storage.createBox3Blueprint({
+      dossierId,
+      version: newVersion,
+      blueprint,
+      createdBy: 'pipeline-v2',
+    });
+
+    // Extract tax years from manifest
+    const taxYears = pipelineResult.manifest.tax_years || [];
+    const hasFiscalPartner = !!pipelineResult.manifest.fiscal_entity?.fiscal_partner;
+
+    // Update dossier
+    await storage.updateBox3Dossier(dossierId, {
+      taxYears: taxYears.length > 0 ? taxYears : null,
+      hasFiscalPartner,
+      status: taxYears.length > 0 ? 'in_behandeling' : 'intake',
+    });
+
+    logger.info(job.id, `Box3 Blueprint v${newVersion} created (V2)`, {
+      dossierId,
+      timing: pipelineResult.timing,
+    });
+
+    // Complete the job
+    await storage.completeJob(job.id, {
+      success: true,
+      blueprintVersion: newVersion,
+      taxYears,
+      documentCount: documents.length,
+      pipelineVersion: 'v2',
+      timing: pipelineResult.timing,
+      warnings: pipelineResult.warnings,
     });
   }
 
