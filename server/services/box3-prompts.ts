@@ -123,6 +123,7 @@ Dit kan een vakantiewoning, verhuurpand, grond, of buitenlands vastgoed zijn.
       "taxpayer": 50,
       "partner": 50
     }
+    // KRITIEK: taxpayer + partner MOET ALTIJD optellen tot 100%!
   },
   "tax_authority_data": {
     "2023": {
@@ -222,6 +223,10 @@ Identificeer de belastingplichtige en eventuele fiscaal partner.
 ### Verdeling (allocation)
 - Hoe is het Box 3 vermogen verdeeld? (standaard 50/50)
 - Kijk naar "verdeling" of "toerekening" in de aangifte
+- KRITIEK: De som van alle allocation_percentages MOET ALTIJD 100% zijn!
+  * Als 2 partners: bijv. 50/50, 60/40, 70/30 - maar ALTIJD optellend tot 100
+  * Als 1 persoon (geen partner): allocation = 100
+  * Als je geen expliciete verdeling vindt, gebruik 50/50 als default
 
 ## OUTPUT FORMAT (alleen JSON):
 {
@@ -317,7 +322,9 @@ Extraheer ook:
 BELANGRIJK:
 - total_tax_assessed is CRUCIAAL voor teruggave berekening
 - is_final_assessment bepaalt of claim mogelijk is
-- Focus ALLEEN op cijfers, niet op asset details`;
+- Focus ALLEEN op cijfers, niet op asset details
+- KRITIEK: De som van alle allocation_percentage waarden in per_person MOET ALTIJD 100% zijn!
+  Als je geen expliciete verdeling vindt, gebruik 50/50 als default bij 2 personen.`;
 
 // =============================================================================
 // STAGE 2c: ASSET REFERENCES EXTRACTION (NEW - focused sub-stage)
