@@ -25,9 +25,32 @@ De aangifte bepaalt ALLES:
 - Als iets onder "Beleggingen" staat → category: "investments"
 - Als iets onder "Onroerende zaken" staat → category: "real_estate"
 - Als iets onder "Overige bezittingen" of "Uitgeleend geld" staat → category: "other_assets"
-- Als iets onder "Schulden" staat → category: "debt"
+- Als iets onder "Schulden" of "Hypotheken en andere schulden" staat → category: "debt"
 
 JE BEPAALT NIETS ZELF. JE LEEST ALLEEN WAT ER STAAT.
+
+## KRITIEK: STRUCTUUR VAN DE AANGIFTE
+
+De aangifte IB heeft TWEE APARTE HOOFDSECTIES voor Box 3:
+
+### SECTIE 1: "Bankrekeningen en andere bezittingen" (= BEZITTINGEN)
+Dit is het bezittingen-deel met subsecties:
+- "Bank- en spaarrekeningen" → bank_savings
+- "Beleggingen" → investments
+- "Bouwdepots" → meestal geen Box 3
+- "Andere bezittingen" met:
+  - "Uitgeleend geld (vorderingen)" → other_assets met asset_type: "loaned_money"
+  - "Overige bezittingen" → other_assets met andere asset_type
+
+### SECTIE 2: "Hypotheken en andere schulden" (= SCHULDEN!)
+Dit is een COMPLEET APARTE sectie! Dit zijn SCHULDEN, GEEN bezittingen!
+- "Schuld eigen woning" → NEGEER (Box 1, niet Box 3)
+- Alle andere schulden → debt_items
+
+BELANGRIJK: Dezelfde partij kan zowel beleggingen als schulden hebben!
+Als een fondsnaam of bedrijfsnaam onder SCHULDEN staat → debt_items
+Als dezelfde naam onder BELEGGINGEN staat → investments
+De POSITIE in de aangifte bepaalt de classificatie, niet de naam.
 
 ## WAT JE MOET EXTRAHEREN
 
@@ -89,6 +112,44 @@ Voorbeeld: "credit linked beheer groenwoningen fonds €39.550" met "Is het een 
 
 ### Vorderingen / Uitgeleend geld
 - "familie hypotheek Rick otto €60.000" → other_assets, asset_type: "loaned_money"
+- Let op: dit zijn BEZITTINGEN (geld dat JIJ hebt uitgeleend aan anderen)
+- Niet verwarren met schulden (geld dat JIJ hebt geleend VAN anderen)
+
+### Eigen woning schulden (Box 1) vs Box 3 schulden
+In de sectie "Hypotheken en andere schulden" staat bij elke schuld:
+- "Gaat het om een schuld voor uw huidige, toekomstige of vroegere woning (hoofdverblijf)? Ja/Nee"
+
+Als het antwoord "Ja" is → is_eigen_woning_schuld: true → dit is een Box 1 schuld
+Als het antwoord "Nee" is → is_eigen_woning_schuld: false → dit is een Box 3 schuld
+
+Beide moeten in debt_items, maar met de juiste is_eigen_woning_schuld flag.
+De Box 3 berekening gebruikt alleen schulden waar is_eigen_woning_schuld: false.
+
+### Peildatum: altijd 1 januari
+Box 3 gebruikt ALTIJD de waarde per 1 JANUARI van het belastingjaar.
+- "Saldo op 1 januari 2022" → dit is de juiste waarde
+- "Schuld op 1 januari 2022" → dit is de juiste waarde
+- Als je alleen "31 december" ziet, is dit het VORIGE jaar (dus waarde voor volgend jaar)
+
+### Gezamenlijke rekeningen en eigenaarschap
+Let op de vraag: "Was deze rekening alleen van [naam] en [partner]?"
+- "Ja" met beide namen → owner_id: "joint", is_joint_account: true
+- "Ja" met één naam → owner_id: "tp_01" of "fp_01" afhankelijk van wie
+
+Bij "Naam rekeninghouder(s)":
+- "[Naam] en/of [Partner]" → joint
+- Alleen belastingplichtige → tp_01
+- Alleen partner → fp_01
+
+### Buitenlandse rekeningen
+Herkenbaar aan:
+- "Land: [niet Nederland]" (bijv. Litouwen, Duitsland)
+- "Buitenlandse bronbelasting over de rente: €..."
+Behandel deze hetzelfde, maar noteer het land in het item.
+
+### Negatieve saldi
+Een negatief saldo op een beleggingsrekening (margin, rood staan) is GEEN aparte schuld.
+Dit is onderdeel van de belegging zelf. Extraheer het netto bedrag zoals in de aangifte staat.
 
 ## OUTPUT FORMAT
 
@@ -99,15 +160,15 @@ Voorbeeld: "credit linked beheer groenwoningen fonds €39.550" met "Is het een 
   "fiscal_entity": {
     "taxpayer": {
       "id": "tp_01",
-      "name": "J W OTTO",
-      "bsn_masked": "****3776",
-      "date_of_birth": "22-04-1953"
+      "name": "[Naam belastingplichtige]",
+      "bsn_masked": "****1234",
+      "date_of_birth": "01-01-1960"
     },
     "fiscal_partner": {
       "id": "fp_01",
-      "name": "G C OTTO-WORTELBOER",
-      "bsn_masked": "****3990",
-      "date_of_birth": "23-09-1954"
+      "name": "[Naam partner]",
+      "bsn_masked": "****5678",
+      "date_of_birth": "01-01-1962"
     },
     "filing_type": "joint"
   },
@@ -115,14 +176,14 @@ Voorbeeld: "credit linked beheer groenwoningen fonds €39.550" met "Is het een 
     "bank_savings": [
       {
         "manifest_id": "bank_1",
-        "description_from_aangifte": "ING Oranje Spaarrekening A561 -328 65",
+        "description_from_aangifte": "[Banknaam] [Rekeningtype] [IBAN]",
         "category": "bank_savings",
         "owner_id": "joint",
         "ownership_percentage": 100,
-        "iban_from_aangifte": "A561 -328 65",
-        "bank_name": "ING",
+        "iban_from_aangifte": "[IBAN uit aangifte]",
+        "bank_name": "[Banknaam]",
         "yearly_values": {
-          "2022": { "value_jan_1": 45962 }
+          "2022": { "value_jan_1": 50000 }
         },
         "is_joint_account": true
       }
@@ -130,26 +191,26 @@ Voorbeeld: "credit linked beheer groenwoningen fonds €39.550" met "Is het een 
     "investments": [
       {
         "manifest_id": "inv_1",
-        "description_from_aangifte": "DEGIRO Beleggingsrekening Janotto",
+        "description_from_aangifte": "[Broker] Beleggingsrekening [nummer]",
         "category": "investments",
         "owner_id": "tp_01",
         "ownership_percentage": 100,
-        "account_number": "Janotto",
-        "institution": "DEGIRO",
+        "account_number": "[nummer]",
+        "institution": "[Broker]",
         "yearly_values": {
-          "2022": { "value_jan_1": 112343 }
+          "2022": { "value_jan_1": 100000 }
         },
         "is_green_investment": false
       },
       {
         "manifest_id": "inv_green_1",
-        "description_from_aangifte": "credit linked beheer groenwoningen fonds",
+        "description_from_aangifte": "[Fondsnaam] groenfonds",
         "category": "investments",
         "owner_id": "joint",
         "ownership_percentage": 100,
-        "institution": "credit linked beheer",
+        "institution": "[Fondsbeheerder]",
         "yearly_values": {
-          "2022": { "value_jan_1": 39550 }
+          "2022": { "value_jan_1": 40000 }
         },
         "is_green_investment": true
       }
@@ -158,7 +219,7 @@ Voorbeeld: "credit linked beheer groenwoningen fonds €39.550" met "Is het een 
     "other_assets": [
       {
         "manifest_id": "other_1",
-        "description_from_aangifte": "familie hypotheek Rick otto",
+        "description_from_aangifte": "lening aan [naam]",
         "category": "other_assets",
         "asset_type": "loaned_money",
         "owner_id": "joint",
@@ -167,7 +228,7 @@ Voorbeeld: "credit linked beheer groenwoningen fonds €39.550" met "Is het een 
           "2022": { "value_jan_1": 60000 }
         },
         "loan_details": {
-          "borrower_name": "Rick Otto",
+          "borrower_name": "[Naam lener]",
           "is_family_loan": true
         }
       }
@@ -176,38 +237,38 @@ Voorbeeld: "credit linked beheer groenwoningen fonds €39.550" met "Is het een 
   "debt_items": [
     {
       "manifest_id": "debt_1",
-      "description_from_aangifte": "credit linked beheer, duurzaam woningen fonds",
+      "description_from_aangifte": "[Schuldeiser], [omschrijving]",
       "category": "debt",
-      "creditor_name": "credit linked beheer",
-      "loan_number": "duurzaam woningen fonds",
+      "creditor_name": "[Schuldeiser]",
+      "loan_number": "[omschrijving/nummer]",
       "owner_id": "joint",
       "ownership_percentage": 100,
       "yearly_values": {
-        "2022": { "value_jan_1": 5147 }
+        "2022": { "value_jan_1": 25000 }
       },
       "is_eigen_woning_schuld": false
     }
   ],
   "category_totals": {
-    "bank_savings": 413723,
-    "investments": 523199,
+    "bank_savings": 50000,
+    "investments": 100000,
     "real_estate": 0,
-    "other_assets": 112000,
-    "debts": 134936,
-    "grand_total": 913986
+    "other_assets": 60000,
+    "debts": 25000,
+    "grand_total": 185000
   },
   "tax_authority": {
     "2022": {
-      "grondslag_sparen_beleggen": 812686,
+      "grondslag_sparen_beleggen": 83700,
       "heffingsvrij_vermogen": 101300,
-      "forfaitair_rendement": 26647,
-      "belasting_box3": 8260,
-      "rendementsgrondslag": 913986
+      "forfaitair_rendement": 2500,
+      "belasting_box3": 775,
+      "rendementsgrondslag": 185000
     }
   },
   "green_investments": {
-    "total_value": 39550,
-    "exemption_applied": 39550
+    "total_value": 40000,
+    "exemption_applied": 40000
   }
 }
 \`\`\`
@@ -224,7 +285,19 @@ Na extractie, controleer:
 BELANGRIJK: category_totals.investments uit de aangifte bevat GEEN groene beleggingen!
 Die staan apart in de aangifte en moeten in green_investments.total_value.
 
-Als de sommen niet kloppen, heb je items gemist. Controleer opnieuw.
+## VEELGEMAAKTE FOUT - VERMIJD DIT!
+
+FOUT: Items uit sectie "Hypotheken en andere schulden" als bezittingen classificeren.
+
+Herken SCHULDEN aan:
+- Het kopje "Hypotheken en andere schulden" in de aangifte
+- Het woord "Schuld:" voor elk item
+- De vraag "Gaat het om een schuld voor uw ... woning (hoofdverblijf)?" erbij
+
+Dit zijn SCHULDEN (debt_items), NIET bezittingen (other_assets)!
+
+Als de sommen niet kloppen, heb je items gemist OF verkeerd geclassificeerd.
+Controleer specifiek of je schulden niet per ongeluk bij bezittingen hebt gezet!
 
 GEEF ALLEEN VALIDE JSON TERUG.`;
 

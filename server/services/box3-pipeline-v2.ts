@@ -94,14 +94,14 @@ export class Box3PipelineV2 {
   private factory: AIModelFactory;
   private onProgress?: (progress: PipelineV2Progress) => void;
 
-  // Model configuration - using Flash for speed, Pro not needed for reading aangifte
+  // Model configuration - using Pro with high thinking for accurate extraction
   private readonly MODEL_CONFIG = {
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-2.5-pro',
     provider: 'google' as const,
     temperature: 0.0,
     topP: 0.95,
     topK: 40,
-    thinkingLevel: 'low' as const,
+    thinkingLevel: 'high' as const,
     maxOutputTokens: 65536, // Large output for complete manifest
     useGrounding: false,
   };
