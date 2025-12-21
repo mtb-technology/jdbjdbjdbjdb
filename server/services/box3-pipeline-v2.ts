@@ -94,9 +94,9 @@ export class Box3PipelineV2 {
   private factory: AIModelFactory;
   private onProgress?: (progress: PipelineV2Progress) => void;
 
-  // Model configuration - using Pro with high thinking for accurate extraction
+  // Model configuration - using Gemini 3 Pro with high thinking for accurate extraction
   private readonly MODEL_CONFIG = {
-    model: 'gemini-2.5-pro',
+    model: 'gemini-3-pro-preview',
     provider: 'google' as const,
     temperature: 0.0,
     topP: 0.95,
