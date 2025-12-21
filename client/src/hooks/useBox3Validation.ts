@@ -116,6 +116,8 @@ interface UseBox3ValidationReturn extends ValidationState {
   uploadProgress: number | null;
   /** Upload status message during file upload */
   uploadStatus: string | null;
+  /** Number of documents being uploaded (for UI display) */
+  uploadingDocumentCount: number | null;
   /** Check for and resume any active job for a dossier */
   checkForActiveJob: (dossierId: string) => Promise<void>;
   /** Toggle between pipeline V1 and V2 */
@@ -139,6 +141,7 @@ export function useBox3Validation({
   // Upload progress state (0-100)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [uploadingDocumentCount, setUploadingDocumentCount] = useState<number | null>(null);
 
   // Job-based revalidation state
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -427,6 +430,7 @@ export function useBox3Validation({
       const totalFiles = pendingFiles.length;
       const totalSizeMB = pendingFiles.reduce((sum, pf) => sum + pf.file.size, 0) / 1024 / 1024;
       setUploadStatus(`Documenten uploaden (${totalFiles} bestanden, ${totalSizeMB.toFixed(1)}MB)...`);
+      setUploadingDocumentCount(totalFiles);
       setPipelineProgress({ step: 0, totalSteps, message: 'Documenten uploaden...', phase: 'uploading' });
 
       // STEP 2: Start upload in background (fire-and-forget, but track progress)
@@ -461,12 +465,14 @@ export function useBox3Validation({
                 setActiveJobId(jobId);
                 setUploadProgress(null);
                 setUploadStatus(null);
+                setUploadingDocumentCount(null);
                 setPipelineProgress({ step: 0, totalSteps, message: 'AI analyseert aangifte...', phase: 'manifest' });
               }
             } catch {
               // Parse error - still mark upload as done
               setUploadProgress(null);
               setUploadStatus(null);
+              setUploadingDocumentCount(null);
             }
           } else {
             // Upload failed
@@ -474,6 +480,7 @@ export function useBox3Validation({
             setPipelineProgress(null);
             setUploadProgress(null);
             setUploadStatus(null);
+            setUploadingDocumentCount(null);
             try {
               const errorData = JSON.parse(xhr.responseText);
               toast({
@@ -496,6 +503,7 @@ export function useBox3Validation({
           setPipelineProgress(null);
           setUploadProgress(null);
           setUploadStatus(null);
+          setUploadingDocumentCount(null);
           toast({
             title: "Upload mislukt",
             description: "Netwerkfout - verbinding mislukt",
@@ -521,6 +529,7 @@ export function useBox3Validation({
       setPipelineProgress(null);
       setUploadProgress(null);
       setUploadStatus(null);
+      setUploadingDocumentCount(null);
 
       const message = error instanceof Error ? error.message : "Kon validatie niet starten.";
       toast({
@@ -936,6 +945,7 @@ export function useBox3Validation({
     pipelineProgress,
     uploadProgress,
     uploadStatus,
+    uploadingDocumentCount,
     activeJobId,
     activeJob,
     pipelineVersion,

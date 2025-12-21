@@ -73,6 +73,7 @@ const Box3Validator = memo(function Box3Validator() {
     pipelineProgress,
     uploadProgress,
     uploadStatus,
+    uploadingDocumentCount,
     activeJobId,
     activeJob,
     pipelineVersion,
@@ -246,6 +247,7 @@ const Box3Validator = memo(function Box3Validator() {
             activeJobId={activeJobId}
             uploadProgress={uploadProgress}
             uploadStatus={uploadStatus}
+            uploadingDocumentCount={uploadingDocumentCount}
             pipelineVersion={pipelineVersion}
             onPipelineVersionChange={setPipelineVersion}
             onBack={handleBackToList}

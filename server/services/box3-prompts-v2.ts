@@ -602,22 +602,32 @@ GEEF ALLEEN VALIDE JSON TERUG.`;
 
 export const EMAIL_GENERATION_PROMPT = `Je bent een communicatiespecialist bij een Nederlands belastingadvieskantoor.
 
-## VERBODEN - ABSOLUUT NIET DOEN:
-- GEEN headers zoals "Hoe werkt Box 3?" of "Wat betekent dit?"
-- GEEN bullet points of opsommingen
-- GEEN "##" of "**tekst**" formatting
-- NOOIT zelf bedragen verzinnen - gebruik ALLEEN de bedragen die ik je geef
+## STRUCTUUR VAN DE EMAIL:
 
-## VERPLICHTE STIJL:
-Schrijf alsof je een WhatsApp stuurt naar een vriend die ook klant is. Gewoon lopende zinnen, geen structuur.
+1. **Opening**: "Beste [voornaam]," + goed nieuws intro
+2. **Uitleg**: Hoeveel Box 3 belasting betaald, fictief rendement uitleggen, nieuwe wetgeving = werkelijk rendement mag
+3. **Call to action**: Herstelverzoek nodig, 2 opties aanbieden:
 
-## VERPLICHTE TAG:
-Plaats deze tag EXACT zo ergens in de email:
-<refund_visual></refund_visual>
+**Optie 1: Klant levert cijfers aan (No Cure No Pay - €250,-)**
+- Klant zoekt zelf totalen op in jaaropgaven (rente, dividend, koersresultaat)
+- Wij ronden berekening af, stellen bezwaar op, dienen claim in
+- Kosten: €250,- per bezwaar, No Cure No Pay (geen resultaat = geen kosten)
+
+**Optie 2: Wij regelen alles (No Cure No Pay - €475,-)**
+- Klant stuurt alleen documenten (jaaropgaven banken/brokers)
+- Wij doen alles van A tot Z
+- Kosten: €475,- per bezwaar, No Cure No Pay (geen resultaat = geen kosten)
+
+4. **Afsluiting**: Vraag om te reageren met "Optie 1" of "Optie 2"
+
+## STIJL:
+- Professioneel maar toegankelijk
+- Gebruik de exacte bedragen die ik je geef
+- Eindig met "Met vriendelijke groet,"
 
 ## OUTPUT FORMAT:
 \`\`\`json
-{"subject": "kort onderwerp", "body": "<p>paragraaf 1</p><p>paragraaf 2</p>"}
+{"subject": "kort onderwerp", "body": "<p>paragraaf</p><p>paragraaf</p>"}
 \`\`\``;
 
 /**
@@ -641,60 +651,52 @@ export function buildEmailGenerationPrompt(
   if (emailType === 'profitable') {
     return `${EMAIL_GENERATION_PROMPT}
 
-SCHRIJF EEN EMAIL VOOR: ${context.firstName}
-JAAR: ${context.yearRange}
+KLANTGEGEVENS:
+- Naam: ${context.firstName}
+- Belastingjaar: ${context.yearRange}
+- Totaal betaalde Box 3 belasting: €${context.totalTaxPaid},-
+- Geschatte teruggave: €${context.indicativeRefund},-
 
-GEBRUIK EXACT DEZE BEDRAGEN (NIET VERANDEREN!):
-- Betaalde Box 3 belasting: €${context.totalTaxPaid},-
-- Teruggave die we kunnen claimen: €${context.indicativeRefund},-
-- Onze kosten: €${context.totalCost},-
-- Netto voordeel voor klant: €${context.netRefund},-
-
-INHOUD (in vloeiende tekst, GEEN headers):
-1. Goed nieuws - we kunnen geld terugkrijgen
-2. Leg in 2-3 zinnen uit: Belastingdienst rekent met fictief rendement, Hoge Raad zegt dat werkelijk rendement mag, dus verschil terug
-3. Plaats <refund_visual></refund_visual> tag
-4. Noem de teruggave (€${context.indicativeRefund},-), kosten (€${context.totalCost},-) en netto (€${context.netRefund},-)
-5. Vraag of we door mogen gaan
-6. "Met vriendelijke groet,"`;
+Schrijf de email volgens de structuur hierboven. Gebruik de bedragen exact zoals gegeven.`;
 
   } else if (emailType === 'request_docs') {
     return `${EMAIL_GENERATION_PROMPT}
 
-SCHRIJF EEN EMAIL VOOR: ${context.firstName}
-JAAR: ${context.yearRange}
-
-GEBRUIK EXACT DEZE BEDRAGEN:
+KLANTGEGEVENS:
+- Naam: ${context.firstName}
+- Belastingjaar: ${context.yearRange}
 - Geschatte teruggave: €${context.indicativeRefund},-
 
-ONTBREKENDE DOCUMENTEN:
+AANVULLENDE INFO:
+Er ontbreken nog documenten om de exacte berekening te maken:
 ${context.missingDocsList || '(niet gespecificeerd)'}
 
-INHOUD (vloeiend, GEEN headers):
-1. Er lijkt teruggave mogelijk
-2. Kort waarom (Hoge Raad, werkelijk rendement)
-3. Noem €${context.indicativeRefund},- als schatting
-4. Vraag om de documenten hierboven
-5. Ze kunnen gewoon op deze mail antwoorden met de docs
-6. "Met vriendelijke groet,"`;
+Schrijf de email volgens de structuur, maar vraag EERST om de ontbrekende documenten voordat je de opties presenteert. Leg uit dat we met deze documenten een exacte berekening kunnen maken.`;
 
   } else {
-    return `${EMAIL_GENERATION_PROMPT}
+    // not_profitable
+    return `Je bent een communicatiespecialist bij een Nederlands belastingadvieskantoor.
 
-SCHRIJF EEN EMAIL VOOR: ${context.firstName}
-JAAR: ${context.yearRange}
+Schrijf een korte, eerlijke maar vriendelijke email aan ${context.firstName}.
 
-GEBRUIK EXACT DEZE BEDRAGEN:
-- Betaalde belasting: €${context.totalTaxPaid},-
+SITUATIE:
+- Belastingjaar: ${context.yearRange}
+- Betaalde Box 3 belasting: €${context.totalTaxPaid},-
 - Mogelijke teruggave: €${context.indicativeRefund},-
-- Onze kosten: €${context.totalCost},-
-- CONCLUSIE: Kosten hoger dan teruggave, niet rendabel
+- Onze kosten zouden hoger zijn dan de teruggave
 
-INHOUD (vloeiend, GEEN headers):
-1. Eerlijk: helaas geen teruggave mogelijk die de kosten dekt
-2. Leg kort uit waarom
-3. Deur open voor toekomst
-4. "Met vriendelijke groet,"`;
+BOODSCHAP:
+- Helaas is een bezwaarprocedure in dit geval niet rendabel
+- Leg kort uit waarom (kosten overtreffen mogelijke teruggave)
+- Houd de deur open voor de toekomst (volgend jaar opnieuw bekijken)
+- Bied aan om vragen te beantwoorden
+
+Eindig met "Met vriendelijke groet,"
+
+## OUTPUT FORMAT:
+\`\`\`json
+{"subject": "kort onderwerp", "body": "<p>paragraaf</p><p>paragraaf</p>"}
+\`\`\``;
   }
 }
 

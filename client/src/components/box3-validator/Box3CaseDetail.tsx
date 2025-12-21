@@ -86,6 +86,8 @@ interface Box3CaseDetailProps {
   uploadProgress?: number | null;
   /** Upload status message during initial file upload */
   uploadStatus?: string | null;
+  /** Number of documents being uploaded (for showing "X of Y" during processing) */
+  uploadingDocumentCount?: number | null;
   /** Current pipeline version */
   pipelineVersion?: PipelineVersion;
   /** Callback to change pipeline version */
@@ -306,6 +308,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   activeJobId,
   uploadProgress,
   uploadStatus,
+  uploadingDocumentCount,
   pipelineVersion = 'v1',
   onPipelineVersionChange,
   onBack,
@@ -334,7 +337,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
   // Document preview state
   const [previewDocIndex, setPreviewDocIndex] = useState<number | null>(null);
-  const [previewTab, setPreviewTab] = useState<"preview" | "rawtext">("preview");
+  const [previewTab, setPreviewTab] = useState<"preview" | "rawtext" | "aiextractie">("preview");
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const previewDoc = previewDocIndex !== null ? documents[previewDocIndex] : null;
@@ -422,6 +425,103 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   const hasFiscalPartner = blueprint?.fiscal_entity?.fiscal_partner?.has_partner || false;
   const validationFlags = blueprint?.validation_flags || [];
   const sourceDocsRegistry = blueprint?.source_documents_registry || [];
+
+  // Helper function to get AI extraction data for a specific document
+  const getDocumentExtractionData = useCallback((docId: string) => {
+    if (!blueprint) return null;
+
+    // Find document info in source_documents_registry
+    const docInfo = sourceDocsRegistry.find(d => d.file_id === docId);
+
+    // Find assets that reference this document via source_doc_id
+    const linkedAssets: Array<{ category: string; description: string; data: Record<string, unknown> }> = [];
+
+    // Check bank savings
+    blueprint.assets?.bank_savings?.forEach(asset => {
+      const hasLink = Object.values(asset.yearly_data || {}).some(
+        yd => yd?.value_jan_1?.source_doc_id === docId || yd?.value_dec_31?.source_doc_id === docId
+      );
+      if (hasLink) {
+        linkedAssets.push({
+          category: 'Bank & Sparen',
+          description: asset.description,
+          data: asset as unknown as Record<string, unknown>,
+        });
+      }
+    });
+
+    // Check investments
+    blueprint.assets?.investments?.forEach(asset => {
+      const hasLink = Object.values(asset.yearly_data || {}).some(
+        yd => yd?.value_jan_1?.source_doc_id === docId || yd?.value_dec_31?.source_doc_id === docId
+      );
+      if (hasLink) {
+        linkedAssets.push({
+          category: 'Beleggingen',
+          description: asset.description,
+          data: asset as unknown as Record<string, unknown>,
+        });
+      }
+    });
+
+    // Check real estate
+    blueprint.assets?.real_estate?.forEach(asset => {
+      const hasLink = Object.values(asset.yearly_data || {}).some(
+        yd => yd?.woz_value?.source_doc_id === docId || yd?.economic_value?.source_doc_id === docId
+      );
+      if (hasLink) {
+        linkedAssets.push({
+          category: 'Onroerend Goed',
+          description: asset.description,
+          data: asset as unknown as Record<string, unknown>,
+        });
+      }
+    });
+
+    // Check other assets
+    blueprint.assets?.other_assets?.forEach(asset => {
+      const hasLink = Object.values(asset.yearly_data || {}).some(
+        yd => yd?.value_jan_1?.source_doc_id === docId || yd?.value_dec_31?.source_doc_id === docId
+      );
+      if (hasLink) {
+        linkedAssets.push({
+          category: 'Overige Bezittingen',
+          description: asset.description,
+          data: asset as unknown as Record<string, unknown>,
+        });
+      }
+    });
+
+    // Check debts
+    blueprint.debts?.forEach(debt => {
+      const hasLink = Object.values(debt.yearly_data || {}).some(
+        yd => yd?.value_jan_1?.source_doc_id === docId || yd?.value_dec_31?.source_doc_id === docId
+      );
+      if (hasLink) {
+        linkedAssets.push({
+          category: 'Schulden',
+          description: debt.description,
+          data: debt as unknown as Record<string, unknown>,
+        });
+      }
+    });
+
+    // Check if this document is used for tax authority data
+    const taxYearsFromDoc: string[] = [];
+    Object.entries(blueprint.tax_authority_data || {}).forEach(([year, data]) => {
+      if (data?.source_doc_id === docId) {
+        taxYearsFromDoc.push(year);
+      }
+    });
+
+    return {
+      docInfo,
+      linkedAssets,
+      taxYearsFromDoc,
+      // Include the raw blueprint for JSON display
+      fullBlueprint: blueprint,
+    };
+  }, [blueprint, sourceDocsRegistry]);
 
   // Available years from blueprint (component-level for use in Year Tabs)
   const years = useMemo(() => {
@@ -707,11 +807,15 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   </div>
                 </div>
               </DialogHeader>
-              <Tabs value={previewTab} onValueChange={(v) => setPreviewTab(v as "preview" | "rawtext")}>
+              <Tabs value={previewTab} onValueChange={(v) => setPreviewTab(v as "preview" | "rawtext" | "aiextractie")}>
                 <TabsList className="mx-4 mt-2 w-fit">
                   <TabsTrigger value="preview">Preview</TabsTrigger>
                   <TabsTrigger value="rawtext" disabled={!previewDoc.extractedText}>
                     Raw Text {previewDoc.extractionCharCount ? `(${(previewDoc.extractionCharCount / 1000).toFixed(1)}k)` : ''}
+                  </TabsTrigger>
+                  <TabsTrigger value="aiextractie">
+                    <FlaskConical className="h-3.5 w-3.5 mr-1" />
+                    AI Extractie
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="preview" className="mt-0">
@@ -768,6 +872,128 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         </div>
                       </div>
                     )}
+                  </div>
+                </TabsContent>
+                <TabsContent value="aiextractie" className="mt-0">
+                  <div className="overflow-auto max-h-[calc(90vh-120px)] p-4">
+                    {(() => {
+                      const extractionData = getDocumentExtractionData(previewDoc.id);
+                      if (!extractionData || !blueprint) {
+                        return (
+                          <div className="flex items-center justify-center h-64 text-muted-foreground">
+                            <div className="text-center">
+                              <FlaskConical className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                              <p>Geen AI extractie data beschikbaar</p>
+                              <p className="text-sm">Voer eerst een validatie uit</p>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      const { docInfo, linkedAssets, taxYearsFromDoc } = extractionData;
+
+                      return (
+                        <div className="space-y-4">
+                          {/* Document Classification */}
+                          {docInfo && (
+                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                              <h4 className="font-medium text-purple-800 mb-2 flex items-center gap-2">
+                                <Eye className="h-4 w-4" />
+                                Document Classificatie
+                              </h4>
+                              <div className="grid grid-cols-2 gap-2 text-sm">
+                                <div>
+                                  <span className="text-muted-foreground">Type:</span>{' '}
+                                  <Badge variant="outline" className="ml-1">{docInfo.detected_type}</Badge>
+                                </div>
+                                {docInfo.detected_tax_year && (
+                                  <div>
+                                    <span className="text-muted-foreground">Belastingjaar:</span>{' '}
+                                    <span className="font-medium">{docInfo.detected_tax_year}</span>
+                                  </div>
+                                )}
+                                {docInfo.for_person && (
+                                  <div>
+                                    <span className="text-muted-foreground">Persoon:</span>{' '}
+                                    <span className="font-medium">{docInfo.for_person}</span>
+                                  </div>
+                                )}
+                                <div>
+                                  <span className="text-muted-foreground">Leesbaar:</span>{' '}
+                                  {docInfo.is_readable ? (
+                                    <CheckCircle2 className="h-4 w-4 inline text-green-600" />
+                                  ) : (
+                                    <X className="h-4 w-4 inline text-red-600" />
+                                  )}
+                                </div>
+                                {docInfo.notes && (
+                                  <div className="col-span-2">
+                                    <span className="text-muted-foreground">Notities:</span>{' '}
+                                    <span className="italic">{docInfo.notes}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Linked Assets */}
+                          {linkedAssets.length > 0 && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                              <h4 className="font-medium text-blue-800 mb-2 flex items-center gap-2">
+                                <Landmark className="h-4 w-4" />
+                                Geëxtraheerde Bezittingen ({linkedAssets.length})
+                              </h4>
+                              <div className="space-y-2">
+                                {linkedAssets.map((asset, idx) => (
+                                  <div key={idx} className="bg-white rounded p-2 border">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <Badge variant="secondary" className="text-xs">{asset.category}</Badge>
+                                      <span className="font-medium text-sm">{asset.description}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Tax Authority Data */}
+                          {taxYearsFromDoc.length > 0 && (
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                              <h4 className="font-medium text-green-800 mb-2 flex items-center gap-2">
+                                <Building2 className="h-4 w-4" />
+                                Belastingdienst Data
+                              </h4>
+                              <p className="text-sm">
+                                Dit document bevat aangifte/aanslag data voor: {taxYearsFromDoc.join(', ')}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Raw JSON Output */}
+                          <div className="border rounded-lg">
+                            <div className="bg-muted/50 px-4 py-2 border-b flex items-center justify-between">
+                              <h4 className="font-medium text-sm flex items-center gap-2">
+                                <FileText className="h-4 w-4" />
+                                Volledige Blueprint JSON
+                              </h4>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(JSON.stringify(blueprint, null, 2));
+                                  toast({ title: 'Gekopieerd', description: 'Blueprint JSON gekopieerd naar klembord' });
+                                }}
+                                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                title="Kopieer JSON"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <pre className="text-xs font-mono whitespace-pre-wrap bg-muted/30 p-4 max-h-96 overflow-auto">
+                              {JSON.stringify(blueprint, null, 2)}
+                            </pre>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </TabsContent>
               </Tabs>
@@ -1134,10 +1360,20 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
           >
             {showInputDetails ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             <span>Oorspronkelijke input bekijken</span>
-            {documents.length > 0 && (
+            {/* Show document count badge - with processing indicator if uploading */}
+            {(documents.length > 0 || uploadingDocumentCount) && (
               <Badge variant="secondary" className="ml-2">
                 <Paperclip className="h-3 w-3 mr-1" />
-                {documents.length} document(en)
+                {uploadingDocumentCount ? (
+                  // During upload: show "X van Y verwerkt"
+                  <span className="flex items-center gap-1">
+                    {documents.length} van {uploadingDocumentCount} verwerkt
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  </span>
+                ) : (
+                  // After upload: show total count
+                  `${documents.length} document(en)`
+                )}
               </Badge>
             )}
           </button>
