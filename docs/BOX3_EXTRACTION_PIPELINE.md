@@ -1,9 +1,207 @@
 # Box 3 Document Extraction Pipeline
 
 > **Status**: Production
-> **Versie**: 2.0 (6-stage architecture)
+> **Versie**: 3.0 (V2 Aangifte-First Architecture)
 > **Laatst bijgewerkt**: December 2025
 > **Doel**: Automatisch Nederlandse belastingdocumenten verwerken voor Box 3 bezwaarprocedures
+
+---
+
+## ⭐ V2 Pipeline: Aangifte-First Architecture (NIEUW)
+
+De nieuwe V2 pipeline vervangt de oude 6-stage pipeline met een eenvoudigere, nauwkeurigere aanpak.
+
+### Kernprincipe
+
+**De aangifte is de enige bron van waarheid.** We classificeren niets zelf - we lezen alleen wat er staat.
+
+### Waarom V2?
+
+De oude pipeline had problemen met:
+- Duplicaten door reclassificatie
+- Schulden die als bezittingen werden gezien
+- Inconsistente owner_id toewijzing
+
+V2 lost dit op door de aangifte als "manifest" te gebruiken en alleen aan te vullen met werkelijk rendement data.
+
+### V2 Pipeline Stages
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 1: MANIFEST EXTRACTION                                               │
+│  Model: gemini-3-pro-preview + high thinking                                │
+│  System: BOX3_SYSTEM_PROMPT (senior fiscalist persona)                      │
+│                                                                             │
+│  Input:  Aangifte IB / Definitieve aanslag                                  │
+│  Output: Complete vermogensopstelling EXACT zoals in aangifte               │
+│                                                                             │
+│  - Elke asset krijgt category op basis van POSITIE in aangifte              │
+│  - Schulden vs bezittingen bepaald door sectie, niet door naam              │
+│  - Eigenaarschap uit aangifte (joint/tp_01/fp_01)                           │
+│  - Totalen per categorie voor validatie                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 2: ENRICHMENT                                                        │
+│  Model: gemini-3-pro-preview + high thinking                                │
+│                                                                             │
+│  Input:  Manifest + Brondocumenten + Klant email                            │
+│  Output: Manifest verrijkt met werkelijk rendement                          │
+│                                                                             │
+│  Per item zoekt de AI:                                                      │
+│  - Bank: full_iban, interest_received                                       │
+│  - Belegging: dividends_received, costs_paid                                │
+│  - Vordering: agreed_interest_rate, interest_received, borrower_name       │
+│  - Schuld: interest_paid                                                    │
+│                                                                             │
+│  KRITIEK: Manifest items worden NOOIT gewijzigd, alleen aangevuld!          │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 3: VALIDATION & CALCULATION                                          │
+│  Type: Deterministic (geen LLM)                                             │
+│                                                                             │
+│  1. Totalen validatie (som items vs aangifte totalen)                       │
+│  2. Werkelijk rendement berekening                                          │
+│  3. Vergelijking met forfaitair rendement                                   │
+│  4. Indicatieve teruggave berekening                                        │
+│  5. Is bezwaar zinvol? (drempel: €250)                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### System Prompt: Senior Fiscalist
+
+De V2 pipeline gebruikt een dedicated system instruction die de AI positioneert als:
+
+```
+Senior fiscaal specialist bij een gerenommeerd Nederlands belastingadvieskantoor
+
+EXPERTISE:
+- 15+ jaar ervaring met Nederlandse IB
+- Expert in Hoge Raad arresten (Kerstarrest 2021)
+- Specialisatie Box 3 vermogensrendementsheffing
+- Ervaring met massaal bezwaar procedures
+
+JURISPRUDENTIE:
+- HR 24 december 2021 (Kerstarrest)
+- Wet rechtsherstel box 3 (2022)
+- Overbruggingswet box 3 (2023-2026)
+
+WERKWIJZE:
+- EXTREEM nauwkeurig met getallen
+- Aangifte is altijd leidend (ground truth)
+- Documenteer alle aannames
+- Gestructureerde JSON output
+```
+
+### Kernbestanden V2
+
+| Bestand | Doel |
+|---------|------|
+| [server/services/box3-pipeline-v2.ts](../server/services/box3-pipeline-v2.ts) | **Pipeline orchestratie** |
+| [server/services/box3-prompts-v2.ts](../server/services/box3-prompts-v2.ts) | **Prompts + System instruction** |
+| [shared/schema/box3-manifest.ts](../shared/schema/box3-manifest.ts) | **Manifest types** |
+
+### Model Configuratie
+
+```typescript
+MODEL_CONFIG = {
+  model: 'gemini-3-pro-preview',
+  provider: 'google',
+  temperature: 0.0,          // Deterministic
+  thinkingLevel: 'high',     // Maximum reasoning
+  maxOutputTokens: 65536,    // Large manifest output
+  systemInstruction: BOX3_SYSTEM_PROMPT
+}
+```
+
+### Manifest Extractie Voorbeeld
+
+Input: Aangifte IB sectie "Bankrekeningen en andere bezittingen"
+
+Output:
+```json
+{
+  "schema_version": "3.0",
+  "tax_years": ["2024"],
+  "asset_items": {
+    "bank_savings": [
+      {
+        "manifest_id": "bank_1",
+        "description_from_aangifte": "ING Oranje Spaarrekening NL22INGB****4567",
+        "category": "bank_savings",
+        "owner_id": "joint",
+        "yearly_values": { "2024": { "value_jan_1": 85000 } }
+      }
+    ],
+    "other_assets": [
+      {
+        "manifest_id": "other_1",
+        "description_from_aangifte": "Hypotheek aan zoon WH Vonck",
+        "category": "other_assets",
+        "asset_type": "loaned_money",
+        "yearly_values": { "2024": { "value_jan_1": 600000 } },
+        "loan_details": { "borrower_name": "WH Vonck", "is_family_loan": true }
+      }
+    ]
+  }
+}
+```
+
+### Enrichment Voorbeeld
+
+Input: Klant email met "hypotheek aan mijn zoon €600.000 tegen 3.5%pj, rente €21.000 per jaar"
+
+Output (toegevoegd aan manifest item):
+```json
+{
+  "manifest_id": "other_1",
+  "enrichment": {
+    "matched_source_doc_id": "email_context",
+    "match_confidence": 0.95,
+    "agreed_interest_rate": 3.5,
+    "interest_received": 21000,
+    "borrower_name": "WH Vonck"
+  }
+}
+```
+
+### Kritieke Prompt Instructies
+
+De manifest extractie prompt bevat expliciete instructies om veelgemaakte fouten te voorkomen:
+
+**Schulden vs Bezittingen:**
+```
+SECTIE 1: "Bankrekeningen en andere bezittingen" (= BEZITTINGEN)
+SECTIE 2: "Hypotheken en andere schulden" (= SCHULDEN!)
+
+FOUT: Items uit "Hypotheken en andere schulden" als bezittingen classificeren.
+De POSITIE in de aangifte bepaalt de classificatie, niet de naam.
+```
+
+**Vorderingen:**
+```
+"familie hypotheek €60.000" → other_assets, asset_type: "loaned_money"
+Let op: dit zijn BEZITTINGEN (geld dat JIJ hebt uitgeleend aan anderen)
+Niet verwarren met schulden (geld dat JIJ hebt geleend VAN anderen)
+```
+
+**Eigenaarschap:**
+```
+"Was deze rekening alleen van [naam] en [partner]?"
+- "Ja" met beide namen → owner_id: "joint"
+- Alleen belastingplichtige → owner_id: "tp_01"
+- Alleen partner → owner_id: "fp_01"
+```
+
+---
+
+## Legacy: 6-Stage Pipeline
+
+> ⚠️ **Let op**: De onderstaande documentatie beschrijft de oude 6-stage pipeline.
+> Nieuwe dossiers gebruiken de V2 Aangifte-First pipeline hierboven.
 
 ---
 
