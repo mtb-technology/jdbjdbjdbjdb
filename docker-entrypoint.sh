@@ -5,10 +5,10 @@ echo "🔧 Configuring nginx for port $PORT..."
 
 # Generate nginx config with correct PORT
 cat > /etc/nginx/conf.d/default.conf <<EOF
-# Rate limiting zone: 1 request per minute per IP for login attempts
-# (nginx only supports r/s and r/m, not r/d)
-# 10m = 10MB shared memory (~160,000 IPs)
-limit_req_zone \$binary_remote_addr zone=login_limit:10m rate=1r/m;
+# NOTE: Rate limiting disabled - was too restrictive (1r/m) for a SPA
+# If you need rate limiting, use a more reasonable limit like 10r/s
+# and apply only to specific endpoints (e.g., login, API key generation)
+# limit_req_zone \$binary_remote_addr zone=api_limit:10m rate=10r/s;
 
 server {
     listen $PORT;
@@ -94,9 +94,9 @@ server {
 
     # Proxy to Node.js application
     location / {
-        # Rate limit: 1 request per minute, no burst allowed
-        limit_req zone=login_limit nodelay;
-        limit_req_status 429;
+        # NOTE: Rate limiting removed - was causing 429 for all requests
+        # The login_limit (1r/m) was way too restrictive for a SPA
+        # Consider adding targeted rate limiting for specific endpoints if needed
 
         proxy_pass http://127.0.0.1:5000;
         proxy_http_version 1.1;
