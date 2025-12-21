@@ -327,7 +327,52 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   // Document preview state
   const [previewDocIndex, setPreviewDocIndex] = useState<number | null>(null);
   const [previewTab, setPreviewTab] = useState<"preview" | "rawtext">("preview");
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const previewDoc = previewDocIndex !== null ? documents[previewDocIndex] : null;
+
+  // Fetch PDF/image data and create blob URL for preview
+  // This avoids issues with iframe loading from API endpoints
+  useEffect(() => {
+    if (!previewDoc) {
+      if (previewBlobUrl) {
+        URL.revokeObjectURL(previewBlobUrl);
+        setPreviewBlobUrl(null);
+      }
+      return;
+    }
+
+    const fetchPreviewData = async () => {
+      setIsLoadingPreview(true);
+      try {
+        const response = await fetch(`/api/box3-validator/documents/${previewDoc.id}/download`);
+        if (!response.ok) throw new Error('Failed to load document');
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        // Revoke old URL before setting new one
+        if (previewBlobUrl) {
+          URL.revokeObjectURL(previewBlobUrl);
+        }
+        setPreviewBlobUrl(url);
+      } catch (error) {
+        console.error('Failed to load preview:', error);
+        setPreviewBlobUrl(null);
+      } finally {
+        setIsLoadingPreview(false);
+      }
+    };
+
+    fetchPreviewData();
+
+    // Cleanup on unmount or doc change
+    return () => {
+      if (previewBlobUrl) {
+        URL.revokeObjectURL(previewBlobUrl);
+      }
+    };
+  }, [previewDoc?.id]); // Only re-fetch when document ID changes
 
   // Year-first navigation: year is the primary selector
   const availableYears = Object.keys(blueprint?.year_summaries || {}).sort((a, b) => Number(b) - Number(a));
@@ -627,15 +672,29 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 </TabsList>
                 <TabsContent value="preview" className="mt-0">
                   <div className="overflow-auto max-h-[calc(90vh-120px)] bg-muted/10">
-                    {isImageFile(previewDoc.mimeType) ? (
+                    {isLoadingPreview ? (
+                      <div className="flex items-center justify-center h-64 text-muted-foreground">
+                        <div className="text-center">
+                          <RefreshCw className="h-8 w-8 mx-auto mb-2 animate-spin opacity-50" />
+                          <p>Document laden...</p>
+                        </div>
+                      </div>
+                    ) : !previewBlobUrl ? (
+                      <div className="flex items-center justify-center h-64 text-muted-foreground">
+                        <div className="text-center">
+                          <AlertTriangle className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          <p>Kon document niet laden</p>
+                        </div>
+                      </div>
+                    ) : isImageFile(previewDoc.mimeType) ? (
                       <img
-                        src={getPreviewUrl(previewDoc) || ''}
+                        src={previewBlobUrl}
                         alt={previewDoc.filename}
                         className="w-full h-auto"
                       />
                     ) : isPdfFile(previewDoc.mimeType) ? (
                       <iframe
-                        src={getPreviewUrl(previewDoc) || ''}
+                        src={previewBlobUrl}
                         className="w-full h-[calc(90vh-120px)]"
                         title={previewDoc.filename}
                       />
