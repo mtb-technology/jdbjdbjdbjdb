@@ -209,38 +209,6 @@ export const Box3NewCase = memo(function Box3NewCase({
           </p>
         </div>
 
-        {/* Pipeline Version Toggle */}
-        <div className="flex justify-center mb-6">
-          <div className="inline-flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-            <button
-              onClick={() => onPipelineVersionChange('v1')}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
-                pipelineVersion === 'v1'
-                  ? "bg-white dark:bg-slate-700 text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Zap className="h-4 w-4" />
-              Pipeline V1
-              <span className="text-xs text-muted-foreground">(stabiel)</span>
-            </button>
-            <button
-              onClick={() => onPipelineVersionChange('v2')}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
-                pipelineVersion === 'v2'
-                  ? "bg-white dark:bg-slate-700 text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <FlaskConical className="h-4 w-4" />
-              Pipeline V2
-              <span className="text-xs text-orange-500">(experimenteel)</span>
-            </button>
-          </div>
-        </div>
-
         {/* Main Input Card */}
         <Card className="border-0 shadow-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm">
           <CardContent className="p-8 space-y-6">
