@@ -814,10 +814,13 @@ export class Box3PipelineV2 {
       return sum + (yearData?.value_jan_1 || 0);
     }, 0);
 
-    const debtTotal = manifest.debt_items.reduce((sum, item) => {
-      const yearData = Object.values(item.yearly_values)[0];
-      return sum + (yearData?.value_jan_1 || 0);
-    }, 0);
+    // Only count Box 3 debts (exclude eigen woning schulden which belong to Box 1)
+    const debtTotal = manifest.debt_items
+      .filter((item) => !item.is_eigen_woning_schuld)
+      .reduce((sum, item) => {
+        const yearData = Object.values(item.yearly_values)[0];
+        return sum + (yearData?.value_jan_1 || 0);
+      }, 0);
 
     // Expected investments: from category_totals (excludes green) + green_investments.total_value
     // The LLM should extract:
@@ -864,8 +867,8 @@ export class Box3PipelineV2 {
         is_match: Math.abs(otherTotal - expected.other_assets) < 1,
       },
       debts: {
-        expected_count: manifest.debt_items.length,
-        extracted_count: manifest.debt_items.length,
+        expected_count: manifest.debt_items.filter((d) => !d.is_eigen_woning_schuld).length,
+        extracted_count: manifest.debt_items.filter((d) => !d.is_eigen_woning_schuld).length,
         expected_total: expected.debts,
         extracted_total: debtTotal,
         difference: debtTotal - expected.debts,
@@ -1095,24 +1098,26 @@ export class Box3PipelineV2 {
       return 'other';
     };
 
-    // Convert debts
-    const debts: Box3Debt[] = manifest.debt_items.map((item, idx) => ({
-      id: `debt_${idx + 1}`,
-      owner_id: item.owner_id,
-      description: item.description_from_aangifte,
-      lender: item.creditor_name,
-      debt_type: inferDebtType(item),
-      ownership_percentage: item.ownership_percentage,
-      yearly_data: Object.fromEntries(
-        Object.entries(item.yearly_values).map(([y, data]) => [
-          y,
-          {
-            value_jan_1: { amount: data.value_jan_1, confidence: 1.0 },
-            interest_paid: item.interest_paid ? { amount: item.interest_paid, confidence: 1.0 } : undefined,
-          },
-        ])
-      ),
-    }));
+    // Convert debts - ONLY Box 3 debts (exclude eigen woning schulden which belong to Box 1)
+    const debts: Box3Debt[] = manifest.debt_items
+      .filter((item) => !item.is_eigen_woning_schuld)
+      .map((item, idx) => ({
+        id: `debt_${idx + 1}`,
+        owner_id: item.owner_id,
+        description: item.description_from_aangifte,
+        lender: item.creditor_name,
+        debt_type: inferDebtType(item),
+        ownership_percentage: item.ownership_percentage,
+        yearly_data: Object.fromEntries(
+          Object.entries(item.yearly_values).map(([y, data]) => [
+            y,
+            {
+              value_jan_1: { amount: data.value_jan_1, confidence: 1.0 },
+              interest_paid: item.interest_paid ? { amount: item.interest_paid, confidence: 1.0 } : undefined,
+            },
+          ])
+        ),
+      }));
 
     // Convert fiscal entity (ensure undefined -> null conversion)
     const fiscalEntity: Box3FiscalEntity = {
@@ -1214,7 +1219,8 @@ export class Box3PipelineV2 {
         // Note: we don't estimate other income - too variable
       }
       for (const item of manifest.debt_items) {
-        if (item.interest_paid) {
+        // Only count interest from Box 3 debts (exclude eigen woning schulden)
+        if (item.interest_paid && !item.is_eigen_woning_schuld) {
           debtInterest += item.interest_paid;
         }
       }
@@ -1270,7 +1276,7 @@ export class Box3PipelineV2 {
           bank_savings: manifest.asset_items.bank_savings.length > 0 ? 'complete' : 'not_applicable',
           investments: manifest.asset_items.investments.length > 0 ? 'complete' : 'not_applicable',
           real_estate: manifest.asset_items.real_estate.length > 0 ? 'complete' : 'not_applicable',
-          debts: manifest.debt_items.length > 0 ? 'complete' : 'not_applicable',
+          debts: manifest.debt_items.filter((d) => !d.is_eigen_woning_schuld).length > 0 ? 'complete' : 'not_applicable',
           tax_return: taxAuthData ? 'complete' : 'incomplete',
         },
         missing_items: [],

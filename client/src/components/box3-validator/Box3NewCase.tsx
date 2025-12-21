@@ -25,6 +25,7 @@ import {
   Zap,
 } from "lucide-react";
 
+import { Progress } from "@/components/ui/progress";
 import type { PendingFile } from "@/types/box3Validator.types";
 import type { PipelineVersion } from "@/hooks/useBox3Validation";
 
@@ -34,6 +35,10 @@ interface Box3NewCaseProps {
   onPipelineVersionChange: (version: PipelineVersion) => void;
   onBack: () => void;
   onValidate: (clientName: string, inputText: string, files: PendingFile[]) => void;
+  /** Upload progress percentage (0-100) */
+  uploadProgress?: number | null;
+  /** Upload status message */
+  uploadStatus?: string | null;
 }
 
 export const Box3NewCase = memo(function Box3NewCase({
@@ -42,6 +47,8 @@ export const Box3NewCase = memo(function Box3NewCase({
   onPipelineVersionChange,
   onBack,
   onValidate,
+  uploadProgress,
+  uploadStatus,
 }: Box3NewCaseProps) {
   const [clientName, setClientName] = useState("");
   const [inputText, setInputText] = useState("");
@@ -202,10 +209,10 @@ export const Box3NewCase = memo(function Box3NewCase({
         {/* Page Title */}
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-foreground mb-2">
-            Nieuwe Case
+            Nieuwe Box 3 Bezwaar Analyse
           </h1>
           <p className="text-muted-foreground">
-            Voer klantgegevens in en upload documenten
+            Voer klantgegevens in en upload documenten voor Box 3 bezwaar beoordeling
           </p>
         </div>
 
@@ -322,6 +329,26 @@ export const Box3NewCase = memo(function Box3NewCase({
               )}
             </div>
 
+            {/* Upload Progress Indicator */}
+            {isValidating && uploadProgress !== null && uploadProgress !== undefined && (
+              <div className="space-y-2 p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-900">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-blue-900 dark:text-blue-100">
+                    {uploadStatus || 'Uploaden...'}
+                  </span>
+                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <Progress value={uploadProgress} className="h-2" />
+                {uploadProgress >= 100 && (
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    Server verwerkt documenten...
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <Button
@@ -333,7 +360,7 @@ export const Box3NewCase = memo(function Box3NewCase({
                 {isValidating ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Analyseren...
+                    {uploadStatus || 'Analyseren...'}
                   </>
                 ) : (
                   <>
@@ -345,6 +372,7 @@ export const Box3NewCase = memo(function Box3NewCase({
               <Button
                 variant="outline"
                 onClick={onBack}
+                disabled={isValidating}
                 className="h-12 w-full sm:w-auto border-slate-300 dark:border-slate-600 hover:bg-white/50 dark:hover:bg-slate-800/50"
               >
                 <FolderOpen className="mr-2 h-4 w-4" />

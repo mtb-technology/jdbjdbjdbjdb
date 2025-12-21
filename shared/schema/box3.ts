@@ -40,7 +40,7 @@ export const box3Dossiers = pgTable("box3_dossiers", {
   intakeText: text("intake_text"), // Originele mail van klant
 
   // Status
-  status: text("status").default("intake"), // intake | in_behandeling | wacht_op_klant | klaar | afgerond
+  status: text("status").default("intake"), // uploading | intake | in_behandeling | wacht_op_klant | klaar | afgerond
   taxYears: text("tax_years").array(), // ["2022", "2023"]
   hasFiscalPartner: boolean("has_fiscal_partner").default(false),
 
@@ -904,7 +904,7 @@ export type InsertBox3BlueprintRecord = typeof box3Blueprints.$inferInsert;
 export const insertBox3DossierSchema = createInsertSchema(box3Dossiers, {
   clientName: z.string().min(1, "Klantnaam is verplicht"),
   clientEmail: z.string().email().optional().nullable(),
-  status: z.enum(['intake', 'in_behandeling', 'wacht_op_klant', 'klaar', 'afgerond']).optional(),
+  status: z.enum(['uploading', 'intake', 'in_behandeling', 'wacht_op_klant', 'klaar', 'afgerond']).optional(),
   taxYears: z.array(z.string()).optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 

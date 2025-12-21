@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { Box3Blueprint } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
-import type { Box3DossierFull } from "./useBox3Sessions";
+import type { Box3DossierFull } from "./useBox3Dossiers";
 import { BOX3_CONSTANTS } from "@shared/constants";
 
 // Pipeline version type
@@ -84,7 +84,7 @@ interface UseBox3ValidationProps {
 /** Result of starting a validation job - contains dossier info for immediate navigation */
 export interface ValidationJobStartResult {
   dossierId: string;
-  jobId: string;
+  jobId: string | null;  // null if upload still in progress
   clientName: string;
 }
 
@@ -112,6 +112,10 @@ interface UseBox3ValidationReturn extends ValidationState {
   handleReset: () => void;
   loadFromDossier: (dossierFull: Box3DossierFull) => void;
   pipelineProgress: PipelineProgress | null;
+  /** Upload progress percentage (0-100) during file upload */
+  uploadProgress: number | null;
+  /** Upload status message during file upload */
+  uploadStatus: string | null;
   /** Check for and resume any active job for a dossier */
   checkForActiveJob: (dossierId: string) => Promise<void>;
   /** Toggle between pipeline V1 and V2 */
@@ -131,6 +135,10 @@ export function useBox3Validation({
   const [taxYears, setTaxYears] = useState<string[]>([]);
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress | null>(null);
+
+  // Upload progress state (0-100)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
   // Job-based revalidation state
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -290,18 +298,14 @@ export function useBox3Validation({
       return null;
     }
 
-    // Both V1 and V2 use background jobs now
-    const isV2 = pipelineVersion === 'v2';
-    const totalSteps = isV2 ? 3 : 5;
-    const endpoint = isV2
-      ? `/api/box3-validator/dossiers/${dossierId}/revalidate-v2-job`
-      : `/api/box3-validator/dossiers/${dossierId}/revalidate-job`;
+    const totalSteps = 3;
+    const endpoint = `/api/box3-validator/dossiers/${dossierId}/revalidate-job`;
 
     setIsValidating(true);
     setPipelineProgress({
       step: 0,
       totalSteps,
-      message: `Job starten (Pipeline ${isV2 ? 'V2' : 'V1'})...`,
+      message: 'Job starten...',
       phase: 'starting'
     });
 
@@ -321,11 +325,11 @@ export function useBox3Validation({
       if (data.existing) {
         toast({
           title: "Actieve job gevonden",
-          description: `Er loopt al een revalidatie voor dit dossier (${data.pipelineVersion || 'V1'}).`,
+          description: "Er loopt al een revalidatie voor dit dossier.",
         });
       } else {
         toast({
-          title: `Revalidatie gestart (Pipeline ${isV2 ? 'V2' : 'V1'})`,
+          title: "Revalidatie gestart",
           description: "Je kan de browser sluiten, de verwerking gaat door.",
         });
       }
@@ -346,6 +350,7 @@ export function useBox3Validation({
   }, [toast, pipelineVersion]);
 
   // Start background validation job for new dossier
+  // FAST FLOW: 1. Init dossier (fast) → 2. Return IMMEDIATELY for navigation → 3. Upload continues in background
   const startValidationJob = useCallback(async (
     clientName: string,
     inputText: string,
@@ -383,61 +388,139 @@ export function useBox3Validation({
       return null;
     }
 
-    // Determine pipeline version and endpoint
     const isV2 = pipelineVersion === 'v2';
     const totalSteps = isV2 ? 3 : 5;
-    const endpoint = isV2
-      ? "/api/box3-validator/validate-v2-job"
-      : "/api/box3-validator/validate-job";
 
     setIsValidating(true);
-    setPipelineProgress({ step: 0, totalSteps, message: `Dossier aanmaken (Pipeline ${isV2 ? 'V2' : 'V1'})...`, phase: 'starting' });
+    setUploadProgress(0);
+    setUploadStatus('Dossier aanmaken...');
+    setPipelineProgress({ step: 0, totalSteps, message: 'Dossier aanmaken...', phase: 'init' });
 
     try {
-      const formData = new FormData();
-      formData.append("clientName", clientName.trim());
-      formData.append("inputText", inputText.trim() || "(geen mail tekst)");
-
-      for (const pf of pendingFiles) {
-        formData.append("files", pf.file, pf.name);
-      }
-
-      const response = await fetch(endpoint, {
+      // STEP 1: Initialize dossier (fast, no files)
+      const initResponse = await fetch("/api/box3-validator/init-dossier", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientName: clientName.trim(),
+          inputText: inputText.trim() || "(geen mail tekst)",
+        }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+      if (!initResponse.ok) {
+        const errorData = await initResponse.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP ${initResponse.status}`);
       }
 
-      const result = await response.json();
-      const data = result.success ? result.data : result;
+      const initResult = await initResponse.json();
+      const dossierId = initResult.success ? initResult.data.dossier.id : initResult.dossier?.id;
+      const dossierClientName = initResult.success ? initResult.data.dossier.clientName : initResult.dossier?.clientName;
 
-      // Validate response
-      if (!data.dossier?.id || !data.jobId) {
-        throw new Error("Server gaf geen dossier of job ID terug");
+      if (!dossierId) {
+        throw new Error("Server gaf geen dossier ID terug");
       }
 
-      // Update state for job tracking
-      setCurrentDossierId(data.dossier.id);
-      setActiveJobId(data.jobId);
+      // Update state - dossier is now created
+      setCurrentDossierId(dossierId);
 
-      toast({
-        title: `Validatie gestart (Pipeline ${isV2 ? 'V2' : 'V1'})`,
-        description: "Je kan de browser sluiten, de verwerking gaat door.",
-      });
+      // Set initial upload status
+      const totalFiles = pendingFiles.length;
+      const totalSizeMB = pendingFiles.reduce((sum, pf) => sum + pf.file.size, 0) / 1024 / 1024;
+      setUploadStatus(`Documenten uploaden (${totalFiles} bestanden, ${totalSizeMB.toFixed(1)}MB)...`);
+      setPipelineProgress({ step: 0, totalSteps, message: 'Documenten uploaden...', phase: 'uploading' });
 
-      // Return info for immediate navigation
+      // STEP 2: Start upload in background (fire-and-forget, but track progress)
+      // The upload will continue even after we return and navigate away
+      const uploadInBackground = () => {
+        const formData = new FormData();
+        for (const pf of pendingFiles) {
+          formData.append("files", pf.file, pf.name);
+        }
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const progress = Math.round((e.loaded / e.total) * 100);
+            setUploadProgress(progress);
+            if (progress < 100) {
+              setUploadStatus(`Documenten uploaden... ${progress}%`);
+            } else {
+              setUploadStatus('PDF tekst extraheren...');
+              setPipelineProgress({ step: 0, totalSteps, message: 'PDF tekst extraheren...', phase: 'extracting' });
+            }
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const parsed = JSON.parse(xhr.responseText);
+              const jobId = parsed.success ? parsed.data.jobId : parsed.jobId;
+              if (jobId) {
+                setActiveJobId(jobId);
+                setUploadProgress(null);
+                setUploadStatus(null);
+                setPipelineProgress({ step: 0, totalSteps, message: 'AI analyseert aangifte...', phase: 'manifest' });
+              }
+            } catch {
+              // Parse error - still mark upload as done
+              setUploadProgress(null);
+              setUploadStatus(null);
+            }
+          } else {
+            // Upload failed
+            setIsValidating(false);
+            setPipelineProgress(null);
+            setUploadProgress(null);
+            setUploadStatus(null);
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              toast({
+                title: "Upload mislukt",
+                description: errorData.error?.message || `HTTP ${xhr.status}`,
+                variant: "destructive",
+              });
+            } catch {
+              toast({
+                title: "Upload mislukt",
+                description: `HTTP ${xhr.status}`,
+                variant: "destructive",
+              });
+            }
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          setIsValidating(false);
+          setPipelineProgress(null);
+          setUploadProgress(null);
+          setUploadStatus(null);
+          toast({
+            title: "Upload mislukt",
+            description: "Netwerkfout - verbinding mislukt",
+            variant: "destructive",
+          });
+        });
+
+        xhr.open('POST', `/api/box3-validator/dossiers/${dossierId}/upload-and-start`);
+        xhr.send(formData);
+      };
+
+      // Start upload in background
+      uploadInBackground();
+
+      // Return IMMEDIATELY so navigation can happen while upload continues
       return {
-        dossierId: data.dossier.id,
-        jobId: data.jobId,
-        clientName: data.dossier.clientName,
+        dossierId,
+        jobId: null, // Job ID not yet known - will be set when upload completes
+        clientName: dossierClientName || clientName,
       };
     } catch (error: unknown) {
       setIsValidating(false);
       setPipelineProgress(null);
+      setUploadProgress(null);
+      setUploadStatus(null);
 
       const message = error instanceof Error ? error.message : "Kon validatie niet starten.";
       toast({
@@ -851,6 +934,8 @@ export function useBox3Validation({
     taxYears,
     debugInfo,
     pipelineProgress,
+    uploadProgress,
+    uploadStatus,
     activeJobId,
     activeJob,
     pipelineVersion,

@@ -13,7 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AppHeader } from "@/components/app-header";
 
 // Hooks
-import { useBox3Sessions, type Box3DossierFull } from "@/hooks/useBox3Sessions";
+import { useBox3Dossiers, type Box3DossierFull } from "@/hooks/useBox3Dossiers";
 import { useBox3Validation, type PipelineVersion } from "@/hooks/useBox3Validation";
 
 // Components
@@ -54,15 +54,15 @@ const Box3Validator = memo(function Box3Validator() {
     return promptConfig?.config?.box3Config?.emailPrompt || "";
   }, [promptConfig]);
 
-  // Session management hook
+  // Dossier management hook
   const {
-    sessions,
-    isLoading: isLoadingSessions,
-    refetchSessions,
-    loadSession,
-    deleteSession,
+    dossiers,
+    isLoading: isLoadingDossiers,
+    refetchDossiers,
+    loadDossier,
+    deleteDossier,
     addDocuments,
-  } = useBox3Sessions();
+  } = useBox3Dossiers();
 
   // Validation hook
   const {
@@ -71,6 +71,8 @@ const Box3Validator = memo(function Box3Validator() {
     currentDossierId,
     debugInfo,
     pipelineProgress,
+    uploadProgress,
+    uploadStatus,
     activeJobId,
     activeJob,
     pipelineVersion,
@@ -82,14 +84,14 @@ const Box3Validator = memo(function Box3Validator() {
     checkForActiveJob,
     setPipelineVersion,
   } = useBox3Validation({
-    refetchSessions,
+    refetchSessions: refetchDossiers,
   });
 
   // Load dossier when URL changes to detail view
   useEffect(() => {
     if (urlDossierId && urlDossierId !== selectedDossier?.dossier.id) {
       setIsLoadingDossier(true);
-      loadSession(urlDossierId).then((dossierFull) => {
+      loadDossier(urlDossierId).then((dossierFull) => {
         if (dossierFull) {
           setSelectedDossier(dossierFull);
           loadFromDossier(dossierFull);
@@ -101,7 +103,7 @@ const Box3Validator = memo(function Box3Validator() {
         setIsLoadingDossier(false);
       });
     }
-  }, [urlDossierId, selectedDossier?.dossier.id, loadSession, loadFromDossier, setLocation]);
+  }, [urlDossierId, selectedDossier?.dossier.id, loadDossier, loadFromDossier, setLocation]);
 
   // Navigation handlers
   const handleSelectCase = useCallback(
@@ -120,18 +122,18 @@ const Box3Validator = memo(function Box3Validator() {
   const handleBackToList = useCallback(() => {
     setSelectedDossier(null);
     handleReset();
-    refetchSessions();
+    refetchDossiers();
     setLocation("/box3-validator");
-  }, [handleReset, refetchSessions, setLocation]);
+  }, [handleReset, refetchDossiers, setLocation]);
 
   const handleDeleteCase = useCallback(
     async (dossierId: string) => {
-      const success = await deleteSession(dossierId);
+      const success = await deleteDossier(dossierId);
       if (success) {
-        refetchSessions();
+        refetchDossiers();
       }
     },
-    [deleteSession, refetchSessions]
+    [deleteDossier, refetchDossiers]
   );
 
   // Validation handler for new case - uses job-based flow for immediate navigation
@@ -157,25 +159,32 @@ const Box3Validator = memo(function Box3Validator() {
   const prevActiveJobIdRef = useRef<string | null>(null);
 
   // Reload dossier when job completes (transitions from having a job to no job)
+  // OR when upload completes and job starts (transitions from null to having a job)
   useEffect(() => {
     const hadJob = prevActiveJobIdRef.current !== null;
+    const hasJobNow = activeJobId !== null;
     const hasNoJobNow = activeJobId === null;
 
     // Update ref for next render
     prevActiveJobIdRef.current = activeJobId;
 
-    // Only reload if we HAD a job and now we don't (job just completed)
-    if (hadJob && hasNoJobNow && selectedDossier?.dossier.id && !isValidating) {
-      const reloadDossier = async () => {
-        const updatedDossier = await loadSession(selectedDossier.dossier.id);
+    // Reload if:
+    // 1. We HAD a job and now we don't (job just completed)
+    // 2. We had NO job and now we DO (upload just completed, documents are now in DB)
+    const jobCompleted = hadJob && hasNoJobNow && !isValidating;
+    const uploadCompleted = !hadJob && hasJobNow; // null -> jobId means upload finished
+
+    if ((jobCompleted || uploadCompleted) && selectedDossier?.dossier.id) {
+      const reloadDossierData = async () => {
+        const updatedDossier = await loadDossier(selectedDossier.dossier.id);
         if (updatedDossier) {
           setSelectedDossier(updatedDossier);
           loadFromDossier(updatedDossier);
         }
       };
-      reloadDossier();
+      reloadDossierData();
     }
-  }, [activeJobId, selectedDossier?.dossier.id, isValidating, loadSession, loadFromDossier]);
+  }, [activeJobId, selectedDossier?.dossier.id, isValidating, loadDossier, loadFromDossier]);
 
   // Revalidate handler for detail view (now uses job-based flow)
   const handleRevalidate = useCallback(async () => {
@@ -192,7 +201,7 @@ const Box3Validator = memo(function Box3Validator() {
         const success = await addDocuments(selectedDossier.dossier.id, files);
         if (success) {
           // Reload the dossier to get updated data
-          const updatedDossier = await loadSession(selectedDossier.dossier.id);
+          const updatedDossier = await loadDossier(selectedDossier.dossier.id);
           if (updatedDossier) {
             setSelectedDossier(updatedDossier);
             loadFromDossier(updatedDossier);
@@ -202,7 +211,7 @@ const Box3Validator = memo(function Box3Validator() {
         setIsAddingDocs(false);
       }
     },
-    [selectedDossier, addDocuments, loadSession, loadFromDossier]
+    [selectedDossier, addDocuments, loadDossier, loadFromDossier]
   );
 
   return (
@@ -212,7 +221,8 @@ const Box3Validator = memo(function Box3Validator() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         {viewMode === "list" && (
           <Box3CaseList
-            sessions={sessions}
+            dossiers={dossiers}
+            isLoading={isLoadingDossiers}
             onSelectCase={handleSelectCase}
             onNewCase={handleNewCase}
             onDeleteCase={handleDeleteCase}
@@ -234,6 +244,8 @@ const Box3Validator = memo(function Box3Validator() {
             debugInfo={debugInfo}
             pipelineProgress={pipelineProgress}
             activeJobId={activeJobId}
+            uploadProgress={uploadProgress}
+            uploadStatus={uploadStatus}
             pipelineVersion={pipelineVersion}
             onPipelineVersionChange={setPipelineVersion}
             onBack={handleBackToList}
@@ -262,6 +274,8 @@ const Box3Validator = memo(function Box3Validator() {
             onPipelineVersionChange={setPipelineVersion}
             onBack={handleBackToList}
             onValidate={handleValidate}
+            uploadProgress={uploadProgress}
+            uploadStatus={uploadStatus}
           />
         )}
       </div>

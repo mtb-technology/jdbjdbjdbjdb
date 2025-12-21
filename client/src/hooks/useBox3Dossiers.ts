@@ -1,8 +1,8 @@
 /**
- * useBox3Sessions Hook - V2
+ * useBox3Dossiers Hook
  *
- * Session/Dossier management for Box 3 Validator.
- * Uses the new V2 Blueprint data model.
+ * Dossier management for Box 3 Validator.
+ * Uses the V2 Blueprint data model.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -13,7 +13,7 @@ import type { Box3Blueprint, Box3Dossier, Box3GeneratedEmail } from "@shared/sch
 import type { PendingFile } from "@/types/box3Validator.types";
 import { BOX3_CONSTANTS } from "@shared/constants";
 
-// Light session type for list view
+// Light dossier type for list view
 export interface Box3DossierLight {
   id: string;
   dossierNummer: string | null;
@@ -47,22 +47,22 @@ export interface Box3DossierFull {
   }>;
 }
 
-interface UseBox3SessionsReturn {
-  sessions: Box3DossierLight[] | undefined;
+interface UseBox3DossiersReturn {
+  dossiers: Box3DossierLight[] | undefined;
   isLoading: boolean;
-  refetchSessions: () => void;
-  loadSession: (sessionId: string) => Promise<Box3DossierFull | null>;
-  deleteSession: (sessionId: string) => Promise<boolean>;
-  addDocuments: (sessionId: string, files: PendingFile[]) => Promise<boolean>;
-  updateStatus: (sessionId: string, status: string) => Promise<boolean>;
+  refetchDossiers: () => void;
+  loadDossier: (dossierId: string) => Promise<Box3DossierFull | null>;
+  deleteDossier: (dossierId: string) => Promise<boolean>;
+  addDocuments: (dossierId: string, files: PendingFile[]) => Promise<boolean>;
+  updateStatus: (dossierId: string, status: string) => Promise<boolean>;
 }
 
-export function useBox3Sessions(): UseBox3SessionsReturn {
+export function useBox3Dossiers(): UseBox3DossiersReturn {
   const { toast } = useToast();
 
   // Fetch dossiers list
-  const { data: sessions, refetch: refetchSessions, isLoading } = useQuery<Box3DossierLight[]>({
-    queryKey: QUERY_KEYS.box3.sessions(),
+  const { data: dossiers, refetch: refetchDossiers, isLoading } = useQuery<Box3DossierLight[]>({
+    queryKey: QUERY_KEYS.box3.sessions(), // Keep query key for cache compatibility
     queryFn: async () => {
       const res = await fetch("/api/box3-validator/dossiers");
       if (!res.ok) {
@@ -72,13 +72,20 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
       const data = await res.json();
       return data.success ? data.data : data;
     },
-    refetchInterval: 30000,
+    // Refresh more frequently if there are dossiers with uploading/processing status
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const hasActiveProcessing = data?.some(
+        d => d.status === 'uploading' || d.status === 'processing'
+      );
+      return hasActiveProcessing ? 3000 : 30000; // 3s when active, 30s otherwise
+    },
   });
 
   // Load a specific dossier with blueprint
-  const loadSession = useCallback(async (sessionId: string): Promise<Box3DossierFull | null> => {
+  const loadDossier = useCallback(async (dossierId: string): Promise<Box3DossierFull | null> => {
     try {
-      const res = await fetch(`/api/box3-validator/dossiers/${sessionId}`);
+      const res = await fetch(`/api/box3-validator/dossiers/${dossierId}`);
       if (!res.ok) throw new Error("Failed to load dossier");
 
       const data = await res.json();
@@ -95,9 +102,9 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
   }, [toast]);
 
   // Delete a dossier
-  const deleteSession = async (sessionId: string): Promise<boolean> => {
+  const deleteDossier = async (dossierId: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/box3-validator/dossiers/${sessionId}`, {
+      const res = await fetch(`/api/box3-validator/dossiers/${dossierId}`, {
         method: "DELETE",
       });
 
@@ -108,7 +115,7 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
         description: "Het dossier is succesvol verwijderd.",
       });
 
-      refetchSessions();
+      refetchDossiers();
       return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -123,7 +130,7 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
 
   // Add documents to existing dossier
   const addDocuments = async (
-    sessionId: string,
+    dossierId: string,
     files: PendingFile[]
   ): Promise<boolean> => {
     // ✅ Client-side file size validation
@@ -150,7 +157,7 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
 
       let res;
       try {
-        res = await fetch(`/api/box3-validator/dossiers/${sessionId}/documents`, {
+        res = await fetch(`/api/box3-validator/dossiers/${dossierId}/documents`, {
           method: "POST",
           body: formData,
           signal: controller.signal,
@@ -169,7 +176,7 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
         description: `${files.length} document(en) toegevoegd en geëxtraheerd.`,
       });
 
-      refetchSessions();
+      refetchDossiers();
       return true;
     } catch (error: unknown) {
       let message = "Kon documenten niet toevoegen.";
@@ -191,11 +198,11 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
 
   // Update dossier status
   const updateStatus = async (
-    sessionId: string,
+    dossierId: string,
     status: string
   ): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/box3-validator/dossiers/${sessionId}`, {
+      const res = await fetch(`/api/box3-validator/dossiers/${dossierId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -208,7 +215,7 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
         description: `Dossier status is nu: ${status}`,
       });
 
-      refetchSessions();
+      refetchDossiers();
       return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -222,12 +229,16 @@ export function useBox3Sessions(): UseBox3SessionsReturn {
   };
 
   return {
-    sessions,
+    dossiers,
     isLoading,
-    refetchSessions,
-    loadSession,
-    deleteSession,
+    refetchDossiers,
+    loadDossier,
+    deleteDossier,
     addDocuments,
     updateStatus,
   };
 }
+
+// Re-export with old name for backwards compatibility during migration
+/** @deprecated Use useBox3Dossiers instead */
+export const useBox3Sessions = useBox3Dossiers;

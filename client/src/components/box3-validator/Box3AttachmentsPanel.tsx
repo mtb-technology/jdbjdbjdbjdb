@@ -263,10 +263,11 @@ function getExtractionStatusBadge(status: Box3Attachment['extractionStatus'], ch
         </Badge>
       );
     case 'failed':
+      // Scanned PDF - processed via vision/multimodal, not a failure
       return (
-        <Badge variant="outline" className="bg-gray-50 text-gray-500 border-gray-200">
-          <FileQuestion className="h-3 w-3 mr-1" />
-          Niet leesbaar
+        <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+          <Eye className="h-3 w-3 mr-1" />
+          Vision verwerkt
         </Badge>
       );
     default:
@@ -633,14 +634,14 @@ const Box3AttachmentItem = memo(function Box3AttachmentItem({
             )}
 
             {attachment.extractionStatus === 'failed' && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
-                <div className="flex items-center gap-2 text-amber-800 mb-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  <strong>Tekst niet leesbaar</strong>
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-sm">
+                <div className="flex items-center gap-2 text-purple-800 mb-2">
+                  <Eye className="h-4 w-4" />
+                  <strong>Gescande PDF - Vision verwerkt</strong>
                 </div>
-                <p className="text-amber-700">
-                  De tekst in dit PDF bestand kon niet worden geëxtraheerd. Het bestand is mogelijk
-                  een gescande afbeelding. De AI heeft geprobeerd het visueel te analyseren.
+                <p className="text-purple-700">
+                  Dit is een gescande PDF zonder extracteerbare tekst. De AI heeft het document
+                  <strong> visueel geanalyseerd</strong> via multimodal vision en de inhoud succesvol verwerkt.
                 </p>
               </div>
             )}

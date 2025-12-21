@@ -22,7 +22,17 @@ import {
   Check,
   RefreshCw,
   ExternalLink,
+  Settings,
+  Building2,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { Box3Dossier } from "@shared/schema";
 
@@ -34,6 +44,7 @@ interface MissingItem {
 interface NextStep {
   action: string;
   description: string;
+  banksNeeded?: string[];
 }
 
 interface GeneratedEmail {
@@ -55,10 +66,16 @@ interface Box3ActionCardsProps {
   isProfitable: boolean;
   totalRefund: number;
   hasMissingReturnData?: boolean;
-  onGenerateEmail: () => void;
+  onGenerateEmail: (customPrompt?: string) => void;
   isGeneratingEmail: boolean;
   generatedEmail: GeneratedEmail | null;
   onShowEmailPreview?: () => void;
+}
+
+interface EmailPromptData {
+  prompt: string;
+  placeholders: Array<{ key: string; description: string }>;
+  emailTypes: Array<{ key: string; description: string }>;
 }
 
 export const Box3ActionCards = memo(function Box3ActionCards({
@@ -75,6 +92,43 @@ export const Box3ActionCards = memo(function Box3ActionCards({
 }: Box3ActionCardsProps) {
   const { toast } = useToast();
   const [copiedEmail, setCopiedEmail] = useState(false);
+  const [showPromptDialog, setShowPromptDialog] = useState(false);
+  const [promptData, setPromptData] = useState<EmailPromptData | null>(null);
+  const [customPrompt, setCustomPrompt] = useState<string>("");
+  const [isLoadingPrompt, setIsLoadingPrompt] = useState(false);
+
+  // Load prompt template when dialog opens
+  const handleOpenPromptDialog = async () => {
+    setShowPromptDialog(true);
+    if (!promptData) {
+      setIsLoadingPrompt(true);
+      try {
+        const response = await fetch('/api/box3-validator/email-prompt');
+        if (response.ok) {
+          const result = await response.json();
+          setPromptData(result.data);
+          setCustomPrompt(result.data.prompt);
+        }
+      } catch (error) {
+        toast({ title: "Fout", description: "Kon prompt niet laden", variant: "destructive" });
+      } finally {
+        setIsLoadingPrompt(false);
+      }
+    }
+  };
+
+  // Generate with custom prompt
+  const handleGenerateWithCustomPrompt = () => {
+    setShowPromptDialog(false);
+    onGenerateEmail(customPrompt);
+  };
+
+  // Reset to default prompt
+  const handleResetPrompt = () => {
+    if (promptData) {
+      setCustomPrompt(promptData.prompt);
+    }
+  };
 
   // Determine status - also consider missing return data
   const hasMissingDocs = missingItems.length > 0 || hasMissingReturnData;
@@ -147,9 +201,25 @@ export const Box3ActionCards = memo(function Box3ActionCards({
         {hasMissingDocs && (
           <div className="pt-2 border-t space-y-2">
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-              Ontbrekende documenten
+              {nextStep.banksNeeded && nextStep.banksNeeded.length > 0
+                ? 'Jaaroverzichten nodig van'
+                : 'Ontbrekende documenten'}
             </p>
-            {missingItems.length > 0 ? (
+            {nextStep.banksNeeded && nextStep.banksNeeded.length > 0 ? (
+              // Show specific banks that need documents
+              <div className="flex flex-wrap gap-1.5">
+                {nextStep.banksNeeded.map((bank, idx) => (
+                  <Badge
+                    key={idx}
+                    variant="outline"
+                    className="text-xs bg-amber-50 border-amber-200 text-amber-700"
+                  >
+                    <Building2 className="h-3 w-3 mr-1" />
+                    {bank}
+                  </Badge>
+                ))}
+              </div>
+            ) : missingItems.length > 0 ? (
               <ul className="space-y-1">
                 {missingItems.slice(0, 4).map((item, idx) => (
                   <li key={idx} className="flex items-start gap-1.5 text-xs">
@@ -199,15 +269,24 @@ export const Box3ActionCards = memo(function Box3ActionCards({
 
       {/* Email Card - Modern minimal */}
       <div className="bg-white rounded-lg border shadow-sm p-4 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          <Mail className="h-4 w-4" />
-          Email naar klant
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Mail className="h-4 w-4" />
+            Email naar klant
+          </div>
+          <button
+            onClick={handleOpenPromptDialog}
+            className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+            title="Email prompt aanpassen"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
         </div>
         {!generatedEmail ? (
           // Generate button - centered, elegant
           <div className="flex justify-center items-center py-6">
             <button
-              onClick={onGenerateEmail}
+              onClick={() => onGenerateEmail()}
               disabled={isGeneratingEmail}
               className="group flex items-center gap-2 px-5 py-2.5 rounded-full border border-slate-200 bg-white text-slate-600 text-sm font-medium shadow-sm hover:shadow-md hover:border-slate-300 hover:text-slate-900 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -267,7 +346,7 @@ export const Box3ActionCards = memo(function Box3ActionCards({
 
             {/* Regenerate - text link style */}
             <button
-              onClick={onGenerateEmail}
+              onClick={() => onGenerateEmail()}
               disabled={isGeneratingEmail}
               className="w-full text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 py-1"
             >
@@ -277,6 +356,70 @@ export const Box3ActionCards = memo(function Box3ActionCards({
           </div>
         )}
       </div>
+
+      {/* Prompt Configuration Dialog */}
+      <Dialog open={showPromptDialog} onOpenChange={setShowPromptDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Email Generatie Prompt</DialogTitle>
+            <DialogDescription>
+              Pas de AI prompt aan voor het genereren van klant emails. De prompt bepaalt de toon, structuur en inhoud.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingPrompt ? (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-hidden flex flex-col gap-4">
+              {/* Placeholders reference */}
+              {promptData && (
+                <div className="bg-slate-50 rounded-lg p-3 text-xs">
+                  <p className="font-medium text-slate-700 mb-2">Beschikbare placeholders:</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {promptData.placeholders.map(p => (
+                      <div key={p.key} className="flex gap-2">
+                        <code className="bg-slate-200 px-1 rounded text-slate-700">{p.key}</code>
+                        <span className="text-slate-500 truncate">{p.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Prompt editor */}
+              <div className="flex-1 min-h-0">
+                <Textarea
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  className="h-full min-h-[300px] font-mono text-xs resize-none"
+                  placeholder="Email generatie prompt..."
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-between pt-2 border-t">
+                <Button variant="ghost" size="sm" onClick={handleResetPrompt}>
+                  Reset naar standaard
+                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowPromptDialog(false)}>
+                    Annuleren
+                  </Button>
+                  <Button size="sm" onClick={handleGenerateWithCustomPrompt} disabled={isGeneratingEmail}>
+                    {isGeneratingEmail ? (
+                      <><RefreshCw className="h-3 w-3 mr-1 animate-spin" />Genereren...</>
+                    ) : (
+                      <>Genereer met deze prompt</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 });

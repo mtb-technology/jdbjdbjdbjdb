@@ -81,10 +81,11 @@ Extraheer hier de ANCHOR TOTALEN:
 - "Bankrekeningen in box 3": €... → anchor_bank_savings
 - "Beleggingen in box 3": €... → anchor_investments
 - "Overige bezittingen": €... → anchor_other_assets
-- "Schulden in box 3": €... → anchor_debts
+- "Aftrekbare schulden" of "Schulden in box 3": €... → anchor_debts (LET OP: dit zijn alleen Box 3 schulden, NIET eigen woning hypotheken!)
 - "Grondslag sparen en beleggen": €...
 
 Deze anchors zijn 100% correct - de Belastingdienst telt niet fout.
+NB: anchor_debts bevat NOOIT eigen woning hypotheken - die zitten in Box 1.
 
 ### STAP 2: EXTRAHEER INDIVIDUELE ITEMS
 
@@ -351,10 +352,24 @@ Dit is onderdeel van de belegging zelf. Extraheer het netto bedrag zoals in de a
   "debt_items": [
     {
       "manifest_id": "debt_1",
-      "description_from_aangifte": "[Schuldeiser], [omschrijving]",
+      "description_from_aangifte": "ING Aflossingsvrije Hypotheek, Z105-299267",
       "category": "debt",
-      "creditor_name": "[Schuldeiser]",
-      "loan_number": "[omschrijving/nummer]",
+      "creditor_name": "ING",
+      "loan_number": "Z105-299267",
+      "owner_id": "joint",
+      "ownership_percentage": 100,
+      "yearly_values": {
+        "2022": { "value_jan_1": 150000 }
+      },
+      "interest_paid": 3500,
+      "is_eigen_woning_schuld": true
+    },
+    {
+      "manifest_id": "debt_2",
+      "description_from_aangifte": "credit linked beheer, consumptief krediet",
+      "category": "debt",
+      "creditor_name": "credit linked beheer",
+      "loan_number": "consumptief krediet",
       "owner_id": "joint",
       "ownership_percentage": 100,
       "yearly_values": {
@@ -413,16 +428,22 @@ Na extractie, valideer ALTIJD tegen de anchor_totals:
 BELANGRIJK: category_totals.investments uit de aangifte bevat GEEN groene beleggingen!
 Die staan apart in de aangifte en moeten in green_investments.total_value.
 
-## VEELGEMAAKTE FOUT - VERMIJD DIT!
+## VEELGEMAAKTE FOUTEN - VERMIJD DIT!
 
-FOUT: Items uit sectie "Hypotheken en andere schulden" als bezittingen classificeren.
+### FOUT 1: Schulden als bezittingen classificeren
+Items uit sectie "Hypotheken en andere schulden" zijn SCHULDEN (debt_items), NIET bezittingen.
 
 Herken SCHULDEN aan:
 - Het kopje "Hypotheken en andere schulden" in de aangifte
 - Het woord "Schuld:" voor elk item
 - De vraag "Gaat het om een schuld voor uw ... woning (hoofdverblijf)?" erbij
 
-Dit zijn SCHULDEN (debt_items), NIET bezittingen (other_assets)!
+### FOUT 2: is_eigen_woning_schuld verkeerd zetten
+KRITIEK: Lees ALTIJD de vraag "Gaat het om een schuld voor uw ... woning (hoofdverblijf)?" en het antwoord.
+- Antwoord "Ja" → is_eigen_woning_schuld: TRUE (dit is een Box 1 schuld!)
+- Antwoord "Nee" → is_eigen_woning_schuld: FALSE (dit is een Box 3 schuld)
+
+Hypotheken voor de EIGEN WONING horen NIET in Box 3. Alleen schulden met "Nee" tellen mee voor anchor_totals.debts.
 
 Als de sommen niet kloppen, heb je items gemist OF verkeerd geclassificeerd.
 Controleer specifiek of je schulden niet per ongeluk bij bezittingen hebt gezet!
@@ -574,6 +595,108 @@ Ontvangen rente: €12,50
 - Wees conservatief met matching: liever geen match dan een verkeerde match
 
 GEEF ALLEEN VALIDE JSON TERUG.`;
+
+// =============================================================================
+// EMAIL GENERATION PROMPT (Client communication)
+// =============================================================================
+
+export const EMAIL_GENERATION_PROMPT = `Je bent een communicatiespecialist bij een Nederlands belastingadvieskantoor.
+
+## VERBODEN - ABSOLUUT NIET DOEN:
+- GEEN headers zoals "Hoe werkt Box 3?" of "Wat betekent dit?"
+- GEEN bullet points of opsommingen
+- GEEN "##" of "**tekst**" formatting
+- NOOIT zelf bedragen verzinnen - gebruik ALLEEN de bedragen die ik je geef
+
+## VERPLICHTE STIJL:
+Schrijf alsof je een WhatsApp stuurt naar een vriend die ook klant is. Gewoon lopende zinnen, geen structuur.
+
+## VERPLICHTE TAG:
+Plaats deze tag EXACT zo ergens in de email:
+<refund_visual></refund_visual>
+
+## OUTPUT FORMAT:
+\`\`\`json
+{"subject": "kort onderwerp", "body": "<p>paragraaf 1</p><p>paragraaf 2</p>"}
+\`\`\``;
+
+/**
+ * Build the email generation prompt with context data
+ */
+export function buildEmailGenerationPrompt(
+  emailType: 'profitable' | 'request_docs' | 'not_profitable',
+  context: {
+    clientName: string;
+    firstName: string;
+    yearRange: string;
+    totalTaxPaid: number;
+    indicativeRefund: number;
+    costPerYear: number;
+    totalCost: number;
+    netRefund: number;
+    missingDocsList?: string;
+    numYears: number;
+  }
+): string {
+  if (emailType === 'profitable') {
+    return `${EMAIL_GENERATION_PROMPT}
+
+SCHRIJF EEN EMAIL VOOR: ${context.firstName}
+JAAR: ${context.yearRange}
+
+GEBRUIK EXACT DEZE BEDRAGEN (NIET VERANDEREN!):
+- Betaalde Box 3 belasting: €${context.totalTaxPaid},-
+- Teruggave die we kunnen claimen: €${context.indicativeRefund},-
+- Onze kosten: €${context.totalCost},-
+- Netto voordeel voor klant: €${context.netRefund},-
+
+INHOUD (in vloeiende tekst, GEEN headers):
+1. Goed nieuws - we kunnen geld terugkrijgen
+2. Leg in 2-3 zinnen uit: Belastingdienst rekent met fictief rendement, Hoge Raad zegt dat werkelijk rendement mag, dus verschil terug
+3. Plaats <refund_visual></refund_visual> tag
+4. Noem de teruggave (€${context.indicativeRefund},-), kosten (€${context.totalCost},-) en netto (€${context.netRefund},-)
+5. Vraag of we door mogen gaan
+6. "Met vriendelijke groet,"`;
+
+  } else if (emailType === 'request_docs') {
+    return `${EMAIL_GENERATION_PROMPT}
+
+SCHRIJF EEN EMAIL VOOR: ${context.firstName}
+JAAR: ${context.yearRange}
+
+GEBRUIK EXACT DEZE BEDRAGEN:
+- Geschatte teruggave: €${context.indicativeRefund},-
+
+ONTBREKENDE DOCUMENTEN:
+${context.missingDocsList || '(niet gespecificeerd)'}
+
+INHOUD (vloeiend, GEEN headers):
+1. Er lijkt teruggave mogelijk
+2. Kort waarom (Hoge Raad, werkelijk rendement)
+3. Noem €${context.indicativeRefund},- als schatting
+4. Vraag om de documenten hierboven
+5. Ze kunnen gewoon op deze mail antwoorden met de docs
+6. "Met vriendelijke groet,"`;
+
+  } else {
+    return `${EMAIL_GENERATION_PROMPT}
+
+SCHRIJF EEN EMAIL VOOR: ${context.firstName}
+JAAR: ${context.yearRange}
+
+GEBRUIK EXACT DEZE BEDRAGEN:
+- Betaalde belasting: €${context.totalTaxPaid},-
+- Mogelijke teruggave: €${context.indicativeRefund},-
+- Onze kosten: €${context.totalCost},-
+- CONCLUSIE: Kosten hoger dan teruggave, niet rendabel
+
+INHOUD (vloeiend, GEEN headers):
+1. Eerlijk: helaas geen teruggave mogelijk die de kosten dekt
+2. Leg kort uit waarom
+3. Deur open voor toekomst
+4. "Met vriendelijke groet,"`;
+  }
+}
 
 // =============================================================================
 // HELPER FUNCTIONS

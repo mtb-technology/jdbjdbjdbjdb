@@ -36,11 +36,13 @@ import {
   AlertTriangle,
   FileQuestion,
   LayoutGrid,
+  Loader2,
 } from "lucide-react";
-import type { Box3DossierLight } from "@/hooks/useBox3Sessions";
+import type { Box3DossierLight } from "@/hooks/useBox3Dossiers";
 
 interface Box3CaseListProps {
-  sessions: Box3DossierLight[] | undefined;
+  dossiers: Box3DossierLight[] | undefined;
+  isLoading?: boolean;
   onSelectCase: (dossierId: string) => void;
   onNewCase: () => void;
   onDeleteCase: (dossierId: string) => void;
@@ -60,6 +62,9 @@ const getStatusColor = (status: string | null | undefined) => {
       return "bg-amber-100 text-amber-800";
     case "intake":
       return "bg-gray-100 text-gray-800";
+    case "uploading":
+    case "processing":
+      return "bg-purple-100 text-purple-800";
     default:
       return "bg-gray-100 text-gray-800";
   }
@@ -76,13 +81,18 @@ const getStatusLabel = (status: string | null | undefined) => {
       return "Wacht op klant";
     case "intake":
       return "Intake";
+    case "uploading":
+      return "Uploading...";
+    case "processing":
+      return "Verwerken...";
     default:
       return status;
   }
 };
 
 export const Box3CaseList = memo(function Box3CaseList({
-  sessions,
+  dossiers,
+  isLoading = false,
   onSelectCase,
   onNewCase,
   onDeleteCase,
@@ -94,21 +104,21 @@ export const Box3CaseList = memo(function Box3CaseList({
 
   // Calculate statistics
   const stats = useMemo(() => {
-    if (!sessions) return { total: 0, afgerond: 0, inBehandeling: 0, wachtOpKlant: 0 };
+    if (!dossiers) return { total: 0, afgerond: 0, inBehandeling: 0, wachtOpKlant: 0 };
 
     return {
-      total: sessions.length,
-      afgerond: sessions.filter(s => s.status === "afgerond").length,
-      inBehandeling: sessions.filter(s => s.status === "in_behandeling").length,
-      wachtOpKlant: sessions.filter(s => s.status === "wacht_op_klant").length,
+      total: dossiers.length,
+      afgerond: dossiers.filter(s => s.status === "afgerond").length,
+      inBehandeling: dossiers.filter(s => s.status === "in_behandeling").length,
+      wachtOpKlant: dossiers.filter(s => s.status === "wacht_op_klant").length,
     };
-  }, [sessions]);
+  }, [dossiers]);
 
-  // Filter and sort sessions
-  const filteredSessions = useMemo(() => {
-    if (!sessions) return [];
+  // Filter and sort dossiers
+  const filteredDossiers = useMemo(() => {
+    if (!dossiers) return [];
 
-    let result = [...sessions];
+    let result = [...dossiers];
 
     // Apply search filter
     if (searchQuery.trim()) {
@@ -142,7 +152,7 @@ export const Box3CaseList = memo(function Box3CaseList({
     });
 
     return result;
-  }, [sessions, searchQuery, statusFilter, sortOption]);
+  }, [dossiers, searchQuery, statusFilter, sortOption]);
 
   const handleDelete = (dossierId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -173,7 +183,7 @@ export const Box3CaseList = memo(function Box3CaseList({
       </div>
 
       {/* Dashboard Stats */}
-      {sessions && sessions.length > 0 && (
+      {dossiers && dossiers.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <button
             onClick={() => handleStatClick("all")}
@@ -230,7 +240,7 @@ export const Box3CaseList = memo(function Box3CaseList({
       )}
 
       {/* Search & Filter Bar */}
-      {sessions && sessions.length > 0 && (
+      {dossiers && dossiers.length > 0 && (
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="relative flex-1">
@@ -275,16 +285,33 @@ export const Box3CaseList = memo(function Box3CaseList({
       )}
 
       {/* Results count when filtering */}
-      {sessions && sessions.length > 0 && (searchQuery || statusFilter !== "all") && (
+      {dossiers && dossiers.length > 0 && (searchQuery || statusFilter !== "all") && (
         <p className="text-sm text-muted-foreground">
-          {filteredSessions.length} van {sessions.length} dossiers
+          {filteredDossiers.length} van {dossiers.length} dossiers
           {searchQuery && ` voor "${searchQuery}"`}
           {statusFilter !== "all" && ` met status "${getStatusLabel(statusFilter)}"`}
         </p>
       )}
 
       {/* Cases Grid */}
-      {!sessions || sessions.length === 0 ? (
+      {isLoading ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="animate-pulse">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-5 bg-muted rounded w-32" />
+                  <div className="h-5 bg-muted rounded w-20" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-4 bg-muted rounded w-24" />
+                  <div className="h-4 bg-muted rounded w-36" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : !dossiers || dossiers.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <FileCheck className="h-12 w-12 text-muted-foreground mb-4" />
@@ -298,7 +325,7 @@ export const Box3CaseList = memo(function Box3CaseList({
             </Button>
           </CardContent>
         </Card>
-      ) : filteredSessions.length === 0 ? (
+      ) : filteredDossiers.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <FileQuestion className="h-12 w-12 text-muted-foreground mb-4" />
@@ -319,7 +346,7 @@ export const Box3CaseList = memo(function Box3CaseList({
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredSessions.map((dossier) => (
+          {filteredDossiers.map((dossier) => (
             <Card
               key={dossier.id}
               className="cursor-pointer hover:border-primary transition-colors group"
@@ -349,6 +376,9 @@ export const Box3CaseList = memo(function Box3CaseList({
               <CardContent className="space-y-3">
                 {/* Status badge */}
                 <Badge className={getStatusColor(dossier.status)}>
+                  {(dossier.status === 'uploading' || dossier.status === 'processing') && (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  )}
                   {getStatusLabel(dossier.status)}
                 </Badge>
 

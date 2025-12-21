@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 import {
   ArrowLeft,
   RefreshCw,
@@ -41,6 +42,7 @@ import {
   Check,
   FlaskConical,
   Zap,
+  Loader2,
 } from "lucide-react";
 import {
   Dialog,
@@ -66,7 +68,7 @@ import {
 // Types
 import type { Box3Blueprint, Box3Dossier } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
-import type { Box3DossierFull } from "@/hooks/useBox3Sessions";
+import type { Box3DossierFull } from "@/hooks/useBox3Dossiers";
 import type { DebugInfo, PipelineProgress, PipelineVersion } from "@/hooks/useBox3Validation";
 
 // Constants
@@ -80,6 +82,10 @@ interface Box3CaseDetailProps {
   pipelineProgress?: PipelineProgress | null;
   /** Active job ID if background revalidation is running */
   activeJobId?: string | null;
+  /** Upload progress percentage (0-100) during initial file upload */
+  uploadProgress?: number | null;
+  /** Upload status message during initial file upload */
+  uploadStatus?: string | null;
   /** Current pipeline version */
   pipelineVersion?: PipelineVersion;
   /** Callback to change pipeline version */
@@ -298,6 +304,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   debugInfo,
   pipelineProgress,
   activeJobId,
+  uploadProgress,
+  uploadStatus,
   pipelineVersion = 'v1',
   onPipelineVersionChange,
   onBack,
@@ -456,35 +464,65 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
       });
     });
 
-    // Additional check: even if no missing_items from pipeline, check if actual return data is missing
-    // This catches cases where assets exist but return data (interest/dividend/gains) is 0
-    const hasMissingReturnData = years.some(year => {
+    // Check for accounts with estimated interest (no actual interest data in yearly_data)
+    const savingsAccounts = blueprint.assets?.bank_savings || [];
+    const accountsWithEstimatedInterest: Array<{ account: string; bank: string }> = [];
+    years.forEach(year => {
+      savingsAccounts.forEach(asset => {
+        const yearData = asset.yearly_data?.[year];
+        if (!yearData) return;
+        const interestValue = typeof yearData.interest_received === 'number'
+          ? yearData.interest_received
+          : typeof yearData.interest_received === 'object'
+            ? (yearData.interest_received as any)?.amount
+            : null;
+        if (interestValue == null) {
+          const existing = accountsWithEstimatedInterest.find(
+            a => a.account === (asset.account_masked || asset.description) && a.bank === (asset.bank_name || '')
+          );
+          if (!existing) {
+            accountsWithEstimatedInterest.push({
+              account: asset.account_masked || asset.description || 'Onbekende rekening',
+              bank: asset.bank_name || 'Onbekende bank',
+            });
+          }
+        }
+      });
+    });
+    const banksNeedingDocs = Array.from(new Set(accountsWithEstimatedInterest.map(a => a.bank)));
+    const hasEstimatedInterest = accountsWithEstimatedInterest.length > 0;
+
+    // Legacy check for hasMissingReturnData (keep for backward compat)
+    const hasMissingReturnData = hasEstimatedInterest || years.some(year => {
       const actualReturn = yearSummaries[year]?.calculated_totals?.actual_return;
       const totalAssets = yearSummaries[year]?.calculated_totals?.total_assets_jan_1 || 0;
 
-      // If we have significant assets but no actual return data, something is missing
       if (totalAssets > 10000) {
         const totalActualReturn = (actualReturn?.bank_interest || 0) +
                                   (actualReturn?.dividends || 0) +
                                   (actualReturn?.investment_gain || 0) +
                                   (actualReturn?.other_assets_income || 0) +
                                   (actualReturn?.rental_income_net || 0);
-        // If actual return is exactly 0 on significant assets, likely missing data
         return totalActualReturn === 0;
       }
       return false;
     });
 
-    // Determine next step
-    let nextStep = { action: '', description: '' };
+    // Determine next step - priority: missing docs > estimated interest > bezwaar
+    let nextStep = { action: '', description: '', banksNeeded: [] as string[] };
 
-    if (allMissingItems.length > 0 || hasMissingReturnData) {
-      const itemCount = allMissingItems.length || (hasMissingReturnData ? 1 : 0);
+    if (allMissingItems.length > 0) {
       nextStep = {
         action: 'Documenten opvragen',
-        description: hasMissingReturnData && allMissingItems.length === 0
-          ? 'Jaaroverzichten nodig om werkelijk rendement te bepalen (rente, dividend, koerswinst)'
-          : `${itemCount} document(en) nodig om volledig te kunnen beoordelen`,
+        description: `${allMissingItems.length} document(en) nodig om volledig te kunnen beoordelen`,
+        banksNeeded: [],
+      };
+    } else if (hasEstimatedInterest) {
+      // Estimated interest = need bank statements before we can submit bezwaar
+      nextStep = {
+        action: 'Jaaroverzichten opvragen',
+        description: `Bankrente is geschat voor ${accountsWithEstimatedInterest.length} rekening${accountsWithEstimatedInterest.length > 1 ? 'en' : ''}. Vraag jaaroverzichten op voor exacte berekening.`,
+        banksNeeded: banksNeedingDocs,
       };
     } else if (isProfitable) {
       const numBezwaren = hasPartner ? 2 : 1;
@@ -493,20 +531,23 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
         description: hasPartner
           ? `${numBezwaren} bezwaarschriften opstellen (per aanslag)`
           : 'Bezwaarschrift opstellen',
+        banksNeeded: [],
       };
     } else if (!isComplete) {
       nextStep = {
         action: 'Aanvullende info nodig',
         description: 'Wacht op meer gegevens van de klant',
+        banksNeeded: [],
       };
     } else {
       nextStep = {
         action: 'Afsluiten',
         description: 'Geen teruggave mogelijk op basis van huidige gegevens',
+        banksNeeded: [],
       };
     }
 
-    return { nextStep, allMissingItems, isProfitable, totalRefund, hasMissingReturnData };
+    return { nextStep, allMissingItems, isProfitable, totalRefund, hasMissingReturnData, banksNeedingDocs, hasEstimatedInterest };
   }, [blueprint]);
 
   // File handling with compression
@@ -517,13 +558,16 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   };
 
   // Generate follow-up email based on dossier status
-  const handleGenerateEmail = useCallback(async () => {
+  const handleGenerateEmail = useCallback(async (customPrompt?: string) => {
     setIsGeneratingEmail(true);
     try {
       const response = await fetch(`/api/box3-validator/dossiers/${dossier.id}/generate-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailType: 'auto' }),
+        body: JSON.stringify({
+          emailType: 'auto',
+          ...(customPrompt && { customPrompt }),
+        }),
       });
 
       if (!response.ok) {
@@ -880,26 +924,38 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             </div>
           </div>
 
-          {/* Pipeline Progress Indicator */}
-          {isRevalidating && pipelineProgress && (
+          {/* Progress Indicator - shows upload progress OR pipeline progress */}
+          {isRevalidating && (uploadProgress !== null || pipelineProgress) && (
             <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-lg">
               <div className="flex items-center gap-4">
                 <div className="relative">
                   <div className="w-12 h-12 rounded-full border-4 border-blue-200 flex items-center justify-center">
-                    <RefreshCw className="h-5 w-5 text-blue-600 animate-spin" />
+                    {uploadProgress !== null ? (
+                      <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-5 w-5 text-blue-600 animate-spin" />
+                    )}
                   </div>
                   <div className="absolute -bottom-1 -right-1 bg-blue-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {pipelineProgress.step}
+                    {uploadProgress !== null ? (
+                      <Upload className="h-3 w-3" />
+                    ) : (
+                      pipelineProgress?.step || 0
+                    )}
                   </div>
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold text-blue-900">
-                      Stap {pipelineProgress.step} van {pipelineProgress.totalSteps}
+                      {uploadProgress !== null ? (
+                        `Stap 0 van ${pipelineProgress?.totalSteps || 3}`
+                      ) : (
+                        `Stap ${pipelineProgress?.step || 0} van ${pipelineProgress?.totalSteps || 3}`
+                      )}
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
-                        {pipelineProgress.phase}
+                        {uploadProgress != null ? ((uploadProgress ?? 0) < 100 ? 'uploading' : 'extracting') : pipelineProgress?.phase}
                       </span>
                       {activeJobId && onCancelRevalidation && (
                         <Button
@@ -913,41 +969,51 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                       )}
                     </div>
                   </div>
-                  <p className="text-sm text-blue-800">{pipelineProgress.message}</p>
-                  {activeJobId && (
-                    <p className="text-xs text-blue-600 mt-1">
-                      Achtergrondverwerking - je kan de browser sluiten
-                    </p>
-                  )}
+                  <p className="text-sm text-blue-800">
+                    {uploadProgress !== null ? uploadStatus : pipelineProgress?.message}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Achtergrondverwerking - je kan de browser sluiten
+                  </p>
                   <div className="mt-2 h-2 bg-blue-200 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-blue-600 transition-all duration-500 ease-out"
-                      style={{ width: `${(pipelineProgress.step / pipelineProgress.totalSteps) * 100}%` }}
+                      style={{
+                        width: uploadProgress != null
+                          ? `${Math.min(uploadProgress ?? 0, 100) * 0.15}%`  // Upload is ~15% of total process
+                          : `${15 + ((pipelineProgress?.step || 0) / (pipelineProgress?.totalSteps || 3)) * 85}%`
+                      }}
                     />
                   </div>
                 </div>
               </div>
               <div className="mt-3 flex gap-2">
                 {/* Dynamic stages based on pipeline version (V1: 5 stages, V2: 3 stages) */}
-                {pipelineProgress.totalSteps === 3 ? (
+                {(pipelineProgress?.totalSteps || 3) === 3 ? (
                   // Pipeline V2: 3 stages
                   <>
-                    {[1, 2, 3].map((step) => (
-                      <div
-                        key={step}
-                        className={`flex-1 text-center text-xs py-1 rounded ${
-                          step < pipelineProgress.step
-                            ? 'bg-blue-600 text-white'
-                            : step === pipelineProgress.step
-                              ? 'bg-blue-400 text-white animate-pulse'
-                              : 'bg-blue-100 text-blue-400'
-                        }`}
-                      >
-                        {step === 1 && 'Manifest'}
-                        {step === 2 && 'Enrichment'}
-                        {step === 3 && 'Validatie'}
-                      </div>
-                    ))}
+                    {[1, 2, 3].map((step) => {
+                      const currentStep = pipelineProgress?.step || 0;
+                      const isUploading = uploadProgress !== null;
+                      return (
+                        <div
+                          key={step}
+                          className={`flex-1 text-center text-xs py-1 rounded ${
+                            isUploading
+                              ? 'bg-blue-100 text-blue-400'
+                              : step < currentStep
+                                ? 'bg-blue-600 text-white'
+                                : step === currentStep
+                                  ? 'bg-blue-400 text-white animate-pulse'
+                                  : 'bg-blue-100 text-blue-400'
+                          }`}
+                        >
+                          {step === 1 && 'Manifest'}
+                          {step === 2 && 'Enrichment'}
+                          {step === 3 && 'Validatie'}
+                        </div>
+                      );
+                    })}
                   </>
                 ) : (
                   // Pipeline V1: 5 stages
@@ -956,9 +1022,9 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                       <div
                         key={step}
                         className={`flex-1 text-center text-xs py-1 rounded ${
-                          step < pipelineProgress.step
+                          step < (pipelineProgress?.step || 0)
                             ? 'bg-blue-600 text-white'
-                            : step === pipelineProgress.step
+                            : step === (pipelineProgress?.step || 0)
                               ? 'bg-blue-400 text-white animate-pulse'
                               : 'bg-blue-100 text-blue-400'
                         }`}
@@ -1195,16 +1261,52 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                               </div>
                             )}
 
-                            {/* Readable indicator */}
-                            {registryEntry && (
-                              registryEntry.is_readable ? (
-                                <span title="Document leesbaar">
-                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                                </span>
+                            {/* Extraction status indicator */}
+                            {doc.extractionStatus && (
+                              doc.extractionStatus === 'success' ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Tekst geëxtraheerd ({doc.extractionCharCount?.toLocaleString()} tekens)</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : doc.extractionStatus === 'low_yield' ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Weinig tekst geëxtraheerd ({doc.extractionCharCount?.toLocaleString()} tekens) - gebruikt vision</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : doc.extractionStatus === 'password_protected' ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <AlertTriangle className="h-4 w-4 text-red-500" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>PDF beveiligd met wachtwoord</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                               ) : (
-                                <span title="Document niet volledig leesbaar">
-                                  <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                                </span>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <Eye className="h-4 w-4 text-purple-500" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Gescande PDF - visueel verwerkt via AI vision</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                               )
                             )}
 
@@ -1382,12 +1484,41 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
               });
             });
 
-            // Determine next step
+            // Check for accounts with estimated interest (no actual interest data)
+            const savingsAccounts = blueprint.assets?.bank_savings || [];
+            const accountsWithEstimatedInterest: Array<{ account: string; bank: string }> = [];
+            years.forEach(year => {
+              savingsAccounts.forEach(asset => {
+                const yearData = asset.yearly_data?.[year];
+                if (!yearData) return;
+                const interestValue = typeof yearData.interest_received === 'number'
+                  ? yearData.interest_received
+                  : typeof yearData.interest_received === 'object'
+                    ? (yearData.interest_received as any)?.amount
+                    : null;
+                if (interestValue == null) {
+                  const existing = accountsWithEstimatedInterest.find(
+                    a => a.account === (asset.account_masked || asset.description) && a.bank === (asset.bank_name || '')
+                  );
+                  if (!existing) {
+                    accountsWithEstimatedInterest.push({
+                      account: asset.account_masked || asset.description || 'Onbekende rekening',
+                      bank: asset.bank_name || 'Onbekende bank',
+                    });
+                  }
+                }
+              });
+            });
+            const banksNeedingDocs = Array.from(new Set(accountsWithEstimatedInterest.map(a => a.bank)));
+            const hasEstimatedInterest = accountsWithEstimatedInterest.length > 0;
+
+            // Determine next step - priority: missing docs > estimated interest > bezwaar
             let nextStep = {
               action: '',
               description: '',
               buttonLabel: '',
               buttonAction: null as (() => void) | null,
+              banksNeeded: [] as string[],
             };
 
             if (allMissingItems.length > 0) {
@@ -1396,6 +1527,16 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 description: `${allMissingItems.length} document(en) nodig om volledig te kunnen beoordelen`,
                 buttonLabel: 'Bekijk ontbrekende docs',
                 buttonAction: null,
+                banksNeeded: [],
+              };
+            } else if (hasEstimatedInterest) {
+              // Estimated interest = need bank statements before we can submit bezwaar
+              nextStep = {
+                action: 'Jaaroverzichten opvragen',
+                description: `Bankrente is geschat voor ${accountsWithEstimatedInterest.length} rekening${accountsWithEstimatedInterest.length > 1 ? 'en' : ''}. Vraag jaaroverzichten op voor exacte berekening.`,
+                buttonLabel: 'Genereer email',
+                buttonAction: null,
+                banksNeeded: banksNeedingDocs,
               };
             } else if (isProfitable) {
               // Box 3 bezwaar is per aanslag = per persoon
@@ -1407,6 +1548,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   : 'Bezwaarschrift opstellen',
                 buttonLabel: 'Genereer bezwaar',
                 buttonAction: null,
+                banksNeeded: [],
               };
             } else if (!isComplete) {
               nextStep = {
@@ -1414,6 +1556,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 description: 'Wacht op meer gegevens van de klant',
                 buttonLabel: 'Stuur herinnering',
                 buttonAction: null,
+                banksNeeded: [],
               };
             } else {
               nextStep = {
@@ -1421,6 +1564,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 description: 'Geen teruggave mogelijk op basis van huidige gegevens',
                 buttonLabel: 'Informeer klant',
                 buttonAction: null,
+                banksNeeded: [],
               };
             }
 
@@ -1526,6 +1670,73 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     </>
                   )}
 
+                  {/* Next Actions - inline when we have estimated interest */}
+                  {(() => {
+                    // Check for accounts with estimated interest (no actual interest data)
+                    const savingsAccounts = blueprint.assets?.bank_savings || [];
+                    const accountsWithEstimatedInterest: Array<{ account: string; bank: string; year: string }> = [];
+
+                    years.forEach(year => {
+                      savingsAccounts.forEach(asset => {
+                        const yearData = asset.yearly_data?.[year];
+                        if (!yearData) return;
+                        const interestValue = typeof yearData.interest_received === 'number'
+                          ? yearData.interest_received
+                          : typeof yearData.interest_received === 'object'
+                            ? yearData.interest_received?.amount
+                            : null;
+                        if (interestValue == null) {
+                          const existing = accountsWithEstimatedInterest.find(
+                            a => a.account === (asset.account_masked || asset.description) && a.bank === (asset.bank_name || '')
+                          );
+                          if (!existing) {
+                            accountsWithEstimatedInterest.push({
+                              account: asset.account_masked || asset.description || 'Onbekende rekening',
+                              bank: asset.bank_name || 'Onbekende bank',
+                              year,
+                            });
+                          }
+                        }
+                      });
+                    });
+
+                    // Get unique banks that need documents
+                    const banksNeedingDocs = Array.from(new Set(accountsWithEstimatedInterest.map(a => a.bank)));
+
+                    if (accountsWithEstimatedInterest.length === 0) return null;
+
+                    return (
+                      <>
+                        <div className="h-6 w-px bg-border" />
+                        <div className="flex items-center gap-2">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm font-medium bg-amber-100 text-amber-700 cursor-help">
+                                  <FileText className="h-4 w-4" />
+                                  <span>Jaaroverzichten nodig</span>
+                                  <span className="text-xs opacity-70">({banksNeedingDocs.length} bank{banksNeedingDocs.length > 1 ? 'en' : ''})</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" className="max-w-sm p-3">
+                                <p className="font-medium mb-2">Bankrente is nu geschat</p>
+                                <p className="text-xs text-muted-foreground mb-2">
+                                  Vraag jaaroverzichten op bij de klant voor nauwkeurige berekening:
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {banksNeedingDocs.map((bank, idx) => (
+                                    <Badge key={idx} variant="secondary" className="text-xs">
+                                      {bank}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Calculation Breakdown - Collapsible */}
@@ -2566,6 +2777,39 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                     </tr>
                                   </tfoot>
                                 </table>
+                                  );
+                                })()}
+                                {/* Estimation warning banner */}
+                                {(() => {
+                                  const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[selectedYear] || 0.001;
+                                  const accountsWithUnknownInterest = yearBankSavings.filter(asset => {
+                                    const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
+                                    return getFieldValue(yearData?.interest_received) == null;
+                                  });
+
+                                  if (accountsWithUnknownInterest.length === 0) return null;
+
+                                  return (
+                                    <div className="mx-4 mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                      <div className="flex items-start gap-3">
+                                        <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                                        <div className="flex-1">
+                                          <p className="font-medium text-amber-800">
+                                            Bankrente is geschat voor {accountsWithUnknownInterest.length} rekening{accountsWithUnknownInterest.length > 1 ? 'en' : ''}
+                                          </p>
+                                          <p className="text-sm text-amber-700 mt-1">
+                                            De oranje bedragen (~€) zijn schattingen op basis van {(savingsRate * 100).toFixed(2)}% gemiddelde spaarrente in {selectedYear}.
+                                            Voor een nauwkeurige berekening zijn jaaroverzichten van de bank nodig.
+                                          </p>
+                                          <div className="mt-2 flex flex-wrap gap-2">
+                                            <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-100/50">
+                                              <FileText className="h-3 w-3 mr-1" />
+                                              Actie: Vraag jaaroverzichten op bij de klant
+                                            </Badge>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
                                   );
                                 })()}
                               </CardContent>
