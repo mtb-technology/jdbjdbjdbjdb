@@ -1361,9 +1361,10 @@ box3V2Router.get(
 
     const buffer = Buffer.from(doc.fileData, 'base64');
 
+    // Use 'inline' for preview in iframe, 'attachment' forces download
     res.set({
       'Content-Type': doc.mimeType,
-      'Content-Disposition': `attachment; filename="${doc.filename}"`,
+      'Content-Disposition': `inline; filename="${doc.filename}"`,
       'Content-Length': buffer.length,
     });
 
