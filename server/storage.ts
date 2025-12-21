@@ -813,12 +813,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateJobProgress(id: string, progress: Record<string, any>): Promise<Job | undefined> {
-    const [updated] = await db
-      .update(jobs)
-      .set({ progress: JSON.stringify(progress) })
-      .where(eq(jobs.id, id))
-      .returning();
-    return updated || undefined;
+    // Retry logic for database operations during long-running jobs
+    // Neon serverless can timeout connections during extended pipeline operations
+    const maxRetries = 3;
+    let lastError: Error | undefined;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const [updated] = await db
+          .update(jobs)
+          .set({ progress: JSON.stringify(progress) })
+          .where(eq(jobs.id, id))
+          .returning();
+        return updated || undefined;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt < maxRetries) {
+          // Wait before retry (exponential backoff: 1s, 2s, 4s)
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+        }
+      }
+    }
+
+    // Log but don't throw - job progress update is not critical enough to crash the pipeline
+    console.error(`[storage] Failed to update job progress after ${maxRetries} attempts:`, lastError?.message);
+    return undefined;
   }
 
   async startJob(id: string): Promise<Job | undefined> {

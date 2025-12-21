@@ -262,8 +262,8 @@ export const DATABASE_CONFIG = {
   connectionPool: {
     min: 2,
     max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000
+    idleTimeoutMillis: 60000,  // Increased from 30s to 60s for long-running jobs
+    connectionTimeoutMillis: 30000  // Increased from 10s to 30s for Neon cold starts
   },
   retries: {
     max: 3,

@@ -39,6 +39,8 @@ import {
   Download,
   Copy,
   Check,
+  FlaskConical,
+  Zap,
 } from "lucide-react";
 import {
   Dialog,
@@ -65,7 +67,7 @@ import {
 import type { Box3Blueprint, Box3Dossier } from "@shared/schema";
 import type { PendingFile } from "@/types/box3Validator.types";
 import type { Box3DossierFull } from "@/hooks/useBox3Sessions";
-import type { DebugInfo, PipelineProgress } from "@/hooks/useBox3Validation";
+import type { DebugInfo, PipelineProgress, PipelineVersion } from "@/hooks/useBox3Validation";
 
 // Constants
 import { BOX3_CONSTANTS } from "@shared/constants";
@@ -78,6 +80,10 @@ interface Box3CaseDetailProps {
   pipelineProgress?: PipelineProgress | null;
   /** Active job ID if background revalidation is running */
   activeJobId?: string | null;
+  /** Current pipeline version */
+  pipelineVersion?: PipelineVersion;
+  /** Callback to change pipeline version */
+  onPipelineVersionChange?: (version: PipelineVersion) => void;
   onBack: () => void;
   onRevalidate: () => void;
   /** Cancel active revalidation job */
@@ -292,6 +298,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   debugInfo,
   pipelineProgress,
   activeJobId,
+  pipelineVersion = 'v1',
+  onPipelineVersionChange,
   onBack,
   onRevalidate,
   onCancelRevalidation,
@@ -318,6 +326,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
   // Document preview state
   const [previewDocIndex, setPreviewDocIndex] = useState<number | null>(null);
+  const [previewTab, setPreviewTab] = useState<"preview" | "rawtext">("preview");
   const previewDoc = previewDocIndex !== null ? documents[previewDocIndex] : null;
 
   // Year-first navigation: year is the primary selector
@@ -328,11 +337,44 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
   // Per-person view: null = household view, string = specific person id
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
 
+  // Helper: Check if an asset's owner_id matches the selected person
+  // Handles ID mismatches where AI generates tp_02/fp_02 instead of tp_01/fp_01
+  const matchesSelectedPerson = useCallback((ownerIdRaw?: string): boolean => {
+    if (!selectedPersonId) return true; // Household view shows all
+    if (!ownerIdRaw) return true; // No owner = show for all
+    if (ownerIdRaw === 'joint') return true; // Joint assets show for both
+
+    const ownerId = ownerIdRaw.toLowerCase();
+    const tpId = blueprint?.fiscal_entity?.taxpayer?.id?.toLowerCase();
+    const fpId = blueprint?.fiscal_entity?.fiscal_partner?.id?.toLowerCase();
+    const selectedId = selectedPersonId.toLowerCase();
+
+    // Direct match
+    if (ownerId === selectedId) return true;
+
+    // Fuzzy match: if selectedPerson is taxpayer, accept any tp_XX
+    if (selectedId === tpId || selectedId === 'tp_01') {
+      if (ownerId.startsWith('tp_')) return true;
+    }
+    // Fuzzy match: if selectedPerson is partner, accept any fp_XX
+    if (selectedId === fpId || selectedId === 'fp_01') {
+      if (ownerId.startsWith('fp_')) return true;
+    }
+
+    return false;
+  }, [selectedPersonId, blueprint?.fiscal_entity?.taxpayer?.id, blueprint?.fiscal_entity?.fiscal_partner?.id]);
+
   // Extract data from blueprint
   const taxYears = dossier.taxYears || [];
   const hasFiscalPartner = blueprint?.fiscal_entity?.fiscal_partner?.has_partner || false;
   const validationFlags = blueprint?.validation_flags || [];
   const sourceDocsRegistry = blueprint?.source_documents_registry || [];
+
+  // Available years from blueprint (component-level for use in Year Tabs)
+  const years = useMemo(() => {
+    if (!blueprint?.year_summaries) return [];
+    return Object.keys(blueprint.year_summaries).sort();
+  }, [blueprint?.year_summaries]);
 
   // Compute sidebar data (next step, missing items, profitability)
   const sidebarData = useMemo(() => {
@@ -380,6 +422,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
         const totalActualReturn = (actualReturn?.bank_interest || 0) +
                                   (actualReturn?.dividends || 0) +
                                   (actualReturn?.investment_gain || 0) +
+                                  (actualReturn?.other_assets_income || 0) +
                                   (actualReturn?.rental_income_net || 0);
         // If actual return is exactly 0 on significant assets, likely missing data
         return totalActualReturn === 0;
@@ -532,7 +575,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
     <>
       {/* Modals - outside the grid */}
       {/* Document Preview Modal */}
-      <Dialog open={previewDocIndex !== null} onOpenChange={(open) => !open && setPreviewDocIndex(null)}>
+      <Dialog open={previewDocIndex !== null} onOpenChange={(open) => { if (!open) { setPreviewDocIndex(null); setPreviewTab("preview"); } }}>
         <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
           {previewDoc && (
             <>
@@ -575,29 +618,56 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   </div>
                 </div>
               </DialogHeader>
-              <div className="overflow-auto max-h-[calc(90vh-60px)] bg-muted/10">
-                {isImageFile(previewDoc.mimeType) ? (
-                  <img
-                    src={getPreviewUrl(previewDoc) || ''}
-                    alt={previewDoc.filename}
-                    className="w-full h-auto"
-                  />
-                ) : isPdfFile(previewDoc.mimeType) ? (
-                  <iframe
-                    src={getPreviewUrl(previewDoc) || ''}
-                    className="w-full h-[80vh]"
-                    title={previewDoc.filename}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-64 text-muted-foreground">
-                    <div className="text-center">
-                      <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>Preview niet beschikbaar voor dit bestandstype</p>
-                      <p className="text-sm">{previewDoc.mimeType}</p>
-                    </div>
+              <Tabs value={previewTab} onValueChange={(v) => setPreviewTab(v as "preview" | "rawtext")}>
+                <TabsList className="mx-4 mt-2 w-fit">
+                  <TabsTrigger value="preview">Preview</TabsTrigger>
+                  <TabsTrigger value="rawtext" disabled={!previewDoc.extractedText}>
+                    Raw Text {previewDoc.extractionCharCount ? `(${(previewDoc.extractionCharCount / 1000).toFixed(1)}k)` : ''}
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="preview" className="mt-0">
+                  <div className="overflow-auto max-h-[calc(90vh-120px)] bg-muted/10">
+                    {isImageFile(previewDoc.mimeType) ? (
+                      <img
+                        src={getPreviewUrl(previewDoc) || ''}
+                        alt={previewDoc.filename}
+                        className="w-full h-auto"
+                      />
+                    ) : isPdfFile(previewDoc.mimeType) ? (
+                      <iframe
+                        src={getPreviewUrl(previewDoc) || ''}
+                        className="w-full h-[calc(90vh-120px)]"
+                        title={previewDoc.filename}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-64 text-muted-foreground">
+                        <div className="text-center">
+                          <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          <p>Preview niet beschikbaar voor dit bestandstype</p>
+                          <p className="text-sm">{previewDoc.mimeType}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </TabsContent>
+                <TabsContent value="rawtext" className="mt-0">
+                  <div className="overflow-auto max-h-[calc(90vh-120px)] p-4">
+                    {previewDoc.extractedText ? (
+                      <pre className="text-xs font-mono whitespace-pre-wrap bg-muted/30 p-4 rounded-lg border">
+                        {previewDoc.extractedText}
+                      </pre>
+                    ) : (
+                      <div className="flex items-center justify-center h-64 text-muted-foreground">
+                        <div className="text-center">
+                          <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          <p>Geen tekst geëxtraheerd</p>
+                          <p className="text-sm">Status: {previewDoc.extractionStatus || 'onbekend'}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
             </>
           )}
         </DialogContent>
@@ -605,7 +675,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
       {/* Email Preview Modal */}
       <Dialog open={showEmailPreview} onOpenChange={setShowEmailPreview}>
-        <DialogContent className="max-w-4xl max-h-[95vh] overflow-hidden">
+        <DialogContent className="max-w-3xl w-[90vw]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Mail className="h-5 w-5" />
@@ -625,7 +695,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             </DialogTitle>
           </DialogHeader>
           {generatedEmail && (
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[80vh] overflow-y-auto">
               {/* Subject */}
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Onderwerp</label>
@@ -653,7 +723,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   </button>
                 </div>
                 <div
-                  className="p-4 bg-white border rounded-md text-sm prose prose-sm max-h-[60vh] overflow-y-auto"
+                  className="p-4 bg-white border rounded-md text-sm prose prose-sm max-w-none"
                   dangerouslySetInnerHTML={{ __html: generatedEmail.body }}
                 />
               </div>
@@ -738,6 +808,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 <Plus className="h-4 w-4 mr-1.5" />
                 Document toevoegen
               </Button>
+              {/* Pipeline Version Toggle - Hidden, V2 is now default */}
               <Button
                 onClick={onRevalidate}
                 size="sm"
@@ -798,24 +869,50 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 </div>
               </div>
               <div className="mt-3 flex gap-2">
-                {[1, 2, 3, 4, 5].map((step) => (
-                  <div
-                    key={step}
-                    className={`flex-1 text-center text-xs py-1 rounded ${
-                      step < pipelineProgress.step
-                        ? 'bg-blue-600 text-white'
-                        : step === pipelineProgress.step
-                          ? 'bg-blue-400 text-white animate-pulse'
-                          : 'bg-blue-100 text-blue-400'
-                    }`}
-                  >
-                    {step === 1 && 'Classificatie'}
-                    {step === 2 && 'Aangifte'}
-                    {step === 3 && 'Vermogen'}
-                    {step === 4 && 'Combineren'}
-                    {step === 5 && 'Validatie'}
-                  </div>
-                ))}
+                {/* Dynamic stages based on pipeline version (V1: 5 stages, V2: 3 stages) */}
+                {pipelineProgress.totalSteps === 3 ? (
+                  // Pipeline V2: 3 stages
+                  <>
+                    {[1, 2, 3].map((step) => (
+                      <div
+                        key={step}
+                        className={`flex-1 text-center text-xs py-1 rounded ${
+                          step < pipelineProgress.step
+                            ? 'bg-blue-600 text-white'
+                            : step === pipelineProgress.step
+                              ? 'bg-blue-400 text-white animate-pulse'
+                              : 'bg-blue-100 text-blue-400'
+                        }`}
+                      >
+                        {step === 1 && 'Manifest'}
+                        {step === 2 && 'Enrichment'}
+                        {step === 3 && 'Validatie'}
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  // Pipeline V1: 5 stages
+                  <>
+                    {[1, 2, 3, 4, 5].map((step) => (
+                      <div
+                        key={step}
+                        className={`flex-1 text-center text-xs py-1 rounded ${
+                          step < pipelineProgress.step
+                            ? 'bg-blue-600 text-white'
+                            : step === pipelineProgress.step
+                              ? 'bg-blue-400 text-white animate-pulse'
+                              : 'bg-blue-100 text-blue-400'
+                        }`}
+                      >
+                        {step === 1 && 'Classificatie'}
+                        {step === 2 && 'Aangifte'}
+                        {step === 3 && 'Vermogen'}
+                        {step === 4 && 'Combineren'}
+                        {step === 5 && 'Validatie'}
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1198,66 +1295,22 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             const profitableYears = years.filter(y => yearSummaries[y]?.calculated_totals?.is_profitable);
             const incompleteYears = years.filter(y => yearSummaries[y]?.status === 'incomplete');
 
-            // Calculate estimated refund per year (same logic as breakdown)
-            // This ensures consistency between summary bar and breakdown section
-            const bankSavings = blueprint.assets?.bank_savings || [];
-            let hasUnknownInterest = false;
-            let estimatedRefund = 0;
-
-            years.forEach(year => {
-              const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[year] || 0.001;
-              const taxRate = BOX3_CONSTANTS.TAX_RATES[year] || 0.31;
-              const yearSummary = yearSummaries[year];
-              const calc = yearSummary?.calculated_totals;
-              const deemedReturn = calc?.deemed_return_from_tax_authority || 0;
-              const actualReturn = calc?.actual_return?.total || 0;
-              const yearRefund = calc?.indicative_refund || 0;
-
-              // Calculate estimated interest for this year
-              let yearEstimatedInterest = 0;
-              let yearHasUnknown = false;
-
-              bankSavings.forEach(asset => {
-                const yearData = asset.yearly_data?.[year];
-                if (!yearData) return;
-
-                const interestField = yearData.interest_received;
-                const hasInterest = interestField != null &&
-                  (typeof interestField === 'number' ? interestField > 0 :
-                   typeof interestField === 'object' && interestField.amount != null);
-
-                if (!hasInterest) {
-                  yearHasUnknown = true;
-                  hasUnknownInterest = true;
-                  const balance = typeof yearData.value_jan_1 === 'number' ? yearData.value_jan_1 :
-                    typeof yearData.value_jan_1 === 'object' ? yearData.value_jan_1?.amount :
-                    typeof (yearData as any).balance_jan1 === 'number' ? (yearData as any).balance_jan1 : 0;
-
-                  if (balance && balance > 0) {
-                    yearEstimatedInterest += balance * savingsRate;
-                  }
-                }
-              });
-
-              // Calculate this year's estimated refund using same formula as breakdown
-              if (yearHasUnknown) {
-                const estimatedActualReturn = actualReturn + yearEstimatedInterest;
-                const estimatedDifference = deemedReturn - estimatedActualReturn;
-                const yearEstimatedRefund = Math.max(0, estimatedDifference * taxRate);
-                estimatedRefund += yearEstimatedRefund;
-              } else {
-                estimatedRefund += yearRefund;
-              }
-            });
-
             // Calculate costs: €250 per year
             const costPerYear = 250; // BOX3_CONSTANTS.COST_PER_YEAR
             const totalCost = years.length * costPerYear;
             const netRefund = totalRefund - totalCost;
-            const netEstimatedRefund = estimatedRefund - totalCost;
 
             const isProfitable = netRefund > 0 || profitableYears.length > 0;
             const isComplete = incompleteYears.length === 0 && years.length > 0;
+
+            // Recalculate per-person refunds based on the total
+            // This ensures the per-person split matches what's shown in the header
+            personSummaries.forEach(person => {
+              // Sum up allocations across years and recalculate based on total
+              const totalAllocation = Object.values(person.yearBreakdown).reduce((sum, yb) => sum + yb.allocation, 0);
+              const avgAllocation = years.length > 0 ? totalAllocation / years.length : 0;
+              person.totalIndicativeRefund = totalRefund * (avgAllocation / 100);
+            });
 
             // Collect ALL missing items across all years
             const allMissingItems: { year: string; description: string }[] = [];
@@ -1348,31 +1401,15 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
 
                   {/* Total Refund with costs breakdown */}
                   <div className="flex items-center gap-4">
-                    {/* Gross refund - show estimated if we have unknown interest */}
+                    {/* Gross refund */}
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                        {hasMissingDocs ? (hasUnknownInterest ? 'Geschat' : 'Max.') : 'Teruggave'}
+                        {hasMissingDocs ? 'Max.' : 'Teruggave'}
                       </span>
                       <CopyableCurrency
-                        value={hasUnknownInterest ? estimatedRefund : totalRefund}
-                        className={`text-xl font-bold tracking-tight ${(hasUnknownInterest ? estimatedRefund : totalRefund) > 0 ? 'text-green-600' : 'text-muted-foreground'}`}
+                        value={totalRefund}
+                        className={`text-xl font-bold tracking-tight ${totalRefund > 0 ? 'text-green-600' : 'text-muted-foreground'}`}
                       />
-                      {hasUnknownInterest && hasMissingDocs && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="max-w-xs">
-                              <p className="text-xs">
-                                <strong>Max: {formatCurrency(totalRefund)}</strong><br />
-                                Geschat op basis van gemiddelde spaarrentes.
-                                Werkelijke teruggave kan hoger of lager zijn.
-                              </p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
                     </div>
 
                     {/* Costs */}
@@ -1399,8 +1436,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                           Netto
                         </span>
                         <CopyableCurrency
-                          value={hasUnknownInterest ? netEstimatedRefund : netRefund}
-                          className={`text-2xl font-bold tracking-tight ${(hasUnknownInterest ? netEstimatedRefund : netRefund) > 0 ? 'text-green-600' : 'text-red-500'}`}
+                          value={netRefund}
+                          className={`text-2xl font-bold tracking-tight ${netRefund > 0 ? 'text-green-600' : 'text-red-500'}`}
                         />
                       </div>
                     )}
@@ -1473,79 +1510,42 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                             )
                           );
 
-                          // Pre-calculate estimated refund for header
-                          const savingsRateForHeader = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[year] || 0.001;
-                          const taxRateForHeader = BOX3_CONSTANTS.TAX_RATES[year] || 0.31;
-                          let yearEstInterestForHeader = 0;
-                          let yearHasUnknownForHeader = false;
-                          (blueprint.assets?.bank_savings || []).forEach(asset => {
-                            const assetYearData = asset.yearly_data?.[year];
-                            if (!assetYearData) return;
-                            const interestField = assetYearData.interest_received;
-                            const hasInterest = interestField != null &&
-                              (typeof interestField === 'number' ? interestField > 0 :
-                               typeof interestField === 'object' && interestField.amount != null);
-                            if (!hasInterest) {
-                              yearHasUnknownForHeader = true;
-                              const balance = typeof assetYearData.value_jan_1 === 'number' ? assetYearData.value_jan_1 :
-                                typeof assetYearData.value_jan_1 === 'object' ? assetYearData.value_jan_1?.amount :
-                                typeof (assetYearData as any).balance_jan1 === 'number' ? (assetYearData as any).balance_jan1 : 0;
-                              if (balance && balance > 0) {
-                                yearEstInterestForHeader += balance * savingsRateForHeader;
-                              }
-                            }
-                          });
-                          const estimatedActualReturnForHeader = (actualReturn?.total || 0) + yearEstInterestForHeader;
-                          const estimatedDiffForHeader = deemedReturn - estimatedActualReturnForHeader;
-                          const yearEstRefundForHeader = yearHasUnknownForHeader ? Math.max(0, estimatedDiffForHeader * taxRateForHeader) : yearRefund;
-
+                          // Use backend-calculated refund directly (no frontend estimation)
                           return (
                             <div key={year} className="bg-white rounded-lg p-3 border border-green-100">
                               <div className="flex items-center justify-between mb-2">
                                 <span className="font-semibold text-gray-800">{year}</span>
-                                <span className={`font-bold ${yearEstRefundForHeader > 0 ? 'text-green-600' : 'text-gray-500'}`}>
-                                  {yearHasUnknownForHeader && '~'}{yearEstRefundForHeader > 0 ? '+' : ''}{formatCurrency(yearEstRefundForHeader)}
+                                <span className={`font-bold ${yearRefund > 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                  {yearRefund > 0 ? '+' : ''}{formatCurrency(yearRefund)}
                                 </span>
                               </div>
 
-                              {/* Calculation steps */}
+                              {/* Calculation steps - using backend values, with estimated bank interest shown for info */}
                               {(() => {
-                                // Calculate estimated interest for this year
-                                const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[year] || 0.001;
                                 const taxRate = BOX3_CONSTANTS.TAX_RATES[year] || 0.31;
+                                const savingsRate = BOX3_CONSTANTS.AVERAGE_SAVINGS_RATES[year] || 0.001;
                                 const bankCount = blueprint.assets?.bank_savings?.length || 0;
                                 const invCount = blueprint.assets?.investments?.length || 0;
                                 const reCount = blueprint.assets?.real_estate?.length || 0;
+                                const otherCount = blueprint.assets?.other_assets?.length || 0;
                                 const bankInterest = actualReturn?.bank_interest || 0;
                                 const dividends = actualReturn?.dividends || 0;
                                 const realizedGains = actualReturn?.investment_gain || 0;
                                 const rentalNet = actualReturn?.rental_income_net || 0;
+                                const otherAssetsIncome = actualReturn?.other_assets_income || 0;
 
-                                // Calculate estimated bank interest for this year
-                                let yearEstimatedInterest = 0;
-                                let yearHasUnknownInterest = false;
+                                // Calculate estimated bank interest for display (informational only)
+                                let estimatedBankInterest = 0;
                                 (blueprint.assets?.bank_savings || []).forEach(asset => {
                                   const assetYearData = asset.yearly_data?.[year];
                                   if (!assetYearData) return;
-                                  const interestField = assetYearData.interest_received;
-                                  const hasInterest = interestField != null &&
-                                    (typeof interestField === 'number' ? interestField > 0 :
-                                     typeof interestField === 'object' && interestField.amount != null);
-                                  if (!hasInterest) {
-                                    yearHasUnknownInterest = true;
-                                    const balance = typeof assetYearData.value_jan_1 === 'number' ? assetYearData.value_jan_1 :
-                                      typeof assetYearData.value_jan_1 === 'object' ? assetYearData.value_jan_1?.amount :
-                                      typeof (assetYearData as any).balance_jan1 === 'number' ? (assetYearData as any).balance_jan1 : 0;
-                                    if (balance && balance > 0) {
-                                      yearEstimatedInterest += balance * savingsRate;
-                                    }
+                                  const balance = typeof assetYearData.value_jan_1 === 'number' ? assetYearData.value_jan_1 :
+                                    typeof assetYearData.value_jan_1 === 'object' ? assetYearData.value_jan_1?.amount : 0;
+                                  if (balance && balance > 0) {
+                                    estimatedBankInterest += balance * savingsRate;
                                   }
                                 });
-
-                                // Calculate estimated actual return and refund
-                                const estimatedActualReturn = (actualReturn?.total || 0) + yearEstimatedInterest;
-                                const estimatedDifference = deemedReturn - estimatedActualReturn;
-                                const yearEstimatedRefund = Math.max(0, estimatedDifference * taxRate);
+                                const showEstimatedBankInterest = bankInterest === 0 && estimatedBankInterest > 0;
 
                                 return (
                               <div className="space-y-1 text-sm">
@@ -1554,24 +1554,24 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                   <span className="font-medium text-red-600">{formatCurrency(deemedReturn)}</span>
                                 </div>
                                 <div className="flex justify-between text-gray-600">
-                                  <span>Werkelijk rendement {yearHasUnknownInterest && <span className="text-amber-600 text-xs">(incl. schatting)</span>}</span>
-                                  <span className={`font-medium ${yearHasUnknownInterest ? 'text-amber-600' : 'text-green-600'}`}>
-                                    {formatCurrency(yearHasUnknownInterest ? estimatedActualReturn : (actualReturn?.total || 0))}
+                                  <span>Werkelijk rendement</span>
+                                  <span className="font-medium text-green-600">
+                                    {formatCurrency(actualReturn?.total || 0)}
                                   </span>
                                 </div>
 
                                 {/* Actual return breakdown - always show to clarify what's missing */}
-                                {(bankCount > 0 || invCount > 0 || reCount > 0) && (
+                                {(bankCount > 0 || invCount > 0 || reCount > 0 || otherCount > 0) && (
                                     <div className="ml-4 text-xs space-y-0.5">
-                                      {/* Bank interest - show even if 0 when we have banks */}
+                                      {/* Bank interest - show even if 0 when we have banks, with estimate */}
                                       {bankCount > 0 && (
                                         <div className="flex justify-between">
                                           <span className={bankInterest === 0 ? 'text-amber-600' : 'text-gray-500'}>
-                                            └ Bankrente {bankInterest === 0 && yearHasUnknownInterest && <span className="text-amber-500">(geschat ~{formatCurrency(yearEstimatedInterest)})</span>}
-                                            {bankInterest === 0 && !yearHasUnknownInterest && <span className="text-amber-500">(ontbreekt)</span>}
+                                            └ Bankrente {showEstimatedBankInterest && <span className="text-amber-500">(geschat ~{formatCurrency(estimatedBankInterest)})</span>}
+                                            {bankInterest === 0 && !showEstimatedBankInterest && <span className="text-amber-500">(ontbreekt)</span>}
                                           </span>
                                           <span className={bankInterest === 0 ? 'text-amber-600' : 'text-gray-500'}>
-                                            {bankInterest > 0 ? formatCurrency(bankInterest) : (yearHasUnknownInterest ? `~${formatCurrency(yearEstimatedInterest)}` : formatCurrency(0))}
+                                            {bankInterest > 0 ? formatCurrency(bankInterest) : (showEstimatedBankInterest ? `~${formatCurrency(estimatedBankInterest)}` : formatCurrency(0))}
                                           </span>
                                         </div>
                                       )}
@@ -1608,16 +1608,27 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                           </span>
                                         </div>
                                       )}
+                                      {/* Other assets income (hypotheekvordering rente, etc.) - show when we have other assets */}
+                                      {otherCount > 0 && (
+                                        <div className="flex justify-between">
+                                          <span className={otherAssetsIncome === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            └ Rente overige bezittingen {otherAssetsIncome === 0 && <span className="text-amber-500">(ontbreekt)</span>}
+                                          </span>
+                                          <span className={otherAssetsIncome === 0 ? 'text-amber-600' : 'text-gray-500'}>
+                                            {formatCurrency(otherAssetsIncome)}
+                                          </span>
+                                        </div>
+                                      )}
                                     </div>
                                 )}
 
                                 <div className="flex justify-between text-gray-600 border-t border-dashed pt-1 mt-1">
                                   <span>Verschil</span>
-                                  <span className="font-medium">{formatCurrency(yearHasUnknownInterest ? estimatedDifference : calc.difference)}</span>
+                                  <span className="font-medium">{formatCurrency(calc.difference)}</span>
                                 </div>
                                 <div className="flex justify-between text-gray-600">
                                   <span>× {(taxRate * 100).toFixed(0)}% belastingtarief</span>
-                                  <span className="font-bold text-green-600">{formatCurrency(yearHasUnknownInterest ? yearEstimatedRefund : yearRefund)}</span>
+                                  <span className="font-bold text-green-600">{formatCurrency(yearRefund)}</span>
                                 </div>
                               </div>
                                 );
@@ -1630,6 +1641,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 const dividends = actualReturn?.dividends || 0;
                                 const realizedGains = actualReturn?.investment_gain || 0;
                                 const rentalNet = actualReturn?.rental_income_net || 0;
+                                const otherIncome = actualReturn?.other_assets_income || 0;
                                 const totalAssets = calc.total_assets_jan_1 || 0;
 
                                 // Calculate expected minimum return (0.5% is conservative)
@@ -1658,6 +1670,12 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                 const reCount = blueprint.assets?.real_estate?.length || 0;
                                 if (reCount > 0 && rentalNet === 0) {
                                   missingItems.push('huurinkomsten');
+                                }
+
+                                // If we have other assets (hypotheekvordering, etc.) but no interest/income
+                                const otherCount = blueprint.assets?.other_assets?.length || 0;
+                                if (otherCount > 0 && otherIncome === 0) {
+                                  missingItems.push('rente overige bezittingen');
                                 }
 
                                 // Show warning if there are known missing items OR if return seems too low
@@ -1690,10 +1708,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                       {/* Total summary */}
                       <div className="bg-green-100/50 rounded-lg p-3 flex justify-between items-center">
                         <span className="font-medium text-green-800">
-                          {hasUnknownInterest ? 'Geschatte teruggave' : 'Totale indicatieve teruggave'}
+                          Totale indicatieve teruggave
                         </span>
                         <span className="text-xl font-bold text-green-700">
-                          {hasUnknownInterest && '~'}{formatCurrency(hasUnknownInterest ? estimatedRefund : totalRefund)}
+                          {formatCurrency(totalRefund)}
                         </span>
                       </div>
 
@@ -1746,169 +1764,33 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   />
                 </div>
 
-                {/* Year Tabs - Minimal horizontal tabs */}
-                <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-                  <div className="flex border-b">
-                    {years.map(year => {
-                      const summary = blueprint.year_summaries?.[year];
-                      const refund = summary?.calculated_totals?.indicative_refund || 0;
-                      const yearProfitable = summary?.calculated_totals?.is_profitable || refund > 0;
-                      const yearIncomplete = summary?.status === 'incomplete';
-                      const isSelected = selectedYear === year;
-
-                      return (
-                        <button
-                          key={year}
-                          onClick={() => setSelectedYear(year)}
-                          className={`flex-1 px-4 py-3 text-center transition-all relative ${
-                            isSelected
-                              ? 'bg-white'
-                              : 'bg-muted/30 hover:bg-muted/50'
-                          }`}
-                        >
-                          {/* Active indicator line */}
-                          {isSelected && (
-                            <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${
-                              yearProfitable ? 'bg-green-500' : yearIncomplete ? 'bg-amber-400' : 'bg-gray-300'
-                            }`} />
-                          )}
-
-                          <div className="flex items-center justify-center gap-1.5">
-                            {yearIncomplete && (
-                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                            )}
-                            <span className={`font-semibold text-sm ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>
-                              {year}
-                            </span>
-                          </div>
-                          <p className={`text-xs mt-0.5 ${
-                            yearIncomplete
-                              ? 'text-amber-600'
-                              : yearProfitable
-                                ? 'text-green-600'
-                                : 'text-muted-foreground'
-                          }`}>
-                            {yearIncomplete ? 'Docs nodig' : formatCurrency(refund)}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
             );
           })()}
 
-          {/* Audit Trail - Validation checks with checkmarks */}
-          {blueprint.audit_checks && blueprint.audit_checks.length > 0 && (
-            <Card className="border-gray-200 bg-gray-50">
-              <CardHeader className="pb-3 pt-4">
-                <CardTitle className="text-base font-bold flex items-center gap-2 text-gray-700">
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  Validatie ({blueprint.audit_checks.filter(c => c.passed).length}/{blueprint.audit_checks.length} checks geslaagd)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 pb-4">
-                <TooltipProvider delayDuration={300}>
-                  <div className="space-y-2">
-                    {blueprint.audit_checks.map((check, idx) => {
-                      // Build tooltip content from details
-                      const hasDetails = check.details && (
-                        check.details.expected !== undefined ||
-                        check.details.actual !== undefined ||
-                        check.details.difference !== undefined
-                      );
+          {/* Audit Trail - Validation checks grouped by type */}
+          {((blueprint.audit_checks && blueprint.audit_checks.length > 0) || validationFlags.length > 0) && (() => {
+            const auditChecks = blueprint.audit_checks || [];
+            const passedCount = auditChecks.filter(c => c.passed).length;
+            const totalChecks = auditChecks.length;
 
-                      const tooltipContent = hasDetails ? (
-                        <div className="space-y-1 text-xs">
-                          <div className="font-medium text-gray-200 mb-1">
-                            {check.check_type === 'asset_total' && 'Vermogenstotaal controle'}
-                            {check.check_type === 'asset_count' && 'Aantal assets controle'}
-                            {check.check_type === 'interest_plausibility' && 'Rente plausibiliteit'}
-                            {check.check_type === 'missing_data' && 'Ontbrekende data'}
-                            {check.check_type === 'duplicate_asset' && 'Duplicaat detectie'}
-                            {check.check_type === 'discrepancy' && 'Afwijking gedetecteerd'}
-                          </div>
-                          {check.details?.expected !== undefined && (
-                            <div className="flex justify-between gap-4">
-                              <span className="text-gray-400">Verwacht:</span>
-                              <span className="font-mono">
-                                {typeof check.details.expected === 'number'
-                                  ? check.check_type === 'asset_count'
-                                    ? check.details.expected
-                                    : `€${check.details.expected.toLocaleString('nl-NL')}`
-                                  : check.details.expected}
-                              </span>
-                            </div>
-                          )}
-                          {check.details?.actual !== undefined && (
-                            <div className="flex justify-between gap-4">
-                              <span className="text-gray-400">Gevonden:</span>
-                              <span className="font-mono">
-                                {typeof check.details.actual === 'number'
-                                  ? check.check_type === 'asset_count'
-                                    ? check.details.actual
-                                    : `€${check.details.actual.toLocaleString('nl-NL')}`
-                                  : check.details.actual}
-                              </span>
-                            </div>
-                          )}
-                          {check.details?.difference !== undefined && check.details.difference !== 0 && (
-                            <div className="flex justify-between gap-4 pt-1 border-t border-gray-600">
-                              <span className="text-gray-400">Verschil:</span>
-                              <span className={`font-mono ${check.details.difference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                                €{Math.abs(check.details.difference).toLocaleString('nl-NL')}
-                              </span>
-                            </div>
-                          )}
-                          {check.year && (
-                            <div className="text-gray-500 text-[10px] mt-1">
-                              Belastingjaar {check.year}
-                            </div>
-                          )}
-                        </div>
-                      ) : null;
+            // Filter out validation flags that are already shown in audit_checks (by message)
+            const auditMessages = new Set(auditChecks.map(c => c.message));
+            const uniqueFlags = validationFlags.filter(f => !auditMessages.has(f.message));
 
-                      return (
-                        <Tooltip key={check.id || idx}>
-                          <TooltipTrigger asChild>
-                            <div
-                              className={`flex items-center gap-3 p-2 rounded-lg cursor-default transition-colors ${
-                                check.passed
-                                  ? 'bg-green-50 border border-green-200 hover:bg-green-100'
-                                  : 'bg-yellow-50 border border-yellow-200 hover:bg-yellow-100'
-                              }`}
-                            >
-                              {check.passed ? (
-                                <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                              ) : (
-                                <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
-                              )}
-                              <span className={`text-sm ${check.passed ? 'text-green-800' : 'text-yellow-800'}`}>
-                                {check.message}
-                              </span>
-                              {hasDetails && (
-                                <Info className="h-3.5 w-3.5 text-gray-400 ml-auto shrink-0" />
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          {tooltipContent && (
-                            <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 max-w-xs">
-                              {tooltipContent}
-                            </TooltipContent>
-                          )}
-                        </Tooltip>
-                      );
-                    })}
-                  </div>
-                </TooltipProvider>
-              </CardContent>
-            </Card>
-          )}
+            // Categorize audit checks
+            const totalenChecks = auditChecks.filter(c =>
+              c.check_type === 'asset_total' || c.message.includes('Totalen komen overeen')
+            );
+            const belastingChecks = auditChecks.filter(c =>
+              c.message.includes('Box 3 belasting gevonden')
+            );
+            // Warnings: failed audit checks + unique validation flags
+            const warningChecks = auditChecks.filter(c => !c.passed &&
+              !totalenChecks.includes(c) && !belastingChecks.includes(c)
+            );
 
-          {/* Aandachtspunten - After hero, with blocks and human-readable labels */}
-          {validationFlags.length > 0 && (() => {
-            // Map technical flag types to human-readable labels
+            // Helper for flag labels
             const getFlagLabel = (type: string | undefined): string => {
               if (!type) return 'Onbekend';
               const labels: Record<string, string> = {
@@ -1922,38 +1804,227 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
               return labels[type] || type.replace(/_/g, ' ');
             };
 
+            // Render a single check item
+            const renderCheckItem = (check: typeof auditChecks[0], idx: number) => {
+              const hasDetails = check.details && (
+                check.details.expected !== undefined ||
+                check.details.actual !== undefined ||
+                check.details.difference !== undefined ||
+                (check.details.missing_descriptions && check.details.missing_descriptions.length > 0)
+              );
+
+              const tooltipContent = hasDetails ? (
+                <div className="space-y-1 text-xs">
+                  <div className="font-medium text-gray-200 mb-1">
+                    {check.check_type === 'asset_total' && 'Vermogenstotaal controle'}
+                    {check.check_type === 'asset_count' && 'Aantal assets controle'}
+                    {check.check_type === 'interest_plausibility' && 'Rente plausibiliteit'}
+                    {check.check_type === 'missing_data' && 'Ontbrekende data'}
+                    {check.check_type === 'duplicate_asset' && 'Duplicaat detectie'}
+                    {check.check_type === 'discrepancy' && 'Afwijking gedetecteerd'}
+                  </div>
+                  {check.details?.expected !== undefined && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-400">Verwacht:</span>
+                      <span className="font-mono">
+                        {typeof check.details.expected === 'number'
+                          ? check.check_type === 'asset_count'
+                            ? check.details.expected
+                            : `€${check.details.expected.toLocaleString('nl-NL')}`
+                          : check.details.expected}
+                      </span>
+                    </div>
+                  )}
+                  {check.details?.actual !== undefined && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-400">Gevonden:</span>
+                      <span className="font-mono">
+                        {typeof check.details.actual === 'number'
+                          ? check.check_type === 'asset_count'
+                            ? check.details.actual
+                            : `€${check.details.actual.toLocaleString('nl-NL')}`
+                          : check.details.actual}
+                      </span>
+                    </div>
+                  )}
+                  {check.details?.difference !== undefined && check.details.difference !== 0 && (
+                    <div className="flex justify-between gap-4 pt-1 border-t border-gray-600">
+                      <span className="text-gray-400">Verschil:</span>
+                      <span className={`font-mono ${check.details.difference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+                        €{Math.abs(check.details.difference).toLocaleString('nl-NL')}
+                      </span>
+                    </div>
+                  )}
+                  {check.details?.missing_descriptions && check.details.missing_descriptions.length > 0 && (
+                    <div className="pt-1 border-t border-gray-600 mt-1">
+                      <span className="text-gray-400 block mb-1">Mogelijk ontbrekend:</span>
+                      <ul className="text-yellow-300 text-[11px] space-y-0.5 pl-2">
+                        {check.details.missing_descriptions.slice(0, 5).map((desc, i) => (
+                          <li key={i} className="truncate">• {desc}</li>
+                        ))}
+                        {check.details.missing_descriptions.length > 5 && (
+                          <li className="text-gray-500">...en {check.details.missing_descriptions.length - 5} meer</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                  {check.year && (
+                    <div className="text-gray-500 text-[10px] mt-1">
+                      Belastingjaar {check.year}
+                    </div>
+                  )}
+                </div>
+              ) : null;
+
+              return (
+                <Tooltip key={check.id || idx}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={`flex items-center gap-3 p-2 rounded-lg cursor-default transition-colors ${
+                        check.passed
+                          ? 'bg-green-50 border border-green-200 hover:bg-green-100'
+                          : 'bg-yellow-50 border border-yellow-200 hover:bg-yellow-100'
+                      }`}
+                    >
+                      {check.passed ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
+                      )}
+                      <span className={`text-sm ${check.passed ? 'text-green-800' : 'text-yellow-800'}`}>
+                        {check.message}
+                      </span>
+                      {hasDetails && (
+                        <Info className="h-3.5 w-3.5 text-gray-400 ml-auto shrink-0" />
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  {tooltipContent && (
+                    <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 max-w-xs">
+                      {tooltipContent}
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              );
+            };
+
+            const totalWarnings = warningChecks.length + uniqueFlags.length;
+
             return (
-              <Card className="border-yellow-300 bg-yellow-50">
+              <Card className="border-gray-200 bg-gray-50">
                 <CardHeader className="pb-3 pt-4">
-                  <CardTitle className="text-base font-bold flex items-center gap-2 text-yellow-800">
-                    <Info className="h-5 w-5" />
-                    Let op ({validationFlags.length})
+                  <CardTitle className="text-base font-bold flex items-center gap-2 text-gray-700">
+                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    Validatie ({passedCount}/{totalChecks} checks geslaagd)
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0 pb-4">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {validationFlags.map((flag, idx) => (
-                      <div
-                        key={flag.id || idx}
-                        className="p-3 bg-white rounded-lg border border-yellow-200"
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="text-xs font-semibold bg-yellow-200 text-yellow-800 px-1.5 py-0.5 rounded shrink-0">
-                            {getFlagLabel(flag.type)}
-                          </span>
-                          <p className="text-sm text-yellow-900">{flag.message}</p>
+                  <TooltipProvider delayDuration={300}>
+                    <div className="space-y-4">
+                      {/* Totalen section */}
+                      {totalenChecks.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Totalen</h4>
+                          <div className="space-y-1.5">
+                            {totalenChecks.map((check, idx) => renderCheckItem(check, idx))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      )}
+
+                      {/* Belastingdata section */}
+                      {belastingChecks.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Belastingdata</h4>
+                          <div className="space-y-1.5">
+                            {belastingChecks.map((check, idx) => renderCheckItem(check, idx))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Aandachtspunten section */}
+                      {totalWarnings > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-yellow-700 uppercase tracking-wide mb-2">
+                            Aandachtspunten ({totalWarnings})
+                          </h4>
+                          <div className="space-y-1.5">
+                            {warningChecks.map((check, idx) => renderCheckItem(check, idx))}
+                            {uniqueFlags.map((flag, idx) => (
+                              <div
+                                key={`flag-${flag.id || idx}`}
+                                className="flex items-center gap-3 p-2 rounded-lg cursor-default transition-colors bg-yellow-50 border border-yellow-200 hover:bg-yellow-100"
+                              >
+                                <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0" />
+                                <span className="text-xs font-semibold bg-yellow-200 text-yellow-800 px-1.5 py-0.5 rounded shrink-0">
+                                  {getFlagLabel(flag.type)}
+                                </span>
+                                <span className="text-sm text-yellow-800">{flag.message}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </TooltipProvider>
                 </CardContent>
               </Card>
             );
           })()}
 
+
           {/* YEAR DETAIL: Shows when a year is selected */}
-          {availableYears.length > 0 && selectedYear && (
+          {availableYears.length > 0 && (
             <Card>
+              {/* Year Tabs as Card Header */}
+              <div className="flex border-b">
+                {years.map(year => {
+                  const summary = blueprint.year_summaries?.[year];
+                  const refund = summary?.calculated_totals?.indicative_refund || 0;
+                  const yearProfitable = summary?.calculated_totals?.is_profitable || refund > 0;
+                  const yearIncomplete = summary?.status === 'incomplete';
+                  const isSelected = selectedYear === year;
+
+                  return (
+                    <button
+                      key={year}
+                      onClick={() => setSelectedYear(year)}
+                      className={`flex-1 px-4 py-3 text-center transition-all relative ${
+                        isSelected
+                          ? 'bg-white'
+                          : 'bg-muted/30 hover:bg-muted/50'
+                      }`}
+                    >
+                      {/* Active indicator line */}
+                      {isSelected && (
+                        <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${
+                          yearProfitable ? 'bg-green-500' : yearIncomplete ? 'bg-amber-400' : 'bg-gray-300'
+                        }`} />
+                      )}
+
+                      <div className="flex items-center justify-center gap-1.5">
+                        {yearIncomplete && (
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                        )}
+                        <span className={`font-semibold text-sm ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {year}
+                        </span>
+                      </div>
+                      <p className={`text-xs mt-0.5 ${
+                        yearIncomplete
+                          ? 'text-amber-600'
+                          : yearProfitable
+                            ? 'text-green-600'
+                            : 'text-muted-foreground'
+                      }`}>
+                        {yearIncomplete ? 'Docs nodig' : formatCurrency(refund)}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Year Content */}
+              {selectedYear && (
               <CardContent className="pt-6">
                 {/* YEAR DETAIL VIEW */}
                 {selectedYear && blueprint.year_summaries?.[selectedYear] && (
@@ -2058,12 +2129,24 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                                 <p className="text-xs font-medium text-blue-800 mb-2">Verdeling per persoon ({selectedYear})</p>
                                 <div className="grid grid-cols-2 gap-4">
-                                  {Object.entries(perPerson).map(([personId, personData]) => {
+                                  {Object.entries(perPerson).map(([personId, personData], index) => {
+                                    // Try to match personId to fiscal_entity to get the name
                                     let personName = personId;
-                                    if (personId === blueprint.fiscal_entity?.taxpayer?.id) {
-                                      personName = blueprint.fiscal_entity.taxpayer.name || 'Belastingplichtige';
-                                    } else if (personId === blueprint.fiscal_entity?.fiscal_partner?.id) {
-                                      personName = blueprint.fiscal_entity.fiscal_partner.name || 'Fiscaal Partner';
+                                    const tpId = blueprint.fiscal_entity?.taxpayer?.id;
+                                    const fpId = blueprint.fiscal_entity?.fiscal_partner?.id;
+
+                                    if (personId === tpId || personId === 'tp_01') {
+                                      personName = blueprint.fiscal_entity?.taxpayer?.name || 'Belastingplichtige';
+                                    } else if (personId === fpId || personId === 'fp_01') {
+                                      personName = blueprint.fiscal_entity?.fiscal_partner?.name || 'Fiscaal Partner';
+                                    } else if (personId.startsWith('tp_') || personId.startsWith('fp_')) {
+                                      // Fallback: if ID looks like tp_XX or fp_XX but doesn't match,
+                                      // use position to determine (first = taxpayer, second = partner)
+                                      if (index === 0) {
+                                        personName = blueprint.fiscal_entity?.taxpayer?.name || 'Belastingplichtige';
+                                      } else {
+                                        personName = blueprint.fiscal_entity?.fiscal_partner?.name || 'Fiscaal Partner';
+                                      }
                                     }
 
                                     return (
@@ -2216,13 +2299,23 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                       <div className="mt-4 pt-3 border-t">
                                         <h5 className="text-sm font-medium mb-2">Per persoon</h5>
                                         <div className="grid gap-2">
-                                          {Object.entries(taxData.per_person).map(([personId, personData]) => {
+                                          {Object.entries(taxData.per_person).map(([personId, personData], index) => {
                                             // Try to get person name
                                             let personName = personId;
-                                            if (personId === blueprint.fiscal_entity?.taxpayer?.id) {
-                                              personName = blueprint.fiscal_entity.taxpayer.name || 'Belastingplichtige';
-                                            } else if (personId === blueprint.fiscal_entity?.fiscal_partner?.id) {
-                                              personName = blueprint.fiscal_entity.fiscal_partner.name || 'Fiscaal Partner';
+                                            const tpId = blueprint.fiscal_entity?.taxpayer?.id;
+                                            const fpId = blueprint.fiscal_entity?.fiscal_partner?.id;
+
+                                            if (personId === tpId || personId === 'tp_01') {
+                                              personName = blueprint.fiscal_entity?.taxpayer?.name || 'Belastingplichtige';
+                                            } else if (personId === fpId || personId === 'fp_01') {
+                                              personName = blueprint.fiscal_entity?.fiscal_partner?.name || 'Fiscaal Partner';
+                                            } else if (personId.startsWith('tp_') || personId.startsWith('fp_')) {
+                                              // Fallback: use position (first = taxpayer, second = partner)
+                                              if (index === 0) {
+                                                personName = blueprint.fiscal_entity?.taxpayer?.name || 'Belastingplichtige';
+                                              } else {
+                                                personName = blueprint.fiscal_entity?.fiscal_partner?.name || 'Fiscaal Partner';
+                                              }
                                             }
 
                                             const allocation = personData.allocation_percentage;
@@ -2272,14 +2365,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         {(() => {
                           const bankSavings = blueprint.assets?.bank_savings || [];
 
-                          const matchesPerson = (asset: { owner_id?: string }) => {
-                            if (!selectedPersonId) return true;
-                            if (asset.owner_id === 'joint') return true;
-                            return asset.owner_id === selectedPersonId;
-                          };
-
                           // Filter by year AND person - show accounts that have data for this year
-                          const yearBankSavings = bankSavings.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+                          const yearBankSavings = bankSavings.filter(a => a.yearly_data?.[selectedYear] && matchesSelectedPerson(a.owner_id));
 
                           let selectedPersonName = 'dit huishouden';
                           if (selectedPersonId) {
@@ -2433,14 +2520,8 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                         {(() => {
                           const investments = blueprint.assets?.investments || [];
 
-                          const matchesPerson = (asset: { owner_id?: string }) => {
-                            if (!selectedPersonId) return true;
-                            if (asset.owner_id === 'joint') return true;
-                            return asset.owner_id === selectedPersonId;
-                          };
-
                           // Filter by year AND person
-                          const yearInvestments = investments.filter(a => a.yearly_data?.[selectedYear] && matchesPerson(a));
+                          const yearInvestments = investments.filter(a => a.yearly_data?.[selectedYear] && matchesSelectedPerson(a.owner_id));
 
                           let selectedPersonName = 'dit huishouden';
                           if (selectedPersonId) {
@@ -2680,10 +2761,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                               {/* Other Assets section */}
                               {yearOtherAssets.length > 0 && (() => {
                                 let totalValue = 0;
+                                let totalInterestReceived = 0;
                                 yearOtherAssets.forEach(asset => {
                                   const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
                                   const amount = getValueJan1(yearData);
                                   if (typeof amount === 'number') totalValue += amount;
+                                  // Sum up interest received for loans/claims
+                                  const interestReceived = getFieldValue(yearData?.interest_received);
+                                  if (typeof interestReceived === 'number') totalInterestReceived += interestReceived;
                                 });
 
                                 const typeLabels: Record<string, string> = {
@@ -2698,6 +2783,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                   crypto: 'Cryptovaluta',
                                   other: 'Overig',
                                 };
+
+                                // Check if any assets are loans/claims (need extra columns)
+                                const hasLoans = yearOtherAssets.some(a =>
+                                  a.type === 'loaned_money' || a.type === 'claims'
+                                );
 
                                 return (
                                   <Card>
@@ -2720,17 +2810,39 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                             <th className="text-left px-4 py-2 font-medium">Type</th>
                                             <th className="text-left px-4 py-2 font-medium">Land</th>
                                             <th className="text-right px-4 py-2 font-medium">1 jan {selectedYear}</th>
+                                            {hasLoans && (
+                                              <>
+                                                <th className="text-right px-4 py-2 font-medium">Rente %</th>
+                                                <th className="text-right px-4 py-2 font-medium">Ontvangen rente</th>
+                                              </>
+                                            )}
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y">
                                           {yearOtherAssets.map((asset, idx) => {
                                             const yearData = asset.yearly_data?.[selectedYear] as YearlyDataLegacy | undefined;
                                             const amount = getValueJan1(yearData);
+                                            const isLoan = asset.type === 'loaned_money' || asset.type === 'claims';
+
+                                            // Get loan-specific fields (cast to any for new fields not yet in type)
+                                            const assetAny = asset as any;
+                                            const agreedRate = assetAny.agreed_interest_rate;
+                                            const interestReceived = getFieldValue(yearData?.interest_received);
+                                            const borrowerName = assetAny.borrower_name;
+                                            const isFamilyLoan = assetAny.is_family_loan;
 
                                             return (
                                               <tr key={asset.id || idx} className="hover:bg-muted/30">
                                                 <td className="px-4 py-3">
-                                                  <span className="font-medium">{asset.description}</span>
+                                                  <div>
+                                                    <span className="font-medium">{asset.description}</span>
+                                                    {borrowerName && (
+                                                      <div className="text-xs text-muted-foreground">
+                                                        Aan: {borrowerName}
+                                                        {isFamilyLoan && <span className="ml-1 text-blue-500">(familie)</span>}
+                                                      </div>
+                                                    )}
+                                                  </div>
                                                 </td>
                                                 <td className="px-4 py-3">
                                                   <Badge variant="outline" className="text-xs">{typeLabels[asset.type] || asset.type}</Badge>
@@ -2739,6 +2851,24 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                                 <td className="px-4 py-3 text-right font-semibold">
                                                   {amount != null ? formatCurrency(amount) : '—'}
                                                 </td>
+                                                {hasLoans && (
+                                                  <>
+                                                    <td className="px-4 py-3 text-right">
+                                                      {isLoan && agreedRate != null ? (
+                                                        <span className="text-blue-600 font-medium">{agreedRate}%</span>
+                                                      ) : isLoan ? (
+                                                        <span className="text-orange-500 text-xs">onbekend</span>
+                                                      ) : '—'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                      {isLoan && interestReceived != null ? (
+                                                        <span className="text-green-600 font-medium">{formatCurrency(interestReceived)}</span>
+                                                      ) : isLoan ? (
+                                                        <span className="text-orange-500 text-xs">onbekend</span>
+                                                      ) : '—'}
+                                                    </td>
+                                                  </>
+                                                )}
                                               </tr>
                                             );
                                           })}
@@ -2747,6 +2877,14 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                                           <tr className="font-semibold">
                                             <td className="px-4 py-2" colSpan={3}>Subtotaal</td>
                                             <td className="px-4 py-2 text-right">{formatCurrency(totalValue)}</td>
+                                            {hasLoans && (
+                                              <>
+                                                <td className="px-4 py-2"></td>
+                                                <td className="px-4 py-2 text-right text-green-600">
+                                                  {totalInterestReceived > 0 ? formatCurrency(totalInterestReceived) : '—'}
+                                                </td>
+                                              </>
+                                            )}
                                           </tr>
                                         </tfoot>
                                       </table>
@@ -2882,6 +3020,7 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                 )}
 
               </CardContent>
+              )}
             </Card>
           )}
 

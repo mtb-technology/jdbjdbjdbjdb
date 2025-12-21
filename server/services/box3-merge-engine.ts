@@ -787,6 +787,9 @@ export class Box3MergeEngine {
     );
 
     if (!existing) {
+      // Document is readable if it was classified (not 'overig')
+      const isReadable = extraction.detected_type !== 'overig';
+
       this.blueprint.source_documents_registry.push({
         file_id: extraction.document_id,
         filename: extraction.document_id, // Will be updated by caller
@@ -795,8 +798,8 @@ export class Box3MergeEngine {
           ? parseInt(extraction.detected_tax_years[0], 10)
           : null,
         for_person: extraction.detected_person,
-        is_readable: true,
-        used_for_extraction: true,
+        is_readable: isReadable,
+        used_for_extraction: isReadable,
       });
     }
   }
