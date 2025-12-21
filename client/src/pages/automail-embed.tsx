@@ -338,7 +338,6 @@ export function AutomailEmbedByConversation() {
       return result.success ? result.data : result;
     },
     enabled: !!conversationId,
-    refetchInterval: 10000, // Poll every 10s to catch updates
     retry: (failureCount, error) => {
       // Don't retry on unauthorized errors
       if (error instanceof Error && error.message === "UNAUTHORIZED") {
@@ -388,7 +387,6 @@ export function AutomailEmbedByReportId() {
       return result.success ? result.data : result;
     },
     enabled: !!reportId,
-    refetchInterval: 10000, // Poll every 10s to catch updates
     retry: (failureCount, error) => {
       // Don't retry on unauthorized errors
       if (error instanceof Error && error.message === "UNAUTHORIZED") {
