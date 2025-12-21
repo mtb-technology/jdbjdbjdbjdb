@@ -2,7 +2,7 @@
  * PDF to Images Converter
  *
  * Converts PDF pages to images for multimodal AI processing.
- * Uses pdf-poppler which requires poppler-utils to be installed on the system.
+ * Uses pdftoppm from poppler-utils (system package, not npm).
  *
  * On macOS: brew install poppler
  * On Ubuntu: apt-get install poppler-utils
@@ -12,10 +12,51 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { promisify } from 'util';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { logger } from './logger';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+// Dynamic import for pdfjs-dist (ESM compatibility)
+let pdfjsLib: any = null;
+
+async function getPdfjs() {
+  if (!pdfjsLib) {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    pdfjsLib = pdfjs;
+    if (pdfjsLib.GlobalWorkerOptions) {
+      try {
+        const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
+      } catch {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
+      }
+    }
+  }
+  return pdfjsLib;
+}
+
+/**
+ * Get page count from a PDF buffer using pdfjs-dist
+ * This avoids shelling out to pdfinfo which has security implications
+ */
+async function getPdfPageCount(pdfBuffer: Buffer): Promise<number> {
+  const pdfjs = await getPdfjs();
+  const data = new Uint8Array(pdfBuffer);
+
+  const loadingTask = pdfjs.getDocument({
+    data,
+    useSystemFonts: true,
+    disableFontFace: true,
+    standardFontDataUrl: undefined,
+    isEvalSupported: false,
+    // @ts-ignore - disableWorker exists in pdfjs
+    disableWorker: true,
+  });
+
+  const pdf = await loadingTask.promise;
+  return pdf.numPages;
+}
 
 export interface PageImage {
   pageNumber: number;
@@ -72,19 +113,12 @@ export async function convertPdfToImages(
     // Write PDF to temp file
     await fs.promises.writeFile(pdfPath, pdfBuffer);
 
-    // Build pdftoppm command
+    // Build pdftoppm command args
     const formatFlag = opts.format === 'png' ? '-png' : '-jpeg';
     const extension = opts.format === 'png' ? 'png' : 'jpg';
 
-    // First, get page count using pdfinfo
-    let pageCount: number;
-    try {
-      const { stdout } = await execAsync(`pdfinfo "${pdfPath}" | grep Pages | awk '{print $2}'`);
-      pageCount = parseInt(stdout.trim(), 10) || 0;
-    } catch {
-      // Fallback: try to convert and count results
-      pageCount = 0;
-    }
+    // Get page count using pdfjs-dist (safer than shelling out to pdfinfo)
+    const pageCount = await getPdfPageCount(pdfBuffer);
 
     if (pageCount === 0) {
       throw new Error('Could not determine PDF page count');
@@ -105,12 +139,12 @@ export async function convertPdfToImages(
       pagesToConvert = Array.from({ length: maxPages }, (_, i) => i + 1);
     }
 
-    // Convert pages using pdftoppm
+    // Convert pages using pdftoppm via execFile (avoids shell injection risks)
     // pdftoppm -jpeg -r 150 input.pdf output-prefix
     // This creates output-prefix-01.jpg, output-prefix-02.jpg, etc.
-    const cmd = `pdftoppm ${formatFlag} -r ${opts.dpi} "${pdfPath}" "${outputPrefix}"`;
+    const args = [formatFlag, '-r', String(opts.dpi), pdfPath, outputPrefix];
 
-    await execAsync(cmd, { maxBuffer: 50 * 1024 * 1024 }); // 50MB buffer for large PDFs
+    await execFileAsync('pdftoppm', args, { maxBuffer: 50 * 1024 * 1024 }); // 50MB buffer for large PDFs
 
     // Read generated images
     const images: PageImage[] = [];
@@ -200,7 +234,7 @@ export async function convertPdfToImagesFromBase64(
  */
 export async function isPopperInstalled(): Promise<boolean> {
   try {
-    await execAsync('which pdftoppm');
+    await execFileAsync('which', ['pdftoppm']);
     return true;
   } catch {
     return false;

@@ -68,6 +68,51 @@ export const MANIFEST_EXTRACTION_PROMPT = `Je bent een expert in Nederlandse bel
 ## OPDRACHT
 Extraheer de VOLLEDIGE Box 3 vermogensopstelling uit de aangifte IB en/of definitieve aanslag.
 
+## EXTRACTIE VOLGORDE - ANCHOR-BASED (KRITIEK!)
+
+Je MOET deze volgorde aanhouden voor nauwkeurige extractie:
+
+### STAP 1: VIND DE ANCHORS (EERST!)
+
+Zoek de pagina "Overzicht Belasting en Premies" of "Overzicht box 3" (meestal pagina 8-15).
+Dit is de HEILIGE GRAAL met de officiele totalen van de Belastingdienst.
+
+Extraheer hier de ANCHOR TOTALEN:
+- "Bankrekeningen in box 3": €... → anchor_bank_savings
+- "Beleggingen in box 3": €... → anchor_investments
+- "Overige bezittingen": €... → anchor_other_assets
+- "Schulden in box 3": €... → anchor_debts
+- "Grondslag sparen en beleggen": €...
+
+Deze anchors zijn 100% correct - de Belastingdienst telt niet fout.
+
+### STAP 2: EXTRAHEER INDIVIDUELE ITEMS
+
+Ga nu door de aangifte en extraheer elk individueel item.
+Houd per categorie een lopend totaal bij.
+
+### STAP 3: SELF-VALIDATION (VERPLICHT!)
+
+Na extractie, vergelijk je totalen met de anchors:
+- SUM(bank_savings items) == anchor_bank_savings?
+- SUM(investment items excl. groen) == anchor_investments?
+- SUM(other_assets items) == anchor_other_assets?
+- SUM(debt items met is_eigen_woning_schuld=false) == anchor_debts?
+
+### STAP 4: SELF-CORRECTION (BIJ MISMATCH)
+
+Als een som NIET klopt met de anchor:
+1. Bereken het verschil (bijv. anchor €50.000, gevonden €48.000 → €2.000 ontbreekt)
+2. Ga TERUG naar de aangifte en zoek het ontbrekende item
+3. Typische oorzaken van missers:
+   - Item over het hoofd gezien
+   - Item verkeerd geclassificeerd (schuld als bezitting of vice versa)
+   - Dubbele entries bij broker (cash + effecten apart)
+   - Groene beleggingen vergeten
+4. Documenteer elke correctie in "self_correction_log"
+
+BELANGRIJK: Lever GEEN output als de totalen niet kloppen, tenzij je echt alles hebt geprobeerd.
+
 ## KRITIEKE REGEL: AANGIFTE IS GROUND TRUTH
 
 De aangifte bepaalt ALLES:
@@ -92,15 +137,15 @@ Dit is het bezittingen-deel met subsecties:
   - "Uitgeleend geld (vorderingen)" → other_assets met asset_type: "loaned_money"
   - "Overige bezittingen" → other_assets met andere asset_type
 
-### SECTIE 2: "Hypotheken en andere schulden" (= SCHULDEN!)
-Dit is een COMPLEET APARTE sectie! Dit zijn SCHULDEN, GEEN bezittingen!
-- "Schuld eigen woning" → NEGEER (Box 1, niet Box 3)
-- Alle andere schulden → debt_items
+### SECTIE 2: "Hypotheken en andere schulden"
+Dit is een aparte sectie voor schulden, niet bezittingen.
+- Alle schulden → debt_items
+- Bij elke schuld: check "Gaat het om een schuld voor uw ... woning (hoofdverblijf)?"
+- Antwoord "Ja" → is_eigen_woning_schuld: true (Box 1)
+- Antwoord "Nee" → is_eigen_woning_schuld: false (Box 3)
 
-BELANGRIJK: Dezelfde partij kan zowel beleggingen als schulden hebben!
-Als een fondsnaam of bedrijfsnaam onder SCHULDEN staat → debt_items
-Als dezelfde naam onder BELEGGINGEN staat → investments
-De POSITIE in de aangifte bepaalt de classificatie, niet de naam.
+Dezelfde partij kan zowel beleggingen als schulden hebben.
+De positie in de aangifte (onder bezittingen vs schulden) bepaalt de classificatie.
 
 ## WAT JE MOET EXTRAHEREN
 
@@ -166,14 +211,17 @@ Voorbeeld: "credit linked beheer groenwoningen fonds €39.550" met "Is het een 
 - Niet verwarren met schulden (geld dat JIJ hebt geleend VAN anderen)
 
 ### Eigen woning schulden (Box 1) vs Box 3 schulden
-In de sectie "Hypotheken en andere schulden" staat bij elke schuld:
-- "Gaat het om een schuld voor uw huidige, toekomstige of vroegere woning (hoofdverblijf)? Ja/Nee"
 
-Als het antwoord "Ja" is → is_eigen_woning_schuld: true → dit is een Box 1 schuld
-Als het antwoord "Nee" is → is_eigen_woning_schuld: false → dit is een Box 3 schuld
+Bij elke schuld in "Hypotheken en andere schulden" staat de vraag:
+"Gaat het om een schuld voor uw huidige, toekomstige of vroegere woning (hoofdverblijf)?"
 
-Beide moeten in debt_items, maar met de juiste is_eigen_woning_schuld flag.
-De Box 3 berekening gebruikt alleen schulden waar is_eigen_woning_schuld: false.
+Het antwoord ("Ja" of "Nee") staat direct onder deze vraag.
+
+- "Ja" → is_eigen_woning_schuld: true (Box 1 schuld, niet Box 3)
+- "Nee" → is_eigen_woning_schuld: false (Box 3 schuld)
+
+Extraheer beide typen naar debt_items met de correcte flag.
+Box 3 berekeningen gebruiken alleen schulden met is_eigen_woning_schuld: false.
 
 ### Peildatum: altijd 1 januari
 Box 3 gebruikt ALTIJD de waarde per 1 JANUARI van het belastingjaar.
@@ -207,6 +255,22 @@ Dit is onderdeel van de belegging zelf. Extraheer het netto bedrag zoals in de a
 {
   "schema_version": "3.0",
   "tax_years": ["2022"],
+  "anchor_totals": {
+    "source_page": "Overzicht Belasting en Premies (pagina 12)",
+    "bank_savings": 50000,
+    "investments": 100000,
+    "other_assets": 60000,
+    "debts": 25000,
+    "green_investments": 40000
+  },
+  "self_correction_log": [
+    {
+      "category": "bank_savings",
+      "issue": "Initieel €48.000 gevonden, anchor was €50.000",
+      "resolution": "Credit Linked Beheer deposito €2.000 gemist op pagina 5",
+      "corrected": true
+    }
+  ],
   "fiscal_entity": {
     "taxpayer": {
       "id": "tp_01",
@@ -323,14 +387,28 @@ Dit is onderdeel van de belegging zelf. Extraheer het netto bedrag zoals in de a
 }
 \`\`\`
 
-## VALIDATIE
+## VALIDATIE (ANCHOR-BASED)
 
-Na extractie, controleer:
-1. Som bank_savings items == category_totals.bank_savings
-2. Som investments items (EXCL. groene) == category_totals.investments
-3. Som investments items met is_green_investment == green_investments.total_value
-4. Som other_assets items == category_totals.other_assets
-5. Som debt_items == category_totals.debts
+Na extractie, valideer ALTIJD tegen de anchor_totals:
+
+### Validatie checks:
+1. SUM(bank_savings items) == anchor_totals.bank_savings
+2. SUM(investments items EXCL. groene) == anchor_totals.investments
+3. SUM(investments items met is_green_investment=true) == anchor_totals.green_investments
+4. SUM(other_assets items) == anchor_totals.other_assets
+5. SUM(debt_items met is_eigen_woning_schuld=false) == anchor_totals.debts
+
+### Bij mismatch:
+- STOP en ga terug naar STAP 4 (Self-Correction)
+- Zoek het ontbrekende bedrag
+- Documenteer in self_correction_log
+- Herhaal tot alle sommen kloppen
+
+### category_totals moet overeenkomen met anchor_totals:
+- category_totals.bank_savings = anchor_totals.bank_savings
+- category_totals.investments = anchor_totals.investments (EXCL. groen!)
+- category_totals.other_assets = anchor_totals.other_assets
+- category_totals.debts = anchor_totals.debts
 
 BELANGRIJK: category_totals.investments uit de aangifte bevat GEEN groene beleggingen!
 Die staan apart in de aangifte en moeten in green_investments.total_value.
@@ -503,9 +581,13 @@ GEEF ALLEEN VALIDE JSON TERUG.`;
 
 /**
  * Build the manifest extraction prompt with document content
+ *
+ * @param documentContents - Array of document texts
+ * @param hasVision - If true, page images are attached for multimodal processing
  */
 export function buildManifestExtractionPrompt(
-  documentContents: Array<{ doc_id: string; doc_type: string; content: string }>
+  documentContents: Array<{ doc_id: string; doc_type: string; content: string }>,
+  hasVision: boolean = false
 ): string {
   const aangifteDocuments = documentContents.filter(
     (d) => d.doc_type === 'aangifte_ib' || d.doc_type === 'definitieve_aanslag' || d.doc_type === 'voorlopige_aanslag'
@@ -515,17 +597,42 @@ export function buildManifestExtractionPrompt(
     throw new Error('Geen aangifte of aanslag document gevonden. Manifest extractie vereist een aangifte.');
   }
 
+  // Build multimodal instruction if images are attached
+  const multimodalInstruction = hasVision
+    ? `## MULTIMODAL VERWERKING
+
+Je ontvangt de aangifte op TWEE manieren:
+1. **AFBEELDINGEN** van elke pagina (als bijlage) - GEBRUIK DEZE PRIMAIR voor:
+   - Tabelstructuur herkennen (kolommen: Aangever vs Partner)
+   - Visuele layout begrijpen
+   - Exacte bedragen aflezen
+
+2. **TEKST** (hieronder) - Als aanvulling voor:
+   - Doorzoekbaarheid
+   - Backup als afbeelding onduidelijk is
+
+BELANGRIJK BIJ FISCALE PARTNERS:
+- Kijk GOED naar de kolomkoppen in tabellen
+- "Aangever" kolom = owner_id: "tp_01"
+- "Partner" kolom = owner_id: "fp_01"
+- Gezamenlijk = owner_id: "joint"
+
+De visuele layout is KRITIEK - vertrouw op wat je ZIET in de afbeeldingen.
+
+`
+    : '';
+
   const documentText = aangifteDocuments
     .map((d) => `=== Document: ${d.doc_id} (${d.doc_type}) ===\n${d.content}`)
     .join('\n\n');
 
   return `${MANIFEST_EXTRACTION_PROMPT}
 
-## TE VERWERKEN DOCUMENTEN:
+${multimodalInstruction}## TE VERWERKEN DOCUMENTEN:
 
 ${documentText}
 
-Extraheer het volledige Box 3 manifest uit bovenstaande aangifte(n).`;
+Extraheer het volledige Box 3 manifest uit ${hasVision ? 'de afbeeldingen EN' : ''} bovenstaande aangifte(n).`;
 }
 
 /**
