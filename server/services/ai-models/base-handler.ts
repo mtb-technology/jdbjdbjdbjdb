@@ -50,6 +50,8 @@ export interface AIModelParameters {
   responseFormat?: 'json' | 'text';
   // Report language for Stage 3 generation
   reportLanguage?: "nl" | "en";
+  // System instruction for Google AI models (native support for system prompts)
+  systemInstruction?: string;
 }
 
 export interface CircuitBreakerState {

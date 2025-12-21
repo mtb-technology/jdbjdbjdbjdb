@@ -31,7 +31,7 @@ export class GoogleAIHandler extends BaseAIHandler {
   async callInternal(
     prompt: string,
     config: AiConfig,
-    options?: AIModelParameters & { signal?: AbortSignal; visionAttachments?: Array<{ mimeType: string; data: string; filename: string }>; responseFormat?: 'json' | 'text' }
+    options?: AIModelParameters & { signal?: AbortSignal; visionAttachments?: Array<{ mimeType: string; data: string; filename: string }>; responseFormat?: 'json' | 'text'; systemInstruction?: string }
   ): Promise<AIModelResponse> {
     const startTime = Date.now();
     const jobId = options?.jobId;
@@ -138,6 +138,12 @@ export class GoogleAIHandler extends BaseAIHandler {
         contents: contentParts,
         config: generationConfig
       };
+
+      // Add system instruction if provided
+      if (options?.systemInstruction) {
+        requestConfig.config.systemInstruction = options.systemInstruction;
+        logger.debug(jobId || 'google-handler', 'System instruction added', { length: options.systemInstruction.length });
+      }
 
       // Add tools if grounding is enabled
       if (tools) {

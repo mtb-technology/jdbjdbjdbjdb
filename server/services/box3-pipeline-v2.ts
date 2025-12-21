@@ -21,6 +21,7 @@ import {
   buildManifestExtractionPrompt,
   buildEnrichmentPrompt,
   ANOMALY_DETECTION_PROMPT_V2,
+  BOX3_SYSTEM_PROMPT,
 } from './box3-prompts-v2';
 import type {
   Box3Manifest,
@@ -416,7 +417,9 @@ export class Box3PipelineV2 {
   // ===========================================================================
 
   private async callModel(prompt: string): Promise<string> {
-    const result = await this.factory.callModel(this.MODEL_CONFIG, prompt);
+    const result = await this.factory.callModel(this.MODEL_CONFIG, prompt, {
+      systemInstruction: BOX3_SYSTEM_PROMPT,
+    });
     return result.content;
   }
 
