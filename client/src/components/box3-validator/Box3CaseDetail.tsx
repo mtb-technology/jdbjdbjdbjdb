@@ -565,8 +565,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
     });
 
     // Check for accounts with estimated interest (no actual interest data in yearly_data)
+    // Use asset.id for deduplication to avoid counting different accounts at the same bank as duplicates
     const savingsAccounts = blueprint.assets?.bank_savings || [];
-    const accountsWithEstimatedInterest: Array<{ account: string; bank: string }> = [];
+    const assetsWithEstimatedInterestIds = new Set<string>();
+    const accountsWithEstimatedInterest: Array<{ id: string; account: string; bank: string }> = [];
     years.forEach(year => {
       savingsAccounts.forEach(asset => {
         const yearData = asset.yearly_data?.[year];
@@ -577,11 +579,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             ? (yearData.interest_received as any)?.amount
             : null;
         if (interestValue == null) {
-          const existing = accountsWithEstimatedInterest.find(
-            a => a.account === (asset.account_masked || asset.description) && a.bank === (asset.bank_name || '')
-          );
-          if (!existing) {
+          // Deduplicate by asset ID to avoid counting same account multiple times across years
+          if (!assetsWithEstimatedInterestIds.has(asset.id)) {
+            assetsWithEstimatedInterestIds.add(asset.id);
             accountsWithEstimatedInterest.push({
+              id: asset.id,
               account: asset.account_masked || asset.description || 'Onbekende rekening',
               bank: asset.bank_name || 'Onbekende bank',
             });
@@ -1721,8 +1723,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
             });
 
             // Check for accounts with estimated interest (no actual interest data)
+            // Use asset.id for deduplication to avoid counting different accounts at the same bank as duplicates
             const savingsAccounts = blueprint.assets?.bank_savings || [];
-            const accountsWithEstimatedInterest: Array<{ account: string; bank: string }> = [];
+            const assetsWithEstimatedInterestIds = new Set<string>();
+            const accountsWithEstimatedInterest: Array<{ id: string; account: string; bank: string }> = [];
             years.forEach(year => {
               savingsAccounts.forEach(asset => {
                 const yearData = asset.yearly_data?.[year];
@@ -1733,11 +1737,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                     ? (yearData.interest_received as any)?.amount
                     : null;
                 if (interestValue == null) {
-                  const existing = accountsWithEstimatedInterest.find(
-                    a => a.account === (asset.account_masked || asset.description) && a.bank === (asset.bank_name || '')
-                  );
-                  if (!existing) {
+                  // Deduplicate by asset ID to avoid counting same account multiple times across years
+                  if (!assetsWithEstimatedInterestIds.has(asset.id)) {
+                    assetsWithEstimatedInterestIds.add(asset.id);
                     accountsWithEstimatedInterest.push({
+                      id: asset.id,
                       account: asset.account_masked || asset.description || 'Onbekende rekening',
                       bank: asset.bank_name || 'Onbekende bank',
                     });
@@ -1909,8 +1913,10 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                   {/* Next Actions - inline when we have estimated interest */}
                   {(() => {
                     // Check for accounts with estimated interest (no actual interest data)
+                    // Use asset.id for deduplication to avoid counting different accounts at the same bank as duplicates
                     const savingsAccounts = blueprint.assets?.bank_savings || [];
-                    const accountsWithEstimatedInterest: Array<{ account: string; bank: string; year: string }> = [];
+                    const assetsWithEstimatedInterestIds = new Set<string>();
+                    const accountsWithEstimatedInterest: Array<{ id: string; account: string; bank: string; year: string }> = [];
 
                     years.forEach(year => {
                       savingsAccounts.forEach(asset => {
@@ -1922,11 +1928,11 @@ export const Box3CaseDetail = memo(function Box3CaseDetail({
                             ? yearData.interest_received?.amount
                             : null;
                         if (interestValue == null) {
-                          const existing = accountsWithEstimatedInterest.find(
-                            a => a.account === (asset.account_masked || asset.description) && a.bank === (asset.bank_name || '')
-                          );
-                          if (!existing) {
+                          // Deduplicate by asset ID to avoid counting same account multiple times across years
+                          if (!assetsWithEstimatedInterestIds.has(asset.id)) {
+                            assetsWithEstimatedInterestIds.add(asset.id);
                             accountsWithEstimatedInterest.push({
+                              id: asset.id,
                               account: asset.account_masked || asset.description || 'Onbekende rekening',
                               bank: asset.bank_name || 'Onbekende bank',
                               year,
