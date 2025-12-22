@@ -22,6 +22,8 @@ export interface WorkflowState {
   copiedPrompt: boolean;
   stageStartTime: Date | null;
   stagePrompts: Record<string, string>;
+  // Active job tracking - set immediately when job is created to avoid race conditions
+  activeJobId: string | null;
 }
 
 export type WorkflowAction =
@@ -49,7 +51,8 @@ export type WorkflowAction =
   | { type: "CLEAR_STAGE_PROMPTS" }
   | { type: "CLEAR_STAGE_RESULT"; stage: string; cascadeDeleted?: string[] }
   | { type: "RESET_WORKFLOW" }
-  | { type: "LOAD_EXISTING_REPORT"; report: Report };
+  | { type: "LOAD_EXISTING_REPORT"; report: Report }
+  | { type: "SET_ACTIVE_JOB_ID"; jobId: string | null };
 
 // Memory-optimized configuration
 // ✅ FIX #5: Increased limits to support step-back functionality
@@ -79,6 +82,7 @@ const initialState: WorkflowState = {
   copiedPrompt: false,
   stageStartTime: null,
   stagePrompts: {},
+  activeJobId: null,
 };
 
 function workflowReducer(state: WorkflowState, action: WorkflowAction): WorkflowState {
@@ -285,6 +289,9 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         ...state,
         stagePrompts: {}
       };
+
+    case "SET_ACTIVE_JOB_ID":
+      return { ...state, activeJobId: action.jobId };
 
     case "CLEAR_STAGE_RESULT": {
       // Clear a specific stage result and optionally cascade-deleted stages

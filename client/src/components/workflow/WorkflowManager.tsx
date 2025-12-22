@@ -318,6 +318,10 @@ function WorkflowManagerContent({
       // ✅ Skip normal completion for job-based stages - handled by useJobPolling in WorkflowView
       if (data?.isJobBased) {
         console.log(`📋 [${variables.stage}] Job-based execution started - completion handled by job polling`);
+        // Store jobId in context immediately so WorkflowView can start polling without waiting for useActiveJobs
+        if (data.jobId) {
+          dispatch({ type: "SET_ACTIVE_JOB_ID", jobId: data.jobId });
+        }
         // Don't clear processing state - job is still running in background
         // WorkflowView's ActiveJobsBanner and useJobPolling handle the completion
         return;

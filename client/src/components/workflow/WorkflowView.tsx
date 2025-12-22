@@ -70,17 +70,24 @@ export const WorkflowView = memo(function WorkflowView({
   const { activeJobs, refetch: refetchActiveJobs } = useActiveJobs(state.currentReport?.id || null);
   const activeJob = activeJobs[0]; // Get first active job if any
 
+  // Use jobId from context (set immediately on job creation) OR from useActiveJobs polling
+  // This fixes the race condition where job completes before useActiveJobs finds it
+  const contextJobId = state.activeJobId;
+  const polledJobId = activeJob?.id || null;
+
+  // Prefer context jobId (immediate) over polled jobId (delayed)
+  const effectiveJobId = contextJobId || polledJobId;
+
   // Keep track of the last known job ID to continue polling even after it leaves activeJobs
-  // This fixes the race condition where job completes but useActiveJobs polls first
   const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
 
-  // Update tracked job when a new active job appears
+  // Update tracked job when a new job appears (from context or polling)
   useEffect(() => {
-    if (activeJob?.id && activeJob.id !== trackedJobId) {
-      console.log(`📋 [WorkflowView] Tracking new job: ${activeJob.id}`);
-      setTrackedJobId(activeJob.id);
+    if (effectiveJobId && effectiveJobId !== trackedJobId) {
+      console.log(`📋 [WorkflowView] Tracking job: ${effectiveJobId} (source: ${contextJobId ? 'context' : 'polling'})`);
+      setTrackedJobId(effectiveJobId);
     }
-  }, [activeJob?.id, trackedJobId]);
+  }, [effectiveJobId, trackedJobId, contextJobId]);
 
   // Handle job completion - clear processing state and refresh data
   const handleJobComplete = useCallback((job: any) => {
@@ -108,10 +115,26 @@ export const WorkflowView = memo(function WorkflowView({
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.reports.all() });
     }
 
-    // Clear tracked job and refetch active jobs
+    // Clear tracked job and context job ID, then refetch active jobs
     setTrackedJobId(null);
+    dispatch({ type: "SET_ACTIVE_JOB_ID", jobId: null });
     refetchActiveJobs();
   }, [dispatch, state.currentReport?.id, queryClient, refetchActiveJobs]);
+
+  // Handle job failure - clear state and processing indicators
+  const handleJobError = useCallback((job: any) => {
+    console.log(`❌ [WorkflowView] Job failed:`, job.id, job.error);
+
+    const stageId = job.progress?.currentStage || job.progress?.stages?.[0]?.stageId;
+    if (stageId) {
+      dispatch({ type: "SET_STAGE_PROCESSING", stage: stageId, isProcessing: false });
+    }
+
+    // Clear tracked job and context job ID
+    setTrackedJobId(null);
+    dispatch({ type: "SET_ACTIVE_JOB_ID", jobId: null });
+    refetchActiveJobs();
+  }, [dispatch, refetchActiveJobs]);
 
   // Use tracked job ID for polling - continues even after job leaves activeJobs
   const { progress: jobProgress } = useJobPolling({
@@ -119,6 +142,7 @@ export const WorkflowView = memo(function WorkflowView({
     reportId: state.currentReport?.id || "",
     enabled: !!trackedJobId,
     onComplete: handleJobComplete,
+    onError: handleJobError,
   });
 
   // Custom hooks for handlers

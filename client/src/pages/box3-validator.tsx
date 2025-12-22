@@ -156,26 +156,33 @@ const Box3Validator = memo(function Box3Validator() {
     }
   }, [selectedDossier?.dossier.id, checkForActiveJob]);
 
-  // Track previous activeJobId to detect job completion
+  // Track previous job state to detect transitions
   const prevActiveJobIdRef = useRef<string | null>(null);
+  const prevJobStatusRef = useRef<string | null>(null);
 
-  // Reload dossier when job completes (transitions from having a job to no job)
-  // OR when upload completes and job starts (transitions from null to having a job)
+  // Reload dossier when job completes or upload finishes
   useEffect(() => {
-    const hadJob = prevActiveJobIdRef.current !== null;
-    const hasJobNow = activeJobId !== null;
-    const hasNoJobNow = activeJobId === null;
+    const prevJobId = prevActiveJobIdRef.current;
+    const prevStatus = prevJobStatusRef.current;
+    const currentStatus = activeJob?.status || null;
 
-    // Update ref for next render
+    // Update refs for next render
     prevActiveJobIdRef.current = activeJobId;
+    prevJobStatusRef.current = currentStatus;
 
-    // Reload if:
-    // 1. We HAD a job and now we don't (job just completed)
-    // 2. We had NO job and now we DO (upload just completed, documents are now in DB)
-    const jobCompleted = hadJob && hasNoJobNow && !isValidating;
-    const uploadCompleted = !hadJob && hasJobNow; // null -> jobId means upload finished
+    // Case 1: Job just completed (status changed to completed/failed)
+    const jobJustCompleted =
+      activeJob &&
+      (currentStatus === 'completed' || currentStatus === 'failed') &&
+      prevStatus !== currentStatus;
 
-    if ((jobCompleted || uploadCompleted) && selectedDossier?.dossier.id) {
+    // Case 2: Upload completed and job started (null -> jobId with processing status)
+    const uploadCompleted =
+      prevJobId === null &&
+      activeJobId !== null &&
+      currentStatus === 'processing';
+
+    if ((jobJustCompleted || uploadCompleted) && selectedDossier?.dossier.id) {
       const reloadDossierData = async () => {
         const updatedDossier = await loadDossier(selectedDossier.dossier.id);
         if (updatedDossier) {
@@ -185,7 +192,7 @@ const Box3Validator = memo(function Box3Validator() {
       };
       reloadDossierData();
     }
-  }, [activeJobId, selectedDossier?.dossier.id, isValidating, loadDossier, loadFromDossier]);
+  }, [activeJobId, activeJob, selectedDossier?.dossier.id, loadDossier, loadFromDossier]);
 
   // Revalidate handler for detail view (now uses job-based flow)
   const handleRevalidate = useCallback(async () => {
