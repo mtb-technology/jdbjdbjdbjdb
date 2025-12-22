@@ -137,8 +137,49 @@ export function registerStageRoutes(
       }
 
       // For Stage 1a: Include attachment extracted text AND vision attachments
+      // For Stage 2 & 3: Include casuïstiek (case law, professional literature)
       let dossierWithAttachments = report.dossierData as DossierData;
       let visionAttachments: Array<{ mimeType: string; data: string; filename: string }> = [];
+
+      // Stage 2 & 3: Inject casuïstiek into dossier context
+      if (stage === '2_complexiteitscheck' || stage === '3_generatie') {
+        const casuistiek = (dossierWithAttachments as any).casuistiek;
+        if (casuistiek) {
+          let casuistiekContext = '';
+
+          // Add casuistiek text references
+          if (casuistiek.tekst && casuistiek.tekst.trim()) {
+            casuistiekContext += `\n\n=== CASUÏSTIEK REFERENTIES ===\n${casuistiek.tekst}`;
+          }
+
+          // Add casuistiek bijlages (PDF/TXT content)
+          if (casuistiek.bijlageIds && casuistiek.bijlageIds.length > 0) {
+            const casuistiekAttachments = await storage.getAttachmentsForReport(id);
+            const casuistiekFiles = casuistiekAttachments.filter(
+              att => casuistiek.bijlageIds.includes(att.id) && att.extractedText
+            );
+
+            if (casuistiekFiles.length > 0) {
+              const casuistiekTexts = casuistiekFiles
+                .map(att => `\n\n=== CASUÏSTIEK: ${att.filename} ===\n${att.extractedText}`)
+                .join('');
+              casuistiekContext += casuistiekTexts;
+            }
+          }
+
+          if (casuistiekContext) {
+            const existingRawText = (dossierWithAttachments as any).rawText || '';
+            dossierWithAttachments = {
+              ...dossierWithAttachments,
+              rawText: existingRawText + casuistiekContext
+            };
+            logger.info(id, `Stage ${stage}: Added casuïstiek context to dossier`, {
+              hasText: !!casuistiek.tekst,
+              fileCount: casuistiek.bijlageIds?.length || 0
+            });
+          }
+        }
+      }
 
       if (stage === '1a_informatiecheck') {
         const attachments = await storage.getAttachmentsForReport(id);

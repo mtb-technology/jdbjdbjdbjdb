@@ -63,17 +63,28 @@ export function registerCrudRoutes(
    */
   app.post("/api/reports/create", asyncHandler(async (req: Request, res: Response) => {
     const validatedData = createReportRequestSchema.parse(req.body);
-    const { clientName, rawText } = validatedData;
+    const { clientName, rawText, casuistiekText } = validatedData;
 
     logger.info('reports', 'Creating new report', {
       clientName,
-      rawTextLength: rawText.length
+      rawTextLength: rawText.length,
+      hasCasuistiek: !!casuistiekText
     });
+
+    // Build dossierData with optional casuistiek
+    const dossierData: Record<string, unknown> = {
+      rawText,
+      klant: { naam: clientName }
+    };
+
+    if (casuistiekText) {
+      dossierData.casuistiek = { tekst: casuistiekText };
+    }
 
     const report = await storage.createReport({
       title: clientName,
       clientName: clientName,
-      dossierData: { rawText, klant: { naam: clientName } },
+      dossierData,
       bouwplanData: {},
       generatedContent: null,
       stageResults: {},

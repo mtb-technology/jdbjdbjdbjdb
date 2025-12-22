@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, FolderOpen, Loader2, Upload, X, FileText } from "lucide-react";
+import { Play, FolderOpen, Loader2, Upload, X, FileText, ChevronRight, BookOpen } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 import WorkflowInterface from "@/components/workflow-interface";
@@ -78,8 +79,16 @@ const Pipeline = memo(function Pipeline() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<string>(''); // Status message during upload/processing
   const [isDragging, setIsDragging] = useState(false);
+  // Casuïstiek state (vakliteratuur/jurisprudentie)
+  const [casuistiekText, setCasuistiekText] = useState("");
+  const [casuistiekFiles, setCasuistiekFiles] = useState<PendingFile[]>([]);
+  const [isCasuistiekOpen, setIsCasuistiekOpen] = useState(false);
+  const [isCasuistiekDragging, setIsCasuistiekDragging] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  const casuistiekFileInputRef = useRef<HTMLInputElement>(null);
+  const casuistiekDropZoneRef = useRef<HTMLDivElement>(null);
   const { toast} = useToast();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -259,9 +268,125 @@ const Pipeline = memo(function Pipeline() {
     });
   }, [toast]);
 
+  // Casuistiek file handlers
+  const handleCasuistiekFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const validFiles: File[] = [];
+    const rejectedFiles: { name: string; size: number }[] = [];
+
+    Array.from(files).forEach(file => {
+      if (file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES) {
+        rejectedFiles.push({ name: file.name, size: file.size });
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (rejectedFiles.length > 0) {
+      const rejectedNames = rejectedFiles
+        .map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`)
+        .join(', ');
+      toast({
+        title: "Bestand(en) te groot",
+        description: getOversizedFilesMessage(rejectedNames),
+        variant: "destructive",
+      });
+    }
+
+    if (validFiles.length > 0) {
+      const newFiles: PendingFile[] = validFiles.map(file => ({
+        file, name: file.name, size: file.size, type: file.type,
+      }));
+      setCasuistiekFiles(prev => [...prev, ...newFiles]);
+      toast({
+        title: "Casuïstiek bestanden toegevoegd",
+        description: `${newFiles.length} bestand(en) klaar voor upload`,
+      });
+    }
+
+    if (casuistiekFileInputRef.current) {
+      casuistiekFileInputRef.current.value = '';
+    }
+  }, [toast]);
+
+  const handleRemoveCasuistiekFile = useCallback((fileName: string) => {
+    setCasuistiekFiles(prev => prev.filter(f => f.name !== fileName));
+  }, []);
+
+  const handleCasuistiekDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsCasuistiekDragging(true);
+  }, []);
+
+  const handleCasuistiekDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (casuistiekDropZoneRef.current && !casuistiekDropZoneRef.current.contains(e.relatedTarget as Node)) {
+      setIsCasuistiekDragging(false);
+    }
+  }, []);
+
+  const handleCasuistiekDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleCasuistiekDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsCasuistiekDragging(false);
+
+    const droppedFiles = e.dataTransfer.files;
+    if (!droppedFiles || droppedFiles.length === 0) return;
+
+    const validFiles: File[] = [];
+    const rejectedFiles: { name: string; reason: string }[] = [];
+
+    Array.from(droppedFiles).forEach(file => {
+      const validTypes = ['.pdf', '.txt'];
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+      if (!validTypes.includes(ext)) {
+        rejectedFiles.push({ name: file.name, reason: 'type' });
+        return;
+      }
+      if (file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES) {
+        rejectedFiles.push({ name: file.name, reason: 'size' });
+        return;
+      }
+      validFiles.push(file);
+    });
+
+    if (rejectedFiles.filter(f => f.reason === 'type').length > 0) {
+      toast({
+        title: "Ongeldig bestandstype",
+        description: "Alleen PDF en TXT bestanden zijn toegestaan voor casuïstiek.",
+        variant: "destructive",
+      });
+    }
+
+    if (validFiles.length > 0) {
+      const newFiles: PendingFile[] = validFiles.map(file => ({
+        file, name: file.name, size: file.size, type: file.type,
+      }));
+      setCasuistiekFiles(prev => [...prev, ...newFiles]);
+      toast({
+        title: "Casuïstiek bestanden toegevoegd",
+        description: `${newFiles.length} bestand(en) klaar voor upload`,
+      });
+    }
+  }, [toast]);
+
   // Upload attachments to a report (called after case is created)
   // Returns { success: boolean, needsOcr: boolean }
-  const uploadAttachments = useCallback(async (reportId: string, files: PendingFile[]): Promise<{ success: boolean; needsOcr: boolean }> => {
+  // attachmentType: optional - "casuistiek" for case law/literature files
+  const uploadAttachments = useCallback(async (
+    reportId: string,
+    files: PendingFile[],
+    attachmentType?: 'casuistiek'
+  ): Promise<{ success: boolean; needsOcr: boolean }> => {
     if (files.length === 0) return { success: true, needsOcr: false };
 
     setIsUploading(true);
@@ -385,7 +510,10 @@ const Pipeline = memo(function Pipeline() {
         // Set a reasonable timeout (5 minutes for large files)
         xhr.timeout = 300000;
 
-        xhr.open('POST', `/api/upload/attachments/${reportId}/batch`);
+        const url = attachmentType
+          ? `/api/upload/attachments/${reportId}/batch?type=${attachmentType}`
+          : `/api/upload/attachments/${reportId}/batch`;
+        xhr.open('POST', url);
         xhr.withCredentials = true;
         xhr.send(formData);
       });
@@ -429,16 +557,23 @@ const Pipeline = memo(function Pipeline() {
     setIsCreatingCase(true);
     try {
       // Create the case immediately when "Start Case" is clicked
-      const response = await apiRequest("POST", "/api/reports/create", {
+      // Include casuistiekText if provided
+      const createPayload: Record<string, unknown> = {
         dossier: dossierData,
         bouwplan: bouwplanData,
         clientName: clientName.trim(),
         rawText: rawText.trim() || "(Zie bijlages)", // Fallback als alleen files
-      });
+      };
+
+      if (casuistiekText.trim()) {
+        createPayload.casuistiekText = casuistiekText.trim();
+      }
+
+      const response = await apiRequest("POST", "/api/reports/create", createPayload);
       const data = await response.json();
       const report = (data && typeof data === 'object' && 'success' in data && data.success === true) ? data.data : data;
 
-      console.log("🎯 Pipeline: Report created:", { reportId: report?.id });
+      console.log("🎯 Pipeline: Report created:", { reportId: report?.id, hasCasuistiek: !!casuistiekText.trim() });
 
       // Invalidate cases cache so the new case appears in the list
       queryClient.invalidateQueries({ queryKey: ["/api/cases"], refetchType: 'all' });
@@ -461,6 +596,21 @@ const Pipeline = memo(function Pipeline() {
         needsOcr = uploadResult.needsOcr;
       }
 
+      // Upload casuistiek files (vakliteratuur/jurisprudentie)
+      if (casuistiekFiles.length > 0 && report?.id) {
+        const casuistiekResult = await uploadAttachments(report.id, casuistiekFiles, 'casuistiek');
+        if (!casuistiekResult.success) {
+          toast({
+            title: "Casuïstiek upload mislukt",
+            description: "De casuïstiek bestanden konden niet worden geüpload. Je kunt deze later toevoegen.",
+            variant: "destructive",
+          });
+        }
+        if (casuistiekResult.needsOcr) {
+          needsOcr = true;
+        }
+      }
+
       // If OCR is needed, don't auto-start workflow - user must wait for OCR to complete
       if (needsOcr) {
         toast({
@@ -472,9 +622,10 @@ const Pipeline = memo(function Pipeline() {
         return;
       }
 
+      const totalFiles = pendingFiles.length + casuistiekFiles.length;
       toast({
         title: "Case aangemaakt",
-        description: `Nieuwe case "${report.title}" met ${pendingFiles.length} bijlage(s) opgeslagen`,
+        description: `Nieuwe case "${report.title}" met ${totalFiles} bijlage(s) opgeslagen`,
       });
 
       // Navigate to the case detail page and auto-start workflow
@@ -492,7 +643,7 @@ const Pipeline = memo(function Pipeline() {
     } finally {
       setIsCreatingCase(false);
     }
-  }, [clientName, rawText, pendingFiles, dossierData, bouwplanData, toast, uploadAttachments, setLocation, queryClient]);
+  }, [clientName, rawText, pendingFiles, casuistiekText, casuistiekFiles, dossierData, bouwplanData, toast, uploadAttachments, setLocation, queryClient]);
 
 
   return (
@@ -639,6 +790,92 @@ Bijvoorbeeld:
                     </div>
                   )}
                 </div>
+
+                {/* Casuïstiek Section - Collapsible */}
+                <Collapsible open={isCasuistiekOpen} onOpenChange={setIsCasuistiekOpen}>
+                  <CollapsibleTrigger className="flex items-center gap-2 w-full p-3 hover:bg-accent/50 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors">
+                    <ChevronRight className={cn("h-4 w-4 transition-transform", isCasuistiekOpen && "rotate-90")} />
+                    <BookOpen className="h-4 w-4 text-amber-600" />
+                    <span className="font-medium text-sm">Casuïstiek (optioneel)</span>
+                    {(casuistiekText.trim() || casuistiekFiles.length > 0) && (
+                      <Badge variant="secondary" className="ml-auto text-xs">
+                        {casuistiekFiles.length > 0 ? `${casuistiekFiles.length} bestanden` : 'tekst'}
+                      </Badge>
+                    )}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pt-3 space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Voeg relevante jurisprudentie, vakliteratuur of andere bronnen toe die de AI moet meenemen in de analyse (Stage 2 &amp; 3).
+                    </p>
+
+                    {/* Casuistiek Text Input */}
+                    <Textarea
+                      placeholder={`Bijvoorbeeld:
+• HR 2020/123 - Belastingkamer over vermogensrendementsheffing
+• BNB 2019/145 - Box 3 peildatum
+• Fiscaal Commentaar, § 5.2.3 - Vrijstellingen`}
+                      value={casuistiekText}
+                      onChange={(e) => setCasuistiekText(e.target.value)}
+                      className="min-h-24 resize-none text-sm border-slate-200 dark:border-slate-700"
+                    />
+
+                    {/* Casuistiek File Upload */}
+                    <input
+                      type="file"
+                      ref={casuistiekFileInputRef}
+                      onChange={handleCasuistiekFileSelect}
+                      accept=".pdf,.txt"
+                      multiple
+                      className="hidden"
+                    />
+                    <div
+                      ref={casuistiekDropZoneRef}
+                      onDragEnter={handleCasuistiekDragEnter}
+                      onDragLeave={handleCasuistiekDragLeave}
+                      onDragOver={handleCasuistiekDragOver}
+                      onDrop={handleCasuistiekDrop}
+                      onClick={() => !isUploading && casuistiekFileInputRef.current?.click()}
+                      className={cn(
+                        "relative border-2 border-dashed rounded-lg p-3 text-center cursor-pointer transition-all",
+                        isCasuistiekDragging
+                          ? "border-amber-500 bg-amber-500/5 scale-[1.01]"
+                          : "border-slate-200 dark:border-slate-700 hover:border-amber-500/50 hover:bg-amber-500/5",
+                        isUploading && "pointer-events-none opacity-60"
+                      )}
+                    >
+                      <div className="space-y-1">
+                        <Upload className="h-5 w-5 mx-auto text-muted-foreground" />
+                        <p className="text-xs">
+                          Sleep PDF/TXT of <span className="text-amber-600 font-medium">klik om te uploaden</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Casuistiek Pending Files */}
+                    {casuistiekFiles.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {casuistiekFiles.map((file) => (
+                          <Badge key={file.name} variant="secondary" className="gap-2 pr-1 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+                            <BookOpen className="h-3 w-3 text-amber-600" />
+                            <span className="text-xs max-w-[150px] truncate">{file.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({Math.round(file.size / 1024)}KB)
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveCasuistiekFile(file.name);
+                              }}
+                              className="ml-1 hover:bg-amber-100 dark:hover:bg-amber-800/50 rounded-sm p-0.5"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
 
                 {/* Action Buttons */}
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">

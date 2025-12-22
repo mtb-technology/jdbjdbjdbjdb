@@ -94,12 +94,16 @@ export function errorHandler(
       }))
     };
 
+    // Build user-friendly message from first error
+    const firstError = err.errors[0];
+    const userMessage = firstError?.message || 'De ingevoerde gegevens zijn niet geldig. Controleer uw invoer.';
+
     return res.status(400).json(
       createApiErrorResponse(
         'VALIDATION_ERROR',
         ERROR_CODES.VALIDATION_FAILED,
         'Validation failed',
-        'De ingevoerde gegevens zijn niet geldig. Controleer uw invoer.',
+        userMessage,
         details
       )
     );

@@ -549,11 +549,19 @@ fileUploadRouter.post(
 /**
  * Upload multiple attachments for a report (batch)
  * POST /api/upload/attachments/:reportId/batch
+ *
+ * Query params:
+ * - type: "casuistiek" - marks files as case law/literature references
+ *         When type=casuistiek, attachment IDs are added to dossierData.casuistiek.bijlageIds
  */
 fileUploadRouter.post(
   "/attachments/:reportId/batch",
   (req: Request, res: Response, next: NextFunction) => {
-    logger.info(req.params.reportId, 'Batch upload request received', { contentLength: req.headers['content-length'] });
+    const attachmentType = req.query.type as string | undefined;
+    logger.info(req.params.reportId, 'Batch upload request received', {
+      contentLength: req.headers['content-length'],
+      attachmentType: attachmentType || 'default'
+    });
 
     // Wrap multer to catch file filter and size limit errors
     upload.array('files', 20)(req, res, (err: any) => {
@@ -715,6 +723,36 @@ fileUploadRouter.post(
       ocrPendingCount: attachmentsNeedingOcr.length,
     };
 
+    // If this is a casuistiek upload, add attachment IDs to dossierData.casuistiek.bijlageIds
+    const attachmentType = req.query.type as string | undefined;
+    if (attachmentType === 'casuistiek' && results.length > 0) {
+      try {
+        const dossierData = (report.dossierData || {}) as Record<string, unknown>;
+        const existingCasuistiek = (dossierData.casuistiek || {}) as Record<string, unknown>;
+        const existingBijlageIds = (existingCasuistiek.bijlageIds || []) as string[];
+
+        const newBijlageIds = [...existingBijlageIds, ...results.map(r => r.id)];
+
+        await storage.updateReport(reportId, {
+          dossierData: {
+            ...dossierData,
+            casuistiek: {
+              ...existingCasuistiek,
+              bijlageIds: newBijlageIds,
+            },
+          },
+        });
+
+        logger.info(reportId, 'Added casuistiek attachment IDs to dossierData', {
+          newIds: results.map(r => r.id),
+          totalCasuistiekBijlages: newBijlageIds.length
+        });
+      } catch (updateError) {
+        logger.error(reportId, 'Failed to update dossierData with casuistiek bijlageIds', {}, updateError instanceof Error ? updateError : undefined);
+        // Don't fail the request - attachments are saved, just the reference wasn't added
+      }
+    }
+
     logger.info(reportId, 'Sending batch response', {
       totalFiles: responseData.totalFiles,
       successful: responseData.successful,
@@ -722,6 +760,7 @@ fileUploadRouter.post(
       needsOcr: responseData.needsOcr,
       ocrPendingCount: responseData.ocrPendingCount,
       attachmentIds: results.map(r => r.id),
+      attachmentType: attachmentType || 'default',
     });
 
     // Send response immediately - don't wait for OCR

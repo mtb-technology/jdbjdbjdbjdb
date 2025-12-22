@@ -712,11 +712,15 @@ export const ReportAdjustmentDialog = memo(function ReportAdjustmentDialog({
                 onChange={(e) => setInstruction(e.target.value)}
                 placeholder="Bijv: Voeg een paragraaf toe over de fiscale implicaties van de bedrijfsoverdracht. Of: Verwijder de sectie over box 3 vermogen."
                 className="min-h-[150px] resize-none"
+                maxLength={100000}
                 autoFocus
               />
-              <p className="text-xs text-muted-foreground">
-                Minimaal 10 karakters. Wees zo specifiek mogelijk.
-              </p>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Minimaal 10 karakters. Wees zo specifiek mogelijk.</span>
+                <span className={instruction.length > 90000 ? "text-orange-500 font-medium" : instruction.length > 100000 ? "text-red-500 font-medium" : ""}>
+                  {instruction.length.toLocaleString()} / 100.000
+                </span>
+              </div>
             </div>
 
             <div className="flex justify-end gap-3">

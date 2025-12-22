@@ -29,7 +29,11 @@ export const createReportRequestSchema = z.object({
     .regex(/^[a-zA-Z0-9\s\-\.,']+$/, "Clientnaam bevat ongeldige karakters"),
   rawText: z.string()
     .min(10, "Ruwe tekst moet minimaal 10 karakters bevatten")
-    .max(5000000, "Ruwe tekst mag niet langer zijn dan 5MB (5.000.000 karakters)") // ✅ FIX: Verhoogd voor grote PDF uploads
+    .max(5000000, "Ruwe tekst mag niet langer zijn dan 5MB (5.000.000 karakters)"), // ✅ FIX: Verhoogd voor grote PDF uploads
+  // Casuïstiek: vakliteratuur en jurisprudentie voor Stage 2 (Bouwplan) en Stage 3 (Generatie)
+  casuistiekText: z.string()
+    .max(500000, "Casuïstiek tekst mag niet langer zijn dan 500.000 karakters")
+    .optional(),
 });
 
 // Report Generation Request (LEGACY - kept for backwards compatibility)
@@ -316,7 +320,7 @@ export type ExpressModeSummary = z.infer<typeof expressModeSummarySchema>;
 export const adjustReportRequestSchema = z.object({
   instruction: z.string()
     .min(10, "Instructie moet minimaal 10 karakters bevatten")
-    .max(10000, "Instructie mag niet langer zijn dan 10000 karakters"),
+    .max(100000, "Instructie mag niet langer zijn dan 100.000 karakters"),
   // Optional: specify which version to adjust (default: latest)
   baseVersion: z.string().optional()
 });

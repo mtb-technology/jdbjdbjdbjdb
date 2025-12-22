@@ -287,6 +287,11 @@ export const dossierSchema = z.object({
   // ✅ rawText: Alleen nodig in Stage 1 (informatiecheck), daarna niet meer
   // Wordt gefilterd in buildReviewerData() om niet in Stage 4+ validatie te komen
   rawText: z.string().optional(),
+  // Casuïstiek: Vakliteratuur en jurisprudentie voor Stage 2 (Bouwplan) en Stage 3 (Generatie)
+  casuistiek: z.object({
+    tekst: z.string().max(500000, "Casuïstiek tekst mag niet langer zijn dan 500.000 karakters").optional(),
+    bijlageIds: z.array(z.string()).optional(),
+  }).optional(),
 }).strict();
 
 export const bouwplanSchema = z.object({

@@ -201,6 +201,10 @@ export function useReportAdjustment(reportId: string): UseReportAdjustmentReturn
       setError("Instructie moet minimaal 10 karakters bevatten");
       return;
     }
+    if (instruction.length > 100000) {
+      setError("Instructie mag niet langer zijn dan 100.000 karakters");
+      return;
+    }
 
     setStage("analyzing");
     setError(null);
